@@ -210,6 +210,7 @@ impl Sidebar {
         selected: bool,
         colors: &ThemeColors,
     ) -> impl IntoElement {
+        let theme = theme(cx);
         // Pencil design: active = cyan bg with dark text, inactive = muted slate text
         let icon_color = if selected {
             colors.background  // dark icon on cyan bg
@@ -246,7 +247,7 @@ impl Sidebar {
                 .w_full()
                 .px(px(8.0))
                 .py(px(6.0))
-                .rounded(px(6.0))
+                .rounded(theme.border_radius_md)
                 .bg(bg)
                 .cursor_pointer()
                 .hover(|style| style.bg(hover_bg))
@@ -268,7 +269,7 @@ impl Sidebar {
                 .w_full()
                 .px(px(12.0))
                 .py(px(6.0))
-                .rounded(px(6.0))
+                .rounded(theme.border_radius_md)
                 .bg(bg)
                 .cursor_pointer()
                 .hover(|style| style.bg(hover_bg))
@@ -284,7 +285,7 @@ impl Sidebar {
                     // Label
                     div()
                         .flex_1()
-                        .font_family(theme(cx).font_family_ui.clone())
+                        .font_family(theme.font_family_ui.clone())
                         .text_size(px(13.0))
                         .font_weight(if selected { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
                         .text_color(text_color)

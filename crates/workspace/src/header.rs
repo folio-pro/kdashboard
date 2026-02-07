@@ -1,7 +1,7 @@
 use gpui::*;
 use gpui::prelude::FluentBuilder;
 use ui::gpui_component::input::{Input, InputEvent, InputState};
-use ui::{theme, Icon, IconName};
+use ui::{theme, Icon, IconName, Sizable};
 
 pub struct Header {
     search_input: Option<Entity<InputState>>,
@@ -59,6 +59,7 @@ impl Render for Header {
             Input::new(input)
                 .appearance(false)
                 .cleanable(true)
+                .with_size(ui::Size::Small)
         });
 
         div()
@@ -82,18 +83,18 @@ impl Render for Header {
                     .child(
                         div()
                             .w(px(300.0))
-                            .px(px(14.0))
-                            .py(px(4.0))
-                            .rounded(px(6.0))
+                            .px(px(12.0))
+                            .py(px(6.0))
+                            .rounded(theme.border_radius_md)
                             .bg(colors.surface)
                             .border_1()
                             .border_color(colors.border)
                             .flex()
                             .items_center()
-                            .gap(px(10.0))
+                            .gap(px(8.0))
                             .child(
                                 Icon::new(IconName::Search)
-                                    .size(px(18.0))
+                                    .size(px(14.0))
                                     .color(colors.text_muted),
                             )
                             .when_some(search_input, |el, input| el.child(input)),

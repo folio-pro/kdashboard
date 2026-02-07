@@ -7,7 +7,7 @@ use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor};
 use gpui::*;
 use k8s_client::{get_client, TerminalOutput, TerminalClosed};
 use std::sync::mpsc;
-use ui::{theme, Icon, IconName, Sizable};
+use ui::{back_btn, secondary_btn, danger_btn, theme, Icon, IconName, Sizable};
 
 use crate::colors;
 use crate::terminal_emulator::TerminalEmulator;
@@ -276,23 +276,7 @@ impl PodTerminalView {
                     .gap(px(16.0))
                     // Back button (36x36, rounded 6, surface bg, border)
                     .child(
-                        div()
-                            .id("terminal-back-btn")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(36.0))
-                            .rounded(px(6.0))
-                            .bg(colors.surface)
-                            .border_1()
-                            .border_color(colors.border)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(colors.selection_hover))
-                            .child(
-                                Icon::new(IconName::ArrowLeft)
-                                    .size(px(18.0))
-                                    .color(colors.text_secondary)
-                            )
+                        back_btn("terminal-back-btn", colors)
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 this.close_session();
                                 if let Some(on_close) = &this.on_close {
@@ -311,14 +295,14 @@ impl PodTerminalView {
                                 div()
                                     .text_size(px(16.0))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .font_family("Inter")
+                                    .font_family(theme.font_family_ui.clone())
                                     .text_color(colors.text)
                                     .child("Terminal")
                             )
                             .child(
                                 div()
                                     .text_size(px(12.0))
-                                    .font_family("JetBrains Mono")
+                                    .font_family(theme.font_family.clone())
                                     .text_color(colors.text_muted)
                                     .child(self.pod_name.clone())
                             )
@@ -335,72 +319,22 @@ impl PodTerminalView {
                         "container-select",
                         self.selected_container.as_deref().unwrap_or("default"),
                         px(180.0),
-                        colors,
+                        theme,
                     ))
                     // Shell select dropdown
                     .child(self.render_select_dropdown(
                         "shell-select",
                         "/bin/bash",
                         px(120.0),
-                        colors,
+                        theme,
                     ))
                     // Reconnect button
                     .child(
-                        div()
-                            .id("btn-reconnect")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .gap(px(8.0))
-                            .px(px(16.0))
-                            .py(px(10.0))
-                            .rounded(px(6.0))
-                            .bg(colors.surface)
-                            .border_1()
-                            .border_color(colors.border)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(colors.selection_hover))
-                            .child(
-                                Icon::new(IconName::Refresh)
-                                    .size(px(16.0))
-                                    .color(colors.text_secondary)
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(13.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .font_family("JetBrains Mono")
-                                    .text_color(colors.text)
-                                    .child("Reconnect")
-                            )
+                        secondary_btn("btn-reconnect", IconName::Refresh, "Reconnect", colors)
                     )
                     // Disconnect button (red)
                     .child(
-                        div()
-                            .id("btn-disconnect")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .gap(px(8.0))
-                            .px(px(16.0))
-                            .py(px(10.0))
-                            .rounded(px(6.0))
-                            .bg(colors.error)
-                            .cursor_pointer()
-                            .hover(|s| s.opacity(0.9))
-                            .child(
-                                Icon::new(IconName::Power)
-                                    .size(px(16.0))
-                                    .color(colors.text)
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(13.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .font_family("JetBrains Mono")
-                                    .text_color(colors.text)
-                                    .child("Disconnect")
-                            )
+                        danger_btn("btn-disconnect", IconName::Power, "Disconnect", colors)
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 this.close_session();
                                 cx.notify();
@@ -415,8 +349,9 @@ impl PodTerminalView {
         id: &str,
         value: &str,
         width: Pixels,
-        colors: &ui::ThemeColors,
+        theme: &ui::Theme,
     ) -> impl IntoElement {
+        let colors = &theme.colors;
         div()
             .id(ElementId::Name(id.to_string().into()))
             .flex()
@@ -425,14 +360,14 @@ impl PodTerminalView {
             .w(width)
             .px(px(14.0))
             .py(px(10.0))
-            .rounded(px(6.0))
+            .rounded(theme.border_radius_md)
             .bg(colors.surface)
             .border_1()
             .border_color(colors.border)
             .child(
                 div()
                     .text_size(px(13.0))
-                    .font_family("JetBrains Mono")
+                    .font_family(theme.font_family.clone())
                     .text_color(colors.text)
                     .child(value.to_string())
             )
@@ -484,7 +419,7 @@ impl PodTerminalView {
                         div()
                             .text_size(px(11.0))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .font_family("JetBrains Mono")
+                            .font_family(theme.font_family.clone())
                             .text_color(status_color)
                             .child(status_text)
                     )
@@ -496,14 +431,14 @@ impl PodTerminalView {
                 div()
                     .text_size(px(12.0))
                     .font_weight(FontWeight::MEDIUM)
-                    .font_family("Inter")
+                    .font_family(theme.font_family_ui.clone())
                     .text_color(colors.text_secondary)
                     .child("Size:")
             )
             .child(
                 div()
                     .text_size(px(11.0))
-                    .font_family("JetBrains Mono")
+                    .font_family(theme.font_family.clone())
                     .text_color(colors.text_muted)
                     .child("120x30")
             )
@@ -514,7 +449,7 @@ impl PodTerminalView {
                 div()
                     .text_size(px(12.0))
                     .font_weight(FontWeight::MEDIUM)
-                    .font_family("Inter")
+                    .font_family(theme.font_family_ui.clone())
                     .text_color(colors.text_secondary)
                     .child("Font:")
             )
@@ -526,14 +461,14 @@ impl PodTerminalView {
                     .w(px(100.0))
                     .px(px(14.0))
                     .py(px(10.0))
-                    .rounded(px(6.0))
+                    .rounded(theme.border_radius_md)
                     .bg(colors.surface)
                     .border_1()
                     .border_color(colors.border)
                     .child(
                         div()
                             .text_size(px(13.0))
-                            .font_family("JetBrains Mono")
+                            .font_family(theme.font_family.clone())
                             .text_color(colors.text)
                             .child("14px")
                     )
@@ -546,16 +481,16 @@ impl PodTerminalView {
             // Separator
             .child(self.render_toolbar_separator(colors))
             // Action buttons: Copy, Paste, Clear
-            .child(self.render_toolbar_button("btn-copy", IconName::Copy, "Copy", colors))
-            .child(self.render_toolbar_button("btn-paste", IconName::Clipboard, "Paste", colors))
-            .child(self.render_toolbar_button("btn-clear", IconName::Trash, "Clear", colors))
+            .child(self.render_toolbar_button("btn-copy", IconName::Copy, "Copy", theme))
+            .child(self.render_toolbar_button("btn-paste", IconName::Clipboard, "Paste", theme))
+            .child(self.render_toolbar_button("btn-clear", IconName::Trash, "Clear", theme))
             // Spacer
             .child(div().flex_1())
             // Separator
             .child(self.render_toolbar_separator(colors))
             // Fullscreen + Export
-            .child(self.render_toolbar_button("btn-fullscreen", IconName::Maximize, "Fullscreen", colors))
-            .child(self.render_toolbar_button("btn-export", IconName::Download, "Export", colors))
+            .child(self.render_toolbar_button("btn-fullscreen", IconName::Maximize, "Fullscreen", theme))
+            .child(self.render_toolbar_button("btn-export", IconName::Download, "Export", theme))
     }
 
     fn render_toolbar_separator(&self, colors: &ui::ThemeColors) -> impl IntoElement {
@@ -570,8 +505,9 @@ impl PodTerminalView {
         id: &str,
         icon: IconName,
         label: &str,
-        colors: &ui::ThemeColors,
+        theme: &ui::Theme,
     ) -> impl IntoElement {
+        let colors = &theme.colors;
         div()
             .id(ElementId::Name(id.to_string().into()))
             .flex()
@@ -579,7 +515,7 @@ impl PodTerminalView {
             .gap(px(6.0))
             .px(px(10.0))
             .py(px(6.0))
-            .rounded(px(6.0))
+            .rounded(theme.border_radius_md)
             .border_1()
             .border_color(colors.border)
             .cursor_pointer()
@@ -593,7 +529,7 @@ impl PodTerminalView {
                 div()
                     .text_size(px(11.0))
                     .font_weight(FontWeight::MEDIUM)
-                    .font_family("Inter")
+                    .font_family(theme.font_family_ui.clone())
                     .text_color(colors.text_secondary)
                     .child(label.to_string())
             )
@@ -614,7 +550,7 @@ impl PodTerminalView {
                     .flex_1()
                     .flex()
                     .flex_col()
-                    .rounded(px(8.0))
+                    .rounded(theme.border_radius_md)
                     .bg(colors.surface_elevated)
                     .border_1()
                     .border_color(colors.border)
@@ -635,7 +571,7 @@ impl PodTerminalView {
                                     .child(
                                         div()
                                             .text_size(px(14.0))
-                                            .font_family("Inter")
+                                            .font_family(theme.font_family_ui.clone())
                                             .text_color(colors.text_muted)
                                             .child(format!("Connecting to {}...", self.pod_name))
                                     )
@@ -649,7 +585,7 @@ impl PodTerminalView {
                     .flex_1()
                     .flex()
                     .flex_col()
-                    .rounded(px(8.0))
+                    .rounded(theme.border_radius_md)
                     .bg(colors.surface_elevated)
                     .border_1()
                     .border_color(colors.border)
@@ -674,14 +610,14 @@ impl PodTerminalView {
                                     .child(
                                         div()
                                             .text_size(px(14.0))
-                                            .font_family("Inter")
+                                            .font_family(theme.font_family_ui.clone())
                                             .text_color(colors.error)
                                             .child("Failed to connect")
                                     )
                                     .child(
                                         div()
                                             .text_size(px(12.0))
-                                            .font_family("Inter")
+                                            .font_family(theme.font_family_ui.clone())
                                             .text_color(colors.text_muted)
                                             .max_w(px(400.0))
                                             .child(error_msg)
@@ -708,15 +644,15 @@ impl PodTerminalView {
                     .flex_1()
                     .flex()
                     .flex_col()
-                    .rounded(px(8.0))
+                    .rounded(theme.border_radius_md)
                     .bg(colors.surface_elevated)
                     .border_1()
                     .border_color(colors.border)
                     .overflow_hidden()
                     // Terminal header
-                    .child(self.render_terminal_header(&prompt_path, container_name, colors))
+                    .child(self.render_terminal_header(&prompt_path, container_name, theme))
                     // Terminal body
-                    .child(self.render_terminal_body(colors, cx))
+                    .child(self.render_terminal_body(theme, cx))
                     .into_any_element()
             }
         }
@@ -726,8 +662,9 @@ impl PodTerminalView {
         &self,
         prompt_path: &str,
         _container_name: &str,
-        colors: &ui::ThemeColors,
+        theme: &ui::Theme,
     ) -> impl IntoElement {
+        let colors = &theme.colors;
         div()
             .w_full()
             .flex()
@@ -752,7 +689,7 @@ impl PodTerminalView {
                     .child(
                         div()
                             .text_size(px(12.0))
-                            .font_family("JetBrains Mono")
+                            .font_family(theme.font_family.clone())
                             .text_color(colors.text_secondary)
                             .child(format!("{}  ~", prompt_path))
                     )
@@ -766,7 +703,7 @@ impl PodTerminalView {
                     .child(
                         div()
                             .text_size(px(11.0))
-                            .font_family("JetBrains Mono")
+                            .font_family(theme.font_family.clone())
                             .text_color(colors.text_muted)
                             .child("Session: 00:00:00")
                     )
@@ -775,7 +712,7 @@ impl PodTerminalView {
 
     fn render_terminal_body(
         &self,
-        _colors: &ui::ThemeColors,
+        theme: &ui::Theme,
         cx: &Context<'_, Self>,
     ) -> AnyElement {
         let emulator = match &self.emulator {
@@ -801,12 +738,13 @@ impl PodTerminalView {
         let num_rows = emulator.screen_lines();
 
         let default_fg_hsla = colors::rgb_to_hsla(colors::DEFAULT_FG);
+        let font_family = &theme.font_family;
 
         let mut row_elements: Vec<AnyElement> = Vec::with_capacity(num_rows);
         for row_idx in 0..num_rows {
             let line = Line(row_idx as i32);
             row_elements.push(
-                self.render_grid_row(row_idx, line, grid, num_cols, &cursor, term_colors, default_fg_hsla)
+                self.render_grid_row(row_idx, line, grid, num_cols, &cursor, term_colors, default_fg_hsla, font_family)
             );
         }
 
@@ -841,6 +779,7 @@ impl PodTerminalView {
         cursor: &alacritty_terminal::term::RenderableCursor,
         term_colors: &Colors,
         default_fg: Hsla,
+        font_family: &SharedString,
     ) -> AnyElement {
         let mut text = String::with_capacity(num_cols);
         let mut highlights: Vec<(Range<usize>, HighlightStyle)> = Vec::new();
@@ -916,7 +855,7 @@ impl PodTerminalView {
             .w_full()
             .h(px(20.0))
             .text_size(px(13.0))
-            .font_family("JetBrains Mono")
+            .font_family(font_family.clone())
             .text_color(default_fg)
             .child(
                 StyledText::new(SharedString::from(text))

@@ -1,7 +1,9 @@
+mod buttons;
 mod icon;
 mod theme;
 
 // Custom K8s-specific components
+pub use buttons::*;
 pub use icon::*;
 pub use theme::*;
 

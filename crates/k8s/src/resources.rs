@@ -684,6 +684,7 @@ pub async fn get_pod_logs(
         tail_lines,
         since_seconds,
         follow: false,
+        timestamps: true,
         ..Default::default()
     };
 

@@ -7,8 +7,8 @@ use logs::PodLogsView;
 use resources::{DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails, PodAction, PodDetails, ReplicaSetAction, ReplicaSetDetails, ResourceTable};
 use terminal::PodTerminalView;
 use ui::{
-    theme, Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenu,
-    PopupMenuItem, Sizable,
+    theme, secondary_btn, primary_icon_btn, Button, ButtonVariant, ButtonVariants, DropdownMenu,
+    Icon, IconName, PopupMenu, PopupMenuItem, Sizable,
 };
 
 /// Status categories for metric cards
@@ -459,7 +459,7 @@ impl AppView {
                 div()
                     .px(px(12.0))
                     .py(px(8.0))
-                    .rounded(px(6.0))
+                    .rounded(theme.border_radius_md)
                     .bg(colors.error.opacity(0.1))
                     .border_1()
                     .border_color(colors.error.opacity(0.3))
@@ -629,32 +629,7 @@ impl AppView {
                     .gap(px(12.0))
                     // Refresh button
                     .child(
-                        div()
-                            .id("page-refresh-btn")
-                            .px(px(16.0))
-                            .py(px(10.0))
-                            .rounded(px(6.0))
-                            .bg(colors.surface)
-                            .border_1()
-                            .border_color(colors.border)
-                            .cursor_pointer()
-                            .hover(|style| style.bg(colors.selection_hover))
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .child(
-                                Icon::new(IconName::Refresh)
-                                    .size(px(16.0))
-                                    .color(colors.text_secondary)
-                            )
-                            .child(
-                                div()
-                                    .font_family(theme.font_family_ui.clone())
-                                    .text_size(px(13.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(colors.text)
-                                    .child("Refresh")
-                            )
+                        secondary_btn("page-refresh-btn", IconName::Refresh, "Refresh", colors)
                             .on_click(cx.listener(|_this, _event, _window, cx| {
                                 let state = cx.global::<AppState>();
                                 let resource_type = state.selected_type;
@@ -665,29 +640,8 @@ impl AppView {
                     )
                     // Create button - disabled (not yet implemented)
                     .child(
-                        div()
-                            .id("page-create-btn")
-                            .px(px(16.0))
-                            .py(px(10.0))
-                            .rounded(px(6.0))
-                            .bg(colors.primary)
+                        primary_icon_btn("page-create-btn", IconName::Plus, format!("Create {}", resource_type.api_kind()), colors.primary, colors.background)
                             .opacity(0.5)
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .child(
-                                Icon::new(IconName::Plus)
-                                    .size(px(16.0))
-                                    .color(colors.background)
-                            )
-                            .child(
-                                div()
-                                    .font_family(theme.font_family_ui.clone())
-                                    .text_size(px(13.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(colors.background)
-                                    .child(format!("Create {}", resource_type.api_kind()))
-                            )
                     )
             )
     }
@@ -774,7 +728,7 @@ impl AppView {
             .flex_1()
             .px(px(14.0))
             .py(px(10.0))
-            .rounded(px(8.0))
+            .rounded(theme.border_radius_md)
             .bg(colors.surface)
             .border_1()
             .border_color(colors.border)

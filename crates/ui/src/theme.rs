@@ -127,9 +127,16 @@ pub struct Theme {
     pub font_size: Pixels,
     pub font_size_small: Pixels,
     pub font_size_large: Pixels,
+    pub font_size_xs: Pixels,
+    pub font_size_title: Pixels,
     pub line_height: f32,
     pub spacing_unit: Pixels,
     pub border_radius: Pixels,
+    pub border_radius_sm: Pixels,
+    pub border_radius_md: Pixels,
+    pub border_radius_lg: Pixels,
+    pub border_radius_full: Pixels,
+    pub status_badge_opacity: f32,
 }
 
 impl Default for Theme {
@@ -141,9 +148,16 @@ impl Default for Theme {
             font_size: px(13.0),
             font_size_small: px(11.0),
             font_size_large: px(15.0),
+            font_size_xs: px(10.0),
+            font_size_title: px(24.0),
             line_height: 1.5,
             spacing_unit: px(4.0),
             border_radius: px(4.0),
+            border_radius_sm: px(4.0),
+            border_radius_md: px(8.0),
+            border_radius_lg: px(12.0),
+            border_radius_full: px(100.0),
+            status_badge_opacity: 0.12,
         }
     }
 }

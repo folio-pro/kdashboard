@@ -4,8 +4,8 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use k8s_client::{get_client, get_pod_logs};
 use std::sync::mpsc;
 use ui::{
-    theme, Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenu,
-    PopupMenuItem, Sizable,
+    theme, back_btn, secondary_btn, Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon,
+    IconName, PopupMenu, PopupMenuItem, Sizable,
 };
 
 /// Get or create the Tokio runtime for K8s operations
@@ -502,22 +502,24 @@ impl PodLogsView {
 
 impl Render for PodLogsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        // Lazily initialize the search input (needs window)
         self.ensure_search_input(window, cx);
 
         let theme = theme(cx);
         let colors = &theme.colors;
 
+        // Root: fixed to window size, nothing escapes
         div()
-            .size_full()
+            .id("pod-logs-root")
+            .w_full()
+            .h_full()
+            .min_w(px(0.0))
+            .min_h(px(0.0))
+            .overflow_hidden()
             .flex()
             .flex_col()
             .bg(colors.background)
-            // Top bar
             .child(self.render_top_bar(cx))
-            // Filter toolbar
             .child(self.render_filter_toolbar(cx))
-            // Logs content area
             .child(self.render_logs_content(cx))
     }
 }
@@ -529,19 +531,19 @@ impl PodLogsView {
         let theme = theme(cx);
         let colors = &theme.colors;
 
-        // Build the container dropdown before the div chain
         let container_dropdown = self.render_container_dropdown(cx);
 
-        // Build search input
         let search_input = self.search_input.as_ref().map(|input| {
             Input::new(input)
                 .appearance(false)
                 .cleanable(true)
+                .with_size(ui::Size::Small)
         });
 
         div()
             .w_full()
             .flex_shrink_0()
+            .overflow_hidden()
             .flex()
             .items_center()
             .justify_between()
@@ -555,25 +557,8 @@ impl PodLogsView {
                     .flex()
                     .items_center()
                     .gap(px(16.0))
-                    // Back button
                     .child(
-                        div()
-                            .id("logs-back-btn")
-                            .size(px(36.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(6.0))
-                            .bg(colors.surface)
-                            .border_1()
-                            .border_color(colors.border)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(colors.secondary_hover))
-                            .child(
-                                Icon::new(IconName::ArrowLeft)
-                                    .size(px(18.0))
-                                    .color(colors.text_secondary),
-                            )
+                        back_btn("logs-back-btn", colors)
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 if let Some(on_close) = &this.on_close {
                                     on_close(cx);
@@ -581,7 +566,6 @@ impl PodLogsView {
                                 cx.notify();
                             })),
                     )
-                    // Title block
                     .child(
                         div()
                             .flex()
@@ -591,14 +575,14 @@ impl PodLogsView {
                                 div()
                                     .text_size(px(16.0))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .font_family("Inter")
+                                    .font_family(theme.font_family_ui.clone())
                                     .text_color(colors.text)
                                     .child("Logs"),
                             )
                             .child(
                                 div()
                                     .text_size(px(12.0))
-                                    .font_family("JetBrains Mono")
+                                    .font_family(theme.font_family.clone())
                                     .text_color(colors.text_muted)
                                     .child(self.pod_name.clone()),
                             ),
@@ -610,9 +594,7 @@ impl PodLogsView {
                     .flex()
                     .items_center()
                     .gap(px(12.0))
-                    // Container dropdown
                     .child(container_dropdown)
-                    // Search input
                     .child(
                         div()
                             .w(px(250.0))
@@ -621,13 +603,13 @@ impl PodLogsView {
                             .gap(px(8.0))
                             .px(px(12.0))
                             .py(px(4.0))
-                            .rounded(px(6.0))
+                            .rounded(theme.border_radius_md)
                             .bg(colors.surface)
                             .border_1()
                             .border_color(colors.border)
                             .child(
                                 Icon::new(IconName::Search)
-                                    .size(px(16.0))
+                                    .size(px(14.0))
                                     .color(colors.text_muted),
                             )
                             .when_some(search_input, |el, input| el.child(input)),
@@ -640,8 +622,8 @@ impl PodLogsView {
                             .items_center()
                             .gap(px(4.0))
                             .px(px(12.0))
-                            .py(px(10.0))
-                            .rounded(px(6.0))
+                            .py(px(6.0))
+                            .rounded(theme.border_radius_md)
                             .border_1()
                             .when(self.word_wrap, |el| {
                                 el.bg(colors.primary)
@@ -655,7 +637,7 @@ impl PodLogsView {
                             .hover(|s| s.bg(colors.secondary_hover))
                             .child(
                                 Icon::new(IconName::WrapText)
-                                    .size(px(16.0))
+                                    .size(px(14.0))
                                     .color(if self.word_wrap {
                                         colors.background
                                     } else {
@@ -664,8 +646,8 @@ impl PodLogsView {
                             )
                             .child(
                                 div()
-                                    .text_size(px(13.0))
-                                    .font_family("Inter")
+                                    .text_size(px(12.0))
+                                    .font_family(theme.font_family_ui.clone())
                                     .text_color(if self.word_wrap {
                                         colors.background
                                     } else {
@@ -680,32 +662,7 @@ impl PodLogsView {
                     )
                     // Download button
                     .child(
-                        div()
-                            .id("download-btn")
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .px(px(16.0))
-                            .py(px(10.0))
-                            .rounded(px(6.0))
-                            .bg(colors.surface)
-                            .border_1()
-                            .border_color(colors.border)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(colors.secondary_hover))
-                            .child(
-                                Icon::new(IconName::Download)
-                                    .size(px(16.0))
-                                    .color(colors.text_secondary),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(13.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .font_family("JetBrains Mono")
-                                    .text_color(colors.text)
-                                    .child("Download"),
-                            )
+                        secondary_btn("download-btn", IconName::Download, "Download", colors)
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 this.download_logs();
                                 if let Some(on_action) = &this.on_action {
@@ -713,16 +670,16 @@ impl PodLogsView {
                                 }
                             })),
                     )
-                    // Stream button (primary)
+                    // Stream button
                     .child(
                         div()
                             .id("stream-btn")
                             .flex()
                             .items_center()
-                            .gap(px(8.0))
-                            .px(px(16.0))
-                            .py(px(10.0))
-                            .rounded(px(6.0))
+                            .gap(px(6.0))
+                            .px(px(12.0))
+                            .py(px(6.0))
+                            .rounded(theme.border_radius_md)
                             .border_1()
                             .when(self.is_streaming, |el| {
                                 el.bg(colors.primary)
@@ -736,7 +693,7 @@ impl PodLogsView {
                             .hover(|s| s.bg(colors.primary_hover))
                             .child(
                                 Icon::new(IconName::Play)
-                                    .size(px(16.0))
+                                    .size(px(14.0))
                                     .color(if self.is_streaming {
                                         colors.background
                                     } else {
@@ -745,9 +702,9 @@ impl PodLogsView {
                             )
                             .child(
                                 div()
-                                    .text_size(px(13.0))
+                                    .text_size(px(12.0))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .font_family("JetBrains Mono")
+                                    .font_family(theme.font_family.clone())
                                     .text_color(if self.is_streaming {
                                         colors.background
                                     } else {
@@ -781,7 +738,6 @@ impl PodLogsView {
             .unwrap_or_else(|| "default".to_string())
             .into();
 
-        // Only show dropdown if there are multiple containers
         if containers.len() <= 1 {
             return div().child(
                 Button::new("container-selector")
@@ -831,13 +787,13 @@ impl PodLogsView {
         let colors = &theme.colors;
         let filtered_count = self.filtered_logs().len();
 
-        // Build dropdowns before the div chain
         let time_dropdown = self.render_time_dropdown(cx);
         let tail_dropdown = self.render_tail_dropdown(cx);
 
         div()
             .w_full()
             .flex_shrink_0()
+            .overflow_hidden()
             .flex()
             .items_center()
             .gap(px(12.0))
@@ -846,40 +802,34 @@ impl PodLogsView {
             .py(px(10.0))
             .border_b_1()
             .border_color(colors.border)
-            // "Level:" label
             .child(
                 div()
                     .text_size(px(12.0))
                     .font_weight(FontWeight::MEDIUM)
-                    .font_family("Inter")
+                    .font_family(theme.font_family_ui.clone())
                     .text_color(colors.text_secondary)
                     .child("Level:"),
             )
-            // Level segmented control
             .child(self.render_level_selector(cx))
             .child(self.render_separator(colors))
-            // "Since:" label
             .child(
                 div()
                     .text_size(px(12.0))
                     .font_weight(FontWeight::MEDIUM)
-                    .font_family("Inter")
+                    .font_family(theme.font_family_ui.clone())
                     .text_color(colors.text_secondary)
                     .child("Since:"),
             )
-            // Time dropdown
             .child(time_dropdown)
             .child(self.render_separator(colors))
-            // "Tail:" label
             .child(
                 div()
                     .text_size(px(12.0))
                     .font_weight(FontWeight::MEDIUM)
-                    .font_family("Inter")
+                    .font_family(theme.font_family_ui.clone())
                     .text_color(colors.text_secondary)
                     .child("Tail:"),
             )
-            // Tail dropdown
             .child(tail_dropdown)
             .child(self.render_separator(colors))
             // Timestamps toggle
@@ -891,7 +841,7 @@ impl PodLogsView {
                     .gap(px(6.0))
                     .px(px(10.0))
                     .py(px(6.0))
-                    .rounded(px(6.0))
+                    .rounded(theme.border_radius_md)
                     .when(self.show_timestamps, |el| el.bg(colors.primary))
                     .when(!self.show_timestamps, |el| {
                         el.border_1().border_color(colors.border)
@@ -913,7 +863,7 @@ impl PodLogsView {
                             } else {
                                 FontWeight::MEDIUM
                             })
-                            .font_family("Inter")
+                            .font_family(theme.font_family_ui.clone())
                             .text_color(if self.show_timestamps {
                                 colors.background
                             } else {
@@ -935,7 +885,7 @@ impl PodLogsView {
                     .gap(px(6.0))
                     .px(px(10.0))
                     .py(px(6.0))
-                    .rounded(px(6.0))
+                    .rounded(theme.border_radius_md)
                     .when(self.previous_container, |el| el.bg(colors.primary))
                     .when(!self.previous_container, |el| {
                         el.border_1().border_color(colors.border)
@@ -953,7 +903,7 @@ impl PodLogsView {
                         div()
                             .text_size(px(11.0))
                             .font_weight(FontWeight::MEDIUM)
-                            .font_family("Inter")
+                            .font_family(theme.font_family_ui.clone())
                             .text_color(if self.previous_container {
                                 colors.background
                             } else {
@@ -976,7 +926,7 @@ impl PodLogsView {
                     .gap(px(6.0))
                     .px(px(10.0))
                     .py(px(6.0))
-                    .rounded(px(6.0))
+                    .rounded(theme.border_radius_md)
                     .when(self.regex_mode, |el| el.bg(colors.primary))
                     .when(!self.regex_mode, |el| {
                         el.border_1().border_color(colors.border)
@@ -996,7 +946,7 @@ impl PodLogsView {
                         div()
                             .text_size(px(11.0))
                             .font_weight(FontWeight::MEDIUM)
-                            .font_family("Inter")
+                            .font_family(theme.font_family_ui.clone())
                             .text_color(if self.regex_mode {
                                 colors.background
                             } else {
@@ -1026,7 +976,7 @@ impl PodLogsView {
                         div()
                             .text_size(px(11.0))
                             .font_weight(FontWeight::MEDIUM)
-                            .font_family("JetBrains Mono")
+                            .font_family(theme.font_family.clone())
                             .text_color(colors.text_muted)
                             .child(format!(
                                 "{} lines",
@@ -1044,7 +994,7 @@ impl PodLogsView {
                     .gap(px(6.0))
                     .px(px(10.0))
                     .py(px(6.0))
-                    .rounded(px(6.0))
+                    .rounded(theme.border_radius_md)
                     .border_1()
                     .border_color(colors.border)
                     .cursor_pointer()
@@ -1058,7 +1008,7 @@ impl PodLogsView {
                         div()
                             .text_size(px(11.0))
                             .font_weight(FontWeight::MEDIUM)
-                            .font_family("Inter")
+                            .font_family(theme.font_family_ui.clone())
                             .text_color(colors.text_secondary)
                             .child("Clear"),
                     )
@@ -1144,7 +1094,7 @@ impl PodLogsView {
 
         div()
             .flex()
-            .rounded(px(6.0))
+            .rounded(theme.border_radius_md)
             .border_1()
             .border_color(colors.border)
             .overflow_hidden()
@@ -1210,7 +1160,7 @@ impl PodLogsView {
                     } else {
                         FontWeight::MEDIUM
                     })
-                    .font_family("Inter")
+                    .font_family(theme.font_family_ui.clone())
                     .text_color(if is_active { colors.background } else { color })
                     .child(label_owned.clone()),
             )
@@ -1229,66 +1179,77 @@ impl PodLogsView {
         let is_loading = self.is_loading;
         let error = self.error.clone();
 
+        // Outer: fills remaining vertical space, clips everything
         div()
             .flex_1()
             .min_h(px(0.0))
+            .min_w(px(0.0))
             .overflow_hidden()
             .p(px(24.0))
             .child(
+                // Card container: fills the padded area
                 div()
-                    .size_full()
+                    .w_full()
+                    .h_full()
+                    .min_w(px(0.0))
                     .flex()
                     .flex_col()
-                    .rounded(px(8.0))
+                    .rounded(theme.border_radius_md)
                     .bg(colors.surface_elevated)
                     .border_1()
                     .border_color(colors.border)
                     .overflow_hidden()
-                    // Terminal header
                     .child(self.render_terminal_header(cx))
-                    // Terminal body
+                    // Scroll boundary: hard clip wrapper so scroll never leaks
                     .child(
                         div()
-                            .id("logs-scroll")
                             .flex_1()
                             .min_h(px(0.0))
-                            .overflow_scroll()
-                            .track_scroll(&self.scroll_handle)
-                            .bg(colors.surface_elevated)
-                            .p(px(16.0))
-                            .flex()
-                            .flex_col()
-                            .when(!self.word_wrap, |el| el.items_start())
-                            .gap(px(2.0))
-                            // Loading state
-                            .when(is_loading, |el| {
-                                el.child(
-                                    div()
-                                        .text_size(px(12.0))
-                                        .text_color(colors.text_muted)
-                                        .font_family("JetBrains Mono")
-                                        .child("Loading logs..."),
-                                )
-                            })
-                            // Error state
-                            .when(error.is_some(), |el| {
-                                el.child(
-                                    div()
-                                        .text_size(px(12.0))
-                                        .text_color(colors.error)
-                                        .font_family("JetBrains Mono")
-                                        .child(format!(
-                                            "Error: {}",
-                                            error.unwrap_or_default()
-                                        )),
-                                )
-                            })
-                            // Log lines
-                            .when(!is_loading && self.error.is_none(), |el| {
-                                el.children(
-                                    logs.iter().map(|log| self.render_log_line(cx, log)),
-                                )
-                            }),
+                            .min_w(px(0.0))
+                            .overflow_hidden()
+                            .child(
+                                // Actual scrollable area
+                                div()
+                                    .id("logs-scroll")
+                                    .w_full()
+                                    .h_full()
+                                    .when(self.word_wrap, |el| el.overflow_y_scroll())
+                                    .when(!self.word_wrap, |el| el.overflow_scroll())
+                                    .track_scroll(&self.scroll_handle)
+                                    .bg(colors.surface_elevated)
+                                    .p(px(16.0))
+                                    .flex()
+                                    .flex_col()
+                                    .when(!self.word_wrap, |el| el.items_start())
+                                    .gap(px(2.0))
+                                    .when(is_loading, |el| {
+                                        el.child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .text_color(colors.text_muted)
+                                                .font_family(theme.font_family.clone())
+                                                .child("Loading logs..."),
+                                        )
+                                    })
+                                    .when(error.is_some(), |el| {
+                                        el.child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .text_color(colors.error)
+                                                .font_family(theme.font_family.clone())
+                                                .child(format!(
+                                                    "Error: {}",
+                                                    error.unwrap_or_default()
+                                                )),
+                                        )
+                                    })
+                                    .when(!is_loading && self.error.is_none(), |el| {
+                                        el.children(
+                                            logs.iter()
+                                                .map(|log| self.render_log_line(cx, log)),
+                                        )
+                                    }),
+                            ),
                     ),
             )
     }
@@ -1301,6 +1262,8 @@ impl PodLogsView {
 
         div()
             .w_full()
+            .flex_shrink_0()
+            .overflow_hidden()
             .flex()
             .items_center()
             .justify_between()
@@ -1309,7 +1272,6 @@ impl PodLogsView {
             .bg(colors.surface)
             .border_b_1()
             .border_color(colors.border)
-            // Left: terminal icon + pod name
             .child(
                 div()
                     .flex()
@@ -1323,12 +1285,11 @@ impl PodLogsView {
                     .child(
                         div()
                             .text_size(px(12.0))
-                            .font_family("JetBrains Mono")
+                            .font_family(theme.font_family.clone())
                             .text_color(colors.text_secondary)
                             .child(self.pod_name.clone()),
                     ),
             )
-            // Right: LIVE indicator
             .when(self.is_streaming, |el| {
                 el.child(
                     div()
@@ -1345,7 +1306,7 @@ impl PodLogsView {
                             div()
                                 .text_size(px(10.0))
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .font_family("JetBrains Mono")
+                                .font_family(theme.font_family.clone())
                                 .text_color(colors.success)
                                 .child("LIVE"),
                         ),
@@ -1360,30 +1321,31 @@ impl PodLogsView {
         let colors = &theme.colors;
 
         let (level_color, level_label, msg_color) = match log.level {
-            DetectedLevel::Info => (colors.primary, "INFO", hex_to_hsla("#CCCCCC")),
+            DetectedLevel::Info => (colors.primary, "INFO", colors.text_secondary),
             DetectedLevel::Warn => (colors.warning, "WARN", colors.warning),
             DetectedLevel::Error => (colors.error, "ERROR", colors.error),
-            DetectedLevel::Debug => (colors.text_muted, "DEBUG", hex_to_hsla("#CCCCCC")),
+            DetectedLevel::Debug => (colors.text_muted, "DEBUG", colors.text_secondary),
         };
 
         let word_wrap = self.word_wrap;
 
         div()
-            .when(word_wrap, |el| el.w_full())
+            .w_full()
             .when(!word_wrap, |el| el.flex_shrink_0())
+            .min_w(px(0.0))
             .flex()
             .items_start()
             .gap(px(12.0))
             .hover(|s| s.bg(colors.selection_hover))
             // Timestamp
-            .when(self.show_timestamps, |el| {
+            .when(self.show_timestamps && !log.timestamp.is_empty(), |el| {
                 el.child(
                     div()
                         .w(px(200.0))
                         .flex_shrink_0()
                         .text_size(px(12.0))
-                        .font_family("JetBrains Mono")
-                        .text_color(hex_to_hsla("#666666"))
+                        .font_family(theme.font_family.clone())
+                        .text_color(colors.text_muted)
                         .child(log.timestamp.clone()),
                 )
             })
@@ -1393,7 +1355,7 @@ impl PodLogsView {
                     .w(px(50.0))
                     .flex_shrink_0()
                     .text_size(px(12.0))
-                    .font_family("JetBrains Mono")
+                    .font_family(theme.font_family.clone())
                     .text_color(level_color)
                     .child(level_label),
             )
@@ -1403,7 +1365,7 @@ impl PodLogsView {
                     .when(word_wrap, |el| el.flex_1().min_w(px(0.0)))
                     .when(!word_wrap, |el| el.whitespace_nowrap().flex_shrink_0())
                     .text_size(px(12.0))
-                    .font_family("JetBrains Mono")
+                    .font_family(theme.font_family.clone())
                     .text_color(msg_color)
                     .child(log.message.clone()),
             )
@@ -1424,34 +1386,3 @@ impl PodLogsView {
     }
 }
 
-/// Convert hex color string to Hsla
-fn hex_to_hsla(hex: &str) -> Hsla {
-    let hex = hex.trim_start_matches('#');
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f32 / 255.0;
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f32 / 255.0;
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f32 / 255.0;
-
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let l = (max + min) / 2.0;
-
-    if max == min {
-        return hsla(0.0, 0.0, l, 1.0);
-    }
-
-    let d = max - min;
-    let s = if l > 0.5 {
-        d / (2.0 - max - min)
-    } else {
-        d / (max + min)
-    };
-    let h = if max == r {
-        ((g - b) / d + if g < b { 6.0 } else { 0.0 }) / 6.0
-    } else if max == g {
-        ((b - r) / d + 2.0) / 6.0
-    } else {
-        ((r - g) / d + 4.0) / 6.0
-    };
-
-    hsla(h, s, l, 1.0)
-}

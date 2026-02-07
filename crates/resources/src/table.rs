@@ -525,7 +525,7 @@ impl Render for ResourceTable {
             .flex()
             .flex_col()
             .bg(colors.surface)
-            .rounded(px(12.0))
+            .rounded(theme.border_radius_lg)
             .border_1()
             .border_color(colors.border)
             .overflow_hidden();
@@ -902,7 +902,7 @@ impl ResourceTable {
                         .px(px(10.0))
                         .py(px(4.0))
                         .rounded(px(100.0))
-                        .bg(status_color.opacity(0.125))
+                        .bg(status_color.opacity(0.12))
                         .child(
                             // Status dot
                             div()
@@ -1428,14 +1428,15 @@ fn render_actions(cell: Div, colors: &ThemeColors) -> Div {
 
 /// Render a pill-shaped status badge with translucent colored background
 fn render_status_pill(status_color: Hsla, label: &str) -> Div {
+    let theme = ui::Theme::default();
     div()
         .flex()
         .items_center()
         .gap(px(6.0))
         .px(px(10.0))
         .py(px(4.0))
-        .rounded(px(100.0))
-        .bg(status_color.opacity(0.125))
+        .rounded(theme.border_radius_full)
+        .bg(status_color.opacity(0.12))
         .child(
             div()
                 .w(px(6.0))
