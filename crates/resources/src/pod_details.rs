@@ -1,7 +1,9 @@
 use gpui::*;
 use gpui::prelude::FluentBuilder;
-use k8s_client::Resource;
-use ui::{theme, Icon, IconName, danger_btn};
+use k8s_client::{PortForwardInfo, Resource};
+use std::collections::HashMap;
+use ui::gpui_component::input::{Input as TextInput, InputState};
+use ui::{theme, Icon, IconName, Sizable, Size, danger_btn};
 use editor::YamlEditor;
 use crate::detail_tabs::{DetailTab, EditorSubTab};
 use crate::detail_shared::*;
@@ -12,8 +14,19 @@ pub enum PodAction {
     ViewLogs { pod_name: String, namespace: String, containers: Vec<String>, selected_container: Option<String> },
     OpenTerminal { pod_name: String, namespace: String, containers: Vec<String>, selected_container: Option<String> },
     Delete { pod_name: String, namespace: String },
+    PortForward { pod_name: String, namespace: String, container_port: u16, local_port: Option<u16> },
+    StopPortForward { session_id: String },
 }
 
+
+/// Info about a discovered container port for the port-forward panel
+#[derive(Clone, Debug)]
+struct ContainerPortEntry {
+    container_name: String,
+    container_port: u16,
+    protocol: String,
+    port_name: String,
+}
 
 pub struct PodDetails {
     resource: Resource,
@@ -25,6 +38,12 @@ pub struct PodDetails {
     yaml_editor: Option<Entity<YamlEditor>>,
     original_yaml: String,
     yaml_valid: Option<bool>,
+    /// Text input entities per container_port for the local port value
+    pf_inputs: HashMap<u16, Entity<InputState>>,
+    /// Active port forwards (synced from AppState)
+    port_forwards: Vec<PortForwardInfo>,
+    /// Error message to show in the port forward panel
+    pf_error: Option<String>,
 }
 
 impl PodDetails {
@@ -39,6 +58,9 @@ impl PodDetails {
             yaml_editor: None,
             original_yaml: String::new(),
             yaml_valid: None,
+            pf_inputs: HashMap::new(),
+            port_forwards: Vec::new(),
+            pf_error: None,
         }
     }
 
@@ -48,6 +70,59 @@ impl PodDetails {
         self.original_yaml.clear();
         self.yaml_valid = None;
         self.editor_sub_tab = EditorSubTab::Editor;
+    }
+
+    pub fn set_pf_error(&mut self, error: Option<String>) {
+        self.pf_error = error;
+    }
+
+    pub fn set_port_forwards(&mut self, port_forwards: Vec<PortForwardInfo>) {
+        self.port_forwards = port_forwards;
+    }
+
+    /// Find an active port forward for this pod + container port
+    fn find_active_forward(&self, container_port: u16) -> Option<&PortForwardInfo> {
+        let pod_name = &self.resource.metadata.name;
+        let namespace = self.resource.metadata.namespace.as_deref().unwrap_or("default");
+        self.port_forwards.iter().find(|pf| {
+            pf.pod_name == *pod_name
+                && pf.namespace == namespace
+                && pf.container_port == container_port
+        })
+    }
+
+    /// Collect all container ports from the pod spec
+    fn collect_container_ports(&self) -> Vec<ContainerPortEntry> {
+        let containers = get_json_array(&self.resource.spec, &["containers"]).unwrap_or_default();
+        let mut entries = Vec::new();
+        for container in &containers {
+            let container_name = container
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("-")
+                .to_string();
+            if let Some(ports) = container.get("ports").and_then(|p| p.as_array()) {
+                for p in ports {
+                    if let Some(cp) = p.get("containerPort").and_then(|v| v.as_u64()) {
+                        entries.push(ContainerPortEntry {
+                            container_name: container_name.clone(),
+                            container_port: cp as u16,
+                            protocol: p
+                                .get("protocol")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("TCP")
+                                .to_string(),
+                            port_name: p
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        entries
     }
 
     pub fn on_close(mut self, handler: impl Fn(&mut Context<'_, Self>) + 'static) -> Self {
@@ -65,6 +140,24 @@ impl Render for PodDetails {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         if self.active_tab == DetailTab::Yaml {
             return self.render_yaml_view(window, cx).into_any_element();
+        }
+
+        // Lazily create InputState entities for port forward inputs
+        {
+            let ports = self.collect_container_ports();
+            let missing: Vec<(u16, String)> = ports
+                .iter()
+                .filter(|e| !self.pf_inputs.contains_key(&e.container_port))
+                .map(|e| (e.container_port, e.container_port.to_string()))
+                .collect();
+            for (cp, default_val) in missing {
+                let input_state = cx.new(|input_cx| {
+                    InputState::new(window, input_cx)
+                        .placeholder("Port")
+                        .default_value(default_val)
+                });
+                self.pf_inputs.insert(cp, input_state);
+            }
         }
 
         let colors = &theme(cx).colors;
@@ -358,32 +451,357 @@ impl PodDetails {
     fn render_content(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let resource = &self.resource;
 
+        let left_col = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .gap(px(24.0))
+            .child(self.render_pod_info_card(cx, resource))
+            .child(self.render_containers_card(cx, resource))
+            .child(render_detail_labels_card(cx, resource));
+
+        let mut right_col = div()
+            .w(px(500.0))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .gap(px(24.0));
+
+        // Port forward panel (above events in the right column)
+        right_col = right_col.child(self.render_port_forward_panel(cx));
+
+        right_col = right_col.child(self.render_events_card(cx, resource));
+
         div()
             .w_full()
             .flex()
             .gap(px(24.0))
-            // Left column
-            .child(
+            .child(left_col)
+            .child(right_col)
+    }
+
+    // ── Port Forward panel ────────────────────────────────────────────
+
+    fn render_port_forward_panel(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let theme = theme(cx);
+        let colors = &theme.colors;
+
+        let ports = self.collect_container_ports();
+
+        if ports.is_empty() {
+            return render_detail_card(
+                cx,
+                "Port Forward",
+                None,
                 div()
-                    .flex_1()
-                    .min_w(px(0.0))
+                    .p(px(20.0))
                     .flex()
-                    .flex_col()
-                    .gap(px(24.0))
-                    .child(self.render_pod_info_card(cx, resource))
-                    .child(self.render_containers_card(cx, resource))
-                    .child(render_detail_labels_card(cx, resource))
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .text_color(colors.text_muted)
+                            .child("No container ports defined in this pod"),
+                    ),
             )
-            // Right column (400px)
-            .child(
-                div()
-                    .w(px(400.0))
-                    .flex_shrink_0()
+            .into_any_element();
+        }
+
+        let total = ports.len();
+        let port_rows: Vec<AnyElement> = ports
+            .iter()
+            .enumerate()
+            .map(|(idx, entry)| {
+                let is_last = idx == total - 1;
+                let cp = entry.container_port;
+                let active_pf = self.find_active_forward(cp).cloned();
+                let is_active = active_pf.is_some();
+
+                let port_label = if entry.port_name.is_empty() {
+                    format!("{}/{}", cp, entry.protocol)
+                } else {
+                    format!("{} ({}/{})", entry.port_name, cp, entry.protocol)
+                };
+
+                let pod_name_fwd = self.resource.metadata.name.clone();
+                let namespace_fwd = self
+                    .resource
+                    .metadata
+                    .namespace
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string());
+
+                let row_bg = if is_active {
+                    colors.success.opacity(0.08)
+                } else {
+                    gpui::transparent_black()
+                };
+
+                let icon_color = if is_active { colors.success } else { colors.primary };
+
+                let mut row = div()
+                    .w_full()
                     .flex()
-                    .flex_col()
-                    .gap(px(24.0))
-                    .child(self.render_events_card(cx, resource))
-            )
+                    .items_center()
+                    .px(px(20.0))
+                    .py(px(14.0))
+                    .bg(row_bg);
+
+                if !is_last {
+                    row = row.border_b_1().border_color(colors.border);
+                }
+
+                // Left: container name + port info
+                row = row.child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .flex()
+                        .flex_col()
+                        .gap(px(2.0))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .child(
+                                    Icon::new(IconName::PortForward)
+                                        .size(px(14.0))
+                                        .color(icon_color),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(13.0))
+                                        .text_color(colors.text)
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(port_label),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .pl(px(22.0))
+                                .text_size(px(11.0))
+                                .text_color(colors.text_muted)
+                                .child(format!("Container: {}", entry.container_name)),
+                        ),
+                );
+
+                if let Some(pf) = active_pf {
+                    // Active state: show local port badge + stop button
+                    let session_id = pf.session_id.clone();
+                    row = row
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .child(
+                                    div()
+                                        .px(px(10.0))
+                                        .py(px(4.0))
+                                        .rounded(theme.border_radius_full)
+                                        .bg(colors.success.opacity(0.12))
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(6.0))
+                                        .child(
+                                            div()
+                                                .size(px(6.0))
+                                                .rounded_full()
+                                                .bg(colors.success),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .text_color(colors.success)
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .child(format!("localhost:{}", pf.local_port)),
+                                        ),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .ml(px(12.0))
+                                .child(
+                                    div()
+                                        .id(ElementId::Name(format!("pf-stop-{}", cp).into()))
+                                        .cursor_pointer()
+                                        .px(px(14.0))
+                                        .py(px(6.0))
+                                        .rounded(theme.border_radius_md)
+                                        .bg(colors.error.opacity(0.12))
+                                        .text_size(px(12.0))
+                                        .text_color(colors.error)
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .hover(|s| s.bg(colors.error.opacity(0.2)))
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(6.0))
+                                        .child(
+                                            Icon::new(IconName::Close)
+                                                .size(px(12.0))
+                                                .color(colors.error),
+                                        )
+                                        .child("Stop")
+                                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                                            if let Some(on_action) = &this.on_action {
+                                                on_action(
+                                                    PodAction::StopPortForward {
+                                                        session_id: session_id.clone(),
+                                                    },
+                                                    cx,
+                                                );
+                                            }
+                                        })),
+                                ),
+                        );
+                } else {
+                    // Inactive state: show input + start button
+                    let input_el: Option<AnyElement> = self.pf_inputs.get(&cp).map(|state| {
+                        TextInput::new(state)
+                            .with_size(Size::Small)
+                            .cleanable(false)
+                            .w(px(90.0))
+                            .into_any_element()
+                    });
+
+                    row = row
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .child(
+                                    div()
+                                        .text_size(px(11.0))
+                                        .text_color(colors.text_muted)
+                                        .child("Local port:"),
+                                )
+                                .when_some(input_el, |el, input| el.child(input)),
+                        )
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .ml(px(16.0))
+                                .child(
+                                    div()
+                                        .id(ElementId::Name(format!("pf-start-{}", cp).into()))
+                                        .cursor_pointer()
+                                        .px(px(14.0))
+                                        .py(px(6.0))
+                                        .rounded(theme.border_radius_md)
+                                        .bg(colors.primary)
+                                        .text_size(px(12.0))
+                                        .text_color(colors.background)
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .hover(|s| s.bg(colors.primary_hover))
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(6.0))
+                                        .child(
+                                            Icon::new(IconName::Play)
+                                                .size(px(12.0))
+                                                .color(colors.background),
+                                        )
+                                        .child("Start")
+                                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                                            if let Some(on_action) = &this.on_action {
+                                                let local_port = this
+                                                    .pf_inputs
+                                                    .get(&cp)
+                                                    .and_then(|state| {
+                                                        let val = state.read(cx).value().to_string();
+                                                        val.trim().parse::<u16>().ok()
+                                                    })
+                                                    .filter(|&p| p > 0);
+                                                on_action(
+                                                    PodAction::PortForward {
+                                                        pod_name: pod_name_fwd.clone(),
+                                                        namespace: namespace_fwd.clone(),
+                                                        container_port: cp,
+                                                        local_port,
+                                                    },
+                                                    cx,
+                                                );
+                                            }
+                                        })),
+                                ),
+                        );
+                }
+
+                row.into_any_element()
+            })
+            .collect();
+
+        render_detail_card(
+            cx,
+            "Port Forward",
+            Some(format!(
+                "{} port{}",
+                total,
+                if total != 1 { "s" } else { "" }
+            )),
+            div()
+                .flex()
+                .flex_col()
+                .children(port_rows)
+                // Error banner
+                .when_some(self.pf_error.clone(), |el, error_msg| {
+                    el.child(
+                        div()
+                            .w_full()
+                            .px(px(20.0))
+                            .py(px(10.0))
+                            .border_t_1()
+                            .border_color(colors.error.opacity(0.3))
+                            .bg(colors.error.opacity(0.08))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(
+                                Icon::new(IconName::Error)
+                                    .size(px(14.0))
+                                    .color(colors.error),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(px(12.0))
+                                    .text_color(colors.error)
+                                    .child(error_msg),
+                            ),
+                    )
+                })
+                .child(
+                    // Help text at the bottom
+                    div()
+                        .w_full()
+                        .px(px(20.0))
+                        .py(px(12.0))
+                        .border_t_1()
+                        .border_color(colors.border)
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .child(
+                            Icon::new(IconName::Info)
+                                .size(px(12.0))
+                                .color(colors.text_muted),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(11.0))
+                                .text_color(colors.text_muted)
+                                .child("Type a port number or leave empty for auto-assign"),
+                        ),
+                ),
+        )
+        .into_any_element()
     }
 
     // ── Pod Information card ────────────────────────────────────────────
@@ -609,6 +1027,54 @@ impl PodDetails {
                         .gap(px(16.0))
                         .child(render_detail_resource_stat(cx, "CPU", &cpu_num, &cpu_unit, cpu_limit.as_deref()))
                         .child(render_detail_resource_stat(cx, "MEMORY", &mem_num, &mem_unit, mem_limit.as_deref()))
+                )
+                // Container ports display
+                .when_some(
+                    container.get("ports").and_then(|p| p.as_array()).cloned(),
+                    move |el: Div, ports| {
+                        if ports.is_empty() {
+                            return el;
+                        }
+                        let port_items: Vec<Div> = ports.iter().filter_map(|p| {
+                            let container_port = p.get("containerPort").and_then(|v| v.as_u64())? as u16;
+                            let protocol = p.get("protocol").and_then(|v| v.as_str()).unwrap_or("TCP");
+                            let port_name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                            let label = if port_name.is_empty() {
+                                format!("{}/{}", container_port, protocol)
+                            } else {
+                                format!("{} ({}/{})", port_name, container_port, protocol)
+                            };
+
+                            Some(div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.0))
+                                .child(
+                                    Icon::new(IconName::PortForward)
+                                        .size(px(12.0))
+                                        .color(colors.text_muted)
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.0))
+                                        .text_color(colors.text_secondary)
+                                        .child(label)
+                                ))
+                        }).collect();
+
+                        if port_items.is_empty() {
+                            return el;
+                        }
+
+                        el.child(
+                            div()
+                                .w_full()
+                                .flex()
+                                .flex_wrap()
+                                .gap(px(12.0))
+                                .children(port_items)
+                        )
+                    }
                 )
         }).collect();
 

@@ -4,7 +4,7 @@ use gpui::*;
 use gpui::prelude::FluentBuilder;
 use k8s_client::Resource;
 use logs::PodLogsView;
-use resources::{DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails, PodAction, PodDetails, ReplicaSetAction, ReplicaSetDetails, ResourceTable};
+use resources::{DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails, PodAction, PodDetails, PortForwardView, PortForwardViewAction, ReplicaSetAction, ReplicaSetDetails, ResourceTable};
 use terminal::PodTerminalView;
 use ui::{
     theme, secondary_btn, primary_icon_btn, Button, ButtonVariant, ButtonVariants, DropdownMenu,
@@ -30,6 +30,7 @@ pub struct AppView {
     generic_details: Option<Entity<GenericResourceDetails>>,
     pod_logs: Option<Entity<PodLogsView>>,
     pod_terminal: Option<Entity<PodTerminalView>>,
+    port_forward_view: Option<Entity<PortForwardView>>,
 }
 
 impl AppView {
@@ -55,6 +56,7 @@ impl AppView {
             generic_details: None,
             pod_logs: None,
             pod_terminal: None,
+            port_forward_view: None,
         }
     }
 
@@ -73,7 +75,7 @@ impl AppView {
 }
 
 impl Render for AppView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         // Sync state with views
         let (resources, resource_type, selected_resource) = {
             let state = app_state(cx);
@@ -87,6 +89,16 @@ impl Render for AppView {
         if let Some(ref selected) = selected_resource {
             if selected.kind != resource_type.api_kind() {
                 self.close_details(cx);
+            }
+            // Clear mismatched detail views (e.g. navigating from deployment to one of its pods)
+            if selected.kind != "Deployment" && self.deployment_details.is_some() {
+                self.deployment_details = None;
+            }
+            if selected.kind != "Pod" && self.pod_details.is_some() {
+                self.pod_details = None;
+            }
+            if selected.kind != "ReplicaSet" && self.replicaset_details.is_some() {
+                self.replicaset_details = None;
             }
         }
 
@@ -151,12 +163,25 @@ impl Render for AppView {
                                             });
                                             delete_resource_bg(cx, k8s_client::ResourceType::Pods, pod_name.clone(), namespace.clone());
                                         }
+                                        PodAction::PortForward { pod_name, namespace, container_port, local_port } => {
+                                            cx.update_global::<AppState, _>(|state, _cx| {
+                                                state.pf_error = None;
+                                            });
+                                            start_port_forward_bg(cx, pod_name, namespace, container_port, local_port);
+                                        }
+                                        PodAction::StopPortForward { session_id } => {
+                                            let _ = k8s_client::stop_port_forward(&session_id);
+                                            cx.update_global::<AppState, _>(|state, _cx| {
+                                                state.remove_port_forward(&session_id);
+                                            });
+                                        }
                                     }
                                 })
                         }));
                     }
                     "Deployment" => {
-                        self.deployment_details = Some(cx.new(|_| {
+                        let deploy_resource = resource.clone();
+                        let deployment_details = cx.new(|_| {
                             DeploymentDetails::new(resource)
                                 .on_close(|cx| {
                                     cx.update_global::<AppState, _>(|state, _cx| {
@@ -171,9 +196,18 @@ impl Render for AppView {
                                             });
                                             delete_resource_bg(cx, k8s_client::ResourceType::Deployments, name, namespace);
                                         }
+                                        DeploymentAction::SelectPod { resource: pod } => {
+                                            cx.update_global::<AppState, _>(|state, _cx| {
+                                                state.selected_type = k8s_client::ResourceType::Pods;
+                                                state.set_selected_resource(Some(pod));
+                                            });
+                                        }
                                     }
                                 })
-                        }));
+                        });
+                        // Fetch related pods in background
+                        fetch_related_pods(cx, deploy_resource, deployment_details.clone());
+                        self.deployment_details = Some(deployment_details);
                     }
                     "ReplicaSet" => {
                         self.replicaset_details = Some(cx.new(|_| {
@@ -258,6 +292,68 @@ impl Render for AppView {
             }
         }
 
+        // Check if we need to create/destroy PortForwardView
+        {
+            let state = app_state(cx);
+            if state.active_view == ActiveView::PortForwards {
+                if self.port_forward_view.is_none() {
+                    let pf_list = state.port_forwards.clone();
+                    self.port_forward_view = Some(cx.new(|_| {
+                        PortForwardView::new(pf_list)
+                            .on_close(|cx| {
+                                cx.update_global::<AppState, _>(|state, _cx| {
+                                    state.active_view = ActiveView::ResourceTable;
+                                });
+                            })
+                            .on_action(|action, cx| {
+                                match action {
+                                    PortForwardViewAction::Stop { session_id } => {
+                                        let _ = k8s_client::stop_port_forward(&session_id);
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.remove_port_forward(&session_id);
+                                        });
+                                    }
+                                    PortForwardViewAction::OpenBrowser { local_port } => {
+                                        let url = format!("http://localhost:{}", local_port);
+                                        #[cfg(target_os = "macos")]
+                                        {
+                                            let _ = std::process::Command::new("open").arg(&url).spawn();
+                                        }
+                                        #[cfg(target_os = "linux")]
+                                        {
+                                            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                                        }
+                                        #[cfg(target_os = "windows")]
+                                        {
+                                            let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn();
+                                        }
+                                    }
+                                }
+                            })
+                    }));
+                } else {
+                    // Sync port forwards list
+                    let pf_list = state.port_forwards.clone();
+                    self.port_forward_view.as_ref().unwrap().update(cx, |view, _| {
+                        view.set_port_forwards(pf_list);
+                    });
+                }
+            } else if self.port_forward_view.is_some() {
+                self.port_forward_view = None;
+            }
+        }
+
+        // Sync port forwards and errors into pod_details if it exists
+        if let Some(ref pd) = self.pod_details {
+            let state = app_state(cx);
+            let pf_list = state.port_forwards.clone();
+            let pf_error = state.pf_error.clone();
+            pd.update(cx, |view, _| {
+                view.set_port_forwards(pf_list);
+                view.set_pf_error(pf_error);
+            });
+        }
+
         // Check if we need to create PodTerminalView from global state
         {
             let state = app_state(cx);
@@ -295,6 +391,7 @@ impl Render for AppView {
             || self.generic_details.is_some();
         let showing_logs = self.pod_logs.is_some();
         let showing_terminal = self.pod_terminal.is_some();
+        let showing_port_forwards = self.port_forward_view.is_some();
 
         div()
             .size_full()
@@ -321,16 +418,27 @@ impl Render for AppView {
                             .flex_col()
                             .overflow_hidden()
                             // Header (only show in table mode)
-                            .when(!showing_details && !showing_logs && !showing_terminal, |el: Div| el.child(self.header.clone()))
+                            .when(!showing_details && !showing_logs && !showing_terminal && !showing_port_forwards, |el: Div| el.child(self.header.clone()))
                             // Content
-                            .child(self.render_content(cx, active_view.clone(), active_panel, showing_details, showing_logs, showing_terminal)),
+                            .child(self.render_content(cx, active_view.clone(), active_panel, showing_details, showing_logs, showing_terminal, showing_port_forwards)),
                     ),
             )
     }
 }
 
 impl AppView {
-    fn render_content(&self, cx: &Context<'_, Self>, active_view: ActiveView, active_panel: ActivePanel, showing_details: bool, showing_logs: bool, showing_terminal: bool) -> impl IntoElement {
+    fn render_content(&self, cx: &Context<'_, Self>, _active_view: ActiveView, active_panel: ActivePanel, showing_details: bool, showing_logs: bool, showing_terminal: bool, showing_port_forwards: bool) -> impl IntoElement {
+        // Show port forwards view (full screen)
+        if showing_port_forwards {
+            if let Some(pf_view) = &self.port_forward_view {
+                return div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(pf_view.clone())
+                    .into_any_element();
+            }
+        }
+
         // Show terminal view (full screen)
         if showing_terminal {
             if let Some(terminal_view) = &self.pod_terminal {
@@ -889,6 +997,139 @@ impl AppView {
             )
     }
 
+}
+
+fn start_port_forward_bg<T: 'static>(
+    cx: &mut Context<'_, T>,
+    pod_name: String,
+    namespace: String,
+    container_port: u16,
+    local_port: Option<u16>,
+) {
+    let (tx, rx) = std::sync::mpsc::channel::<Result<k8s_client::PortForwardInfo, String>>();
+
+    std::thread::spawn(move || {
+        let rt = crate::resource_loader::get_tokio_runtime_pub();
+        rt.block_on(async {
+            match k8s_client::get_client().await {
+                Ok(client) => {
+                    match k8s_client::start_port_forward(
+                        &client,
+                        &pod_name,
+                        &namespace,
+                        container_port,
+                        local_port,
+                    )
+                    .await
+                    {
+                        Ok(info) => {
+                            let _ = tx.send(Ok(info));
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(e.to_string()));
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e.to_string()));
+                }
+            }
+        });
+    });
+
+    cx.spawn(async move |_view, cx| {
+        for _ in 0..100 {
+            if let Ok(result) = rx.try_recv() {
+                let _ = cx.update(|cx: &mut gpui::App| {
+                    match result {
+                        Ok(info) => {
+                            tracing::info!(
+                                "Port forward started: localhost:{} → {}:{}",
+                                info.local_port,
+                                info.pod_name,
+                                info.container_port
+                            );
+                            cx.update_global::<AppState, _>(|state, _cx| {
+                                state.pf_error = None;
+                                state.add_port_forward(info);
+                            });
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to start port forward: {}", e);
+                            cx.update_global::<AppState, _>(|state, _cx| {
+                                state.pf_error = Some(format!("Port forward failed: {}", e));
+                            });
+                        }
+                    }
+                });
+                return;
+            }
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(50))
+                .await;
+        }
+    })
+    .detach();
+}
+
+fn fetch_related_pods(
+    cx: &mut Context<'_, AppView>,
+    deployment: k8s_client::Resource,
+    details_entity: Entity<DeploymentDetails>,
+) {
+    // Extract matchLabels from deployment spec.selector.matchLabels
+    let selector: std::collections::BTreeMap<String, String> = deployment.spec.as_ref()
+        .and_then(|s| s.get("selector"))
+        .and_then(|s| s.get("matchLabels"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    let namespace = deployment.metadata.namespace.clone();
+
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<k8s_client::Resource>>();
+
+    std::thread::spawn(move || {
+        let rt = crate::resource_loader::get_tokio_runtime_pub();
+        rt.block_on(async {
+            match k8s_client::get_client().await {
+                Ok(client) => {
+                    match k8s_client::list_resources(&client, k8s_client::ResourceType::Pods, namespace.as_deref()).await {
+                        Ok(pod_list) => {
+                            let matched: Vec<k8s_client::Resource> = pod_list.items.into_iter()
+                                .filter(|pod| resources::labels_match_selector(&pod.metadata.labels, &selector))
+                                .collect();
+                            let _ = tx.send(matched);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to fetch pods for deployment: {}", e);
+                            let _ = tx.send(Vec::new());
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to get k8s client: {}", e);
+                    let _ = tx.send(Vec::new());
+                }
+            }
+        });
+    });
+
+    cx.spawn(async move |_view, cx| {
+        for _ in 0..100 {
+            if let Ok(pods) = rx.try_recv() {
+                let _ = cx.update(|cx: &mut gpui::App| {
+                    details_entity.update(cx, |view, _| {
+                        view.set_related_pods(pods);
+                    });
+                });
+                return;
+            }
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(50))
+                .await;
+        }
+    })
+    .detach();
 }
 
 fn delete_resource_bg<T: 'static>(cx: &mut Context<'_, T>, resource_type: k8s_client::ResourceType, name: String, namespace: String) {

@@ -3,7 +3,7 @@ use k8s_client::{Resource, ResourceType};
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use ui::{theme, Tag, Icon, IconName, ThemeColors};
+use ui::{theme, Icon, IconName, ThemeColors};
 
 /// Status type for resources
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -163,11 +163,6 @@ impl ResourceTable {
             let new_width = self.resize_start_width + delta;
             self.set_column_width(&col, new_width, cx);
         }
-    }
-
-    /// End resizing
-    fn end_resize(&mut self) {
-        self.resizing_column = None;
     }
 
     /// Auto-fit column width to content (double-click on resize handle)
@@ -445,15 +440,6 @@ struct DragValue {
     start_width: f32,
 }
 
-/// Empty view for drag preview
-struct EmptyView {}
-
-impl Render for EmptyView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<'_, Self>) -> impl IntoElement {
-        div().size(px(0.0))
-    }
-}
-
 impl ColumnDef {
     fn new(name: &'static str, width: f32) -> Self {
         Self {
@@ -472,11 +458,6 @@ impl ColumnDef {
 
     fn right(mut self) -> Self {
         self.align = Align::Right;
-        self
-    }
-
-    fn not_sortable(mut self) -> Self {
-        self.sortable = false;
         self
     }
 
@@ -1094,22 +1075,6 @@ impl ResourceTable {
         }
     }
 
-    fn get_generic_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
-        match column {
-            "Checkbox" => render_checkbox(cell, colors),
-            "Name" => render_name_with_icon(cell, resource, IconName::Box, colors),
-            "Namespace" => render_namespace(cell, resource, colors),
-            "Status" => {
-                let status = get_resource_status(resource);
-                let status_color = status.color(colors);
-                cell.flex().items_center().child(render_status_pill(status_color, status.label()))
-            }
-            "Age" => render_age(cell, resource, colors),
-            "Actions" => render_actions(cell, colors),
-            _ => cell.child("-"),
-        }
-    }
-
     fn get_replicaset_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
@@ -1602,15 +1567,6 @@ fn get_node_status(resource: &Resource) -> StatusType {
     }
 
     StatusType::Unknown
-}
-
-fn render_status_badge(status: StatusType) -> Tag {
-    match status {
-        StatusType::Ready => Tag::success().child(status.label()),
-        StatusType::Pending => Tag::warning().child(status.label()),
-        StatusType::Failed => Tag::danger().child(status.label()),
-        StatusType::Unknown => Tag::info().child(status.label()),
-    }
 }
 
 fn format_age(timestamp: &Option<String>) -> String {

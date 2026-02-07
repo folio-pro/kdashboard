@@ -1,7 +1,7 @@
 use gpui::*;
 use gpui::prelude::FluentBuilder;
 use k8s_client::Resource;
-use ui::{theme, Icon, IconName, danger_btn};
+use ui::{theme, Icon, IconName, Sizable, danger_btn};
 use editor::YamlEditor;
 use crate::detail_tabs::{DetailTab, EditorSubTab};
 use crate::detail_shared::*;
@@ -10,6 +10,7 @@ use crate::detail_shared::*;
 #[derive(Clone, Debug)]
 pub enum DeploymentAction {
     Delete { name: String, namespace: String },
+    SelectPod { resource: Resource },
 }
 
 pub struct DeploymentDetails {
@@ -22,6 +23,8 @@ pub struct DeploymentDetails {
     yaml_editor: Option<Entity<YamlEditor>>,
     original_yaml: String,
     yaml_valid: Option<bool>,
+    related_pods: Vec<Resource>,
+    loading_pods: bool,
 }
 
 impl DeploymentDetails {
@@ -36,7 +39,14 @@ impl DeploymentDetails {
             yaml_editor: None,
             original_yaml: String::new(),
             yaml_valid: None,
+            related_pods: Vec::new(),
+            loading_pods: true,
         }
+    }
+
+    pub fn set_related_pods(&mut self, pods: Vec<Resource>) {
+        self.related_pods = pods;
+        self.loading_pods = false;
     }
 
     pub fn set_resource(&mut self, resource: Resource) {
@@ -317,6 +327,7 @@ impl DeploymentDetails {
                     .flex()
                     .flex_col()
                     .gap(px(24.0))
+                    .child(self.render_pods_card(cx))
                     .child(self.render_events_card(cx, resource))
             )
     }
@@ -511,6 +522,155 @@ impl DeploymentDetails {
         render_detail_card(cx, "Replicas", Some(count_text),
             div().flex().flex_col().children(container_items)
         )
+    }
+
+    fn render_pods_card(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let theme = theme(cx);
+        let colors = &theme.colors;
+
+        if self.loading_pods {
+            return render_detail_card(cx, "Related Pods", None,
+                div()
+                    .p(px(20.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(ui::Spinner::new().with_size(ui::Size::Small))
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .text_color(colors.text_muted)
+                            .child("Loading pods...")
+                    )
+            ).into_any_element();
+        }
+
+        let count = self.related_pods.len();
+        let total = count;
+
+        let pod_rows: Vec<AnyElement> = self.related_pods.iter().enumerate().map(|(idx, pod)| {
+            let pod_name = pod.metadata.name.clone();
+            let phase = pod.status.as_ref()
+                .and_then(|s| s.get("phase"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
+            let node = pod.status.as_ref()
+                .and_then(|s| s.get("hostIP"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("-")
+                .to_string();
+            let age = format_relative_time(pod);
+
+            let status_color = match phase.as_str() {
+                "Running" | "Succeeded" => colors.success,
+                "Pending" => colors.warning,
+                "Failed" => colors.error,
+                _ => colors.text_muted,
+            };
+
+            let is_last = idx == total - 1;
+            let pod_clone = pod.clone();
+
+            let mut row = div()
+                .id(ElementId::Name(format!("pod-row-{}", idx).into()))
+                .w_full()
+                .cursor_pointer()
+                .px(px(20.0))
+                .py(px(10.0))
+                .hover(|s| s.bg(colors.surface_elevated))
+                .on_click(cx.listener(move |this, _event, _window, cx| {
+                    if let Some(on_action) = &this.on_action {
+                        on_action(DeploymentAction::SelectPod { resource: pod_clone.clone() }, cx);
+                    }
+                }));
+
+            if !is_last {
+                row = row.border_b_1().border_color(colors.border);
+            }
+
+            row
+                .child(
+                    div()
+                        .w_full()
+                        .flex()
+                        .items_center()
+                        .gap(px(10.0))
+                        .child(
+                            div()
+                                .size(px(8.0))
+                                .rounded_full()
+                                .bg(status_color)
+                                .flex_shrink_0()
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(0.0))
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.0))
+                                .child(
+                                    div()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_ellipsis()
+                                        .text_size(px(13.0))
+                                        .text_color(colors.text)
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(pod_name)
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(8.0))
+                                        .child(
+                                            div()
+                                                .text_size(px(11.0))
+                                                .text_color(status_color)
+                                                .child(phase)
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(11.0))
+                                                .text_color(colors.text_muted)
+                                                .child(age)
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(11.0))
+                                                .text_color(colors.text_muted)
+                                                .child(node)
+                                        )
+                                )
+                        )
+                        .child(
+                            Icon::new(IconName::ChevronRight)
+                                .size(px(14.0))
+                                .color(colors.text_muted)
+                        )
+                )
+                .into_any_element()
+        }).collect();
+
+        let count_text = format!("{} pod{}", count, if count != 1 { "s" } else { "" });
+
+        render_detail_card(cx, "Related Pods", Some(count_text),
+            if pod_rows.is_empty() {
+                div()
+                    .p(px(20.0))
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .text_color(colors.text_muted)
+                            .child("No pods found")
+                    )
+                    .into_any_element()
+            } else {
+                div().flex().flex_col().children(pod_rows).into_any_element()
+            }
+        ).into_any_element()
     }
 
     fn render_events_card(&self, cx: &Context<'_, Self>, resource: &Resource) -> impl IntoElement {

@@ -108,6 +108,7 @@ impl TerminalEmulator {
     }
 
     /// Resize the terminal to new dimensions.
+    #[allow(dead_code)]
     pub fn resize(&mut self, cols: usize, rows: usize) {
         self.cols = cols;
         self.rows = rows;

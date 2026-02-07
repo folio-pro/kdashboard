@@ -1,13 +1,18 @@
 use std::ops::Range;
 
+use alacritty_terminal::grid::Dimensions as _;
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor};
 use gpui::*;
+use gpui::prelude::FluentBuilder;
 use k8s_client::{get_client, TerminalOutput, TerminalClosed};
 use std::sync::mpsc;
-use ui::{back_btn, secondary_btn, danger_btn, theme, Icon, IconName, Sizable};
+use ui::{
+    back_btn, secondary_btn, danger_btn, theme, Button, ButtonVariant, ButtonVariants,
+    DropdownMenu, Icon, IconName, PopupMenu, PopupMenuItem, Sizable,
+};
 
 use crate::colors;
 use crate::terminal_emulator::TerminalEmulator;
@@ -43,6 +48,8 @@ pub struct PodTerminalView {
     namespace: String,
     containers: Vec<String>,
     selected_container: Option<String>,
+    selected_shell: String,
+    font_size: f32,
 
     // Session state
     session_id: Option<String>,
@@ -55,6 +62,8 @@ pub struct PodTerminalView {
     // Terminal emulator
     emulator: Option<TerminalEmulator>,
     focus_handle: FocusHandle,
+    /// Measured grid height from the last paint; used to resize the emulator.
+    measured_grid_height: Option<Pixels>,
 
     // Callbacks
     on_close: Option<Box<dyn Fn(&mut Context<'_, Self>) + 'static>>,
@@ -68,12 +77,15 @@ impl PodTerminalView {
             namespace,
             containers,
             selected_container,
+            selected_shell: "/bin/bash".to_string(),
+            font_size: 14.0,
             session_id: None,
             connection_state: TerminalConnectionState::Connecting,
             error_message: None,
             input_sender: None,
             emulator: None,
             focus_handle: cx.focus_handle(),
+            measured_grid_height: None,
             on_close: None,
         }
     }
@@ -209,6 +221,17 @@ impl PodTerminalView {
         }
     }
 
+    /// Reconnect the terminal session
+    fn reconnect(view: Entity<Self>, cx: &mut App) {
+        view.update(cx, |this, _cx| {
+            this.close_session();
+            this.connection_state = TerminalConnectionState::Connecting;
+            this.error_message = None;
+            this.emulator = None;
+        });
+        Self::init(view, cx);
+    }
+
     /// Close the terminal session
     fn close_session(&mut self) {
         if let Some(session_id) = self.session_id.take() {
@@ -225,9 +248,28 @@ impl PodTerminalView {
 // ─── Render ──────────────────────────────────────────────────────────────────
 
 impl Render for PodTerminalView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
+
+        // Resize emulator to fit the available space.
+        // Use measured grid height if available (from previous frame's
+        // on_children_prepainted), otherwise estimate from viewport.
+        let row_h = px((self.font_size * 1.45).round());
+        let grid_h = self.measured_grid_height.unwrap_or_else(|| {
+            // Fallback: estimate from viewport minus chrome.
+            // title_bar(28) + top_bar(~54) + toolbar(~40) + padding(48+32)
+            // + terminal_header(~40) + borders(~4) = ~246
+            window.viewport_size().height - px(246.0)
+        });
+        // Subtract grid padding (16 top + 16 bottom)
+        let usable = grid_h - px(32.0);
+        let target_rows = ((usable / row_h).floor() as usize).max(5);
+        if let Some(emulator) = &mut self.emulator {
+            if emulator.screen_lines() != target_rows {
+                emulator.resize(emulator.columns(), target_rows);
+            }
+        }
 
         div()
             .size_full()
@@ -246,6 +288,7 @@ impl Render for PodTerminalView {
                     .min_h(px(0.0))
                     .flex()
                     .flex_col()
+                    .overflow_hidden()
                     .p(px(24.0))
                     .child(self.render_terminal_container(cx))
             )
@@ -315,22 +358,18 @@ impl PodTerminalView {
                     .items_center()
                     .gap(px(12.0))
                     // Container select dropdown
-                    .child(self.render_select_dropdown(
-                        "container-select",
-                        self.selected_container.as_deref().unwrap_or("default"),
-                        px(180.0),
-                        theme,
-                    ))
+                    .child(self.render_container_dropdown(cx))
                     // Shell select dropdown
-                    .child(self.render_select_dropdown(
-                        "shell-select",
-                        "/bin/bash",
-                        px(120.0),
-                        theme,
-                    ))
+                    .child(self.render_shell_dropdown(cx))
                     // Reconnect button
                     .child(
                         secondary_btn("btn-reconnect", IconName::Refresh, "Reconnect", colors)
+                            .on_click(cx.listener(|_this, _event, _window, cx| {
+                                let view = cx.entity().clone();
+                                cx.defer(move |cx| {
+                                    Self::reconnect(view, cx);
+                                });
+                            }))
                     )
                     // Disconnect button (red)
                     .child(
@@ -343,39 +382,113 @@ impl PodTerminalView {
             )
     }
 
-    /// Renders a styled select-like dropdown (static display)
-    fn render_select_dropdown(
-        &self,
-        id: &str,
-        value: &str,
-        width: Pixels,
-        theme: &ui::Theme,
-    ) -> impl IntoElement {
-        let colors = &theme.colors;
-        div()
-            .id(ElementId::Name(id.to_string().into()))
-            .flex()
-            .items_center()
-            .justify_between()
-            .w(width)
-            .px(px(14.0))
-            .py(px(10.0))
-            .rounded(theme.border_radius_md)
-            .bg(colors.surface)
-            .border_1()
-            .border_color(colors.border)
-            .child(
-                div()
-                    .text_size(px(13.0))
-                    .font_family(theme.font_family.clone())
-                    .text_color(colors.text)
-                    .child(value.to_string())
-            )
-            .child(
-                Icon::new(IconName::ChevronDown)
-                    .size(px(16.0))
-                    .color(colors.text_muted)
-            )
+    fn render_container_dropdown(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let containers = self.containers.clone();
+        let current_label = self.selected_container.clone().unwrap_or_else(|| "default".to_string());
+        let selected = self.selected_container.clone();
+        let view = cx.entity().downgrade();
+
+        div().child(
+            Button::new("container-selector")
+                .icon(IconName::Box)
+                .label(current_label)
+                .compact()
+                .with_variant(ButtonVariant::Ghost)
+                .dropdown_caret(true)
+                .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
+                    let mut m = menu.scrollable(true);
+                    for c in containers.iter() {
+                        let is_selected = selected.as_deref() == Some(c.as_str());
+                        let container = c.clone();
+                        let view = view.clone();
+                        m = m.item(
+                            PopupMenuItem::new(c.clone())
+                                .checked(is_selected)
+                                .on_click(move |_, _window, cx| {
+                                    let container = container.clone();
+                                    let _ = view.update(cx, |this, cx| {
+                                        this.selected_container = Some(container);
+                                        let view = cx.entity().clone();
+                                        cx.defer(move |cx| {
+                                            Self::reconnect(view, cx);
+                                        });
+                                    });
+                                }),
+                        );
+                    }
+                    m
+                }),
+        )
+    }
+
+    fn render_shell_dropdown(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let shells = ["/bin/bash", "/bin/sh", "/bin/zsh"];
+        let current = self.selected_shell.clone();
+        let view = cx.entity().downgrade();
+
+        div().child(
+            Button::new("shell-selector")
+                .icon(IconName::Terminal)
+                .label(current.clone())
+                .compact()
+                .with_variant(ButtonVariant::Ghost)
+                .dropdown_caret(true)
+                .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
+                    let mut m = menu;
+                    for shell in shells.iter() {
+                        let is_selected = *shell == current.as_str();
+                        let shell_str = shell.to_string();
+                        let view = view.clone();
+                        m = m.item(
+                            PopupMenuItem::new(*shell)
+                                .checked(is_selected)
+                                .on_click(move |_, _window, cx| {
+                                    let shell_str = shell_str.clone();
+                                    let _ = view.update(cx, |this, cx| {
+                                        this.selected_shell = shell_str;
+                                        cx.notify();
+                                    });
+                                }),
+                        );
+                    }
+                    m
+                }),
+        )
+    }
+
+    fn render_font_size_dropdown(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let sizes: [f32; 5] = [11.0, 12.0, 14.0, 16.0, 18.0];
+        let current = self.font_size;
+        let view = cx.entity().downgrade();
+
+        div().child(
+            Button::new("font-size-selector")
+                .icon(IconName::Settings)
+                .label(format!("Font: {}px", current as u32))
+                .compact()
+                .with_size(ui::Size::XSmall)
+                .with_variant(ButtonVariant::Ghost)
+                .dropdown_caret(true)
+                .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
+                    let mut m = menu;
+                    for size in sizes.iter() {
+                        let is_selected = (*size - current).abs() < 0.1;
+                        let s = *size;
+                        let view = view.clone();
+                        m = m.item(
+                            PopupMenuItem::new(format!("{}px", s as u32))
+                                .checked(is_selected)
+                                .on_click(move |_, _window, cx| {
+                                    let _ = view.update(cx, |this, cx| {
+                                        this.font_size = s;
+                                        cx.notify();
+                                    });
+                                }),
+                        );
+                    }
+                    m
+                }),
+        )
     }
 }
 
@@ -426,71 +539,21 @@ impl PodTerminalView {
             )
             // Separator
             .child(self.render_toolbar_separator(colors))
-            // Size label
-            .child(
-                div()
-                    .text_size(px(12.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .font_family(theme.font_family_ui.clone())
-                    .text_color(colors.text_secondary)
-                    .child("Size:")
-            )
-            .child(
-                div()
-                    .text_size(px(11.0))
-                    .font_family(theme.font_family.clone())
-                    .text_color(colors.text_muted)
-                    .child("120x30")
-            )
+            // Font size dropdown
+            .child(self.render_font_size_dropdown(cx))
             // Separator
             .child(self.render_toolbar_separator(colors))
-            // Font label + select
+            // Action buttons: Clear
             .child(
-                div()
-                    .text_size(px(12.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .font_family(theme.font_family_ui.clone())
-                    .text_color(colors.text_secondary)
-                    .child("Font:")
+                self.render_toolbar_button("btn-clear", IconName::Trash, "Clear", theme)
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        // Send clear-screen escape sequence
+                        this.send_input("\x0c");
+                        cx.notify();
+                    }))
             )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .w(px(100.0))
-                    .px(px(14.0))
-                    .py(px(10.0))
-                    .rounded(theme.border_radius_md)
-                    .bg(colors.surface)
-                    .border_1()
-                    .border_color(colors.border)
-                    .child(
-                        div()
-                            .text_size(px(13.0))
-                            .font_family(theme.font_family.clone())
-                            .text_color(colors.text)
-                            .child("14px")
-                    )
-                    .child(
-                        Icon::new(IconName::ChevronDown)
-                            .size(px(16.0))
-                            .color(colors.text_muted)
-                    )
-            )
-            // Separator
-            .child(self.render_toolbar_separator(colors))
-            // Action buttons: Copy, Paste, Clear
-            .child(self.render_toolbar_button("btn-copy", IconName::Copy, "Copy", theme))
-            .child(self.render_toolbar_button("btn-paste", IconName::Clipboard, "Paste", theme))
-            .child(self.render_toolbar_button("btn-clear", IconName::Trash, "Clear", theme))
             // Spacer
             .child(div().flex_1())
-            // Separator
-            .child(self.render_toolbar_separator(colors))
-            // Fullscreen + Export
-            .child(self.render_toolbar_button("btn-fullscreen", IconName::Maximize, "Fullscreen", theme))
-            .child(self.render_toolbar_button("btn-export", IconName::Download, "Export", theme))
     }
 
     fn render_toolbar_separator(&self, colors: &ui::ThemeColors) -> impl IntoElement {
@@ -506,7 +569,7 @@ impl PodTerminalView {
         icon: IconName,
         label: &str,
         theme: &ui::Theme,
-    ) -> impl IntoElement {
+    ) -> Stateful<Div> {
         let colors = &theme.colors;
         div()
             .id(ElementId::Name(id.to_string().into()))
@@ -642,6 +705,7 @@ impl PodTerminalView {
                         window.focus(&this.focus_handle);
                     }))
                     .flex_1()
+                    .min_h(px(0.0))
                     .flex()
                     .flex_col()
                     .rounded(theme.border_radius_md)
@@ -649,10 +713,33 @@ impl PodTerminalView {
                     .border_1()
                     .border_color(colors.border)
                     .overflow_hidden()
-                    // Terminal header
-                    .child(self.render_terminal_header(&prompt_path, container_name, theme))
-                    // Terminal body
-                    .child(self.render_terminal_body(theme, cx))
+                    // Inner layout wrapper (non-stateful) for measurement
+                    .child(
+                        div()
+                            .size_full()
+                            .flex()
+                            .flex_col()
+                            .on_children_prepainted({
+                                let view = cx.entity().downgrade();
+                                move |children_bounds: Vec<Bounds<Pixels>>, _window, cx| {
+                                    // children[0] = header (fixed), children[1] = body (flex_1)
+                                    // body bounds = the actual available space for the grid
+                                    if children_bounds.len() >= 2 {
+                                        let body_h = children_bounds[1].size.height;
+                                        let _ = view.update(cx, |this, cx| {
+                                            if this.measured_grid_height != Some(body_h) {
+                                                this.measured_grid_height = Some(body_h);
+                                                cx.notify();
+                                            }
+                                        });
+                                    }
+                                }
+                            })
+                            // Terminal header
+                            .child(self.render_terminal_header(&prompt_path, container_name, theme))
+                            // Terminal body
+                            .child(self.render_terminal_body(theme, cx))
+                    )
                     .into_any_element()
             }
         }
@@ -731,6 +818,7 @@ impl PodTerminalView {
 
         let term = emulator.term();
         let grid = term.grid();
+        let display_offset = grid.display_offset();
         let content = term.renderable_content();
         let cursor = content.cursor;
         let term_colors = term.colors();
@@ -742,23 +830,31 @@ impl PodTerminalView {
 
         let mut row_elements: Vec<AnyElement> = Vec::with_capacity(num_rows);
         for row_idx in 0..num_rows {
-            let line = Line(row_idx as i32);
+            // Convert viewport row to grid line, accounting for scroll offset.
+            // viewport_to_point: Line(row as i32) - display_offset
+            let line = Line(row_idx as i32) - display_offset;
             row_elements.push(
                 self.render_grid_row(row_idx, line, grid, num_cols, &cursor, term_colors, default_fg_hsla, font_family)
             );
         }
 
+        // Calculate scrollbar metrics
+        let total_lines = grid.total_lines();
+        let history_size = total_lines.saturating_sub(num_rows);
+        let has_scrollbar = history_size > 0;
+
         div()
             .id("terminal-grid")
             .flex_1()
+            .min_h(px(0.0))
             .flex()
-            .flex_col()
-            .p(px(16.0))
+            .overflow_hidden()
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _window, cx| {
                 if let Some(emulator) = &mut this.emulator {
+                    let row_h = px((this.font_size * 1.45).round());
                     let lines = match event.delta {
                         ScrollDelta::Lines(pt) => pt.y.round() as i32,
-                        ScrollDelta::Pixels(pt) => (pt.y / px(20.0)).round() as i32,
+                        ScrollDelta::Pixels(pt) => (pt.y / row_h).round() as i32,
                     };
                     if lines != 0 {
                         emulator.scroll(lines);
@@ -766,7 +862,56 @@ impl PodTerminalView {
                     }
                 }
             }))
-            .children(row_elements)
+            // Terminal rows
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .flex()
+                    .flex_col()
+                    .p(px(16.0))
+                    .children(row_elements)
+            )
+            // Scrollbar
+            .when(has_scrollbar, |el: Stateful<Div>| {
+                let row_h_val = (self.font_size * 1.45).round();
+                let track_h = num_rows as f32 * row_h_val;
+                let thumb_frac = (num_rows as f32 / total_lines as f32).clamp(0.05, 1.0);
+                let thumb_h = (track_h * thumb_frac).max(20.0);
+                let scroll_frac = if history_size > 0 {
+                    display_offset as f32 / history_size as f32
+                } else {
+                    0.0
+                };
+                // scroll_frac=0 → bottom (thumb at end), scroll_frac=1 → top (thumb at start)
+                let thumb_top = (1.0 - scroll_frac) * (track_h - thumb_h);
+
+                el.child(
+                    div()
+                        .w(px(8.0))
+                        .flex_shrink_0()
+                        .py(px(16.0))
+                        .pr(px(4.0))
+                        .child(
+                            div()
+                                .w(px(4.0))
+                                .h(px(track_h))
+                                .rounded(px(2.0))
+                                .bg(theme.colors.border.opacity(0.15))
+                                .relative()
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .left(px(0.0))
+                                        .top(px(thumb_top))
+                                        .w(px(4.0))
+                                        .h(px(thumb_h))
+                                        .rounded(px(2.0))
+                                        .bg(theme.colors.text_muted.opacity(0.4))
+                                )
+                        )
+                )
+            })
             .into_any_element()
     }
 
@@ -851,10 +996,13 @@ impl PodTerminalView {
             text.push(' ');
         }
 
+        let font_size = self.font_size;
+        let row_height = (font_size * 1.45).round();
+
         div()
             .w_full()
-            .h(px(20.0))
-            .text_size(px(13.0))
+            .h(px(row_height))
+            .text_size(px(font_size))
             .font_family(font_family.clone())
             .text_color(default_fg)
             .child(

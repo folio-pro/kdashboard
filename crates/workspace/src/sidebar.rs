@@ -1,5 +1,6 @@
-use crate::app_state::app_state;
+use crate::app_state::{app_state, ActiveView};
 use gpui::*;
+use gpui::prelude::FluentBuilder;
 use k8s_client::ResourceType;
 use ui::{theme, Icon, IconName, ThemeColors};
 
@@ -71,11 +72,13 @@ impl Sidebar {
 }
 
 impl Render for Sidebar {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
         let state = app_state(cx);
         let selected_type = state.selected_type;
+        let active_view = state.active_view.clone();
+        let pf_count = state.port_forwards.len();
 
         // Width: 220px expanded, 44px collapsed
         let width = if self.collapsed { px(44.0) } else { px(220.0) };
@@ -89,7 +92,7 @@ impl Render for Sidebar {
             .flex()
             .flex_col()
             .child(self.render_header(cx))
-            .child(self.render_nav_section(cx, selected_type))
+            .child(self.render_nav_section(cx, selected_type, &active_view, pf_count))
     }
 }
 
@@ -134,6 +137,8 @@ impl Sidebar {
         &self,
         cx: &Context<'_, Self>,
         selected_type: ResourceType,
+        active_view: &ActiveView,
+        pf_count: usize,
     ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
@@ -144,6 +149,8 @@ impl Sidebar {
             SidebarSection::Configuration,
             SidebarSection::Cluster,
         ];
+
+        let is_pf_view = *active_view == ActiveView::PortForwards;
 
         let mut nav = div()
             .id("sidebar-nav")
@@ -174,13 +181,117 @@ impl Sidebar {
 
             // Resource items in this section
             for rt in section.resource_types() {
+                let selected = *rt == selected_type && !is_pf_view;
                 nav = nav.child(
-                    self.render_resource_item(cx, *rt, *rt == selected_type, colors)
+                    self.render_resource_item(cx, *rt, selected, colors)
                 );
             }
         }
 
+        // TOOLS section
+        if !self.collapsed {
+            nav = nav.child(
+                div()
+                    .px(px(12.0))
+                    .pt(px(6.0))
+                    .pb(px(2.0))
+                    .font_family(theme.font_family_ui.clone())
+                    .text_size(px(10.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(colors.text_muted)
+                    .child("TOOLS")
+            );
+        }
+
+        nav = nav.child(self.render_port_forward_item(cx, is_pf_view, pf_count, colors));
+
         nav
+    }
+
+    fn render_port_forward_item(
+        &self,
+        cx: &Context<'_, Self>,
+        selected: bool,
+        pf_count: usize,
+        colors: &ThemeColors,
+    ) -> impl IntoElement {
+        let theme = theme(cx);
+        let icon_color = if selected { colors.background } else { colors.text_muted };
+        let text_color = if selected { colors.background } else { colors.text_secondary };
+        let bg = if selected { colors.primary } else { gpui::transparent_black() };
+        let hover_bg = if selected { colors.primary_hover } else { colors.selection_hover };
+
+        let label = if pf_count > 0 {
+            format!("Port Forwards ({})", pf_count)
+        } else {
+            "Port Forwards".to_string()
+        };
+
+        if self.collapsed {
+            div()
+                .id("port-forwards-nav")
+                .w_full()
+                .px(px(8.0))
+                .py(px(6.0))
+                .rounded(theme.border_radius_md)
+                .bg(bg)
+                .cursor_pointer()
+                .hover(|style| style.bg(hover_bg))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(Icon::new(IconName::PortForward).size(px(16.0)).color(icon_color))
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    this.on_port_forwards_selected(cx);
+                }))
+        } else {
+            div()
+                .id("port-forwards-nav")
+                .w_full()
+                .px(px(12.0))
+                .py(px(6.0))
+                .rounded(theme.border_radius_md)
+                .bg(bg)
+                .cursor_pointer()
+                .hover(|style| style.bg(hover_bg))
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .child(Icon::new(IconName::PortForward).size(px(16.0)).color(icon_color))
+                .child(
+                    div()
+                        .flex_1()
+                        .font_family(theme.font_family_ui.clone())
+                        .text_size(px(13.0))
+                        .font_weight(if selected { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
+                        .text_color(text_color)
+                        .child(label)
+                )
+                .when(pf_count > 0 && !selected, |el| {
+                    el.child(
+                        div()
+                            .px(px(6.0))
+                            .py(px(1.0))
+                            .rounded(theme.border_radius_full)
+                            .bg(colors.primary.opacity(0.2))
+                            .text_size(px(10.0))
+                            .text_color(colors.primary)
+                            .font_weight(FontWeight::BOLD)
+                            .child(pf_count.to_string())
+                    )
+                })
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    this.on_port_forwards_selected(cx);
+                }))
+        }
+    }
+
+    fn on_port_forwards_selected(&mut self, cx: &mut Context<'_, Self>) {
+        cx.update_global::<crate::app_state::AppState, _>(|state, _cx| {
+            state.active_view = ActiveView::PortForwards;
+            state.set_selected_resource(None);
+        });
+        cx.notify();
     }
 
     /// Get the icon name for a resource type
@@ -307,6 +418,7 @@ impl Sidebar {
         // Update global state
         cx.update_global::<crate::app_state::AppState, _>(|state, _cx| {
             state.set_selected_type(resource_type);
+            state.active_view = ActiveView::ResourceTable;
         });
 
         // Reload resources with the new resource type

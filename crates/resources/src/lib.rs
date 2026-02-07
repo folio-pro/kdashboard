@@ -6,6 +6,7 @@ mod pod_details;
 mod deployment_details;
 mod replicaset_details;
 mod generic_details;
+mod port_forward_view;
 
 pub use detail_shared::*;
 pub use table::*;
@@ -14,3 +15,4 @@ pub use pod_details::*;
 pub use deployment_details::*;
 pub use replicaset_details::*;
 pub use generic_details::*;
+pub use port_forward_view::*;

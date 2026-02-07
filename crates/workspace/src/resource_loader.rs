@@ -1,6 +1,11 @@
 use gpui::*;
 use k8s_client::{ResourceList, ResourceType};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
+
+/// Generation counter to cancel previous watch when user switches resource/namespace
+static WATCH_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Message types for resource loading
 pub enum ResourceUpdate {
@@ -10,8 +15,10 @@ pub enum ResourceUpdate {
     Error(String),
 }
 
-/// Spawn a task to load resources in the background
+/// Start watching resources. Performs an initial list via the watcher and then
+/// streams live updates. Each call cancels any previous watch.
 pub fn load_resources(cx: &mut App, resource_type: ResourceType, namespace: Option<String>) {
+    let generation = WATCH_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let (tx, rx) = mpsc::channel::<ResourceUpdate>();
 
     // Set loading state
@@ -20,7 +27,11 @@ pub fn load_resources(cx: &mut App, resource_type: ResourceType, namespace: Opti
         state.set_error(None);
     });
 
-    // Spawn background thread for k8s operations
+    // Cancellation flag for this watch
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancelled_bg = cancelled.clone();
+
+    // Spawn background thread that runs the watch stream
     std::thread::spawn(move || {
         let rt = get_tokio_runtime();
         rt.block_on(async {
@@ -28,54 +39,112 @@ pub fn load_resources(cx: &mut App, resource_type: ResourceType, namespace: Opti
 
             match k8s_client::get_client().await {
                 Ok(client) => {
-                    let namespace_ref = namespace.as_deref();
-                    match k8s_client::list_resources(&client, resource_type, namespace_ref).await {
-                        Ok(resources) => {
-                            tracing::info!(
-                                "Loaded {} {} from namespace {:?}",
-                                resources.items.len(),
-                                resource_type.display_name(),
-                                namespace_ref
-                            );
-                            let _ = tx.send(ResourceUpdate::Resources(resources));
+                    // Channel to receive ResourceList updates from the watcher
+                    let (watch_tx, watch_rx) = mpsc::channel::<ResourceList>();
+
+                    let cancelled_watch = cancelled_bg.clone();
+                    let ns_clone = namespace.clone();
+
+                    // Spawn the watcher on a Tokio task
+                    let handle = tokio::spawn(async move {
+                        if let Err(e) = k8s_client::watch_resources(
+                            &client,
+                            resource_type,
+                            ns_clone,
+                            watch_tx,
+                            cancelled_watch,
+                        )
+                        .await
+                        {
+                            tracing::error!("Watch error for {}: {}", resource_type.display_name(), e);
+                            return Err(e);
                         }
-                        Err(e) => {
-                            tracing::error!("Failed to list {}: {}", resource_type.display_name(), e);
-                            let _ = tx.send(ResourceUpdate::Error(format!(
-                                "Failed to load {}: {}",
-                                resource_type.display_name(),
-                                e
-                            )));
+                        Ok(())
+                    });
+
+                    // Forward watch updates to the GPUI channel
+                    let mut first_update = true;
+                    loop {
+                        if cancelled_bg.load(Ordering::SeqCst) {
+                            break;
+                        }
+
+                        match watch_rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                            Ok(resources) => {
+                                if first_update {
+                                    tracing::info!(
+                                        "Watch established for {} ({} items)",
+                                        resource_type.display_name(),
+                                        resources.items.len()
+                                    );
+                                    let _ = tx.send(ResourceUpdate::Loading(false));
+                                    first_update = false;
+                                }
+                                let _ = tx.send(ResourceUpdate::Resources(resources));
+                            }
+                            Err(mpsc::RecvTimeoutError::Timeout) => {
+                                // Check if the tokio task finished (error or stream ended)
+                                if handle.is_finished() {
+                                    if first_update {
+                                        let _ = tx.send(ResourceUpdate::Loading(false));
+                                    }
+                                    match handle.try_join() {
+                                        Ok(Ok(())) => {
+                                            tracing::info!("Watch stream ended for {}", resource_type.display_name());
+                                        }
+                                        Ok(Err(e)) => {
+                                            let _ = tx.send(ResourceUpdate::Error(format!(
+                                                "Watch failed for {}: {}",
+                                                resource_type.display_name(),
+                                                e
+                                            )));
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(ResourceUpdate::Error(format!(
+                                                "Watch task panicked: {}",
+                                                e
+                                            )));
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                if first_update {
+                                    let _ = tx.send(ResourceUpdate::Loading(false));
+                                }
+                                break;
+                            }
                         }
                     }
                 }
                 Err(e) => {
                     tracing::error!("Failed to get k8s client: {}", e);
                     let _ = tx.send(ResourceUpdate::Error(format!("Connection error: {}", e)));
+                    let _ = tx.send(ResourceUpdate::Loading(false));
                 }
             }
-
-            let _ = tx.send(ResourceUpdate::Loading(false));
         });
     });
 
-    // Poll the channel from GPUI
+    // Continuously poll the mpsc channel from GPUI
     cx.spawn(async move |cx| {
-        // Give background thread time to start
-        cx.background_executor()
-            .timer(std::time::Duration::from_millis(50))
-            .await;
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(100))
+                .await;
 
-        // Poll for updates
-        for _ in 0..100 {
+            // If a newer watch was started, cancel this one and stop polling
+            if WATCH_GENERATION.load(Ordering::SeqCst) != generation {
+                cancelled.store(true, Ordering::SeqCst);
+                return;
+            }
+
             while let Ok(update) = rx.try_recv() {
                 let _ = cx.update(|cx| {
                     handle_resource_update(cx, update);
                 });
             }
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(50))
-                .await;
         }
     })
     .detach();
@@ -109,6 +178,12 @@ fn handle_resource_update(cx: &mut App, update: ResourceUpdate) {
 
 /// Switch to a different Kubernetes context, reload namespaces and resources
 pub fn switch_context(cx: &mut App, context_name: String) {
+    // Stop all active port forwards when switching context
+    k8s_client::stop_all_port_forwards();
+    crate::update_app_state(cx, |state, _| {
+        state.clear_port_forwards();
+    });
+
     let (tx, rx) = mpsc::channel::<ResourceUpdate>();
 
     crate::update_app_state(cx, |state, _| {
@@ -135,38 +210,7 @@ pub fn switch_context(cx: &mut App, context_name: String) {
             // Reload namespaces
             match k8s_client::list_namespaces().await {
                 Ok(namespaces) => {
-                    let default_ns = namespaces.first().cloned();
                     let _ = tx.send(ResourceUpdate::Namespaces(namespaces));
-
-                    // Reload resources with first namespace
-                    match k8s_client::get_client().await {
-                        Ok(client) => {
-                            let ns_ref = default_ns.as_deref();
-                            match k8s_client::list_resources(
-                                &client,
-                                ResourceType::Pods,
-                                ns_ref,
-                            )
-                            .await
-                            {
-                                Ok(resources) => {
-                                    let _ = tx.send(ResourceUpdate::Resources(resources));
-                                }
-                                Err(e) => {
-                                    let _ = tx.send(ResourceUpdate::Error(format!(
-                                        "Failed to load resources: {}",
-                                        e
-                                    )));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            let _ = tx.send(ResourceUpdate::Error(format!(
-                                "Failed to get client: {}",
-                                e
-                            )));
-                        }
-                    }
                 }
                 Err(e) => {
                     let _ = tx.send(ResourceUpdate::Error(format!(
@@ -195,6 +239,14 @@ pub fn switch_context(cx: &mut App, context_name: String) {
                 .timer(std::time::Duration::from_millis(50))
                 .await;
         }
+
+        // After context switch, trigger load_resources which will start a new watch
+        let _ = cx.update(|cx| {
+            let state = crate::app_state(cx);
+            let resource_type = state.selected_type;
+            let namespace = state.namespace.clone();
+            crate::load_resources(cx, resource_type, namespace);
+        });
     })
     .detach();
 }
@@ -211,4 +263,19 @@ fn get_tokio_runtime() -> &'static tokio::runtime::Runtime {
     RUNTIME.get_or_init(|| {
         tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     })
+}
+
+/// Helper trait to try joining a finished JoinHandle without await
+trait TryJoin {
+    type Output;
+    fn try_join(self) -> Result<Self::Output, tokio::task::JoinError>;
+}
+
+impl<T> TryJoin for tokio::task::JoinHandle<T> {
+    type Output = T;
+    fn try_join(self) -> Result<T, tokio::task::JoinError> {
+        // Since we only call this after is_finished() returns true,
+        // blocking here is safe and instant
+        futures::executor::block_on(self)
+    }
 }

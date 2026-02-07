@@ -16,7 +16,7 @@ impl Default for TitleBar {
 }
 
 impl Render for TitleBar {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 

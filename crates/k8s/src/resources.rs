@@ -2,16 +2,14 @@ use crate::types::{OwnerReference, Resource, ResourceList, ResourceMetadata, Res
 use anyhow::{Context, Result};
 use kube::api::{Api, DeleteParams, ListParams, LogParams, Patch, PatchParams};
 use kube::Client;
-use serde_json::Value;
-
 fn opt_time_to_string(
     time: Option<k8s_openapi::apimachinery::pkg::apis::meta::v1::Time>,
 ) -> Option<String> {
     time.map(|t| t.0.to_rfc3339())
 }
 
-fn metadata_from<T: kube::Resource<DynamicType = ()>>(
-    obj: &T,
+pub(crate) fn metadata_from<T: kube::Resource<DynamicType = ()>>(
+    _obj: &T,
     meta: &k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta,
 ) -> ResourceMetadata {
     let owner_references = meta.owner_references.as_ref().map(|refs| {

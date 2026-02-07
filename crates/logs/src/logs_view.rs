@@ -19,8 +19,8 @@ pub enum LogLevel {
 pub struct LogsView {
     logs: Vec<LogEntry>,
     pod_name: String,
-    namespace: String,
-    container: Option<String>,
+    _namespace: String,
+    _container: Option<String>,
     filter: String,
     auto_scroll: bool,
 }
@@ -30,8 +30,8 @@ impl LogsView {
         Self {
             logs: Vec::new(),
             pod_name,
-            namespace,
-            container,
+            _namespace: namespace,
+            _container: container,
             filter: String::new(),
             auto_scroll: true,
         }

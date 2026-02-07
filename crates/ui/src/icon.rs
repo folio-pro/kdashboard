@@ -55,6 +55,7 @@ pub enum IconName {
     Power,
     Clipboard,
     Maximize,
+    PortForward,
 }
 
 impl IconName {
@@ -107,6 +108,7 @@ impl IconName {
             IconName::Power => "icons/power.svg",
             IconName::Clipboard => "icons/clipboard.svg",
             IconName::Maximize => "icons/maximize-2.svg",
+            IconName::PortForward => "icons/network.svg",
         }
     }
 }

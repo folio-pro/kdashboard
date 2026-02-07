@@ -1,5 +1,5 @@
 use gpui::*;
-use k8s_client::{ConnectionStatus, Resource, ResourceList, ResourceType, SortDirection};
+use k8s_client::{ConnectionStatus, PortForwardInfo, Resource, ResourceList, ResourceType, SortDirection};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActivePanel {
@@ -23,6 +23,7 @@ pub enum ActiveView {
     PodDetails,
     PodLogs,
     PodTerminal,
+    PortForwards,
 }
 
 /// Pod context for logs/terminal views
@@ -62,6 +63,10 @@ pub struct AppState {
     // Sort state
     pub sort_column: Option<String>,
     pub sort_direction: SortDirection,
+
+    // Port forwarding
+    pub port_forwards: Vec<PortForwardInfo>,
+    pub pf_error: Option<String>,
 }
 
 impl AppState {
@@ -85,6 +90,8 @@ impl AppState {
             sidebar_collapsed: false,
             sort_column: None,
             sort_direction: SortDirection::Ascending,
+            port_forwards: Vec::new(),
+            pf_error: None,
         }
     }
 
@@ -182,6 +189,18 @@ impl AppState {
             self.sort_column = Some(column.to_string());
             self.sort_direction = SortDirection::Ascending;
         }
+    }
+
+    pub fn add_port_forward(&mut self, info: PortForwardInfo) {
+        self.port_forwards.push(info);
+    }
+
+    pub fn remove_port_forward(&mut self, session_id: &str) {
+        self.port_forwards.retain(|pf| pf.session_id != session_id);
+    }
+
+    pub fn clear_port_forwards(&mut self) {
+        self.port_forwards.clear();
     }
 
     pub fn filtered_resources(&self) -> Vec<&Resource> {

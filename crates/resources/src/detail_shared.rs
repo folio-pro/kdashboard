@@ -1,6 +1,7 @@
 use gpui::*;
 use k8s_client::Resource;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use ui::{theme, Icon, IconName};
 
 // ── Helper functions ────────────────────────────────────────────────────
@@ -67,6 +68,17 @@ pub fn get_json_array(value: &Option<Value>, path: &[&str]) -> Option<Vec<Value>
         current = current.get(*key)?;
     }
     current.as_array().cloned()
+}
+
+/// Check if all selector key-value pairs exist in the pod's labels.
+pub fn labels_match_selector(
+    pod_labels: &Option<BTreeMap<String, String>>,
+    selector: &BTreeMap<String, String>,
+) -> bool {
+    let Some(labels) = pod_labels else {
+        return false;
+    };
+    selector.iter().all(|(k, v)| labels.get(k) == Some(v))
 }
 
 pub fn compute_diff_with_colors(original: &str, current: &str, colors: &ui::ThemeColors) -> Vec<Div> {
