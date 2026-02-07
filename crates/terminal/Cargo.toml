@@ -1,0 +1,21 @@
+[package]
+name = "terminal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui.workspace = true
+ui.workspace = true
+k8s_client.workspace = true
+alacritty_terminal.workspace = true
+serde.workspace = true
+tokio.workspace = true
+futures.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+dashmap.workspace = true
+uuid.workspace = true
+parking_lot.workspace = true
+smallvec.workspace = true

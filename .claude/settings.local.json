@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(cargo run:*)",
+      "Bash(grep:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(python3 -c \" import json import sys import re data = json.load\\(sys.stdin\\) text = data[0][''text''] if data else '''' # Find all iconName patterns matches = re.findall\\(r''\"\"iconName\"\"\\\\s*:\\\\s*\"\"\\([^\"\"]+\\)\"\"'', text\\) for m in set\\(matches\\): print\\(m\\) \")",
+      "Bash(curl:*)",
+      "Bash(cargo build:*)",
+      "WebFetch(domain:longbridge.github.io)",
+      "WebSearch",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(cargo tree:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(/bin/df:*)",
+      "Bash(dust:*)",
+      "Bash(cargo clean:*)",
+      "Bash(cargo metadata:*)",
+      "Bash(python3:*)",
+      "Bash(cargo install:*)",
+      "Bash(ls:*)",
+      "Bash(git -C /Users/nicolas.mengual/builds/kdashboard log --oneline -20)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(cargo search:*)",
+      "Bash(cargo doc:*)",
+      "Bash(rg:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "spawner"
+  ]
+}

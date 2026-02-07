@@ -1,0 +1,20 @@
+[package]
+name = "resources"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui.workspace = true
+ui.workspace = true
+k8s_client.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+futures.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+smallvec.workspace = true
+chrono.workspace = true
+editor.workspace = true
+serde_yaml.workspace = true

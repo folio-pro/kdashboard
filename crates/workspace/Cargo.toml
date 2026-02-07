@@ -1,0 +1,23 @@
+[package]
+name = "workspace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui.workspace = true
+ui.workspace = true
+k8s_client.workspace = true
+resources.workspace = true
+terminal.workspace = true
+logs.workspace = true
+ai_assistant.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+futures.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+smallvec.workspace = true
+dirs.workspace = true

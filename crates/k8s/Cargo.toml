@@ -1,0 +1,24 @@
+[package]
+name = "k8s_client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kube.workspace = true
+kube-client.workspace = true
+k8s-openapi.workspace = true
+tokio.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+dashmap.workspace = true
+once_cell.workspace = true
+uuid.workspace = true
+dirs.workspace = true
+parking_lot.workspace = true
+base64 = "0.22"

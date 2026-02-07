@@ -1,0 +1,25 @@
+[package]
+name = "kubernetes-dashboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "kubernetes-dashboard"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+ui.workspace = true
+workspace.workspace = true
+k8s_client.workspace = true
+resources.workspace = true
+terminal.workspace = true
+logs.workspace = true
+ai_assistant.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dirs.workspace = true
+editor.workspace = true
