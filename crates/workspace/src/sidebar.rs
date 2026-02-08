@@ -151,6 +151,7 @@ impl Sidebar {
         ];
 
         let is_pf_view = *active_view == ActiveView::PortForwards;
+        let is_settings_view = *active_view == ActiveView::Settings;
 
         let mut nav = div()
             .id("sidebar-nav")
@@ -204,6 +205,7 @@ impl Sidebar {
         }
 
         nav = nav.child(self.render_port_forward_item(cx, is_pf_view, pf_count, colors));
+        nav = nav.child(self.render_settings_item(cx, is_settings_view, colors));
 
         nav
     }
@@ -286,9 +288,75 @@ impl Sidebar {
         }
     }
 
+    fn render_settings_item(
+        &self,
+        cx: &Context<'_, Self>,
+        selected: bool,
+        colors: &ThemeColors,
+    ) -> impl IntoElement {
+        let theme = theme(cx);
+        let icon_color = if selected { colors.background } else { colors.text_muted };
+        let text_color = if selected { colors.background } else { colors.text_secondary };
+        let bg = if selected { colors.primary } else { gpui::transparent_black() };
+        let hover_bg = if selected { colors.primary_hover } else { colors.selection_hover };
+
+        if self.collapsed {
+            div()
+                .id("settings-nav")
+                .w_full()
+                .px(px(8.0))
+                .py(px(6.0))
+                .rounded(theme.border_radius_md)
+                .bg(bg)
+                .cursor_pointer()
+                .hover(|style| style.bg(hover_bg))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(Icon::new(IconName::Settings).size(px(16.0)).color(icon_color))
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    this.on_settings_selected(cx);
+                }))
+        } else {
+            div()
+                .id("settings-nav")
+                .w_full()
+                .px(px(12.0))
+                .py(px(6.0))
+                .rounded(theme.border_radius_md)
+                .bg(bg)
+                .cursor_pointer()
+                .hover(|style| style.bg(hover_bg))
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .child(Icon::new(IconName::Settings).size(px(16.0)).color(icon_color))
+                .child(
+                    div()
+                        .flex_1()
+                        .font_family(theme.font_family_ui.clone())
+                        .text_size(px(13.0))
+                        .font_weight(if selected { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
+                        .text_color(text_color)
+                        .child("Settings")
+                )
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    this.on_settings_selected(cx);
+                }))
+        }
+    }
+
     fn on_port_forwards_selected(&mut self, cx: &mut Context<'_, Self>) {
         cx.update_global::<crate::app_state::AppState, _>(|state, _cx| {
             state.active_view = ActiveView::PortForwards;
+            state.set_selected_resource(None);
+        });
+        cx.notify();
+    }
+
+    fn on_settings_selected(&mut self, cx: &mut Context<'_, Self>) {
+        cx.update_global::<crate::app_state::AppState, _>(|state, _cx| {
+            state.active_view = ActiveView::Settings;
             state.set_selected_resource(None);
         });
         cx.notify();

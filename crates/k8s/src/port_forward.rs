@@ -76,9 +76,13 @@ pub async fn start_port_forward(
                     tokio::spawn(async move {
                         match api.portforward(&pod, &[container_port]).await {
                             Ok(mut pf) => {
-                                let mut upstream = pf
-                                    .take_stream(container_port)
-                                    .expect("port not found in portforward");
+                                let Some(mut upstream) = pf.take_stream(container_port) else {
+                                    error!(
+                                        "Port-forward stream missing for port {} (session {})",
+                                        container_port, sid
+                                    );
+                                    return;
+                                };
 
                                 let (mut tcp_read, mut tcp_write) =
                                     tcp_stream.split();

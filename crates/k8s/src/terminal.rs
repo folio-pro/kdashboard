@@ -73,11 +73,10 @@ pub async fn start_terminal_session(
 
     let session_id = Uuid::new_v4().to_string();
 
-    let shell_cmd = if cols.is_some() && rows.is_some() {
+    let shell_cmd = if let (Some(cols), Some(rows)) = (cols, rows) {
         format!(
             "export TERM=xterm-256color; stty cols {} rows {} 2>/dev/null; exec /bin/sh -i",
-            cols.unwrap(),
-            rows.unwrap()
+            cols, rows
         )
     } else {
         "export TERM=xterm-256color; exec /bin/sh -i".to_string()
@@ -116,73 +115,90 @@ pub async fn start_terminal_session(
     let sid = session_id.clone();
 
     let task = tokio::spawn(async move {
-        let stdin = attached.stdin().unwrap();
-        let mut stdin = BufWriter::with_capacity(1024, stdin);
-        let mut stdout = attached.stdout().unwrap();
+        let close_reason = 'session: {
+            let stdin = match attached.stdin() {
+                Some(stdin) => stdin,
+                None => {
+                    error!("Terminal session {} has no stdin stream", sid);
+                    break 'session "Terminal stdin stream unavailable".to_string();
+                }
+            };
+            let mut stdin = BufWriter::with_capacity(1024, stdin);
 
-        let mut buf = [0u8; 8192];
+            let mut stdout = match attached.stdout() {
+                Some(stdout) => stdout,
+                None => {
+                    error!("Terminal session {} has no stdout stream", sid);
+                    break 'session "Terminal stdout stream unavailable".to_string();
+                }
+            };
 
-        loop {
-            tokio::select! {
-                biased;
+            let mut buf = [0u8; 8192];
 
-                Some(data) = input_rx.recv() => {
-                    let mut write_error = false;
+            loop {
+                tokio::select! {
+                    biased;
 
-                    if let Err(e) = stdin.write_all(&data).await {
-                        error!("Failed to write stdin: {}", e);
-                        write_error = true;
+                    Some(data) = input_rx.recv() => {
+                        let mut write_error = false;
+
+                        if let Err(e) = stdin.write_all(&data).await {
+                            error!("Failed to write stdin: {}", e);
+                            write_error = true;
+                        }
+
+                        if !write_error {
+                            while let Ok(more_data) = input_rx.try_recv() {
+                                if let Err(e) = stdin.write_all(&more_data).await {
+                                    error!("Failed to write stdin: {}", e);
+                                    write_error = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if !write_error {
+                            if let Err(e) = stdin.flush().await {
+                                error!("Failed to flush stdin: {}", e);
+                                write_error = true;
+                            }
+                        }
+
+                        if write_error {
+                            break;
+                        }
                     }
 
-                    if !write_error {
-                        while let Ok(more_data) = input_rx.try_recv() {
-                            if let Err(e) = stdin.write_all(&more_data).await {
-                                error!("Failed to write stdin: {}", e);
-                                write_error = true;
+                    result = stdout.read(&mut buf) => {
+                        match result {
+                            Ok(0) => {
+                                info!("Stdout EOF");
+                                break;
+                            }
+                            Ok(n) => {
+                                let data = buf[..n].to_vec();
+                                let output = TerminalOutput {
+                                    session_id: sid.clone(),
+                                    data,
+                                };
+                                on_output(output);
+                            }
+                            Err(e) => {
+                                error!("Stdout read error: {}", e);
                                 break;
                             }
                         }
                     }
-
-                    if !write_error {
-                        if let Err(e) = stdin.flush().await {
-                            error!("Failed to flush stdin: {}", e);
-                            write_error = true;
-                        }
-                    }
-
-                    if write_error {
-                        break;
-                    }
-                }
-
-                result = stdout.read(&mut buf) => {
-                    match result {
-                        Ok(0) => {
-                            info!("Stdout EOF");
-                            break;
-                        }
-                        Ok(n) => {
-                            let data = buf[..n].to_vec();
-                            let output = TerminalOutput {
-                                session_id: sid.clone(),
-                                data,
-                            };
-                            on_output(output);
-                        }
-                        Err(e) => {
-                            error!("Stdout read error: {}", e);
-                            break;
-                        }
-                    }
                 }
             }
-        }
+
+            "Connection closed".to_string()
+        };
 
         SESSIONS.remove(&sid);
         on_close(TerminalClosed {
             session_id: sid,
-            reason: "Connection closed".to_string(),
+            reason: close_reason,
         });
     });
 

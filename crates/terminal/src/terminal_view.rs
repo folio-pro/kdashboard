@@ -17,15 +17,6 @@ use ui::{
 use crate::colors;
 use crate::terminal_emulator::TerminalEmulator;
 
-/// Get or create the Tokio runtime for K8s operations
-fn get_tokio_runtime() -> &'static tokio::runtime::Runtime {
-    use std::sync::OnceLock;
-    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
-    })
-}
-
 /// Connection state for the terminal
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TerminalConnectionState {
@@ -105,7 +96,7 @@ impl PodTerminalView {
 
         // Spawn background thread to start the terminal session
         std::thread::spawn(move || {
-            let rt = get_tokio_runtime();
+            let rt = k8s_client::tokio_runtime();
             rt.block_on(async {
                 let client = match get_client().await {
                     Ok(c) => c,

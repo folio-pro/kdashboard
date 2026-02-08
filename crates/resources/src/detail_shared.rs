@@ -475,7 +475,7 @@ macro_rules! impl_yaml_editor_methods {
                 .size_full().flex().flex_col().bg(colors.background)
                 .child(
                     div().w_full().flex().items_center().justify_between()
-                        .px(px(24.0)).py(px(16.0)).border_b_1().border_color(colors.border)
+                        .px(px(24.0)).py(px(12.0)).border_b_1().border_color(colors.border)
                         .child(
                             div().flex().items_center().gap(px(16.0))
                                 .child(
@@ -488,8 +488,15 @@ macro_rules! impl_yaml_editor_methods {
                                 )
                                 .child(
                                     div().flex().flex_col().gap(px(4.0))
-                                        .child(div().text_size(px(24.0)).text_color(colors.text).font_weight(FontWeight::BOLD).child(filename))
-                                        .child(div().text_size(px(14.0)).text_color(colors.text_muted).child(subtitle))
+                                        .child(
+                                            div()
+                                                .text_size(px(16.0))
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .font_family(theme.font_family_ui.clone())
+                                                .text_color(colors.text)
+                                                .child(filename)
+                                        )
+                                        .child(div().text_size(px(12.0)).text_color(colors.text_muted).child(subtitle))
                                 )
                         )
                         .child(

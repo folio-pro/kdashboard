@@ -13,15 +13,6 @@ use ui::{
     IconName, PopupMenu, PopupMenuItem, Sizable,
 };
 
-/// Get or create the Tokio runtime for K8s operations
-fn get_tokio_runtime() -> &'static tokio::runtime::Runtime {
-    use std::sync::OnceLock;
-    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
-    })
-}
-
 /// Log level filter for the UI
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum LogLevelFilter {
@@ -114,7 +105,6 @@ pub struct PodLogEntry {
 #[derive(Clone, Debug)]
 pub enum PodLogsAction {
     Close,
-    Download,
     StartStream,
     StopStream,
     Clear,
@@ -320,7 +310,7 @@ impl PodLogsView {
         let (tx, rx) = mpsc::channel::<Result<String, String>>();
 
         std::thread::spawn(move || {
-            let rt = get_tokio_runtime();
+            let rt = k8s_client::tokio_runtime();
             rt.block_on(async {
                 let client = match get_client().await {
                     Ok(c) => c,
@@ -411,7 +401,7 @@ impl PodLogsView {
         let (tx, rx) = mpsc::channel::<Result<String, String>>();
 
         std::thread::spawn(move || {
-            let rt = get_tokio_runtime();
+            let rt = k8s_client::tokio_runtime();
             rt.block_on(async {
                 let client = match get_client().await {
                     Ok(c) => c,
@@ -544,33 +534,6 @@ impl PodLogsView {
             .collect()
     }
 
-    /// Export logs to a file
-    fn download_logs(&self) {
-        let filtered = self.filtered_logs();
-        let mut content = String::new();
-        for log in &filtered {
-            if !log.timestamp.is_empty() {
-                content.push_str(&log.timestamp);
-                content.push(' ');
-            }
-            content.push_str(match log.level {
-                DetectedLevel::Info => "INFO  ",
-                DetectedLevel::Warn => "WARN  ",
-                DetectedLevel::Error => "ERROR ",
-                DetectedLevel::Debug => "DEBUG ",
-            });
-            content.push_str(&log.message);
-            content.push('\n');
-        }
-
-        // Write to ~/Downloads/<pod_name>-logs.txt
-        if let Some(downloads) = dirs::download_dir() {
-            let filename = format!("{}-logs.txt", self.pod_name);
-            let path = downloads.join(filename);
-            let _ = std::fs::write(&path, content);
-            tracing::info!("Logs saved to {}", path.display());
-        }
-    }
 }
 
 impl Drop for PodLogsView {

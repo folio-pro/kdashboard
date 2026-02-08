@@ -2,8 +2,6 @@ use anyhow::Result;
 use gpui::*;
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::OnceLock;
-use tokio::runtime::Runtime;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use workspace::AppView;
 
@@ -39,16 +37,6 @@ impl AssetSource for Assets {
     }
 }
 
-/// Global Tokio runtime for Kubernetes operations
-static TOKIO_RUNTIME: OnceLock<Runtime> = OnceLock::new();
-
-/// Get the global Tokio runtime
-pub fn tokio_runtime() -> &'static Runtime {
-    TOKIO_RUNTIME.get_or_init(|| {
-        Runtime::new().expect("Failed to create Tokio runtime")
-    })
-}
-
 fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::registry()
@@ -59,7 +47,7 @@ fn main() -> Result<()> {
     tracing::info!("Starting Kubernetes Dashboard");
 
     // Initialize Tokio runtime before GPUI
-    let _ = tokio_runtime();
+    let _ = k8s_client::tokio_runtime();
 
     // Get the assets path - in development it's relative to the ui crate
     let assets_path = std::env::var("CARGO_MANIFEST_DIR")
@@ -142,7 +130,7 @@ fn spawn_connection_check(cx: &mut App) {
 
     // Spawn a thread to run Tokio operations
     std::thread::spawn(move || {
-        let rt = tokio_runtime();
+        let rt = k8s_client::tokio_runtime();
         rt.block_on(async {
             // If a saved context differs from current, switch to it first
             if let Some(ref target_ctx) = saved_context {

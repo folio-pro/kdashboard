@@ -104,9 +104,9 @@ impl Render for YamlEditor {
             .child(
                 div()
                     .w_full()
-                    .h(px(48.0))
+                    .h(px(40.0))
                     .flex_shrink_0()
-                    .px(px(20.0))
+                    .px(px(16.0))
                     .flex()
                     .items_center()
                     .bg(rgb(EDITOR_TOOLBAR_BG))

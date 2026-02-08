@@ -1,15 +1,20 @@
+mod ai_chat_panel;
+
 use crate::app_state::{app_state, update_app_state, ActivePanel, ActiveView, AppState};
 use crate::{Header, Sidebar, TitleBar};
 use gpui::*;
 use gpui::prelude::FluentBuilder;
 use k8s_client::{ConnectionStatus, Resource};
 use logs::PodLogsView;
-use resources::{DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails, PodAction, PodDetails, PortForwardView, PortForwardViewAction, ReplicaSetAction, ReplicaSetDetails, ResourceTable};
+use resources::{BulkTableAction, DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails, PodAction, PodDetails, PortForwardView, PortForwardViewAction, ReplicaSetAction, ReplicaSetDetails, ResourceTable};
 use terminal::PodTerminalView;
 use ui::{
     theme, secondary_btn, primary_icon_btn, Button, ButtonVariant, ButtonVariants, DropdownMenu,
     Icon, IconName, PopupMenu, PopupMenuItem, Sizable,
 };
+use crate::settings::AIProvider;
+use self::ai_chat_panel::{load_opencode_models, run_ai_connection_test};
+use ui::gpui_component::input::InputState;
 
 /// Status categories for metric cards
 enum MetricStatus {
@@ -31,6 +36,11 @@ pub struct AppView {
     pod_logs: Option<Entity<PodLogsView>>,
     pod_terminal: Option<Entity<PodTerminalView>>,
     port_forward_view: Option<Entity<PortForwardView>>,
+    ai_prompt_input: Option<Entity<InputState>>,
+    _ai_prompt_subscription: Option<Subscription>,
+    ai_clear_input_pending: bool,
+    ai_scroll_handle: ScrollHandle,
+    ai_panel_maximized: bool,
 }
 
 impl AppView {
@@ -57,6 +67,11 @@ impl AppView {
             pod_logs: None,
             pod_terminal: None,
             port_forward_view: None,
+            ai_prompt_input: None,
+            _ai_prompt_subscription: None,
+            ai_clear_input_pending: false,
+            ai_scroll_handle: ScrollHandle::new(),
+            ai_panel_maximized: false,
         }
     }
 
@@ -125,6 +140,26 @@ impl Render for AppView {
                     state.set_selected_resource(Some(resource.clone()));
                 });
                 cx.notify();
+            });
+            table.set_on_bulk_action(|action, selected_resources, cx| {
+                if selected_resources.is_empty() {
+                    return;
+                }
+
+                let state = cx.global::<AppState>();
+                let resource_type = state.selected_type;
+
+                match action {
+                    BulkTableAction::Delete => {
+                        delete_resources_bulk_bg(cx, resource_type, selected_resources);
+                    }
+                    BulkTableAction::Scale { replicas } => {
+                        scale_resources_bulk_bg(cx, resource_type, selected_resources, replicas);
+                    }
+                    BulkTableAction::Label { key, value } => {
+                        label_resources_bulk_bg(cx, resource_type, selected_resources, key, value);
+                    }
+                }
             });
         });
 
@@ -334,9 +369,11 @@ impl Render for AppView {
                 } else {
                     // Sync port forwards list
                     let pf_list = state.port_forwards.clone();
-                    self.port_forward_view.as_ref().unwrap().update(cx, |view, _| {
-                        view.set_port_forwards(pf_list);
-                    });
+                    if let Some(port_forward_view) = self.port_forward_view.as_ref() {
+                        port_forward_view.update(cx, |view, _| {
+                            view.set_port_forwards(pf_list);
+                        });
+                    }
                 }
             } else if self.port_forward_view.is_some() {
                 self.port_forward_view = None;
@@ -392,6 +429,7 @@ impl Render for AppView {
         let showing_logs = self.pod_logs.is_some();
         let showing_terminal = self.pod_terminal.is_some();
         let showing_port_forwards = self.port_forward_view.is_some();
+        let showing_settings = active_view == ActiveView::Settings;
 
         div()
             .size_full()
@@ -418,16 +456,20 @@ impl Render for AppView {
                             .flex_col()
                             .overflow_hidden()
                             // Header (only show in table mode)
-                            .when(!showing_details && !showing_logs && !showing_terminal && !showing_port_forwards, |el: Div| el.child(self.header.clone()))
+                            .when(!showing_details && !showing_logs && !showing_terminal && !showing_port_forwards && !showing_settings, |el: Div| el.child(self.header.clone()))
                             // Content
-                            .child(self.render_content(cx, active_view.clone(), active_panel, showing_details, showing_logs, showing_terminal, showing_port_forwards)),
+                            .child(self.render_content(_window, cx, active_view.clone(), active_panel, showing_details, showing_logs, showing_terminal, showing_port_forwards)),
                     ),
             )
     }
 }
 
 impl AppView {
-    fn render_content(&self, cx: &Context<'_, Self>, _active_view: ActiveView, active_panel: ActivePanel, showing_details: bool, showing_logs: bool, showing_terminal: bool, showing_port_forwards: bool) -> impl IntoElement {
+    fn render_content(&mut self, window: &mut Window, cx: &mut Context<'_, Self>, active_view: ActiveView, active_panel: ActivePanel, showing_details: bool, showing_logs: bool, showing_terminal: bool, showing_port_forwards: bool) -> impl IntoElement {
+        if active_view == ActiveView::Settings {
+            return self.render_settings_view(cx).into_any_element();
+        }
+
         // Show port forwards view (full screen)
         if showing_port_forwards {
             if let Some(pf_view) = &self.port_forward_view {
@@ -495,8 +537,8 @@ impl AppView {
 
         // Table view
         let state = app_state(cx);
-        let mut content = div()
-            .flex_1()
+        let base_content = div()
+            .size_full()
             .flex()
             .overflow_hidden()
             // Resource table area
@@ -511,9 +553,22 @@ impl AppView {
                     .child(self.render_resource_area(cx, state)),
             );
 
+        let mut content = div()
+            .flex_1()
+            .relative()
+            .overflow_hidden()
+            .child(base_content);
+
         // Right panel (logs, terminal, AI)
         if active_panel != ActivePanel::None {
-            content = content.child(self.render_right_panel(cx, active_panel));
+            content = content.child(
+                div()
+                    .absolute()
+                    .top(px(0.0))
+                    .right(px(0.0))
+                    .bottom(px(0.0))
+                    .child(self.render_right_panel(window, cx, active_panel)),
+            );
         }
 
         content.into_any_element()
@@ -896,6 +951,25 @@ impl AppView {
                                 cx.notify();
                             }))
                     )
+                    .child(
+                        secondary_btn("page-ai-btn", IconName::AI, "AI Assistant", colors)
+                            .on_click(cx.listener(|_this, _event, _window, cx| {
+                                cx.update_global::<AppState, _>(|state, _| {
+                                    state.toggle_panel(ActivePanel::AI);
+                                });
+                                cx.notify();
+                            }))
+                    )
+                    .child(
+                        secondary_btn("page-settings-btn", IconName::Settings, "Settings", colors)
+                            .on_click(cx.listener(|_this, _event, _window, cx| {
+                                cx.update_global::<AppState, _>(|state, _| {
+                                    state.active_view = ActiveView::Settings;
+                                    state.set_selected_resource(None);
+                                });
+                                cx.notify();
+                            }))
+                    )
                     // Create button - disabled (not yet implemented)
                     .child(
                         primary_icon_btn("page-create-btn", IconName::Plus, format!("Create {}", resource_type.api_kind()), colors.primary, colors.background)
@@ -1085,9 +1159,15 @@ impl AppView {
         }
     }
 
-    fn render_right_panel(&self, cx: &Context<'_, Self>, active_panel: ActivePanel) -> impl IntoElement {
+    fn render_right_panel(&mut self, window: &mut Window, cx: &mut Context<'_, Self>, active_panel: ActivePanel) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
+        let is_ai_panel = active_panel == ActivePanel::AI;
+        let panel_width = if is_ai_panel && self.ai_panel_maximized {
+            px(760.0)
+        } else {
+            px(400.0)
+        };
 
         let title = match active_panel {
             ActivePanel::Logs => "Logs",
@@ -1097,7 +1177,7 @@ impl AppView {
         };
 
         div()
-            .w(px(400.0))
+            .w(panel_width)
             .h_full()
             .border_l_1()
             .border_color(colors.border)
@@ -1121,32 +1201,303 @@ impl AppView {
                     )
                     .child(
                         div()
-                            .id("close-panel-btn")
-                            .cursor_pointer()
-                            .text_color(colors.text_muted)
-                            .hover(|style| style.text_color(colors.text))
-                            .child("×")
-                            .on_click(cx.listener(|_this, _event, _window, cx| {
-                                update_app_state(cx, |state, _| {
-                                    state.active_panel = ActivePanel::None;
-                                });
-                                cx.notify();
-                            })),
+                            .flex()
+                            .items_center()
+                            .gap(px(10.0))
+                            .when(is_ai_panel, |el| {
+                                el.child(
+                                    div()
+                                        .id("maximize-panel-btn")
+                                        .cursor_pointer()
+                                        .text_color(colors.text_muted)
+                                        .hover(|style| style.text_color(colors.text))
+                                        .child(Icon::new(IconName::Maximize).size(px(14.0)).color(colors.text_muted))
+                                        .on_click(cx.listener(|this, _event, _window, cx| {
+                                            this.ai_panel_maximized = !this.ai_panel_maximized;
+                                            cx.notify();
+                                        })),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .id("close-panel-btn")
+                                    .cursor_pointer()
+                                    .text_color(colors.text_muted)
+                                    .hover(|style| style.text_color(colors.text))
+                                    .child("×")
+                                    .on_click(cx.listener(|this, _event, _window, cx| {
+                                        this.ai_panel_maximized = false;
+                                        update_app_state(cx, |state, _| {
+                                            state.active_panel = ActivePanel::None;
+                                        });
+                                        cx.notify();
+                                    })),
+                            ),
                     ),
             )
             .child(
                 div()
                     .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_hidden()
                     .p(px(16.0))
                     .child(
                         div()
-                            .text_size(theme.font_size)
-                            .text_color(colors.text_muted)
-                            .child(format!("{} panel content", title)),
+                            .size_full()
+                            .min_h(px(0.0))
+                            .overflow_hidden()
+                            .child(match active_panel {
+                                ActivePanel::AI => self.render_ai_panel_body(window, cx).into_any_element(),
+                                _ => div()
+                                    .text_size(theme.font_size)
+                                    .text_color(colors.text_muted)
+                                    .child(format!("{} panel content", title))
+                                    .into_any_element(),
+                            }),
                     ),
             )
     }
 
+    fn render_settings_view(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let should_load_models = {
+            let state = app_state(cx);
+            state.ai_provider == AIProvider::OpenCode
+                && !state.opencode_models_loading
+                && state.opencode_models.is_empty()
+        };
+        if should_load_models {
+            cx.defer(|cx| {
+                load_opencode_models(cx);
+            });
+        }
+
+        let theme = theme(cx);
+        let colors = &theme.colors;
+        let state = app_state(cx);
+        let provider = state.ai_provider;
+        let is_testing = state.ai_connection_testing;
+        let opencode_models = state.opencode_models.clone();
+        let opencode_models_loading = state.opencode_models_loading;
+        let selected_model = state.opencode_selected_model.clone();
+
+        let provider_button = Button::new("settings-ai-provider")
+            .icon(IconName::AI)
+            .label(provider.display_name())
+            .compact()
+            .with_variant(ButtonVariant::Ghost)
+            .dropdown_caret(true)
+            .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
+                let mut m = menu.scrollable(false);
+                for option in [AIProvider::OpenCode, AIProvider::ClaudeCode] {
+                    let is_selected = option == provider;
+                    m = m.item(
+                        PopupMenuItem::new(option.display_name())
+                            .checked(is_selected)
+                            .on_click(move |_, _window, cx| {
+                                cx.update_global::<AppState, _>(|state, _| {
+                                    state.set_ai_provider(option);
+                                });
+                                if option == AIProvider::OpenCode {
+                                    load_opencode_models(cx);
+                                }
+                            }),
+                    );
+                }
+                m
+            });
+
+        let status_text = if is_testing {
+            "Probando conexión..."
+        } else {
+            match state.ai_connection_success {
+                Some(true) => "Conexión OK",
+                Some(false) => "Conexión fallida",
+                None => "Sin prueba",
+            }
+        };
+        let status_color = if is_testing {
+            colors.warning
+        } else if state.ai_connection_success == Some(true) {
+            colors.success
+        } else if state.ai_connection_success == Some(false) {
+            colors.error
+        } else {
+            colors.text_muted
+        };
+
+        div()
+            .flex_1()
+            .overflow_hidden()
+            .p(px(24.0))
+            .child(
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .gap(px(16.0))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.0))
+                            .child(
+                                div()
+                                    .font_family(theme.font_family_ui.clone())
+                                    .text_size(px(28.0))
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(colors.text)
+                                    .child("Settings")
+                            )
+                            .child(
+                                div()
+                                    .font_family(theme.font_family_ui.clone())
+                                    .text_size(px(14.0))
+                                    .text_color(colors.text_muted)
+                                    .child("Configura la conexión con IA para OpenCode o ClaudeCode")
+                            )
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .max_w(px(860.0))
+                            .p(px(16.0))
+                            .rounded(theme.border_radius_lg)
+                            .bg(colors.surface)
+                            .border_1()
+                            .border_color(colors.border)
+                            .flex()
+                            .flex_col()
+                            .gap(px(14.0))
+                            .child(
+                                div()
+                                    .text_size(px(16.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(colors.text)
+                                    .child("AI Connection")
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(colors.text_muted)
+                                    .child("Selecciona el proveedor para las pruebas y para el panel de IA.")
+                            )
+                            .child(provider_button)
+                            .when(provider == AIProvider::OpenCode, |el| {
+                                let model_label = selected_model
+                                    .clone()
+                                    .unwrap_or_else(|| "Selecciona modelo".to_string());
+                                let models_for_menu = opencode_models.clone();
+                                let selected_for_menu = selected_model.clone();
+
+                                let model_button = Button::new("settings-opencode-model")
+                                    .icon(IconName::Layers)
+                                    .label(model_label)
+                                    .compact()
+                                    .with_variant(ButtonVariant::Ghost)
+                                    .dropdown_caret(true)
+                                    .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
+                                        let mut m = menu.scrollable(true);
+                                        for model in &models_for_menu {
+                                            let model_value = model.clone();
+                                            let is_selected = selected_for_menu.as_ref() == Some(model);
+                                            m = m.item(
+                                                PopupMenuItem::new(model.clone())
+                                                    .checked(is_selected)
+                                                    .on_click(move |_, _window, cx| {
+                                                        cx.update_global::<AppState, _>(|state, _| {
+                                                            state.set_opencode_selected_model(Some(model_value.clone()));
+                                                        });
+                                                    }),
+                                            );
+                                        }
+                                        m
+                                    });
+
+                                el.child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(12.0))
+                                        .child(model_button)
+                                        .child(
+                                            secondary_btn("settings-opencode-models-refresh", IconName::Refresh, "Actualizar modelos", colors)
+                                                .when(opencode_models_loading, |btn| btn.opacity(0.5))
+                                                .on_click(cx.listener(move |_this, _event, _window, cx| {
+                                                    if !opencode_models_loading {
+                                                        load_opencode_models(cx);
+                                                    }
+                                                }))
+                                        )
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.0))
+                                        .text_color(colors.text_muted)
+                                        .child(if opencode_models_loading {
+                                            "Cargando modelos de OpenCode...".to_string()
+                                        } else if opencode_models.is_empty() {
+                                            "No se pudieron cargar modelos. Revisa auth/red y pulsa actualizar.".to_string()
+                                        } else {
+                                            format!("{} modelos disponibles", opencode_models.len())
+                                        })
+                                )
+                            })
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(status_color)
+                                    .child(status_text)
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(12.0))
+                                    .child(
+                                        secondary_btn("settings-ai-test-btn", IconName::Play, "Probar conexión", colors)
+                                            .when(is_testing, |el| el.opacity(0.5))
+                                            .on_click(cx.listener(move |_this, _event, _window, cx| {
+                                                if !is_testing {
+                                                    run_ai_connection_test(cx, provider, selected_model.clone());
+                                                }
+                                            }))
+                                    )
+                                    .child(
+                                        secondary_btn("settings-open-ai-panel-btn", IconName::AI, "Abrir panel IA", colors)
+                                            .on_click(cx.listener(|_this, _event, _window, cx| {
+                                                cx.update_global::<AppState, _>(|state, _| {
+                                                    if state.active_panel != ActivePanel::AI {
+                                                        state.active_panel = ActivePanel::AI;
+                                                    }
+                                                    state.active_view = ActiveView::ResourceTable;
+                                                });
+                                                cx.notify();
+                                            }))
+                                    )
+                            )
+                            .child(
+                                div()
+                                    .p(px(12.0))
+                                    .rounded(theme.border_radius_md)
+                                    .bg(colors.surface_elevated)
+                                    .border_1()
+                                    .border_color(colors.border)
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .text_color(colors.text)
+                                            .whitespace_nowrap()
+                                            .child(
+                                                format!("\"{}\"", state.ai_connection_message
+                                                    .clone()
+                                                    .unwrap_or_else(|| "No hay salida todavía. Usa \"Probar conexión\" para crear la comunicación.".to_string()))
+                                            )
+                                    )
+                            )
+                    )
+            )
+    }
 }
 
 fn start_port_forward_bg<T: 'static>(
@@ -1159,7 +1510,7 @@ fn start_port_forward_bg<T: 'static>(
     let (tx, rx) = std::sync::mpsc::channel::<Result<k8s_client::PortForwardInfo, String>>();
 
     std::thread::spawn(move || {
-        let rt = crate::resource_loader::get_tokio_runtime_pub();
+        let rt = k8s_client::tokio_runtime();
         rt.block_on(async {
             match k8s_client::get_client().await {
                 Ok(client) => {
@@ -1239,7 +1590,7 @@ fn fetch_related_pods(
     let (tx, rx) = std::sync::mpsc::channel::<Vec<k8s_client::Resource>>();
 
     std::thread::spawn(move || {
-        let rt = crate::resource_loader::get_tokio_runtime_pub();
+        let rt = k8s_client::tokio_runtime();
         rt.block_on(async {
             match k8s_client::get_client().await {
                 Ok(client) => {
@@ -1282,11 +1633,202 @@ fn fetch_related_pods(
     .detach();
 }
 
+fn delete_resources_bulk_bg<T: 'static>(
+    cx: &mut Context<'_, T>,
+    resource_type: k8s_client::ResourceType,
+    resources: Vec<k8s_client::Resource>,
+) {
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+
+    std::thread::spawn(move || {
+        let rt = k8s_client::tokio_runtime();
+        rt.block_on(async {
+            match k8s_client::get_client().await {
+                Ok(client) => {
+                    let mut errors = Vec::new();
+                    for resource in &resources {
+                        let namespace = resource.metadata.namespace.as_deref();
+                        if let Err(e) = k8s_client::delete_resource(
+                            &client,
+                            resource_type,
+                            &resource.metadata.name,
+                            namespace,
+                        )
+                        .await
+                        {
+                            errors.push(format!("{}: {}", resource.metadata.name, e));
+                        }
+                    }
+                    if errors.is_empty() {
+                        let _ = tx.send(Ok(()));
+                    } else {
+                        let _ = tx.send(Err(format!("Bulk delete failed for {} resource(s): {}", errors.len(), errors.join("; "))));
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e.to_string()));
+                }
+            }
+        });
+    });
+
+    cx.spawn(async move |_view, cx| {
+        for _ in 0..120 {
+            if let Ok(result) = rx.try_recv() {
+                let _ = cx.update(|cx: &mut gpui::App| {
+                    cx.update_global::<AppState, _>(|state, _| {
+                        state.set_error(result.err());
+                    });
+                    let state = cx.global::<AppState>();
+                    crate::load_resources(cx, state.selected_type, state.namespace.clone());
+                });
+                return;
+            }
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(50))
+                .await;
+        }
+    })
+    .detach();
+}
+
+fn scale_resources_bulk_bg<T: 'static>(
+    cx: &mut Context<'_, T>,
+    resource_type: k8s_client::ResourceType,
+    resources: Vec<k8s_client::Resource>,
+    replicas: i32,
+) {
+    if !matches!(resource_type, k8s_client::ResourceType::Deployments | k8s_client::ResourceType::StatefulSets) {
+        cx.update_global::<AppState, _>(|state, _| {
+            state.set_error(Some(format!(
+                "Bulk scale is only supported for Deployments and StatefulSets (current: {}).",
+                resource_type.display_name()
+            )));
+        });
+        return;
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    std::thread::spawn(move || {
+        let rt = k8s_client::tokio_runtime();
+        rt.block_on(async {
+            match k8s_client::get_client().await {
+                Ok(client) => {
+                    let mut errors = Vec::new();
+                    for resource in &resources {
+                        let namespace = resource.metadata.namespace.as_deref();
+                        if let Err(e) = k8s_client::scale_resource(
+                            &client,
+                            resource_type,
+                            &resource.metadata.name,
+                            replicas,
+                            namespace,
+                        )
+                        .await
+                        {
+                            errors.push(format!("{}: {}", resource.metadata.name, e));
+                        }
+                    }
+                    if errors.is_empty() {
+                        let _ = tx.send(Ok(()));
+                    } else {
+                        let _ = tx.send(Err(format!("Bulk scale failed for {} resource(s): {}", errors.len(), errors.join("; "))));
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e.to_string()));
+                }
+            }
+        });
+    });
+
+    cx.spawn(async move |_view, cx| {
+        for _ in 0..120 {
+            if let Ok(result) = rx.try_recv() {
+                let _ = cx.update(|cx: &mut gpui::App| {
+                    cx.update_global::<AppState, _>(|state, _| {
+                        state.set_error(result.err());
+                    });
+                    let state = cx.global::<AppState>();
+                    crate::load_resources(cx, state.selected_type, state.namespace.clone());
+                });
+                return;
+            }
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(50))
+                .await;
+        }
+    })
+    .detach();
+}
+
+fn label_resources_bulk_bg<T: 'static>(
+    cx: &mut Context<'_, T>,
+    resource_type: k8s_client::ResourceType,
+    resources: Vec<k8s_client::Resource>,
+    key: String,
+    value: String,
+) {
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    std::thread::spawn(move || {
+        let rt = k8s_client::tokio_runtime();
+        rt.block_on(async {
+            match k8s_client::get_client().await {
+                Ok(client) => {
+                    let mut errors = Vec::new();
+                    for resource in &resources {
+                        let namespace = resource.metadata.namespace.as_deref();
+                        if let Err(e) = k8s_client::label_resource(
+                            &client,
+                            resource_type,
+                            &resource.metadata.name,
+                            &key,
+                            &value,
+                            namespace,
+                        )
+                        .await
+                        {
+                            errors.push(format!("{}: {}", resource.metadata.name, e));
+                        }
+                    }
+                    if errors.is_empty() {
+                        let _ = tx.send(Ok(()));
+                    } else {
+                        let _ = tx.send(Err(format!("Bulk label failed for {} resource(s): {}", errors.len(), errors.join("; "))));
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e.to_string()));
+                }
+            }
+        });
+    });
+
+    cx.spawn(async move |_view, cx| {
+        for _ in 0..120 {
+            if let Ok(result) = rx.try_recv() {
+                let _ = cx.update(|cx: &mut gpui::App| {
+                    cx.update_global::<AppState, _>(|state, _| {
+                        state.set_error(result.err());
+                    });
+                    let state = cx.global::<AppState>();
+                    crate::load_resources(cx, state.selected_type, state.namespace.clone());
+                });
+                return;
+            }
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(50))
+                .await;
+        }
+    })
+    .detach();
+}
+
 fn delete_resource_bg<T: 'static>(cx: &mut Context<'_, T>, resource_type: k8s_client::ResourceType, name: String, namespace: String) {
     let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
 
     std::thread::spawn(move || {
-        let rt = crate::resource_loader::get_tokio_runtime_pub();
+        let rt = k8s_client::tokio_runtime();
         rt.block_on(async {
             match k8s_client::get_client().await {
                 Ok(client) => {

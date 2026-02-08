@@ -971,6 +971,158 @@ pub async fn scale_resource(
     }
 }
 
+pub async fn label_resource(
+    client: &Client,
+    resource_type: ResourceType,
+    name: &str,
+    key: &str,
+    value: &str,
+    namespace: Option<&str>,
+) -> Result<()> {
+    let patch = serde_json::json!({ "metadata": { "labels": { key: value } } });
+    let params = PatchParams::default();
+
+    match resource_type {
+        ResourceType::Pods => {
+            use k8s_openapi::api::core::v1::Pod;
+            let api: Api<Pod> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label pod")?;
+            Ok(())
+        }
+        ResourceType::Deployments => {
+            use k8s_openapi::api::apps::v1::Deployment;
+            let api: Api<Deployment> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label deployment")?;
+            Ok(())
+        }
+        ResourceType::Services => {
+            use k8s_openapi::api::core::v1::Service;
+            let api: Api<Service> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label service")?;
+            Ok(())
+        }
+        ResourceType::ConfigMaps => {
+            use k8s_openapi::api::core::v1::ConfigMap;
+            let api: Api<ConfigMap> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label configmap")?;
+            Ok(())
+        }
+        ResourceType::Secrets => {
+            use k8s_openapi::api::core::v1::Secret;
+            let api: Api<Secret> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label secret")?;
+            Ok(())
+        }
+        ResourceType::Ingresses => {
+            use k8s_openapi::api::networking::v1::Ingress;
+            let api: Api<Ingress> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label ingress")?;
+            Ok(())
+        }
+        ResourceType::StatefulSets => {
+            use k8s_openapi::api::apps::v1::StatefulSet;
+            let api: Api<StatefulSet> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label statefulset")?;
+            Ok(())
+        }
+        ResourceType::DaemonSets => {
+            use k8s_openapi::api::apps::v1::DaemonSet;
+            let api: Api<DaemonSet> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label daemonset")?;
+            Ok(())
+        }
+        ResourceType::Jobs => {
+            use k8s_openapi::api::batch::v1::Job;
+            let api: Api<Job> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label job")?;
+            Ok(())
+        }
+        ResourceType::CronJobs => {
+            use k8s_openapi::api::batch::v1::CronJob;
+            let api: Api<CronJob> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label cronjob")?;
+            Ok(())
+        }
+        ResourceType::ReplicaSets => {
+            use k8s_openapi::api::apps::v1::ReplicaSet;
+            let api: Api<ReplicaSet> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label replicaset")?;
+            Ok(())
+        }
+        ResourceType::Nodes => {
+            use k8s_openapi::api::core::v1::Node;
+            let api: Api<Node> = Api::all(client.clone());
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label node")?;
+            Ok(())
+        }
+        ResourceType::Namespaces => {
+            use k8s_openapi::api::core::v1::Namespace;
+            let api: Api<Namespace> = Api::all(client.clone());
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label namespace")?;
+            Ok(())
+        }
+    }
+}
+
 pub async fn get_pod_logs(
     client: &Client,
     pod_name: &str,

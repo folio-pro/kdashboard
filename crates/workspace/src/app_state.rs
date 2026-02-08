@@ -1,5 +1,6 @@
 use gpui::*;
 use k8s_client::{ConnectionStatus, PortForwardInfo, Resource, ResourceList, ResourceType, SortDirection};
+use crate::settings::AIProvider;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActivePanel {
@@ -24,6 +25,7 @@ pub enum ActiveView {
     PodLogs,
     PodTerminal,
     PortForwards,
+    Settings,
 }
 
 /// Pod context for logs/terminal views
@@ -33,6 +35,18 @@ pub struct PodContext {
     pub namespace: String,
     pub containers: Vec<String>,
     pub selected_container: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AIChatRole {
+    User,
+    Assistant,
+}
+
+#[derive(Clone, Debug)]
+pub struct AIChatMessage {
+    pub role: AIChatRole,
+    pub content: String,
 }
 
 pub struct AppState {
@@ -67,6 +81,17 @@ pub struct AppState {
     // Port forwarding
     pub port_forwards: Vec<PortForwardInfo>,
     pub pf_error: Option<String>,
+
+    // AI settings and communication
+    pub ai_provider: AIProvider,
+    pub ai_connection_testing: bool,
+    pub ai_connection_success: Option<bool>,
+    pub ai_connection_message: Option<String>,
+    pub ai_messages: Vec<AIChatMessage>,
+    pub ai_request_in_flight: bool,
+    pub opencode_models: Vec<String>,
+    pub opencode_models_loading: bool,
+    pub opencode_selected_model: Option<String>,
 }
 
 impl AppState {
@@ -92,7 +117,25 @@ impl AppState {
             sort_direction: SortDirection::Ascending,
             port_forwards: Vec::new(),
             pf_error: None,
+            ai_provider: AIProvider::OpenCode,
+            ai_connection_testing: false,
+            ai_connection_success: None,
+            ai_connection_message: None,
+            ai_messages: Vec::new(),
+            ai_request_in_flight: false,
+            opencode_models: Vec::new(),
+            opencode_models_loading: false,
+            opencode_selected_model: None,
         }
+    }
+
+    fn persist_settings(&self) {
+        crate::settings::save_settings(&crate::settings::UserSettings {
+            context: self.context.clone(),
+            namespace: self.namespace.clone(),
+            ai_provider: Some(self.ai_provider),
+            opencode_model: self.opencode_selected_model.clone(),
+        });
     }
 
     pub fn open_pod_logs(&mut self, pod_name: String, namespace: String, containers: Vec<String>, selected_container: Option<String>) {
@@ -138,19 +181,79 @@ impl AppState {
     }
 
     pub fn set_context(&mut self, context: Option<String>) {
-        self.context = context.clone();
-        crate::settings::save_settings(&crate::settings::UserSettings {
-            context,
-            namespace: self.namespace.clone(),
-        });
+        self.context = context;
+        self.persist_settings();
     }
 
     pub fn set_namespace(&mut self, namespace: Option<String>) {
-        self.namespace = namespace.clone();
-        crate::settings::save_settings(&crate::settings::UserSettings {
-            context: self.context.clone(),
-            namespace,
+        self.namespace = namespace;
+        self.persist_settings();
+    }
+
+    pub fn set_ai_provider(&mut self, provider: AIProvider) {
+        self.ai_provider = provider;
+        self.persist_settings();
+    }
+
+    pub fn set_opencode_models_loading(&mut self, loading: bool) {
+        self.opencode_models_loading = loading;
+    }
+
+    pub fn set_opencode_models(&mut self, models: Vec<String>) {
+        self.opencode_models = models;
+        if let Some(selected) = &self.opencode_selected_model {
+            if !self.opencode_models.iter().any(|m| m == selected) {
+                self.opencode_selected_model = self.opencode_models.first().cloned();
+            }
+        } else {
+            self.opencode_selected_model = self.opencode_models.first().cloned();
+        }
+        self.persist_settings();
+    }
+
+    pub fn set_opencode_selected_model(&mut self, model: Option<String>) {
+        self.opencode_selected_model = model;
+        self.persist_settings();
+    }
+
+    pub fn set_ai_connection_testing(&mut self, testing: bool) {
+        self.ai_connection_testing = testing;
+        if testing {
+            self.ai_connection_message = Some("Probando conexión con el proveedor...".to_string());
+            self.ai_connection_success = None;
+        }
+    }
+
+    pub fn set_ai_connection_result(&mut self, result: Result<String, String>) {
+        self.ai_connection_testing = false;
+        match result {
+            Ok(message) => {
+                self.ai_connection_success = Some(true);
+                self.ai_connection_message = Some(message);
+            }
+            Err(error) => {
+                self.ai_connection_success = Some(false);
+                self.ai_connection_message = Some(error);
+            }
+        }
+    }
+
+    pub fn push_ai_user_message(&mut self, content: String) {
+        self.ai_messages.push(AIChatMessage {
+            role: AIChatRole::User,
+            content,
         });
+    }
+
+    pub fn push_ai_assistant_message(&mut self, content: String) {
+        self.ai_messages.push(AIChatMessage {
+            role: AIChatRole::Assistant,
+            content,
+        });
+    }
+
+    pub fn set_ai_request_in_flight(&mut self, in_flight: bool) {
+        self.ai_request_in_flight = in_flight;
     }
 
     pub fn set_filter(&mut self, filter: String) {
@@ -234,6 +337,8 @@ pub fn init(cx: &mut App) {
     let mut state = AppState::new();
     state.context = saved.context;
     state.namespace = saved.namespace;
+    state.ai_provider = saved.ai_provider.unwrap_or(AIProvider::OpenCode);
+    state.opencode_selected_model = saved.opencode_model;
     cx.set_global(state);
 }
 

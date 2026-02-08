@@ -1,10 +1,29 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AIProvider {
+    #[default]
+    OpenCode,
+    ClaudeCode,
+}
+
+impl AIProvider {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            AIProvider::OpenCode => "OpenCode",
+            AIProvider::ClaudeCode => "ClaudeCode",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UserSettings {
     pub context: Option<String>,
     pub namespace: Option<String>,
+    pub ai_provider: Option<AIProvider>,
+    pub opencode_model: Option<String>,
 }
 
 pub fn settings_path() -> Option<PathBuf> {

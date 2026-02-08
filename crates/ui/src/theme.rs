@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gpui::*;
-use gpui_component::highlighter::HighlightTheme;
+use gpui_component::highlighter::{LanguageConfig, LanguageRegistry, HighlightTheme};
 use gpui_component::theme::Theme as GpuiTheme;
 
 #[derive(Clone)]
@@ -255,25 +255,25 @@ fn apply_k8s_theme(cx: &mut App) {
         "appearance": "dark",
         "style": {
             "editor.background": "#1e293bff",
-            "editor.foreground": "#ffffffff",
+            "editor.foreground": "#cbd5e1ff",
             "editor.line_number": "#64748bff",
             "editor.active_line.background": "#253347ff",
             "editor.active_line_number": "#94a3b8ff",
             "syntax": {
                 "keyword":               { "color": "#22d3eeff" },
                 "type":                  { "color": "#22d3eeff" },
-                "constant":              { "color": "#22d3eeff" },
-                "boolean":               { "color": "#22d3eeff" },
+                "constant":              { "color": "#f59e0bff" },
+                "boolean":               { "color": "#a3e635ff" },
                 "function":              { "color": "#22d3eeff" },
-                "property":              { "color": "#94a3b8ff" },
-                "tag":                   { "color": "#94a3b8ff" },
-                "attribute":             { "color": "#94a3b8ff" },
-                "label":                 { "color": "#94a3b8ff" },
+                "property":              { "color": "#7dd3fcff" },
+                "tag":                   { "color": "#7dd3fcff" },
+                "attribute":             { "color": "#7dd3fcff" },
+                "label":                 { "color": "#7dd3fcff" },
                 "string":               { "color": "#ff8400ff" },
                 "string.escape":         { "color": "#ff8400ff" },
                 "string.regex":          { "color": "#ff8400ff" },
-                "string.special":        { "color": "#ff8400ff" },
-                "string.special.symbol": { "color": "#ff8400ff" },
+                "string.special":        { "color": "#7dd3fcff" },
+                "string.special.symbol": { "color": "#7dd3fcff" },
                 "number":               { "color": "#ff8400ff" },
                 "punctuation":           { "color": "#64748bff" },
                 "punctuation.bracket":   { "color": "#64748bff" },
@@ -283,10 +283,10 @@ fn apply_k8s_theme(cx: &mut App) {
                 "operator":             { "color": "#64748bff" },
                 "comment":              { "color": "#64748bff", "font_style": "italic" },
                 "comment_doc":          { "color": "#64748bff", "font_style": "italic" },
-                "variable":             { "color": "#ffffffff" },
-                "variable.special":     { "color": "#22d3eeff" },
+                "variable":             { "color": "#7dd3fcff" },
+                "variable.special":     { "color": "#7dd3fcff" },
                 "primary":              { "color": "#ffffffff" },
-                "title":                { "color": "#ffffffff" },
+                "title":                { "color": "#7dd3fcff" },
                 "text.literal":         { "color": "#ff8400ff" },
                 "embedded":             { "color": "#22d3eeff" },
                 "enum":                 { "color": "#22d3eeff" },
@@ -302,9 +302,49 @@ fn apply_k8s_theme(cx: &mut App) {
     theme.highlight_theme = Arc::new(pencil_highlight);
 }
 
+/// Extend YAML highlights so any mapping key is captured as `@property`.
+/// This avoids relying on specific key names and fixes inconsistent key coloring.
+fn register_yaml_highlight_overrides() {
+    let registry = LanguageRegistry::singleton();
+    let Some(base_yaml) = registry.language("yaml") else {
+        return;
+    };
+
+    let mut highlights = base_yaml.highlights.to_string();
+    highlights.push_str(
+        r#"
+
+; Generic key highlighting: capture any YAML mapping key as @property.
+(block_mapping_pair
+  key: (flow_node
+    (_) @property))
+
+(flow_mapping
+  (_
+    key: (flow_node
+      (_) @property)))
+"#,
+    );
+
+    registry.register(
+        "yaml",
+        &LanguageConfig::new(
+            "yaml",
+            base_yaml.language,
+            base_yaml.injection_languages.clone(),
+            &highlights,
+            &base_yaml.injections,
+            &base_yaml.locals,
+        ),
+    );
+}
+
 pub fn init(cx: &mut App) {
     // Initialize gpui-component first
     gpui_component::init(cx);
+
+    // Ensure YAML keys are highlighted consistently before applying theme.
+    register_yaml_highlight_overrides();
 
     // Apply our custom Zed dark theme colors
     apply_k8s_theme(cx);

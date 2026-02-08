@@ -1,5 +1,6 @@
 use gpui::*;
 use gpui::prelude::FluentBuilder;
+use crate::app_state::{ActiveView, AppState};
 use ui::gpui_component::input::{Input, InputEvent, InputState};
 use ui::{theme, Icon, IconName, Sizable};
 
@@ -100,7 +101,7 @@ impl Render for Header {
                             .when_some(search_input, |el, input| el.child(input)),
                     ),
             )
-            // Right: avatar
+            // Right: settings entry (replaces static user info)
             .child(
                 div()
                     .flex()
@@ -108,31 +109,43 @@ impl Render for Header {
                     .gap(px(16.0))
                     .child(
                         div()
+                            .id("header-settings-link")
                             .flex()
                             .items_center()
                             .gap(px(10.0))
+                            .cursor_pointer()
+                            .hover(|style| style.opacity(0.85))
                             .child(
                                 div()
                                     .w(px(32.0))
                                     .h(px(32.0))
                                     .rounded_full()
-                                    .bg(colors.primary)
+                                    .bg(colors.surface)
+                                    .border_1()
+                                    .border_color(colors.border)
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .text_size(px(13.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(colors.background)
-                                    .child("JD"),
+                                    .child(
+                                        Icon::new(IconName::Settings)
+                                            .size(px(14.0))
+                                            .color(colors.text_muted),
+                                    ),
                             )
                             .child(
                                 div()
                                     .text_size(px(13.0))
                                     .text_color(colors.text)
-                                    .child("John Doe"),
-                            ),
+                                    .child("Settings"),
+                            )
+                            .on_click(cx.listener(|_this, _event, _window, cx| {
+                                cx.update_global::<AppState, _>(|state, _| {
+                                    state.active_view = ActiveView::Settings;
+                                    state.set_selected_resource(None);
+                                });
+                                cx.notify();
+                            })),
                     ),
             )
     }
 }
-

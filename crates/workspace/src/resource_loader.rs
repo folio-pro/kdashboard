@@ -33,7 +33,7 @@ pub fn load_resources(cx: &mut App, resource_type: ResourceType, namespace: Opti
 
     // Spawn background thread that runs the watch stream
     std::thread::spawn(move || {
-        let rt = get_tokio_runtime();
+        let rt = k8s_client::tokio_runtime();
         rt.block_on(async {
             let _ = tx.send(ResourceUpdate::Loading(true));
 
@@ -194,7 +194,7 @@ pub fn switch_context(cx: &mut App, context_name: String) {
     });
 
     std::thread::spawn(move || {
-        let rt = get_tokio_runtime();
+        let rt = k8s_client::tokio_runtime();
         rt.block_on(async {
             let _ = tx.send(ResourceUpdate::Loading(true));
 
@@ -251,20 +251,6 @@ pub fn switch_context(cx: &mut App, context_name: String) {
         });
     })
     .detach();
-}
-
-/// Get or create the Tokio runtime (public accessor for other modules)
-pub fn get_tokio_runtime_pub() -> &'static tokio::runtime::Runtime {
-    get_tokio_runtime()
-}
-
-/// Get or create the Tokio runtime
-fn get_tokio_runtime() -> &'static tokio::runtime::Runtime {
-    use std::sync::OnceLock;
-    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
-    })
 }
 
 /// Helper trait to try joining a finished JoinHandle without await

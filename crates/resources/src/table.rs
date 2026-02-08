@@ -2,8 +2,8 @@ use gpui::*;
 use k8s_client::{Resource, ResourceType};
 use serde_json::Value;
 use std::cmp::Ordering;
-use std::collections::HashMap;
-use ui::{theme, Icon, IconName, ThemeColors};
+use std::collections::{HashMap, HashSet};
+use ui::{danger_btn, secondary_btn, theme, Icon, IconName, ThemeColors};
 
 /// Status type for resources
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -58,13 +58,22 @@ pub struct SortState {
     pub direction: SortDirection,
 }
 
+#[derive(Clone, Debug)]
+pub enum BulkTableAction {
+    Delete,
+    Scale { replicas: i32 },
+    Label { key: String, value: String },
+}
+
 pub struct ResourceTable {
     resources: Vec<Resource>,
     resource_type: ResourceType,
     selected_index: Option<usize>,
+    selected_indices: HashSet<usize>,
     scroll_handle: ScrollHandle,
     on_select: Option<Box<dyn Fn(usize, &Resource, &mut Context<'_, Self>) + 'static>>,
     on_open: Option<Box<dyn Fn(&Resource, &mut Context<'_, Self>) + 'static>>,
+    on_bulk_action: Option<Box<dyn Fn(BulkTableAction, Vec<Resource>, &mut Context<'_, Self>) + 'static>>,
     /// Custom column widths (column name -> width in pixels)
     column_widths: HashMap<String, f32>,
     /// Current sort state
@@ -83,9 +92,11 @@ impl ResourceTable {
             resources,
             resource_type,
             selected_index: None,
+            selected_indices: HashSet::new(),
             scroll_handle: ScrollHandle::new(),
             on_select: None,
             on_open: None,
+            on_bulk_action: None,
             column_widths: HashMap::new(),
             sort_state: SortState::default(),
             resizing_column: None,
@@ -96,15 +107,26 @@ impl ResourceTable {
 
     pub fn set_resources(&mut self, resources: Vec<Resource>) {
         self.resources = resources;
+        self.selected_indices.retain(|i| *i < self.resources.len());
+        if self.selected_index.is_some_and(|i| i >= self.resources.len()) {
+            self.selected_index = None;
+        }
     }
 
     pub fn set_resource_type(&mut self, resource_type: ResourceType) {
-        self.resource_type = resource_type;
-        self.selected_index = None;
+        if self.resource_type != resource_type {
+            self.resource_type = resource_type;
+            self.selected_index = None;
+            self.selected_indices.clear();
+        }
     }
 
     pub fn set_selected(&mut self, index: Option<usize>) {
         self.selected_index = index;
+    }
+
+    pub fn selected_count(&self) -> usize {
+        self.selected_indices.len()
     }
 
     pub fn on_select(mut self, handler: impl Fn(usize, &Resource, &mut Context<'_, Self>) + 'static) -> Self {
@@ -114,6 +136,13 @@ impl ResourceTable {
 
     pub fn set_on_open(&mut self, handler: impl Fn(&Resource, &mut Context<'_, Self>) + 'static) {
         self.on_open = Some(Box::new(handler));
+    }
+
+    pub fn set_on_bulk_action(
+        &mut self,
+        handler: impl Fn(BulkTableAction, Vec<Resource>, &mut Context<'_, Self>) + 'static,
+    ) {
+        self.on_bulk_action = Some(Box::new(handler));
     }
 
     fn open_row(&mut self, index: usize, cx: &mut Context<'_, Self>) {
@@ -273,12 +302,14 @@ impl ResourceTable {
     fn get_columns(&self) -> Vec<ColumnDef> {
         match self.resource_type {
             ResourceType::Pods => vec![
-                ColumnDef::new("Name", 280.0).with_icon(),
+                ColumnDef::new("Checkbox", 32.0).checkbox(),
+                ColumnDef::new("Name", 240.0).with_icon(),
                 ColumnDef::new("Namespace", 120.0),
                 ColumnDef::new("Status", 120.0).status_dot(),
-                ColumnDef::new("Restarts", 100.0),
-                ColumnDef::new("Age", 80.0),
+                ColumnDef::new("Restarts", 90.0),
+                ColumnDef::new("Age", 70.0).right(),
                 ColumnDef::new("Node", 0.0), // fills remaining space
+                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::Deployments => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -395,15 +426,49 @@ impl ResourceTable {
         }
     }
 
-    fn select_row(&mut self, index: usize, cx: &mut Context<'_, Self>) {
-        self.selected_index = Some(index);
-        if let Some(on_select) = &self.on_select {
-            if let Some(resource) = self.resources.get(index) {
-                let resource = resource.clone();
-                on_select(index, &resource, cx);
+    fn toggle_row_checkbox(&mut self, index: usize, cx: &mut Context<'_, Self>) {
+        if self.selected_indices.contains(&index) {
+            self.selected_indices.remove(&index);
+        } else {
+            self.selected_indices.insert(index);
+        }
+        cx.notify();
+    }
+
+    fn set_all_selected(&mut self, indices: &[usize], selected: bool, cx: &mut Context<'_, Self>) {
+        if selected {
+            for idx in indices {
+                self.selected_indices.insert(*idx);
+            }
+        } else {
+            for idx in indices {
+                self.selected_indices.remove(idx);
             }
         }
         cx.notify();
+    }
+
+    fn selected_resources(&self) -> Vec<Resource> {
+        let mut indices: Vec<usize> = self.selected_indices.iter().copied().collect();
+        indices.sort_unstable();
+        indices
+            .into_iter()
+            .filter_map(|idx| self.resources.get(idx).cloned())
+            .collect()
+    }
+
+    fn trigger_bulk_action(&mut self, action: BulkTableAction, cx: &mut Context<'_, Self>) {
+        if self.selected_indices.is_empty() {
+            return;
+        }
+        let selected = self.selected_resources();
+        if let Some(on_bulk_action) = &self.on_bulk_action {
+            on_bulk_action(action, selected, cx);
+        }
+    }
+
+    fn can_scale(&self) -> bool {
+        matches!(self.resource_type, ResourceType::Deployments | ResourceType::StatefulSets)
     }
 }
 
@@ -489,14 +554,18 @@ impl Render for ResourceTable {
         let theme = theme(cx);
         let colors = &theme.colors;
         let columns = self.get_columns();
-        let selected_index = self.selected_index;
+        let selected_indices = self.selected_indices.clone();
         let resource_type = self.resource_type;
         let sort_state = self.sort_state.clone();
 
         // Get sorted resources with original indices
         let sorted_resources = self.get_sorted_resources();
         let resources: Vec<_> = sorted_resources.iter().map(|(original_idx, r)| {
-            (*original_idx, r.clone(), selected_index == Some(*original_idx))
+            (
+                *original_idx,
+                r.clone(),
+                selected_indices.contains(original_idx),
+            )
         }).collect();
 
         let is_empty = resources.is_empty();
@@ -511,8 +580,27 @@ impl Render for ResourceTable {
             .border_color(colors.border)
             .overflow_hidden();
 
+        let visible_indices: Vec<usize> = sorted_resources.iter().map(|(idx, _)| *idx).collect();
+        let selected_visible_count = visible_indices
+            .iter()
+            .filter(|idx| self.selected_indices.contains(idx))
+            .count();
+        let all_visible_selected = !visible_indices.is_empty() && selected_visible_count == visible_indices.len();
+        let some_visible_selected = selected_visible_count > 0 && !all_visible_selected;
+
+        if !self.selected_indices.is_empty() {
+            container = container.child(self.render_bulk_actions(cx));
+        }
+
         // Header row (fixed, not scrollable)
-        container = container.child(self.render_header(cx, &columns, &sort_state));
+        container = container.child(self.render_header(
+            cx,
+            &columns,
+            &sort_state,
+            visible_indices,
+            all_visible_selected,
+            some_visible_selected,
+        ));
 
         // Table body - scrollable
         if is_empty {
@@ -564,7 +652,78 @@ impl Render for ResourceTable {
 }
 
 impl ResourceTable {
-    fn render_header(&self, cx: &Context<'_, Self>, columns: &[ColumnDef], sort_state: &SortState) -> impl IntoElement {
+    fn render_bulk_actions(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let theme = theme(cx);
+        let colors = &theme.colors;
+        let count = self.selected_count();
+        let can_scale = self.can_scale();
+
+        div()
+            .w_full()
+            .px(px(20.0))
+            .py(px(10.0))
+            .bg(colors.surface_elevated)
+            .border_b_1()
+            .border_color(colors.border)
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(
+                div()
+                    .font_family(theme.font_family_ui.clone())
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(colors.text_secondary)
+                    .child(format!("{} selected", count))
+            )
+            .child(
+                {
+                    let scale_button = if can_scale {
+                        secondary_btn("bulk-scale-btn", IconName::Scale, "Scale x1", colors)
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                this.trigger_bulk_action(BulkTableAction::Scale { replicas: 1 }, cx);
+                            }))
+                    } else {
+                        secondary_btn("bulk-scale-btn", IconName::Scale, "Scale x1", colors)
+                            .opacity(0.5)
+                    };
+
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(
+                            secondary_btn("bulk-label-btn", IconName::Clipboard, "Label", colors)
+                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                    this.trigger_bulk_action(
+                                        BulkTableAction::Label {
+                                            key: "managed-by".to_string(),
+                                            value: "kdashboard".to_string(),
+                                        },
+                                        cx,
+                                    );
+                                }))
+                        )
+                        .child(scale_button)
+                        .child(
+                            danger_btn("bulk-delete-btn", IconName::Trash, "Delete", colors)
+                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                    this.trigger_bulk_action(BulkTableAction::Delete, cx);
+                                }))
+                        )
+                }
+            )
+    }
+
+    fn render_header(
+        &self,
+        cx: &Context<'_, Self>,
+        columns: &[ColumnDef],
+        sort_state: &SortState,
+        visible_indices: Vec<usize>,
+        all_visible_selected: bool,
+        some_visible_selected: bool,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
@@ -587,12 +746,24 @@ impl ResourceTable {
                 let is_last = i == columns.len() - 1;
                 let column_type = col.column_type;
                 let align = col.align;
+                let header_visible_indices = visible_indices.clone();
 
                 let mut elements: Vec<AnyElement> = Vec::new();
 
                 // Create the header cell
                 let cell = self.render_header_cell(
-                    cx, col_name, width, is_sorted, sort_direction, is_sortable, column_type, align, colors
+                    cx,
+                    col_name,
+                    width,
+                    is_sorted,
+                    sort_direction,
+                    is_sortable,
+                    column_type,
+                    align,
+                    all_visible_selected,
+                    some_visible_selected,
+                    header_visible_indices,
+                    colors,
                 );
                 elements.push(cell.into_any_element());
 
@@ -616,23 +787,17 @@ impl ResourceTable {
         is_sortable: bool,
         column_type: ColumnType,
         align: Align,
+        all_visible_selected: bool,
+        some_visible_selected: bool,
+        visible_indices: Vec<usize>,
         colors: &ThemeColors,
     ) -> impl IntoElement {
         // Create the header cell content
         let cell_content: Div = match column_type {
             ColumnType::Checkbox => {
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        div()
-                            .w(px(16.0))
-                            .h(px(16.0))
-                            .rounded(px(3.0))
-                            .border_1()
-                            .border_color(colors.border)
-                    )
+                div().flex().items_center().justify_center().child(
+                    render_checkbox_visual(all_visible_selected, some_visible_selected, colors),
+                )
             }
             ColumnType::Actions => {
                 div()
@@ -679,7 +844,7 @@ impl ResourceTable {
 
         // Create the cell wrapper
         let theme = theme(cx);
-        let cell = div()
+        let mut cell = div()
             .id(ElementId::Name(format!("header-{}", col_name).into()))
             .w(px(width))
             .h_full()
@@ -690,8 +855,19 @@ impl ResourceTable {
             .text_color(colors.text_muted)
             .font_weight(FontWeight::SEMIBOLD)
             .child(cell_content);
+        if column_type == ColumnType::Checkbox || column_type == ColumnType::Actions {
+            cell = cell.justify_center();
+        }
+        if col_name == "Name" {
+            cell = cell.pl(px(2.0));
+        }
 
-        if is_sortable {
+        if column_type == ColumnType::Checkbox {
+            let indices = visible_indices;
+            cell.cursor_pointer().on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
+                this.set_all_selected(&indices, !all_visible_selected, cx);
+            }))
+        } else if is_sortable {
             cell.cursor_pointer()
                 .hover(|style| style.text_color(colors.text))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
@@ -771,23 +947,33 @@ impl ResourceTable {
         let hover_bg = colors.selection_hover;
 
         // Get cell values based on resource type
-        let cells = self.get_row_cells(cx, columns, &resource, resource_type);
+        let row_group = format!("resource-row-{}", index);
+        let cells = self.get_row_cells(
+            cx,
+            columns,
+            index,
+            selected,
+            row_group.clone(),
+            &resource,
+            resource_type,
+        );
 
         // Build row with cells and spacers to match header (for resize handles)
-        let mut row_children: Vec<Div> = Vec::new();
+        let mut row_children: Vec<AnyElement> = Vec::new();
         for (i, cell) in cells.into_iter().enumerate() {
             row_children.push(cell);
             // Add spacer to match resize handle width
             if i < columns.len() - 1 {
                 let col = &columns[i];
                 if col.column_type != ColumnType::Checkbox && col.column_type != ColumnType::Actions {
-                    row_children.push(div().w(px(8.0)));
+                    row_children.push(div().w(px(8.0)).into_any_element());
                 }
             }
         }
 
         div()
             .id(ElementId::NamedInteger("row".into(), index as u64))
+            .group(row_group)
             .w_full()
             .px(px(20.0))
             .py(px(14.0))
@@ -800,11 +986,9 @@ impl ResourceTable {
             .cursor_pointer()
             .hover(|style| style.bg(hover_bg))
             .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
-                // Single click = select, Double click = open details
+                // Only double click opens details. Row selection highlighting is checkbox-driven.
                 if event.click_count() == 2 {
                     this.open_row(index, cx);
-                } else {
-                    this.select_row(index, cx);
                 }
             }))
             .children(row_children)
@@ -814,14 +998,33 @@ impl ResourceTable {
         &self,
         cx: &Context<'_, Self>,
         columns: &[ColumnDef],
+        row_index: usize,
+        row_selected: bool,
+        row_group: String,
         resource: &Resource,
         resource_type: ResourceType,
-    ) -> Vec<Div> {
+    ) -> Vec<AnyElement> {
         let theme = theme(cx);
         let colors = &theme.colors;
+        let checked = self.selected_indices.contains(&row_index);
 
         columns.iter().enumerate().map(|(_i, col)| {
             let width = self.get_column_width(col.name, col.default_width);
+            if col.column_type == ColumnType::Checkbox {
+                return div()
+                    .id(ElementId::Name(format!("row-checkbox-{}", row_index).into()))
+                    .w(px(width))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(render_row_checkbox_visual(checked, row_selected, &row_group, colors))
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
+                        this.toggle_row_checkbox(row_index, cx);
+                    }))
+                    .into_any_element();
+            }
+
             let mut cell = div()
                 .w(px(width))
                 .text_size(px(13.0))
@@ -834,6 +1037,9 @@ impl ResourceTable {
                 Align::Center => cell.flex().justify_center(),
                 Align::Right => cell.flex().justify_end(),
             };
+            if col.name == "Name" {
+                cell = cell.pl(px(2.0));
+            }
 
             // Get value based on column and resource type
             match resource_type {
@@ -851,11 +1057,13 @@ impl ResourceTable {
                 ResourceType::Nodes => self.get_node_cell_value(cell, col.name, resource, colors),
                 ResourceType::Namespaces => self.get_namespace_cell_value(cell, col.name, resource, colors),
             }
+            .into_any_element()
         }).collect()
     }
 
     fn get_pod_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
         match column {
+            "Checkbox" => render_checkbox(cell, colors),
             "Name" => {
                 cell.flex()
                     .items_center()
@@ -926,6 +1134,7 @@ impl ResourceTable {
                 cell.text_color(text_color)
                     .child(node)
             }
+            "Actions" => render_actions(cell, colors),
             _ => cell.child("-"),
         }
     }
@@ -1343,15 +1552,60 @@ impl ResourceTable {
 }
 
 // Helper render functions
+fn render_checkbox_visual(checked: bool, indeterminate: bool, colors: &ThemeColors) -> Div {
+    let bg = if checked || indeterminate {
+        colors.primary
+    } else {
+        gpui::transparent_black()
+    };
+    let border = if checked || indeterminate {
+        colors.primary
+    } else {
+        colors.border
+    };
+
+    let mut checkbox = div()
+        .w(px(16.0))
+        .h(px(16.0))
+        .rounded(px(3.0))
+        .border_1()
+        .border_color(border)
+        .bg(bg)
+        .flex()
+        .items_center()
+        .justify_center();
+
+    if checked {
+        checkbox = checkbox.child(
+            Icon::new(IconName::Check)
+                .size(px(12.0))
+                .color(colors.background),
+        );
+    } else if indeterminate {
+        checkbox = checkbox.child(
+            Icon::new(IconName::Minus)
+                .size(px(12.0))
+                .color(colors.background),
+        );
+    }
+
+    checkbox
+}
+
+fn render_row_checkbox_visual(checked: bool, _selected_row: bool, row_group: &str, colors: &ThemeColors) -> Div {
+    let mut checkbox = render_checkbox_visual(checked, false, colors);
+    if !checked {
+        checkbox = checkbox.group_hover(row_group.to_string(), |style| {
+            style
+                .border_color(colors.text_secondary.opacity(0.95))
+                .bg(colors.surface_elevated.opacity(0.4))
+        });
+    }
+    checkbox
+}
+
 fn render_checkbox(cell: Div, colors: &ThemeColors) -> Div {
-    cell.child(
-        div()
-            .w(px(16.0))
-            .h(px(16.0))
-            .rounded(px(3.0))
-            .border_1()
-            .border_color(colors.border)
-    )
+    cell.child(render_checkbox_visual(false, false, colors))
 }
 
 fn render_name_with_icon(cell: Div, resource: &Resource, icon: IconName, colors: &ThemeColors) -> Div {
