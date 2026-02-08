@@ -405,9 +405,6 @@ pub fn render_detail_events_card(cx: &App, events: Vec<ResourceEvent>) -> impl I
                     )
                     .child(
                         div()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis()
                             .text_size(px(12.0))
                             .text_color(colors.text_secondary)
                             .child(event.description)

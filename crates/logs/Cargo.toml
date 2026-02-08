@@ -17,3 +17,5 @@ smallvec.workspace = true
 gpui-component.workspace = true
 regex.workspace = true
 dirs.workspace = true
+chrono.workspace = true
+serde_json.workspace = true

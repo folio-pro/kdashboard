@@ -3516,6 +3516,7 @@ name = "logs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dirs 6.0.0",
  "futures",
  "gpui",
@@ -3523,6 +3524,7 @@ dependencies = [
  "k8s_client",
  "regex",
  "serde",
+ "serde_json",
  "smallvec",
  "tokio",
  "tracing",

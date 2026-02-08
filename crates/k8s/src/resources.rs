@@ -2,6 +2,8 @@ use crate::types::{OwnerReference, Resource, ResourceList, ResourceMetadata, Res
 use anyhow::{Context, Result};
 use kube::api::{Api, DeleteParams, ListParams, LogParams, Patch, PatchParams};
 use kube::Client;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc::Sender, Arc};
 fn opt_time_to_string(
     time: Option<k8s_openapi::apimachinery::pkg::apis::meta::v1::Time>,
 ) -> Option<String> {
@@ -582,7 +584,207 @@ pub async fn get_resource(
                 type_: None,
             })
         }
-        _ => anyhow::bail!("Get resource not implemented for {:?}", resource_type),
+        ResourceType::Services => {
+            use k8s_openapi::api::core::v1::Service;
+            let api: Api<Service> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let svc = api.get(name).await.context("Failed to get service")?;
+            let metadata = metadata_from(&svc, &svc.metadata);
+            Ok(Resource {
+                api_version: "v1".to_string(),
+                kind: "Service".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&svc.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&svc.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
+        ResourceType::ConfigMaps => {
+            use k8s_openapi::api::core::v1::ConfigMap;
+            let api: Api<ConfigMap> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let cm = api.get(name).await.context("Failed to get configmap")?;
+            let metadata = metadata_from(&cm, &cm.metadata);
+            Ok(Resource {
+                api_version: "v1".to_string(),
+                kind: "ConfigMap".to_string(),
+                metadata,
+                spec: None,
+                status: None,
+                data: Some(serde_json::to_value(&cm.data).unwrap_or_default()),
+                type_: None,
+            })
+        }
+        ResourceType::Secrets => {
+            use k8s_openapi::api::core::v1::Secret;
+            let api: Api<Secret> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let secret = api.get(name).await.context("Failed to get secret")?;
+            let metadata = metadata_from(&secret, &secret.metadata);
+            let secret_type = secret.type_.clone();
+            let data_map: Option<std::collections::BTreeMap<String, String>> = secret.data.map(|d| {
+                d.into_iter()
+                    .map(|(k, v)| {
+                        use base64::Engine;
+                        (k, base64::engine::general_purpose::STANDARD.encode(&v.0))
+                    })
+                    .collect()
+            });
+            Ok(Resource {
+                api_version: "v1".to_string(),
+                kind: "Secret".to_string(),
+                metadata,
+                spec: None,
+                status: None,
+                data: Some(serde_json::to_value(&data_map).unwrap_or_default()),
+                type_: secret_type,
+            })
+        }
+        ResourceType::Ingresses => {
+            use k8s_openapi::api::networking::v1::Ingress;
+            let api: Api<Ingress> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let ing = api.get(name).await.context("Failed to get ingress")?;
+            let metadata = metadata_from(&ing, &ing.metadata);
+            Ok(Resource {
+                api_version: "networking.k8s.io/v1".to_string(),
+                kind: "Ingress".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&ing.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&ing.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
+        ResourceType::StatefulSets => {
+            use k8s_openapi::api::apps::v1::StatefulSet;
+            let api: Api<StatefulSet> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let ss = api.get(name).await.context("Failed to get statefulset")?;
+            let metadata = metadata_from(&ss, &ss.metadata);
+            Ok(Resource {
+                api_version: "apps/v1".to_string(),
+                kind: "StatefulSet".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&ss.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&ss.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
+        ResourceType::DaemonSets => {
+            use k8s_openapi::api::apps::v1::DaemonSet;
+            let api: Api<DaemonSet> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let ds = api.get(name).await.context("Failed to get daemonset")?;
+            let metadata = metadata_from(&ds, &ds.metadata);
+            Ok(Resource {
+                api_version: "apps/v1".to_string(),
+                kind: "DaemonSet".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&ds.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&ds.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
+        ResourceType::Jobs => {
+            use k8s_openapi::api::batch::v1::Job;
+            let api: Api<Job> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let job = api.get(name).await.context("Failed to get job")?;
+            let metadata = metadata_from(&job, &job.metadata);
+            Ok(Resource {
+                api_version: "batch/v1".to_string(),
+                kind: "Job".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&job.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&job.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
+        ResourceType::CronJobs => {
+            use k8s_openapi::api::batch::v1::CronJob;
+            let api: Api<CronJob> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let cj = api.get(name).await.context("Failed to get cronjob")?;
+            let metadata = metadata_from(&cj, &cj.metadata);
+            Ok(Resource {
+                api_version: "batch/v1".to_string(),
+                kind: "CronJob".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&cj.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&cj.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
+        ResourceType::ReplicaSets => {
+            use k8s_openapi::api::apps::v1::ReplicaSet;
+            let api: Api<ReplicaSet> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let rs = api.get(name).await.context("Failed to get replicaset")?;
+            let metadata = metadata_from(&rs, &rs.metadata);
+            Ok(Resource {
+                api_version: "apps/v1".to_string(),
+                kind: "ReplicaSet".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&rs.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&rs.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
+        ResourceType::Nodes => {
+            use k8s_openapi::api::core::v1::Node;
+            let api: Api<Node> = Api::all(client.clone());
+            let node = api.get(name).await.context("Failed to get node")?;
+            let metadata = metadata_from(&node, &node.metadata);
+            Ok(Resource {
+                api_version: "v1".to_string(),
+                kind: "Node".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&node.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&node.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
+        ResourceType::Namespaces => {
+            use k8s_openapi::api::core::v1::Namespace;
+            let api: Api<Namespace> = Api::all(client.clone());
+            let ns = api.get(name).await.context("Failed to get namespace")?;
+            let metadata = metadata_from(&ns, &ns.metadata);
+            Ok(Resource {
+                api_version: "v1".to_string(),
+                kind: "Namespace".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&ns.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&ns.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
     }
 }
 
@@ -615,7 +817,121 @@ pub async fn delete_resource(
                 .context("Failed to delete deployment")?;
             Ok(())
         }
-        _ => anyhow::bail!("Delete resource not implemented for {:?}", resource_type),
+        ResourceType::Services => {
+            use k8s_openapi::api::core::v1::Service;
+            let api: Api<Service> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete service")?;
+            Ok(())
+        }
+        ResourceType::ConfigMaps => {
+            use k8s_openapi::api::core::v1::ConfigMap;
+            let api: Api<ConfigMap> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete configmap")?;
+            Ok(())
+        }
+        ResourceType::Secrets => {
+            use k8s_openapi::api::core::v1::Secret;
+            let api: Api<Secret> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete secret")?;
+            Ok(())
+        }
+        ResourceType::Ingresses => {
+            use k8s_openapi::api::networking::v1::Ingress;
+            let api: Api<Ingress> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete ingress")?;
+            Ok(())
+        }
+        ResourceType::StatefulSets => {
+            use k8s_openapi::api::apps::v1::StatefulSet;
+            let api: Api<StatefulSet> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete statefulset")?;
+            Ok(())
+        }
+        ResourceType::DaemonSets => {
+            use k8s_openapi::api::apps::v1::DaemonSet;
+            let api: Api<DaemonSet> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete daemonset")?;
+            Ok(())
+        }
+        ResourceType::Jobs => {
+            use k8s_openapi::api::batch::v1::Job;
+            let api: Api<Job> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete job")?;
+            Ok(())
+        }
+        ResourceType::CronJobs => {
+            use k8s_openapi::api::batch::v1::CronJob;
+            let api: Api<CronJob> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete cronjob")?;
+            Ok(())
+        }
+        ResourceType::ReplicaSets => {
+            use k8s_openapi::api::apps::v1::ReplicaSet;
+            let api: Api<ReplicaSet> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete replicaset")?;
+            Ok(())
+        }
+        ResourceType::Nodes => {
+            use k8s_openapi::api::core::v1::Node;
+            let api: Api<Node> = Api::all(client.clone());
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete node")?;
+            Ok(())
+        }
+        ResourceType::Namespaces => {
+            use k8s_openapi::api::core::v1::Namespace;
+            let api: Api<Namespace> = Api::all(client.clone());
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete namespace")?;
+            Ok(())
+        }
     }
 }
 
@@ -692,6 +1008,71 @@ pub async fn get_pod_logs(
         .context("Failed to get pod logs")?;
 
     Ok(logs)
+}
+
+pub async fn stream_pod_logs(
+    client: &Client,
+    pod_name: &str,
+    container: Option<&str>,
+    namespace: &str,
+    tail_lines: Option<i64>,
+    since_seconds: Option<i64>,
+    previous: bool,
+    tx: Sender<Result<String, String>>,
+    cancelled: Arc<AtomicBool>,
+) -> Result<()> {
+    use futures::AsyncBufReadExt;
+    use k8s_openapi::api::core::v1::Pod;
+
+    let api: Api<Pod> = Api::namespaced(client.clone(), namespace);
+    let pod = api.get(pod_name).await.context("Failed to get pod")?;
+
+    let container_name = container
+        .map(|c| c.to_string())
+        .or_else(|| {
+            pod.spec
+                .as_ref()
+                .and_then(|spec| spec.containers.first().map(|c| c.name.clone()))
+        })
+        .context("No container found")?;
+
+    let lp = LogParams {
+        container: Some(container_name),
+        tail_lines,
+        since_seconds,
+        follow: true,
+        previous,
+        timestamps: true,
+        ..Default::default()
+    };
+
+    let mut stream = api
+        .log_stream(pod_name, &lp)
+        .await
+        .context("Failed to stream pod logs")?;
+
+    let mut line = String::new();
+    loop {
+        if cancelled.load(Ordering::SeqCst) {
+            break;
+        }
+
+        line.clear();
+        let n = stream
+            .read_line(&mut line)
+            .await
+            .context("Log stream error")?;
+        if n == 0 {
+            break;
+        }
+
+        let trimmed = line.trim_end_matches(['\n', '\r']).to_string();
+        if !trimmed.is_empty() {
+            let _ = tx.send(Ok(trimmed));
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn get_pod_events(client: &Client, pod_name: &str, namespace: &str) -> Result<Vec<crate::types::Event>> {
