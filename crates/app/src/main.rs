@@ -221,22 +221,29 @@ fn spawn_connection_check(cx: &mut App) {
                                             let _ = tx.send(K8sUpdate::Resources(resources));
                                         }
                                         Err(e2) => {
-                                            tracing::error!("Failed to list pods: {}", e2);
-                                            let _ = tx.send(K8sUpdate::Error(format!("Cannot list pods: insufficient permissions. Try selecting a specific namespace.")));
+                                            tracing::error!("Failed to list pods: {:#}", e2);
+                                            let _ = tx.send(K8sUpdate::Error(format!(
+                                                "Cannot list pods. Try selecting a specific namespace.\n\nError details:\n{:#}",
+                                                e2
+                                            )));
                                         }
                                     }
                                 }
                             }
                         }
                         Err(e) => {
-                            tracing::error!("Failed to get client: {}", e);
+                            tracing::error!("Failed to get client: {:#}", e);
+                            let _ = tx.send(K8sUpdate::Error(format!(
+                                "Failed to create Kubernetes client.\n\nError details:\n{:#}",
+                                e
+                            )));
                         }
                     }
                     let _ = tx.send(K8sUpdate::Loading(false));
                 }
                 Err(e) => {
-                    tracing::error!("Failed to connect to Kubernetes: {}", e);
-                    let _ = tx.send(K8sUpdate::Error(e.to_string()));
+                    tracing::error!("Failed to connect to Kubernetes: {:#}", e);
+                    let _ = tx.send(K8sUpdate::Error(format!("{:#}", e)));
                 }
             }
         });

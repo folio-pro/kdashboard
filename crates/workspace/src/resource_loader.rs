@@ -1,5 +1,5 @@
 use gpui::*;
-use k8s_client::{ResourceList, ResourceType};
+use k8s_client::{ConnectionStatus, ResourceList, ResourceType};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -119,8 +119,8 @@ pub fn load_resources(cx: &mut App, resource_type: ResourceType, namespace: Opti
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to get k8s client: {}", e);
-                    let _ = tx.send(ResourceUpdate::Error(format!("Connection error: {}", e)));
+                    tracing::error!("Failed to get k8s client: {:#}", e);
+                    let _ = tx.send(ResourceUpdate::Error(format!("Connection error:\n{:#}", e)));
                     let _ = tx.send(ResourceUpdate::Loading(false));
                 }
             }
@@ -160,6 +160,7 @@ fn handle_resource_update(cx: &mut App, update: ResourceUpdate) {
         ResourceUpdate::Resources(resources) => {
             crate::update_app_state(cx, |state, _| {
                 state.set_resources(Some(resources));
+                state.set_connection_status(ConnectionStatus::Connected, None);
             });
         }
         ResourceUpdate::Namespaces(namespaces) => {
@@ -170,7 +171,8 @@ fn handle_resource_update(cx: &mut App, update: ResourceUpdate) {
         }
         ResourceUpdate::Error(error) => {
             crate::update_app_state(cx, |state, _| {
-                state.set_error(Some(error));
+                state.set_error(Some(error.clone()));
+                state.set_connection_status(ConnectionStatus::Error, Some(error));
             });
         }
     }
@@ -198,9 +200,9 @@ pub fn switch_context(cx: &mut App, context_name: String) {
 
             // Switch context
             if let Err(e) = k8s_client::set_context(&context_name).await {
-                tracing::error!("Failed to switch context to {}: {}", context_name, e);
+                tracing::error!("Failed to switch context to {}: {:#}", context_name, e);
                 let _ = tx.send(ResourceUpdate::Error(format!(
-                    "Failed to switch context: {}",
+                    "Failed to switch context:\n{:#}",
                     e
                 )));
                 let _ = tx.send(ResourceUpdate::Loading(false));
@@ -214,7 +216,7 @@ pub fn switch_context(cx: &mut App, context_name: String) {
                 }
                 Err(e) => {
                     let _ = tx.send(ResourceUpdate::Error(format!(
-                        "Failed to list namespaces: {}",
+                        "Failed to list namespaces:\n{:#}",
                         e
                     )));
                 }

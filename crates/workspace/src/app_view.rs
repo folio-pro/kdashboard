@@ -2,7 +2,7 @@ use crate::app_state::{app_state, update_app_state, ActivePanel, ActiveView, App
 use crate::{Header, Sidebar, TitleBar};
 use gpui::*;
 use gpui::prelude::FluentBuilder;
-use k8s_client::Resource;
+use k8s_client::{ConnectionStatus, Resource};
 use logs::PodLogsView;
 use resources::{DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails, PodAction, PodDetails, PortForwardView, PortForwardViewAction, ReplicaSetAction, ReplicaSetDetails, ResourceTable};
 use terminal::PodTerminalView;
@@ -520,6 +520,22 @@ impl AppView {
     }
 
     fn render_resource_area(&self, cx: &Context<'_, Self>, state: &crate::app_state::AppState) -> impl IntoElement {
+        if state.connection_status == ConnectionStatus::Error {
+            if let Some(connection_feedback) = self.render_connection_feedback(cx, state) {
+                return div()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        div()
+                            .w_full()
+                            .max_w(px(860.0))
+                            .child(connection_feedback),
+                    );
+            }
+        }
+
         let theme = theme(cx);
         let colors = &theme.colors;
         let resource_type = state.selected_type;
@@ -586,6 +602,140 @@ impl AppView {
         );
 
         container
+    }
+
+    fn render_connection_feedback(
+        &self,
+        cx: &Context<'_, Self>,
+        state: &crate::app_state::AppState,
+    ) -> Option<AnyElement> {
+        if state.connection_status != ConnectionStatus::Error {
+            return None;
+        }
+
+        let theme = theme(cx);
+        let colors = &theme.colors;
+        let raw_error = state
+            .connection_error
+            .clone()
+            .unwrap_or_else(|| "Unknown Kubernetes connection error".to_string());
+
+        let (possible_cause, step_1, step_2, step_3) = if raw_error.contains("Failed to read kubeconfig") {
+            (
+                "~/.kube/config does not exist or is not readable.",
+                "1) Verify ~/.kube/config exists.",
+                "2) Run: kubectl config current-context.",
+                "3) Check file read permissions.",
+            )
+        } else if raw_error.contains("No current context set in kubeconfig") {
+            (
+                "No active context is set in kubeconfig.",
+                "1) List contexts: kubectl config get-contexts.",
+                "2) Set one: kubectl config use-context <name>.",
+                "3) Click Retry connection.",
+            )
+        } else if raw_error.contains("Failed to list namespaces") {
+            (
+                "The current context does not have enough permissions in the cluster.",
+                "1) Run: kubectl auth can-i list namespaces.",
+                "2) Switch to a context with permissions.",
+                "3) Click Retry connection.",
+            )
+        } else {
+            (
+                "The Kubernetes client could not be created with the current configuration.",
+                "1) Verify kubectl works in your terminal.",
+                "2) Check the active context in kubeconfig.",
+                "3) Click Retry connection.",
+            )
+        };
+
+        Some(
+            div()
+                .w_full()
+                .px(px(22.0))
+                .py(px(20.0))
+                .rounded(theme.border_radius_lg)
+                .bg(colors.error.opacity(0.08))
+                .border_1()
+                .border_color(colors.error.opacity(0.4))
+                .font_family(theme.font_family_ui.clone())
+                .flex()
+                .flex_col()
+                .gap(px(12.0))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(10.0))
+                        .child(
+                            Icon::new(IconName::Warning)
+                                .size(px(18.0))
+                                .color(colors.error),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(16.0))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(colors.error)
+                                .child("Could not connect to the Kubernetes cluster"),
+                        ),
+                )
+                .child(
+                    div()
+                        .text_size(px(14.0))
+                        .text_color(colors.text)
+                        .child(possible_cause),
+                )
+                .child(
+                    div()
+                        .text_size(px(14.0))
+                        .text_color(colors.text_muted)
+                        .child(step_1),
+                )
+                .child(
+                    div()
+                        .text_size(px(14.0))
+                        .text_color(colors.text_muted)
+                        .child(step_2),
+                )
+                .child(
+                    div()
+                        .text_size(px(14.0))
+                        .text_color(colors.text_muted)
+                        .child(step_3),
+                )
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .text_color(colors.text_muted)
+                        .child(format!("Technical details: {}", raw_error)),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .pt(px(6.0))
+                        .child(
+                            secondary_btn("connection-retry-btn", IconName::Refresh, "Retry connection", colors)
+                                .w_full()
+                                .justify_center()
+                                .px(px(14.0))
+                                .py(px(10.0))
+                                .on_click(cx.listener(|_this, _event, _window, cx| {
+                                    cx.update_global::<AppState, _>(|state, _| {
+                                        state.set_connection_status(ConnectionStatus::Connecting, None);
+                                        state.set_error(None);
+                                    });
+                                    let state = cx.global::<AppState>();
+                                    let resource_type = state.selected_type;
+                                    let namespace = state.namespace.clone();
+                                    crate::load_resources(cx, resource_type, namespace);
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .into_any_element(),
+        )
     }
 
     /// Render breadcrumb navigation (context > namespace) with dropdown menus to switch
