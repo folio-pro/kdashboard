@@ -101,6 +101,7 @@ pub struct ResourceTable {
     resize_start_x: f32,
     /// Starting width for resize drag
     resize_start_width: f32,
+    focus_handle: FocusHandle,
     bulk_dialog: Option<BulkDialog>,
     bulk_error: Option<String>,
     scale_input: Option<Entity<InputState>>,
@@ -110,7 +111,11 @@ pub struct ResourceTable {
 }
 
 impl ResourceTable {
-    pub fn new(resources: Vec<Resource>, resource_type: ResourceType) -> Self {
+    pub fn new(
+        resources: Vec<Resource>,
+        resource_type: ResourceType,
+        focus_handle: FocusHandle,
+    ) -> Self {
         Self {
             resources,
             resource_type,
@@ -126,6 +131,7 @@ impl ResourceTable {
             resizing_column: None,
             resize_start_x: 0.0,
             resize_start_width: 0.0,
+            focus_handle,
             bulk_dialog: None,
             bulk_error: None,
             scale_input: None,
@@ -770,15 +776,20 @@ impl Render for ResourceTable {
         let is_empty = resources.is_empty();
 
         let mut container = div()
+            .id("resource-table-root")
             .size_full()
             .flex()
             .flex_col()
+            .track_focus(&self.focus_handle)
             .bg(colors.surface)
             .rounded(theme.border_radius_lg)
             .border_1()
             .border_color(colors.border)
             .relative()
-            .overflow_hidden();
+            .overflow_hidden()
+            .on_click(cx.listener(|this, _event, window, _cx| {
+                window.focus(&this.focus_handle);
+            }));
 
         let visible_indices: Vec<usize> = sorted_resources.iter().map(|(idx, _)| *idx).collect();
         let selected_visible_count = visible_indices
@@ -849,6 +860,19 @@ impl Render for ResourceTable {
         let key_nav_indices = visible_indices.clone();
         container =
             container.on_key_down(cx.listener(move |this, event: &KeyDownEvent, _window, cx| {
+                if this.bulk_dialog.is_some() {
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            this.close_bulk_dialog(cx);
+                        }
+                        "enter" => {
+                            this.confirm_bulk_dialog(cx);
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+
                 if key_nav_indices.is_empty() {
                     return;
                 }

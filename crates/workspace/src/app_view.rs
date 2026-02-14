@@ -81,7 +81,9 @@ impl AppView {
         let resource_type = state.selected_type;
 
         // Create resource table
-        let resource_table = cx.new(|_| ResourceTable::new(resources, resource_type));
+        let resource_table = cx.new(|cx| {
+            ResourceTable::new(resources, resource_type, cx.focus_handle())
+        });
 
         Self {
             sidebar: cx.new(|_| Sidebar::new(sidebar_collapsed)),

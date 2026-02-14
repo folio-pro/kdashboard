@@ -513,21 +513,27 @@ impl Sidebar {
         };
 
         if self.collapsed {
+            let tooltip_label = label.clone();
             div()
                 .id("port-forwards-nav")
-                .w_full()
-                .px(px(8.0))
-                .py(px(6.0))
-                .rounded(theme.border_radius_md)
+                .w(px(30.0))
+                .h(px(30.0))
+                .mx_auto()
+                .rounded(if selected {
+                    theme.border_radius_full
+                } else {
+                    theme.border_radius_md
+                })
                 .bg(bg)
                 .cursor_pointer()
                 .hover(|style| style.bg(hover_bg))
+                .tooltip(move |_, cx| cx.new(|_| Tooltip::new(tooltip_label.clone())).into())
                 .flex()
                 .items_center()
                 .justify_center()
                 .child(
                     Icon::new(IconName::PortForward)
-                        .size(px(16.0))
+                        .size(px(19.0))
                         .color(icon_color),
                 )
                 .on_click(cx.listener(|this, _event, _window, cx| {
@@ -664,22 +670,28 @@ impl Sidebar {
 
         let element_id = ElementId::Name(resource_type.display_name().into());
         let icon_name = Self::get_icon_for_resource_type(resource_type);
+        let resource_label = resource_type.display_name().to_string();
 
         if self.collapsed {
             // Collapsed mode: just show icon
             div()
                 .id(element_id)
-                .w_full()
-                .px(px(8.0))
-                .py(px(6.0))
-                .rounded(theme.border_radius_md)
+                .w(px(30.0))
+                .h(px(30.0))
+                .mx_auto()
+                .rounded(if selected {
+                    theme.border_radius_full
+                } else {
+                    theme.border_radius_md
+                })
                 .bg(bg)
                 .cursor_pointer()
                 .hover(|style| style.bg(hover_bg))
+                .tooltip(move |_, cx| cx.new(|_| Tooltip::new(resource_label.clone())).into())
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(Icon::new(icon_name).size(px(16.0)).color(icon_color))
+                .child(Icon::new(icon_name).size(px(19.0)).color(icon_color))
                 .on_click(cx.listener(move |this, _event, _window, cx| {
                     this.on_resource_type_selected(resource_type, cx);
                 }))

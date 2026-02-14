@@ -465,7 +465,7 @@ impl PodDetails {
 
         let left_col = div()
             .flex_1()
-            .min_w(px(360.0))
+            .min_w(px(0.0))
             .flex()
             .flex_col()
             .gap(px(24.0))
@@ -474,10 +474,8 @@ impl PodDetails {
             .child(render_detail_labels_card(cx, resource));
 
         let mut right_col = div()
-            .w_full()
-            .max_w(px(500.0))
-            .flex_1()
-            .min_w(px(320.0))
+            .w(px(500.0))
+            .flex_shrink_0()
             .flex()
             .flex_col()
             .gap(px(24.0));
@@ -490,8 +488,6 @@ impl PodDetails {
         div()
             .w_full()
             .flex()
-            .flex_wrap()
-            .items_start()
             .gap(px(24.0))
             .child(left_col)
             .child(right_col)
