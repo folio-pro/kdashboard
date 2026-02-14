@@ -4,7 +4,10 @@ use self::helpers::*;
 use gpui::*;
 use k8s_client::{Resource, ResourceType};
 use std::collections::{HashMap, HashSet};
-use ui::{Icon, IconName, ThemeColors, danger_btn, secondary_btn, theme};
+use ui::{
+    danger_btn, gpui_component::scroll::ScrollableElement, secondary_btn, theme, Icon, IconName,
+    ThemeColors,
+};
 
 /// Status type for resources
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -691,8 +694,8 @@ impl Render for ResourceTable {
                 div()
                     .id("table-body")
                     .flex_1()
-                    .overflow_y_scroll()
                     .track_scroll(&self.scroll_handle)
+                    .overflow_y_scrollbar()
                     .child(div().flex().flex_col().children(rows)),
             );
         }

@@ -3,6 +3,7 @@ use gpui::*;
 use k8s_client::{
     ConnectionStatus, PortForwardInfo, Resource, ResourceList, ResourceType, SortDirection,
 };
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActivePanel {
@@ -51,6 +52,13 @@ pub struct AIChatMessage {
     pub content: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct ResourceCacheKey {
+    context: Option<String>,
+    namespace: Option<String>,
+    resource_type: ResourceType,
+}
+
 pub struct AppState {
     // Kubernetes state
     pub resources: Option<ResourceList>,
@@ -60,6 +68,7 @@ pub struct AppState {
     pub namespace: Option<String>,
     pub namespaces: Vec<String>,
     pub contexts: Vec<String>,
+    resource_cache: HashMap<ResourceCacheKey, ResourceList>,
     pub filter: String,
 
     // UI state
@@ -110,6 +119,7 @@ impl AppState {
             namespace: None,
             namespaces: Vec::new(),
             contexts: Vec::new(),
+            resource_cache: HashMap::new(),
             filter: String::new(),
             is_loading: false,
             error: None,
@@ -202,6 +212,45 @@ impl AppState {
             }
         }
         self.resources = resources;
+    }
+
+    fn cache_key(
+        context: Option<String>,
+        resource_type: ResourceType,
+        namespace: Option<String>,
+    ) -> ResourceCacheKey {
+        let normalized_namespace = if resource_type.is_namespaced() {
+            namespace
+        } else {
+            None
+        };
+
+        ResourceCacheKey {
+            context,
+            namespace: normalized_namespace,
+            resource_type,
+        }
+    }
+
+    pub fn cache_resources_for_scope(
+        &mut self,
+        context: Option<String>,
+        resource_type: ResourceType,
+        namespace: Option<String>,
+        resources: ResourceList,
+    ) {
+        let key = Self::cache_key(context, resource_type, namespace);
+        self.resource_cache.insert(key, resources);
+    }
+
+    pub fn get_cached_resources_for_scope(
+        &self,
+        context: Option<String>,
+        resource_type: ResourceType,
+        namespace: Option<String>,
+    ) -> Option<ResourceList> {
+        let key = Self::cache_key(context, resource_type, namespace);
+        self.resource_cache.get(&key).cloned()
     }
 
     pub fn set_selected_resource(&mut self, resource: Option<Resource>) {

@@ -1069,24 +1069,6 @@ impl AppView {
         // 3. Metric cards
         container = container.child(self.render_metric_cards(cx, state));
 
-        // Loading indicator
-        if state.is_loading {
-            container = container.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(Spinner::new().with_size(Size::Small))
-                    .child(
-                        div()
-                            .font_family(theme.font_family_ui.clone())
-                            .text_size(theme.font_size_small)
-                            .text_color(colors.text_muted)
-                            .child("Loading resources..."),
-                    ),
-            );
-        }
-
         // Error message
         if let Some(error) = &state.error {
             container = container.child(
@@ -1103,13 +1085,61 @@ impl AppView {
             );
         }
 
-        // 4. Resource table
-        container = container.child(
-            div()
-                .flex_1()
-                .overflow_hidden()
-                .child(self.resource_table.clone()),
-        );
+        // 4. Resource table or loading state
+        if state.is_loading {
+            container = container.child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        div()
+                            .w_full()
+                            .max_w(px(680.0))
+                            .px(px(22.0))
+                            .py(px(20.0))
+                            .rounded(theme.border_radius_lg)
+                            .bg(colors.surface_elevated)
+                            .border_1()
+                            .border_color(colors.border.opacity(0.5))
+                            .font_family(theme.font_family_ui.clone())
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap(px(12.0))
+                            .child(
+                                div().child(
+                                    Spinner::new()
+                                        .icon(IconName::Refresh)
+                                        .color(colors.text)
+                                        .with_size(Size::Large),
+                                ),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(16.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(colors.text)
+                                    .child(format!("Loading {}...", resource_type.display_name())),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.0))
+                                    .text_color(colors.text_muted)
+                                    .child("Fetching the latest data from your cluster."),
+                            ),
+                    ),
+            );
+        } else {
+            container = container.child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(self.resource_table.clone()),
+            );
+        }
 
         container
     }
@@ -1379,15 +1409,6 @@ impl AppView {
                             .on_click(cx.listener(|_this, _event, _window, cx| {
                                 cx.update_global::<AppState, _>(|state, _| {
                                     state.toggle_panel(ActivePanel::AI);
-                                });
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        secondary_btn("page-settings-btn", IconName::Settings, "Settings", colors)
-                            .on_click(cx.listener(|_this, _event, _window, cx| {
-                                cx.update_global::<AppState, _>(|state, _| {
-                                    state.open_settings();
                                 });
                                 cx.notify();
                             })),

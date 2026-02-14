@@ -21,10 +21,23 @@ pub fn load_resources(cx: &mut App, resource_type: ResourceType, namespace: Opti
     let generation = WATCH_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let (tx, rx) = mpsc::channel::<ResourceUpdate>();
 
-    // Set loading state
-    crate::update_app_state(cx, |state, _| {
-        state.set_loading(true);
+    // Restore cached resources for this scope when available
+    let has_cached_resources = crate::update_app_state(cx, |state, _| {
+        let cached_resources = state.get_cached_resources_for_scope(
+            state.context.clone(),
+            resource_type,
+            namespace.clone(),
+        );
+        let has_cached_resources = cached_resources.is_some();
+
+        if let Some(resources) = cached_resources {
+            state.set_resources(Some(resources));
+            state.set_loading(false);
+        } else {
+            state.set_loading(true);
+        }
         state.set_error(None);
+        has_cached_resources
     });
 
     // Cancellation flag for this watch
@@ -35,7 +48,9 @@ pub fn load_resources(cx: &mut App, resource_type: ResourceType, namespace: Opti
     std::thread::spawn(move || {
         let rt = k8s_client::tokio_runtime();
         rt.block_on(async {
-            let _ = tx.send(ResourceUpdate::Loading(true));
+            if !has_cached_resources {
+                let _ = tx.send(ResourceUpdate::Loading(true));
+            }
 
             match k8s_client::get_client().await {
                 Ok(client) => {
@@ -166,6 +181,12 @@ fn handle_resource_update(cx: &mut App, update: ResourceUpdate) {
         }
         ResourceUpdate::Resources(resources) => {
             crate::update_app_state(cx, |state, _| {
+                state.cache_resources_for_scope(
+                    state.context.clone(),
+                    state.selected_type,
+                    state.namespace.clone(),
+                    resources.clone(),
+                );
                 state.set_resources(Some(resources));
                 state.set_connection_status(ConnectionStatus::Connected, None);
             });

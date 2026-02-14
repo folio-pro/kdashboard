@@ -1,6 +1,6 @@
 use gpui::*;
 use k8s_client::PortForwardInfo;
-use ui::{Icon, IconName, theme};
+use ui::{gpui_component::scroll::ScrollableElement, theme, Icon, IconName};
 
 /// Actions emitted by the PortForwardView
 #[derive(Clone, Debug)]
@@ -81,7 +81,7 @@ impl Render for PortForwardView {
                 div()
                     .id("port-forwards-content")
                     .flex_1()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .px(px(24.0))
                     .pb(px(24.0))
                     .child(self.render_table(cx)),
