@@ -195,9 +195,15 @@ pub fn switch_context(cx: &mut App, context_name: String) {
 
     let (tx, rx) = mpsc::channel::<ResourceUpdate>();
 
+    let selected_context = context_name.clone();
+
     crate::update_app_state(cx, |state, _| {
+        state.set_context(Some(selected_context.clone()));
         state.set_loading(true);
         state.set_error(None);
+        state.set_connection_status(ConnectionStatus::Connecting, None);
+        state.set_resources(None);
+        state.set_selected_resource(None);
     });
 
     std::thread::spawn(move || {
