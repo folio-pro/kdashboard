@@ -613,6 +613,8 @@ impl Render for AppView {
         let showing_terminal = self.pod_terminal.is_some();
         let showing_port_forwards = self.port_forward_view.is_some();
         let showing_settings = state.settings_open || active_view == ActiveView::Settings;
+        let show_top_bar =
+            !showing_details && !showing_logs && !showing_terminal && !showing_port_forwards;
 
         div()
             .id("workspace-root")
@@ -683,6 +685,8 @@ impl Render for AppView {
                     .flex_1()
                     .flex()
                     .overflow_hidden()
+                    .border_t_1()
+                    .border_color(colors.border)
                     // Sidebar
                     .child(self.sidebar.clone())
                     // Main area
@@ -693,13 +697,7 @@ impl Render for AppView {
                             .flex_col()
                             .overflow_hidden()
                             // Header (only show in table mode)
-                            .when(
-                                !showing_details
-                                    && !showing_logs
-                                    && !showing_terminal
-                                    && !showing_port_forwards,
-                                |el: Div| el.child(self.header.clone()),
-                            )
+                            .when(show_top_bar, |el: Div| el.child(self.header.clone()))
                             // Content
                             .child(self.render_content(
                                 window,

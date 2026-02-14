@@ -1,10 +1,10 @@
-use crate::app_state::{ActiveView, app_state};
+use crate::app_state::{app_state, ActiveView};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use k8s_client::ResourceType;
 use std::collections::HashSet;
 use ui::gpui_component::tooltip::Tooltip;
-use ui::{Icon, IconName, ThemeColors, theme};
+use ui::{theme, Icon, IconName, ThemeColors};
 
 // Actions for sidebar clicks
 actions!(sidebar, [ToggleCollapse]);
@@ -134,7 +134,7 @@ impl Render for Sidebar {
 }
 
 impl Sidebar {
-    fn color_for_context(context_name: &str) -> Hsla {
+    fn color_for_context(context_name: &str, colors: &ThemeColors, is_dark_theme: bool) -> Hsla {
         let normalized = context_name.trim().to_ascii_lowercase();
         let mut hash: u64 = 1469598103934665603;
         for byte in normalized.as_bytes() {
@@ -142,8 +142,20 @@ impl Sidebar {
             hash = hash.wrapping_mul(1099511628211);
         }
 
-        let hue = (hash % 360) as f32 / 360.0;
-        hsla(hue, 0.72, 0.56, 1.0)
+        let palette = [
+            colors.primary,
+            colors.info,
+            colors.success,
+            colors.warning,
+            colors.text_accent,
+        ];
+        let tone = palette[(hash as usize) % palette.len()];
+
+        if is_dark_theme {
+            tone
+        } else {
+            tone.opacity(0.92)
+        }
     }
 
     fn render_cluster_rail(
@@ -154,6 +166,7 @@ impl Sidebar {
     ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
+        let is_dark_theme = theme.mode.is_dark();
 
         if contexts.is_empty() {
             if let Some(ctx) = &current_context {
@@ -181,22 +194,26 @@ impl Sidebar {
         );
 
         for context_name in contexts {
-            let cluster_color = Self::color_for_context(&context_name);
+            let cluster_color = Self::color_for_context(&context_name, colors, is_dark_theme);
             let selected = current_context.as_deref() == Some(context_name.as_str());
             let bg = if selected {
                 cluster_color.opacity(0.95)
             } else {
-                cluster_color.opacity(0.12)
+                cluster_color.opacity(if is_dark_theme { 0.12 } else { 0.18 })
             };
             let hover_bg = if selected {
                 cluster_color.opacity(0.95)
             } else {
-                cluster_color.opacity(0.22)
+                cluster_color.opacity(if is_dark_theme { 0.22 } else { 0.30 })
             };
             let icon_color = if selected {
-                colors.text
+                if is_dark_theme {
+                    colors.background
+                } else {
+                    colors.surface_elevated
+                }
             } else {
-                cluster_color.opacity(0.95)
+                cluster_color.opacity(if is_dark_theme { 0.95 } else { 0.88 })
             };
             let context_id = context_name.clone();
             let context_label = context_name.clone();
