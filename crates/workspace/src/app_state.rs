@@ -89,6 +89,9 @@ pub struct AppState {
     pub ai_connection_message: Option<String>,
     pub ai_messages: Vec<AIChatMessage>,
     pub ai_request_in_flight: bool,
+    pub ai_prefill_prompt: Option<String>,
+    pub ai_prefill_auto_send: bool,
+    pub ai_target_resource: Option<Resource>,
     pub opencode_models: Vec<String>,
     pub opencode_models_loading: bool,
     pub opencode_selected_model: Option<String>,
@@ -123,6 +126,9 @@ impl AppState {
             ai_connection_message: None,
             ai_messages: Vec::new(),
             ai_request_in_flight: false,
+            ai_prefill_prompt: None,
+            ai_prefill_auto_send: false,
+            ai_target_resource: None,
             opencode_models: Vec::new(),
             opencode_models_loading: false,
             opencode_selected_model: None,
@@ -168,6 +174,13 @@ impl AppState {
     }
 
     pub fn set_resources(&mut self, resources: Option<ResourceList>) {
+        // Sync selected_resource with updated data from watch
+        if let (Some(selected), Some(res_list)) = (&self.selected_resource, &resources) {
+            // Find the updated version of the selected resource by UID
+            if let Some(updated) = res_list.items.iter().find(|r| r.metadata.uid == selected.metadata.uid) {
+                self.selected_resource = Some(updated.clone());
+            }
+        }
         self.resources = resources;
     }
 
@@ -254,6 +267,24 @@ impl AppState {
 
     pub fn set_ai_request_in_flight(&mut self, in_flight: bool) {
         self.ai_request_in_flight = in_flight;
+    }
+
+    pub fn queue_ai_prefill_prompt(
+        &mut self,
+        prompt: String,
+        auto_send: bool,
+        target_resource: Option<Resource>,
+    ) {
+        self.ai_prefill_prompt = Some(prompt);
+        self.ai_prefill_auto_send = auto_send;
+        self.ai_target_resource = target_resource;
+    }
+
+    pub fn take_ai_prefill_prompt(&mut self) -> Option<(String, bool)> {
+        let prompt = self.ai_prefill_prompt.take()?;
+        let auto_send = self.ai_prefill_auto_send;
+        self.ai_prefill_auto_send = false;
+        Some((prompt, auto_send))
     }
 
     pub fn set_filter(&mut self, filter: String) {

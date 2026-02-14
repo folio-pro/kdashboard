@@ -54,6 +54,8 @@ pub async fn list_resources(
         ResourceType::ReplicaSets => list_replicasets(client, namespace).await,
         ResourceType::Nodes => list_nodes(client).await,
         ResourceType::Namespaces => list_namespace_resources(client).await,
+        ResourceType::HorizontalPodAutoscalers => list_hpas(client, namespace).await,
+        ResourceType::VerticalPodAutoscalers => list_vpas(client, namespace).await,
     }
 }
 
@@ -541,6 +543,106 @@ async fn list_namespace_resources(client: &Client) -> Result<ResourceList> {
     })
 }
 
+async fn list_hpas(client: &Client, namespace: Option<&str>) -> Result<ResourceList> {
+    use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+
+    let api: Api<HorizontalPodAutoscaler> = match namespace {
+        Some(ns) => Api::namespaced(client.clone(), ns),
+        None => Api::all(client.clone()),
+    };
+
+    let list = api
+        .list(&ListParams::default())
+        .await
+        .context("Failed to list HPAs")?;
+
+    let items = list
+        .items
+        .into_iter()
+        .map(|hpa| {
+            let metadata = metadata_from(&hpa, &hpa.metadata);
+            Resource {
+                api_version: "autoscaling/v2".to_string(),
+                kind: "HorizontalPodAutoscaler".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&hpa.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&hpa.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            }
+        })
+        .collect();
+
+    Ok(ResourceList {
+        resource_type: "horizontalpodautoscalers".to_string(),
+        namespace: namespace.map(|s| s.to_string()),
+        items,
+    })
+}
+
+async fn list_vpas(client: &Client, namespace: Option<&str>) -> Result<ResourceList> {
+    use kube::api::DynamicObject;
+    use kube::discovery::ApiResource;
+
+    let ar = ApiResource {
+        group: "autoscaling.k8s.io".to_string(),
+        version: "v1".to_string(),
+        kind: "VerticalPodAutoscaler".to_string(),
+        api_version: "autoscaling.k8s.io/v1".to_string(),
+        plural: "verticalpodautoscalers".to_string(),
+    };
+
+    let api: Api<DynamicObject> = match namespace {
+        Some(ns) => Api::namespaced_with(client.clone(), ns, &ar),
+        None => Api::all_with(client.clone(), &ar),
+    };
+
+    let list = api
+        .list(&ListParams::default())
+        .await
+        .context("Failed to list VPAs")?;
+
+    let items = list
+        .items
+        .into_iter()
+        .map(|vpa| {
+            let meta = &vpa.metadata;
+            let metadata = ResourceMetadata {
+                name: meta.name.clone().unwrap_or_default(),
+                namespace: meta.namespace.clone(),
+                uid: meta.uid.clone().unwrap_or_default(),
+                resource_version: meta.resource_version.clone().unwrap_or_default(),
+                labels: meta.labels.clone(),
+                annotations: meta.annotations.clone(),
+                creation_timestamp: meta.creation_timestamp.as_ref().map(|t| t.0.to_rfc3339()),
+                owner_references: meta.owner_references.as_ref().map(|refs| {
+                    refs.iter().map(|r| OwnerReference {
+                        api_version: r.api_version.clone(),
+                        kind: r.kind.clone(),
+                        name: r.name.clone(),
+                        uid: r.uid.clone(),
+                    }).collect()
+                }),
+            };
+            Resource {
+                api_version: "autoscaling.k8s.io/v1".to_string(),
+                kind: "VerticalPodAutoscaler".to_string(),
+                metadata,
+                spec: vpa.data.get("spec").cloned(),
+                status: vpa.data.get("status").cloned(),
+                data: None,
+                type_: None,
+            }
+        })
+        .collect();
+
+    Ok(ResourceList {
+        resource_type: "verticalpodautoscalers".to_string(),
+        namespace: namespace.map(|s| s.to_string()),
+        items,
+    })
+}
+
 pub async fn get_resource(
     client: &Client,
     resource_type: ResourceType,
@@ -785,6 +887,69 @@ pub async fn get_resource(
                 type_: None,
             })
         }
+        ResourceType::HorizontalPodAutoscalers => {
+            use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+            let api: Api<HorizontalPodAutoscaler> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            let hpa = api.get(name).await.context("Failed to get HPA")?;
+            let metadata = metadata_from(&hpa, &hpa.metadata);
+            Ok(Resource {
+                api_version: "autoscaling/v2".to_string(),
+                kind: "HorizontalPodAutoscaler".to_string(),
+                metadata,
+                spec: Some(serde_json::to_value(&hpa.spec).unwrap_or_default()),
+                status: Some(serde_json::to_value(&hpa.status).unwrap_or_default()),
+                data: None,
+                type_: None,
+            })
+        }
+        ResourceType::VerticalPodAutoscalers => {
+            use kube::api::DynamicObject;
+            use kube::discovery::ApiResource;
+
+            let ar = ApiResource {
+                group: "autoscaling.k8s.io".to_string(),
+                version: "v1".to_string(),
+                kind: "VerticalPodAutoscaler".to_string(),
+                api_version: "autoscaling.k8s.io/v1".to_string(),
+                plural: "verticalpodautoscalers".to_string(),
+            };
+
+            let api: Api<DynamicObject> = match namespace {
+                Some(ns) => Api::namespaced_with(client.clone(), ns, &ar),
+                None => Api::default_namespaced_with(client.clone(), &ar),
+            };
+            let vpa = api.get(name).await.context("Failed to get VPA")?;
+            let meta = &vpa.metadata;
+            let metadata = ResourceMetadata {
+                name: meta.name.clone().unwrap_or_default(),
+                namespace: meta.namespace.clone(),
+                uid: meta.uid.clone().unwrap_or_default(),
+                resource_version: meta.resource_version.clone().unwrap_or_default(),
+                labels: meta.labels.clone(),
+                annotations: meta.annotations.clone(),
+                creation_timestamp: meta.creation_timestamp.as_ref().map(|t| t.0.to_rfc3339()),
+                owner_references: meta.owner_references.as_ref().map(|refs| {
+                    refs.iter().map(|r| OwnerReference {
+                        api_version: r.api_version.clone(),
+                        kind: r.kind.clone(),
+                        name: r.name.clone(),
+                        uid: r.uid.clone(),
+                    }).collect()
+                }),
+            };
+            Ok(Resource {
+                api_version: "autoscaling.k8s.io/v1".to_string(),
+                kind: "VerticalPodAutoscaler".to_string(),
+                metadata,
+                spec: vpa.data.get("spec").cloned(),
+                status: vpa.data.get("status").cloned(),
+                data: None,
+                type_: None,
+            })
+        }
     }
 }
 
@@ -930,6 +1095,38 @@ pub async fn delete_resource(
             api.delete(name, &DeleteParams::default())
                 .await
                 .context("Failed to delete namespace")?;
+            Ok(())
+        }
+        ResourceType::HorizontalPodAutoscalers => {
+            use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+            let api: Api<HorizontalPodAutoscaler> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete HPA")?;
+            Ok(())
+        }
+        ResourceType::VerticalPodAutoscalers => {
+            use kube::api::DynamicObject;
+            use kube::discovery::ApiResource;
+
+            let ar = ApiResource {
+                group: "autoscaling.k8s.io".to_string(),
+                version: "v1".to_string(),
+                kind: "VerticalPodAutoscaler".to_string(),
+                api_version: "autoscaling.k8s.io/v1".to_string(),
+                plural: "verticalpodautoscalers".to_string(),
+            };
+
+            let api: Api<DynamicObject> = match namespace {
+                Some(ns) => Api::namespaced_with(client.clone(), ns, &ar),
+                None => Api::default_namespaced_with(client.clone(), &ar),
+            };
+            api.delete(name, &DeleteParams::default())
+                .await
+                .context("Failed to delete VPA")?;
             Ok(())
         }
     }
@@ -1120,6 +1317,38 @@ pub async fn label_resource(
                 .context("Failed to label namespace")?;
             Ok(())
         }
+        ResourceType::HorizontalPodAutoscalers => {
+            use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+            let api: Api<HorizontalPodAutoscaler> = match namespace {
+                Some(ns) => Api::namespaced(client.clone(), ns),
+                None => Api::default_namespaced(client.clone()),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label HPA")?;
+            Ok(())
+        }
+        ResourceType::VerticalPodAutoscalers => {
+            use kube::api::DynamicObject;
+            use kube::discovery::ApiResource;
+
+            let ar = ApiResource {
+                group: "autoscaling.k8s.io".to_string(),
+                version: "v1".to_string(),
+                kind: "VerticalPodAutoscaler".to_string(),
+                api_version: "autoscaling.k8s.io/v1".to_string(),
+                plural: "verticalpodautoscalers".to_string(),
+            };
+
+            let api: Api<DynamicObject> = match namespace {
+                Some(ns) => Api::namespaced_with(client.clone(), ns, &ar),
+                None => Api::default_namespaced_with(client.clone(), &ar),
+            };
+            api.patch(name, &params, &Patch::Merge(patch))
+                .await
+                .context("Failed to label VPA")?;
+            Ok(())
+        }
     }
 }
 
@@ -1258,4 +1487,82 @@ pub async fn get_pod_events(client: &Client, pod_name: &str, namespace: &str) ->
             source: e.source.map(|s| s.component.unwrap_or_default()).unwrap_or_default(),
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k8s_openapi::chrono::{TimeZone, Utc};
+    use k8s_openapi::api::core::v1::Pod;
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference, Time};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn metadata_from_maps_object_meta_fields() {
+        let mut labels = BTreeMap::new();
+        labels.insert("app".to_string(), "demo".to_string());
+
+        let meta = ObjectMeta {
+            name: Some("pod-1".to_string()),
+            namespace: Some("ns-1".to_string()),
+            uid: Some("uid-1".to_string()),
+            resource_version: Some("rv-42".to_string()),
+            labels: Some(labels),
+            annotations: None,
+            creation_timestamp: Some(Time(
+                Utc.with_ymd_and_hms(2025, 1, 1, 12, 0, 0)
+                    .single()
+                    .expect("valid timestamp"),
+            )),
+            owner_references: Some(vec![OwnerReference {
+                api_version: "apps/v1".to_string(),
+                kind: "ReplicaSet".to_string(),
+                name: "rs-1".to_string(),
+                uid: "owner-uid".to_string(),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+
+        let pod = Pod {
+            metadata: meta.clone(),
+            ..Default::default()
+        };
+        let mapped = metadata_from(&pod, &meta);
+
+        assert_eq!(mapped.name, "pod-1");
+        assert_eq!(mapped.namespace.as_deref(), Some("ns-1"));
+        assert_eq!(mapped.uid, "uid-1");
+        assert_eq!(mapped.resource_version, "rv-42");
+        assert_eq!(
+            mapped.creation_timestamp.as_deref(),
+            Some("2025-01-01T12:00:00+00:00")
+        );
+        assert_eq!(mapped.labels.as_ref().and_then(|m| m.get("app")), Some(&"demo".to_string()));
+        assert_eq!(mapped.owner_references.as_ref().map(|v| v.len()), Some(1));
+        assert_eq!(
+            mapped
+                .owner_references
+                .as_ref()
+                .and_then(|v| v.first())
+                .map(|o| o.name.as_str()),
+            Some("rs-1")
+        );
+    }
+
+    #[test]
+    fn metadata_from_uses_defaults_for_missing_fields() {
+        let meta = ObjectMeta::default();
+        let pod = Pod {
+            metadata: meta.clone(),
+            ..Default::default()
+        };
+        let mapped = metadata_from(&pod, &meta);
+
+        assert_eq!(mapped.name, "");
+        assert_eq!(mapped.uid, "");
+        assert_eq!(mapped.resource_version, "");
+        assert!(mapped.namespace.is_none());
+        assert!(mapped.creation_timestamp.is_none());
+    }
 }

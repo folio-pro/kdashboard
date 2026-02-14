@@ -19,6 +19,8 @@ pub enum ResourceType {
     ReplicaSets,
     Nodes,
     Namespaces,
+    HorizontalPodAutoscalers,
+    VerticalPodAutoscalers,
 }
 
 impl ResourceType {
@@ -37,6 +39,8 @@ impl ResourceType {
             ResourceType::ReplicaSets => "ReplicaSets",
             ResourceType::Nodes => "Nodes",
             ResourceType::Namespaces => "Namespaces",
+            ResourceType::HorizontalPodAutoscalers => "HPA",
+            ResourceType::VerticalPodAutoscalers => "VPA",
         }
     }
 
@@ -55,6 +59,8 @@ impl ResourceType {
             ResourceType::ReplicaSets => "replicasets",
             ResourceType::Nodes => "nodes",
             ResourceType::Namespaces => "namespaces",
+            ResourceType::HorizontalPodAutoscalers => "horizontalpodautoscalers",
+            ResourceType::VerticalPodAutoscalers => "verticalpodautoscalers",
         }
     }
 
@@ -77,6 +83,8 @@ impl ResourceType {
             ResourceType::ReplicaSets => "ReplicaSet",
             ResourceType::Nodes => "Node",
             ResourceType::Namespaces => "Namespace",
+            ResourceType::HorizontalPodAutoscalers => "HorizontalPodAutoscaler",
+            ResourceType::VerticalPodAutoscalers => "VerticalPodAutoscaler",
         }
     }
 
@@ -95,6 +103,8 @@ impl ResourceType {
             ResourceType::ReplicaSets,
             ResourceType::Nodes,
             ResourceType::Namespaces,
+            ResourceType::HorizontalPodAutoscalers,
+            ResourceType::VerticalPodAutoscalers,
         ]
     }
 }
@@ -195,4 +205,54 @@ pub struct Event {
     pub first_timestamp: Option<String>,
     pub last_timestamp: Option<String>,
     pub source: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resource_type_all_contains_all_unique_variants() {
+        let all = ResourceType::all();
+        assert_eq!(all.len(), 15);
+
+        use std::collections::HashSet;
+        let unique: HashSet<_> = all.iter().copied().collect();
+        assert_eq!(unique.len(), all.len());
+    }
+
+    #[test]
+    fn resource_type_mappings_are_consistent_for_selected_variants() {
+        assert_eq!(ResourceType::Pods.display_name(), "Pods");
+        assert_eq!(ResourceType::Pods.api_name(), "pods");
+        assert_eq!(ResourceType::Pods.api_kind(), "Pod");
+        assert!(ResourceType::Pods.is_namespaced());
+
+        assert_eq!(ResourceType::Namespaces.display_name(), "Namespaces");
+        assert_eq!(ResourceType::Namespaces.api_name(), "namespaces");
+        assert_eq!(ResourceType::Namespaces.api_kind(), "Namespace");
+        assert!(!ResourceType::Namespaces.is_namespaced());
+
+        assert_eq!(
+            ResourceType::HorizontalPodAutoscalers.display_name(),
+            "HPA"
+        );
+        assert_eq!(
+            ResourceType::VerticalPodAutoscalers.display_name(),
+            "VPA"
+        );
+    }
+
+    #[test]
+    fn sort_direction_toggle_flips_both_ways() {
+        assert_eq!(SortDirection::Ascending.toggle(), SortDirection::Descending);
+        assert_eq!(SortDirection::Descending.toggle(), SortDirection::Ascending);
+    }
+
+    #[test]
+    fn defaults_match_expected_values() {
+        assert_eq!(ConnectionStatus::default(), ConnectionStatus::Connecting);
+        assert_eq!(SortDirection::default(), SortDirection::Ascending);
+        assert_eq!(ResourceType::default(), ResourceType::Pods);
+    }
 }

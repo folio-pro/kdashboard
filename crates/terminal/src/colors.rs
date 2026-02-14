@@ -128,3 +128,54 @@ pub fn rgb_to_hsla(rgb: Rgb) -> Hsla {
     let rgba_value = (r << 24) | (g << 16) | (b << 8) | 0xFF;
     gpui::rgba(rgba_value).into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn indexed_color_uses_ansi_for_first_16() {
+        let c0 = indexed_color(0);
+        let c15 = indexed_color(15);
+        assert_eq!(c0, ANSI_COLORS[0]);
+        assert_eq!(c15, ANSI_COLORS[15]);
+    }
+
+    #[test]
+    fn indexed_color_maps_6x6x6_cube() {
+        let c16 = indexed_color(16);
+        let c21 = indexed_color(21);
+        let c52 = indexed_color(52);
+
+        assert_eq!(c16, Rgb { r: 0, g: 0, b: 0 });
+        assert_eq!(c21, Rgb { r: 0, g: 0, b: 255 });
+        assert_eq!(c52, Rgb { r: 95, g: 0, b: 0 });
+    }
+
+    #[test]
+    fn indexed_color_maps_grayscale_ramp() {
+        assert_eq!(indexed_color(232), Rgb { r: 8, g: 8, b: 8 });
+        assert_eq!(indexed_color(255), Rgb { r: 238, g: 238, b: 238 });
+    }
+
+    #[test]
+    fn named_to_hsla_defaults_for_core_named_colors() {
+        let term_colors = Colors::default();
+        let fg = named_to_hsla(NamedColor::Foreground, &term_colors);
+        let bg = named_to_hsla(NamedColor::Background, &term_colors);
+        let cursor = named_to_hsla(NamedColor::Cursor, &term_colors);
+        let dim_fg = named_to_hsla(NamedColor::DimForeground, &term_colors);
+
+        assert_eq!(fg, rgb_to_hsla(DEFAULT_FG));
+        assert_eq!(bg, rgb_to_hsla(DEFAULT_BG));
+        assert_eq!(cursor, rgb_to_hsla(CURSOR_COLOR));
+        assert!(dim_fg.a < fg.a);
+    }
+
+    #[test]
+    fn to_hsla_handles_indexed_color_without_overrides() {
+        let term_colors = Colors::default();
+        let hsla = to_hsla(Color::Indexed(232), &term_colors, true);
+        assert_eq!(hsla, rgb_to_hsla(Rgb { r: 8, g: 8, b: 8 }));
+    }
+}

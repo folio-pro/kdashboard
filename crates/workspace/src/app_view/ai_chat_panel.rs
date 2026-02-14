@@ -55,6 +55,21 @@ impl AppView {
         self.ai_clear_input_pending = false;
     }
 
+    fn apply_pending_ai_input_prefill(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let prefill = cx.update_global::<AppState, _>(|state, _| state.take_ai_prefill_prompt());
+        let Some((prefill, auto_send)) = prefill else {
+            return;
+        };
+        if let Some(input) = self.ai_prompt_input.as_ref() {
+            input.update(cx, |input_state, cx| {
+                input_state.set_value(&prefill, window, cx);
+            });
+        }
+        if auto_send {
+            self.send_ai_prompt(cx);
+        }
+    }
+
     fn send_ai_prompt(&mut self, cx: &mut Context<'_, Self>) {
         let is_sending = cx.global::<AppState>().ai_request_in_flight;
         if is_sending {
@@ -69,11 +84,18 @@ impl AppView {
         let state = cx.global::<AppState>();
         let provider = state.ai_provider;
         let selected_model = state.opencode_selected_model.clone();
+        let selected_resource_for_prompt = state
+            .ai_target_resource
+            .clone()
+            .or_else(|| state.selected_resource.clone());
         let snapshot = PromptContextSnapshot {
             context: state.context.clone(),
             namespace: state.namespace.clone(),
-            selected_resource: state.selected_resource.clone(),
+            selected_resource: selected_resource_for_prompt,
         };
+        update_app_state(cx, |state, _| {
+            state.ai_target_resource = None;
+        });
         run_ai_user_prompt(cx, provider, selected_model, user_prompt, snapshot);
         self.ai_clear_input_pending = true;
         cx.notify();
@@ -85,6 +107,7 @@ impl AppView {
         cx: &mut Context<'_, Self>,
     ) -> impl IntoElement {
         self.ensure_ai_prompt_input(window, cx);
+        self.apply_pending_ai_input_prefill(window, cx);
         self.apply_pending_ai_input_clear(window, cx);
         let theme = theme(cx);
         let colors = &theme.colors;
@@ -135,8 +158,8 @@ impl AppView {
                                 };
                                 align.child(
                                     div()
+                                        .w_full()
                                         .max_w(px(290.0))
-                                        .min_w(px(0.0))
                                         .p(px(10.0))
                                         .rounded(theme.border_radius_md)
                                         .bg(bubble_bg)
@@ -256,24 +279,42 @@ fn build_ai_prompt_with_k8s_context(
 ) -> String {
     let context = snapshot.context.as_deref().unwrap_or("unknown");
     let namespace = snapshot.namespace.as_deref().unwrap_or("all");
-    let expert_system_prompt = r#"You are a senior Kubernetes SRE and platform engineer.
-Your job is to troubleshoot incidents quickly and safely.
+    let expert_system_prompt = r#"Act as a Senior SRE with deep Kubernetes expertise. Investigate incidents and determine root cause, impact, and remediation.
 
-Rules:
-- Focus on root-cause analysis and shortest safe path to mitigation.
-- Ask for missing critical data only when needed; otherwise proceed with best-effort diagnosis using available cluster data.
-- DO NOT ask the user to run kubectl commands.
-- DO NOT output generic checklists.
-- If the question is about a concrete workload issue (for example a Pod Pending), first analyze evidence and then answer with findings.
-- Prioritize non-destructive checks first.
-- Include log-oriented guidance when relevant (what to look for, filters, patterns).
-- Keep answers concise and structured:
-  1) Findings
-  2) Likely cause
-  3) What you checked automatically
-  4) Optional deeper checks
-- If uncertain, state assumptions explicitly.
-"#;
+Goal:
+- Diagnose the issue with high confidence.
+- Avoid assumptions: explicitly state missing information.
+- Prioritize evidence (events, logs, actual cluster state).
+
+Data to collect and analyze when available in the provided context:
+1) Cluster baseline
+- current context, namespaces, nodes, node utilization
+2) Affected resource and related objects
+- resource YAML/describe, related workload/network/policy/autoscaling objects, namespace events
+3) If Pods are failing
+- pod status/describe, current logs, previous logs, container-level utilization
+4) Configuration and dependencies
+- configmaps/secrets/serviceaccounts/rbac, storage objects, services/endpoints/endpointslices, ingress
+5) Control plane and scheduling health
+- cluster-wide events, taints/tolerations, affinity/anti-affinity, requests/limits, quotas/limitranges, PDB, imagePullSecrets, ServiceAccount/RBAC
+
+Analysis rules:
+- Correlate timestamps across events, rollouts, and logs.
+- Clearly separate symptom vs root cause.
+- List hypotheses with confidence level (High/Medium/Low) and supporting evidence.
+- If multiple causes are possible, rank by probability and impact.
+- Do not propose risky changes without rollback steps.
+- If available data is insufficient, state exactly what is missing and why.
+
+Required output format:
+1. Executive summary (5-8 lines)
+2. Key findings (bullet points with evidence)
+3. Most likely root cause
+4. Alternative hypotheses rejected (and why)
+5. Immediate remediation plan (step-by-step with commands)
+6. Post-fix validation (what to measure and how to confirm)
+7. Future prevention (alerts, probes, limits, policies)
+8. Critical missing information (if any)"#;
 
     let selected_resource_section = if let Some(resource) = &snapshot.selected_resource {
         let summary = summarize_selected_resource(resource);
@@ -357,8 +398,9 @@ fn run_ai_user_prompt(
                         state.set_ai_request_in_flight(false);
                         match result {
                             Ok(answer) => {
-                                state.ai_connection_message = Some(answer.clone());
-                                state.push_ai_assistant_message(answer);
+                                let normalized = normalize_ai_template_response(&answer);
+                                state.ai_connection_message = Some(normalized.clone());
+                                state.push_ai_assistant_message(normalized);
                             }
                             Err(error) => {
                                 state.ai_connection_message = Some(error.clone());
@@ -1107,6 +1149,70 @@ fn parse_opencode_models(output: &str) -> Result<Vec<String>, String> {
     Ok(set.into_iter().collect())
 }
 
+fn normalize_ai_template_response(input: &str) -> String {
+    let labels = [
+        "Summary",
+        "Findings",
+        "Likely root cause",
+        "Automatic checks performed",
+        "Recommended next action",
+        "Optional deeper checks",
+    ];
+
+    let mut out = input.to_string();
+
+    // Ensure every section starts on its own line.
+    for (idx, label) in labels.iter().enumerate() {
+        let numbered_a = format!("{} ) {}", idx + 1, label);
+        let numbered_b = format!("{}) {}", idx + 1, label);
+        let plain = format!("{}:", label);
+        out = out.replace(&numbered_a, &plain);
+        out = out.replace(&numbered_b, &plain);
+        out = out.replace(&format!(" {}", plain), &format!("\n{}", plain));
+    }
+
+    let mut sections: Vec<(String, String)> = Vec::new();
+    for (idx, label) in labels.iter().enumerate() {
+        let marker = format!("{}:", label);
+        let start = match out.find(&marker) {
+            Some(pos) => pos,
+            None => continue,
+        };
+        let content_start = start + marker.len();
+        let end = labels
+            .iter()
+            .enumerate()
+            .skip(idx + 1)
+            .filter_map(|(_j, next)| out[content_start..].find(&format!("{}:", next)))
+            .map(|offset| content_start + offset)
+            .min()
+            .unwrap_or(out.len());
+
+        let content = out[content_start..end].trim().to_string();
+        sections.push((marker, content));
+    }
+
+    if sections.is_empty() {
+        return out;
+    }
+
+    let mut normalized_lines = Vec::new();
+    for (marker, content) in sections {
+        if !content.is_empty() {
+            normalized_lines.push(marker);
+            normalized_lines.push(content);
+            normalized_lines.push(String::new());
+        }
+    }
+
+    let normalized = normalized_lines.join("\n").trim().to_string();
+    if normalized.is_empty() {
+        out.trim().to_string()
+    } else {
+        normalized
+    }
+}
+
 #[derive(Clone, Copy)]
 enum MdBlockKind {
     Paragraph,
@@ -1291,13 +1397,13 @@ fn render_markdown_message(
     let blocks = parse_markdown_blocks(content);
 
     div()
-        .w_full()
         .min_w(px(0.0))
         .flex()
         .flex_col()
         .gap(px(6.0))
         .children(blocks.into_iter().map(|(kind, text)| {
             let wrapped_text = soft_wrap_long_tokens(&text, 64);
+            let is_section_title = is_ai_section_title(&wrapped_text);
             match kind {
                 MdBlockKind::Heading(level) => {
                     let size = match level {
@@ -1306,47 +1412,44 @@ fn render_markdown_message(
                         _ => px(13.0),
                     };
                     div()
-                        .w_full()
                         .min_w(px(0.0))
                         .text_size(size)
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(text_color)
+                        .text_color(colors.primary)
                         .child(wrapped_text)
                         .into_any_element()
                 }
                 MdBlockKind::ListItem => {
-                    div()
-                        .w_full()
-                        .min_w(px(0.0))
-                        .flex()
-                        .items_start()
-                        .gap(px(6.0))
-                        .child(div().text_size(px(12.0)).text_color(text_color).child("•"))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .text_size(px(12.0))
-                                .text_color(text_color)
-                                .child(wrapped_text),
-                        )
-                        .into_any_element()
+                    if is_section_title {
+                        div()
+                            .min_w(px(0.0))
+                            .text_size(px(12.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors.primary)
+                            .child(wrapped_text)
+                            .into_any_element()
+                    } else {
+                        div()
+                            .min_w(px(0.0))
+                            .text_size(px(12.0))
+                            .text_color(text_color)
+                            .child(format!("• {}", wrapped_text))
+                            .into_any_element()
+                    }
                 }
                 MdBlockKind::Quote => {
                     div()
-                        .w_full()
                         .min_w(px(0.0))
                         .pl(px(8.0))
                         .border_l_2()
                         .border_color(colors.border)
                         .text_size(px(12.0))
                         .text_color(colors.text_muted)
-                        .child(wrapped_text)
+                        .child(format!("\"{}\"", wrapped_text))
                         .into_any_element()
                 }
                 MdBlockKind::CodeFence => {
                     div()
-                        .w_full()
                         .min_w(px(0.0))
                         .px(px(8.0))
                         .py(px(6.0))
@@ -1360,16 +1463,58 @@ fn render_markdown_message(
                         .into_any_element()
                 }
                 MdBlockKind::Paragraph => {
-                    div()
-                        .w_full()
-                        .min_w(px(0.0))
-                        .text_size(px(12.0))
-                        .text_color(text_color)
-                        .child(wrapped_text)
-                        .into_any_element()
+                    if is_section_title {
+                        div()
+                            .min_w(px(0.0))
+                            .text_size(px(12.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors.primary)
+                            .child(wrapped_text)
+                            .into_any_element()
+                    } else {
+                        div()
+                            .min_w(px(0.0))
+                            .text_size(px(12.0))
+                            .text_color(text_color)
+                            .child(wrapped_text)
+                            .into_any_element()
+                    }
                 }
             }
         }))
+}
+
+fn is_ai_section_title(text: &str) -> bool {
+    let lower = text
+        .trim()
+        .trim_end_matches(':')
+        .to_ascii_lowercase();
+
+    let normalized = lower
+        .strip_prefix("1) ")
+        .or_else(|| lower.strip_prefix("2) "))
+        .or_else(|| lower.strip_prefix("3) "))
+        .or_else(|| lower.strip_prefix("4) "))
+        .or_else(|| lower.strip_prefix("5) "))
+        .or_else(|| lower.strip_prefix("6) "))
+        .or_else(|| lower.strip_prefix("1. "))
+        .or_else(|| lower.strip_prefix("2. "))
+        .or_else(|| lower.strip_prefix("3. "))
+        .or_else(|| lower.strip_prefix("4. "))
+        .or_else(|| lower.strip_prefix("5. "))
+        .or_else(|| lower.strip_prefix("6. "))
+        .unwrap_or(&lower)
+        .trim();
+
+    matches!(
+        normalized,
+        "summary"
+            | "findings"
+            | "likely root cause"
+            | "automatic checks performed"
+            | "recommended next action"
+            | "optional deeper checks"
+    )
 }
 
 fn run_ai_provider_prompt(

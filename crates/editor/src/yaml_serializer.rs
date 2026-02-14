@@ -88,3 +88,105 @@ fn strip_nulls(value: Value) -> Value {
         other => other,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k8s_client::{Resource, ResourceMetadata};
+    use serde_json::json;
+
+    fn sample_resource(spec: Option<Value>, status: Option<Value>, data: Option<Value>) -> Resource {
+        Resource {
+            api_version: "v1".to_string(),
+            kind: "ConfigMap".to_string(),
+            metadata: ResourceMetadata {
+                name: "demo".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "uid-1".to_string(),
+                resource_version: "1".to_string(),
+                labels: None,
+                annotations: None,
+                creation_timestamp: None,
+                owner_references: None,
+            },
+            spec,
+            status,
+            data,
+            type_: None,
+        }
+    }
+
+    #[test]
+    fn validate_yaml_accepts_valid_yaml() {
+        assert!(validate_yaml("apiVersion: v1\nkind: Pod\nmetadata:\n  name: demo\n"));
+    }
+
+    #[test]
+    fn validate_yaml_rejects_invalid_yaml() {
+        assert!(!validate_yaml("apiVersion: v1\nkind: ["));
+    }
+
+    #[test]
+    fn strip_nulls_removes_null_keys_and_empty_objects() {
+        let input = json!({
+            "a": null,
+            "b": {
+                "x": null,
+                "y": 1
+            },
+            "c": {
+                "k": null
+            },
+            "d": [null, {"z": null}, {"z": 2}]
+        });
+
+        let cleaned = strip_nulls(input);
+        assert_eq!(cleaned, json!({"b": {"y": 1}, "d": [null, null, {"z": 2}]}));
+    }
+
+    #[test]
+    fn reorder_fields_applies_expected_key_order() {
+        let input = json!({
+            "status": {"phase": "Running"},
+            "z_extra": 1,
+            "kind": "Pod",
+            "metadata": {"name": "demo"},
+            "apiVersion": "v1",
+            "spec": {"containers": []}
+        });
+        let reordered = reorder_fields(input);
+
+        let keys: Vec<String> = reordered
+            .as_object()
+            .expect("expected object")
+            .keys()
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            keys,
+            vec![
+                "apiVersion".to_string(),
+                "kind".to_string(),
+                "metadata".to_string(),
+                "spec".to_string(),
+                "status".to_string(),
+                "z_extra".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn resource_to_yaml_omits_null_top_level_sections() {
+        let resource = sample_resource(Some(json!({"replicas": 1})), None, None);
+        let yaml = resource_to_yaml(&resource).expect("yaml should serialize");
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&yaml).expect("valid yaml");
+        let map = parsed.as_mapping().expect("top-level yaml mapping");
+
+        assert!(yaml.contains("apiVersion: v1"));
+        assert!(yaml.contains("kind: ConfigMap"));
+        assert!(map.contains_key(serde_yaml::Value::String("spec".to_string())));
+        assert!(!map.contains_key(serde_yaml::Value::String("status".to_string())));
+        assert!(!map.contains_key(serde_yaml::Value::String("data".to_string())));
+    }
+}

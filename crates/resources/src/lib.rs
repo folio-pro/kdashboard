@@ -1,3 +1,5 @@
+#![recursion_limit = "1024"]
+
 mod detail_shared;
 mod table;
 mod details;
@@ -7,6 +9,8 @@ mod deployment_details;
 mod replicaset_details;
 mod generic_details;
 mod port_forward_view;
+mod hpa_details;
+mod vpa_details;
 
 pub use detail_shared::*;
 pub use table::*;
@@ -16,3 +20,5 @@ pub use deployment_details::*;
 pub use replicaset_details::*;
 pub use generic_details::*;
 pub use port_forward_view::*;
+pub use hpa_details::*;
+pub use vpa_details::*;

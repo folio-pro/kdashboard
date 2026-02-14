@@ -26,7 +26,8 @@
       "Bash(find:*)",
       "Bash(cargo search:*)",
       "Bash(cargo doc:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(rustc:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

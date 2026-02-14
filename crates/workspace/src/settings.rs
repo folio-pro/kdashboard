@@ -65,3 +65,39 @@ pub fn save_settings(settings: &UserSettings) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ai_provider_display_name_matches_expected_labels() {
+        assert_eq!(AIProvider::OpenCode.display_name(), "OpenCode");
+        assert_eq!(AIProvider::ClaudeCode.display_name(), "ClaudeCode");
+    }
+
+    #[test]
+    fn user_settings_roundtrip_json() {
+        let settings = UserSettings {
+            context: Some("prod".to_string()),
+            namespace: Some("default".to_string()),
+            ai_provider: Some(AIProvider::ClaudeCode),
+            opencode_model: Some("gpt-5".to_string()),
+        };
+
+        let json = serde_json::to_string(&settings).expect("serialize settings");
+        let decoded: UserSettings = serde_json::from_str(&json).expect("deserialize settings");
+
+        assert_eq!(decoded.context.as_deref(), Some("prod"));
+        assert_eq!(decoded.namespace.as_deref(), Some("default"));
+        assert_eq!(decoded.ai_provider, Some(AIProvider::ClaudeCode));
+        assert_eq!(decoded.opencode_model.as_deref(), Some("gpt-5"));
+    }
+
+    #[test]
+    fn settings_path_ends_with_expected_file_name_when_available() {
+        if let Some(path) = settings_path() {
+            assert!(path.ends_with("kdashboard/settings.json"));
+        }
+    }
+}

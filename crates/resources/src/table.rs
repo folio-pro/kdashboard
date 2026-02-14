@@ -73,6 +73,7 @@ pub struct ResourceTable {
     scroll_handle: ScrollHandle,
     on_select: Option<Box<dyn Fn(usize, &Resource, &mut Context<'_, Self>) + 'static>>,
     on_open: Option<Box<dyn Fn(&Resource, &mut Context<'_, Self>) + 'static>>,
+    on_ai_assist: Option<Box<dyn Fn(&Resource, &mut Context<'_, Self>) + 'static>>,
     on_bulk_action: Option<Box<dyn Fn(BulkTableAction, Vec<Resource>, &mut Context<'_, Self>) + 'static>>,
     /// Custom column widths (column name -> width in pixels)
     column_widths: HashMap<String, f32>,
@@ -96,6 +97,7 @@ impl ResourceTable {
             scroll_handle: ScrollHandle::new(),
             on_select: None,
             on_open: None,
+            on_ai_assist: None,
             on_bulk_action: None,
             column_widths: HashMap::new(),
             sort_state: SortState::default(),
@@ -138,6 +140,10 @@ impl ResourceTable {
         self.on_open = Some(Box::new(handler));
     }
 
+    pub fn set_on_ai_assist(&mut self, handler: impl Fn(&Resource, &mut Context<'_, Self>) + 'static) {
+        self.on_ai_assist = Some(Box::new(handler));
+    }
+
     pub fn set_on_bulk_action(
         &mut self,
         handler: impl Fn(BulkTableAction, Vec<Resource>, &mut Context<'_, Self>) + 'static,
@@ -150,6 +156,12 @@ impl ResourceTable {
             if let Some(on_open) = &self.on_open {
                 on_open(&resource, cx);
             }
+        }
+    }
+
+    fn trigger_ai_assist(&mut self, resource: Resource, cx: &mut Context<'_, Self>) {
+        if let Some(on_ai_assist) = &self.on_ai_assist {
+            on_ai_assist(&resource, cx);
         }
     }
 
@@ -421,6 +433,30 @@ impl ResourceTable {
                 ColumnDef::new("Name", 280.0).with_icon(),
                 ColumnDef::new("Status", 100.0).status_dot(),
                 ColumnDef::new("Age", 70.0).right(),
+                ColumnDef::new("Actions", 40.0).center().actions(),
+            ],
+            ResourceType::HorizontalPodAutoscalers => vec![
+                ColumnDef::new("Checkbox", 32.0).checkbox(),
+                ColumnDef::new("Name", 200.0).with_icon(),
+                ColumnDef::new("Namespace", 100.0),
+                ColumnDef::new("Reference", 140.0),
+                ColumnDef::new("Metrics", 180.0),
+                ColumnDef::new("Replicas", 100.0).center(),
+                ColumnDef::new("Min/Max", 80.0).center(),
+                ColumnDef::new("Status", 100.0).status_dot(),
+                ColumnDef::new("Age", 60.0).right(),
+                ColumnDef::new("Actions", 40.0).center().actions(),
+            ],
+            ResourceType::VerticalPodAutoscalers => vec![
+                ColumnDef::new("Checkbox", 32.0).checkbox(),
+                ColumnDef::new("Name", 200.0).with_icon(),
+                ColumnDef::new("Namespace", 100.0),
+                ColumnDef::new("Target", 140.0),
+                ColumnDef::new("Mode", 80.0).center(),
+                ColumnDef::new("CPU Rec.", 120.0).center(),
+                ColumnDef::new("Mem Rec.", 120.0).center(),
+                ColumnDef::new("Status", 100.0).status_dot(),
+                ColumnDef::new("Age", 60.0).right(),
                 ColumnDef::new("Actions", 40.0).center().actions(),
             ],
         }
@@ -1041,6 +1077,12 @@ impl ResourceTable {
                 cell = cell.pl(px(2.0));
             }
 
+            if col.name == "Actions" {
+                return self
+                    .render_actions_cell(cell, colors, resource, cx)
+                    .into_any_element();
+            }
+
             // Get value based on column and resource type
             match resource_type {
                 ResourceType::Pods => self.get_pod_cell_value(cell, col.name, resource, colors),
@@ -1056,6 +1098,8 @@ impl ResourceTable {
                 ResourceType::Secrets => self.get_secret_cell_value(cell, col.name, resource, colors),
                 ResourceType::Nodes => self.get_node_cell_value(cell, col.name, resource, colors),
                 ResourceType::Namespaces => self.get_namespace_cell_value(cell, col.name, resource, colors),
+                ResourceType::HorizontalPodAutoscalers => self.get_hpa_cell_value(cell, col.name, resource, colors),
+                ResourceType::VerticalPodAutoscalers => self.get_vpa_cell_value(cell, col.name, resource, colors),
             }
             .into_any_element()
         }).collect()
@@ -1549,9 +1593,274 @@ impl ResourceTable {
             _ => cell.child("-"),
         }
     }
+
+    fn get_hpa_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+        match column {
+            "Checkbox" => render_checkbox(cell, colors),
+            "Name" => render_name_with_icon(cell, resource, IconName::Scale, colors),
+            "Namespace" => render_namespace(cell, resource, colors),
+            "Reference" => {
+                let kind = get_json_value(&resource.spec, &["scaleTargetRef", "kind"])
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-");
+                let name = get_json_value(&resource.spec, &["scaleTargetRef", "name"])
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-");
+                let short_kind = match kind {
+                    "Deployment" => "deploy",
+                    "StatefulSet" => "sts",
+                    "ReplicaSet" => "rs",
+                    _ => kind,
+                };
+                cell.text_color(colors.text_secondary)
+                    .child(format!("{}/{}", short_kind, name))
+            }
+            "Metrics" => {
+                // Extract current metrics from status
+                let metrics = get_json_value(&resource.status, &["currentMetrics"])
+                    .and_then(|v| v.as_array());
+
+                let metrics_str = if let Some(metrics_arr) = metrics {
+                    metrics_arr.iter()
+                        .filter_map(|m| {
+                            let metric_type = m.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                            match metric_type {
+                                "Resource" => {
+                                    let name = m.get("resource")
+                                        .and_then(|r| r.get("name"))
+                                        .and_then(|n| n.as_str())
+                                        .unwrap_or("");
+                                    let current = m.get("resource")
+                                        .and_then(|r| r.get("current"))
+                                        .and_then(|c| c.get("averageUtilization"))
+                                        .and_then(|a| a.as_u64());
+
+                                    // Get target from spec
+                                    let target = get_json_value(&resource.spec, &["metrics"])
+                                        .and_then(|v| v.as_array())
+                                        .and_then(|arr| arr.iter().find(|sm| {
+                                            sm.get("resource")
+                                                .and_then(|r| r.get("name"))
+                                                .and_then(|n| n.as_str()) == Some(name)
+                                        }))
+                                        .and_then(|sm| sm.get("resource"))
+                                        .and_then(|r| r.get("target"))
+                                        .and_then(|t| t.get("averageUtilization"))
+                                        .and_then(|a| a.as_u64());
+
+                                    match (current, target) {
+                                        (Some(c), Some(t)) => {
+                                            let label = if name == "cpu" { "CPU" } else if name == "memory" { "Mem" } else { name };
+                                            Some(format!("{}:{}%/{}", label, c, t))
+                                        }
+                                        _ => None
+                                    }
+                                }
+                                _ => None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    // Fallback: show spec metrics targets
+                    let spec_metrics = get_json_value(&resource.spec, &["metrics"])
+                        .and_then(|v| v.as_array());
+                    if let Some(arr) = spec_metrics {
+                        arr.iter()
+                            .filter_map(|m| {
+                                let name = m.get("resource")
+                                    .and_then(|r| r.get("name"))
+                                    .and_then(|n| n.as_str())?;
+                                let target = m.get("resource")
+                                    .and_then(|r| r.get("target"))
+                                    .and_then(|t| t.get("averageUtilization"))
+                                    .and_then(|a| a.as_u64())?;
+                                let label = if name == "cpu" { "CPU" } else if name == "memory" { "Mem" } else { name };
+                                Some(format!("{}:-/{}%", label, target))
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    } else {
+                        "-".to_string()
+                    }
+                };
+
+                cell.text_color(colors.text_secondary)
+                    .text_size(px(12.0))
+                    .child(if metrics_str.is_empty() { "-".to_string() } else { metrics_str })
+            }
+            "Replicas" => {
+                let current = get_json_value(&resource.status, &["currentReplicas"])
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let desired = get_json_value(&resource.status, &["desiredReplicas"])
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+
+                let color = if current == desired {
+                    colors.success
+                } else if current < desired {
+                    colors.warning
+                } else {
+                    colors.primary
+                };
+
+                cell.flex().items_center().justify_center().child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child(
+                            div()
+                                .text_color(color)
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(current.to_string())
+                        )
+                        .child(
+                            div()
+                                .text_color(colors.text_muted)
+                                .child("/")
+                        )
+                        .child(
+                            div()
+                                .text_color(colors.text_secondary)
+                                .child(desired.to_string())
+                        )
+                )
+            }
+            "Min/Max" => {
+                let min = get_json_value(&resource.spec, &["minReplicas"])
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(1);
+                let max = get_json_value(&resource.spec, &["maxReplicas"])
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                cell.text_color(colors.text_secondary)
+                    .child(format!("{}-{}", min, max))
+            }
+            "Status" => {
+                let (status, label) = get_hpa_status(resource);
+                let status_color = status.color(colors);
+                cell.flex().items_center().child(render_status_pill(status_color, label))
+            }
+            "Age" => render_age(cell, resource, colors),
+            "Actions" => render_actions(cell, colors),
+            _ => cell.child("-"),
+        }
+    }
+
+    fn get_vpa_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+        match column {
+            "Checkbox" => render_checkbox(cell, colors),
+            "Name" => render_name_with_icon(cell, resource, IconName::Scale, colors),
+            "Namespace" => render_namespace(cell, resource, colors),
+            "Target" => {
+                let kind = get_json_value(&resource.spec, &["targetRef", "kind"])
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-");
+                let name = get_json_value(&resource.spec, &["targetRef", "name"])
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-");
+                let short_kind = match kind {
+                    "Deployment" => "deploy",
+                    "StatefulSet" => "sts",
+                    "ReplicaSet" => "rs",
+                    "DaemonSet" => "ds",
+                    _ => kind,
+                };
+                cell.text_color(colors.text_secondary)
+                    .child(format!("{}/{}", short_kind, name))
+            }
+            "Mode" => {
+                let mode = get_json_value(&resource.spec, &["updatePolicy", "updateMode"])
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Auto");
+                let (color, short_mode) = match mode {
+                    "Off" => (colors.text_muted, "Off"),
+                    "Initial" => (colors.warning, "Init"),
+                    "Recreate" => (colors.primary, "Recr"),
+                    "Auto" => (colors.success, "Auto"),
+                    _ => (colors.text_secondary, mode),
+                };
+                cell.text_color(color)
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(short_mode.to_string())
+            }
+            "CPU Rec." => {
+                // Get CPU recommendation from first container
+                let recommendation = get_vpa_recommendation(resource, "cpu");
+                let color = if recommendation.contains('-') { colors.text_muted } else { colors.text_secondary };
+                cell.text_color(color)
+                    .text_size(px(12.0))
+                    .child(recommendation)
+            }
+            "Mem Rec." => {
+                // Get Memory recommendation from first container
+                let recommendation = get_vpa_recommendation(resource, "memory");
+                let color = if recommendation.contains('-') { colors.text_muted } else { colors.text_secondary };
+                cell.text_color(color)
+                    .text_size(px(12.0))
+                    .child(recommendation)
+            }
+            "Status" => {
+                let (status, label) = get_vpa_status(resource);
+                let status_color = status.color(colors);
+                cell.flex().items_center().child(render_status_pill(status_color, label))
+            }
+            "Age" => render_age(cell, resource, colors),
+            "Actions" => render_actions(cell, colors),
+            _ => cell.child("-"),
+        }
+    }
+
+    fn render_actions_cell(
+        &self,
+        cell: Div,
+        colors: &ThemeColors,
+        resource: &Resource,
+        cx: &Context<'_, Self>,
+    ) -> Div {
+        let issue = get_resource_issue_status(resource);
+        match issue {
+            Some(status) => {
+                let accent = status.color(colors);
+                let resource_for_action = resource.clone();
+                cell.child(
+                    div()
+                        .id(ElementId::Name(format!("ai-action-{}", resource.metadata.uid).into()))
+                        .cursor_pointer()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .w(px(22.0))
+                        .h(px(22.0))
+                        .rounded(px(6.0))
+                        .bg(accent.opacity(0.15))
+                        .hover(|style| style.bg(accent.opacity(0.25)))
+                        .child(Icon::new(IconName::AI).size(px(14.0)).color(accent))
+                        .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
+                            this.trigger_ai_assist(resource_for_action.clone(), cx);
+                        })),
+                )
+            }
+            None => cell.child(
+                Icon::new(IconName::MoreHorizontal)
+                    .size(px(16.0))
+                    .color(colors.text_muted),
+            ),
+        }
+    }
 }
 
 // Helper render functions
+fn render_actions(cell: Div, colors: &ThemeColors) -> Div {
+    cell.child(
+        Icon::new(IconName::MoreHorizontal)
+            .size(px(16.0))
+            .color(colors.text_muted),
+    )
+}
+
 fn render_checkbox_visual(checked: bool, indeterminate: bool, colors: &ThemeColors) -> Div {
     let bg = if checked || indeterminate {
         colors.primary
@@ -1637,14 +1946,6 @@ fn render_age(cell: Div, resource: &Resource, colors: &ThemeColors) -> Div {
     cell.text_color(colors.text_secondary).child(age)
 }
 
-fn render_actions(cell: Div, colors: &ThemeColors) -> Div {
-    cell.child(
-        Icon::new(IconName::MoreHorizontal)
-            .size(px(16.0))
-            .color(colors.text_muted)
-    )
-}
-
 /// Render a pill-shaped status badge with translucent colored background
 fn render_status_pill(status_color: Hsla, label: &str) -> Div {
     let theme = ui::Theme::default();
@@ -1670,6 +1971,161 @@ fn render_status_pill(status_color: Hsla, label: &str) -> Div {
                 .text_color(status_color)
                 .child(label.to_string())
         )
+}
+
+/// Get HPA status based on conditions and replica counts
+fn get_hpa_status(resource: &Resource) -> (StatusType, &'static str) {
+    let current = get_json_value(&resource.status, &["currentReplicas"])
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let desired = get_json_value(&resource.status, &["desiredReplicas"])
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    // Check conditions
+    let conditions = get_json_value(&resource.status, &["conditions"])
+        .and_then(|v| v.as_array());
+
+    if let Some(conds) = conditions {
+        // Check for ScalingLimited condition
+        for cond in conds {
+            let cond_type = cond.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            let status = cond.get("status").and_then(|s| s.as_str()).unwrap_or("");
+
+            if cond_type == "ScalingLimited" && status == "True" {
+                return (StatusType::Pending, "Limited");
+            }
+            if cond_type == "AbleToScale" && status == "False" {
+                return (StatusType::Failed, "Unable");
+            }
+        }
+    }
+
+    // Determine scaling state
+    if current == 0 && desired == 0 {
+        (StatusType::Unknown, "Idle")
+    } else if current < desired {
+        (StatusType::Pending, "Scaling Up")
+    } else if current > desired {
+        (StatusType::Pending, "Scaling Down")
+    } else {
+        (StatusType::Ready, "Stable")
+    }
+}
+
+/// Get VPA status based on conditions
+fn get_vpa_status(resource: &Resource) -> (StatusType, &'static str) {
+    // Check if there's a recommendation
+    let has_recommendation = get_json_value(&resource.status, &["recommendation", "containerRecommendations"])
+        .and_then(|v| v.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
+
+    // Check conditions
+    let conditions = get_json_value(&resource.status, &["conditions"])
+        .and_then(|v| v.as_array());
+
+    if let Some(conds) = conditions {
+        for cond in conds {
+            let cond_type = cond.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            let status = cond.get("status").and_then(|s| s.as_str()).unwrap_or("");
+
+            if cond_type == "RecommendationProvided" && status == "True" {
+                return (StatusType::Ready, "Ready");
+            }
+            if cond_type == "LowConfidence" && status == "True" {
+                return (StatusType::Pending, "Low Conf.");
+            }
+            if cond_type == "NoPodsMatched" && status == "True" {
+                return (StatusType::Pending, "No Pods");
+            }
+            if cond_type == "ConfigUnsupported" && status == "True" {
+                return (StatusType::Failed, "Invalid");
+            }
+        }
+    }
+
+    if has_recommendation {
+        (StatusType::Ready, "Active")
+    } else {
+        (StatusType::Pending, "Pending")
+    }
+}
+
+/// Get VPA CPU or memory recommendation for first container
+fn get_vpa_recommendation(resource: &Resource, resource_name: &str) -> String {
+    let containers = get_json_value(&resource.status, &["recommendation", "containerRecommendations"])
+        .and_then(|v| v.as_array());
+
+    if let Some(containers) = containers {
+        if let Some(first) = containers.first() {
+            let target = first.get("target")
+                .and_then(|t| t.get(resource_name))
+                .and_then(|v| v.as_str());
+
+            let lower = first.get("lowerBound")
+                .and_then(|t| t.get(resource_name))
+                .and_then(|v| v.as_str());
+
+            let upper = first.get("upperBound")
+                .and_then(|t| t.get(resource_name))
+                .and_then(|v| v.as_str());
+
+            if let Some(t) = target {
+                // Format: target (lower-upper)
+                let bounds = match (lower, upper) {
+                    (Some(l), Some(u)) => format!(" ({}-{})", format_resource_value(l), format_resource_value(u)),
+                    _ => String::new(),
+                };
+                return format!("{}{}", format_resource_value(t), bounds);
+            }
+        }
+    }
+
+    "-".to_string()
+}
+
+/// Format resource values (CPU: millicores, Memory: bytes to human readable)
+fn format_resource_value(value: &str) -> String {
+    // Handle memory values
+    if value.ends_with("Ki") {
+        let num: f64 = value.trim_end_matches("Ki").parse().unwrap_or(0.0);
+        if num >= 1024.0 * 1024.0 {
+            return format!("{:.1}Gi", num / 1024.0 / 1024.0);
+        } else if num >= 1024.0 {
+            return format!("{:.0}Mi", num / 1024.0);
+        }
+        return format!("{:.0}Ki", num);
+    }
+    if value.ends_with("Mi") {
+        let num: f64 = value.trim_end_matches("Mi").parse().unwrap_or(0.0);
+        if num >= 1024.0 {
+            return format!("{:.1}Gi", num / 1024.0);
+        }
+        return format!("{:.0}Mi", num);
+    }
+    if value.ends_with("Gi") {
+        return value.to_string();
+    }
+
+    // Handle CPU values
+    if value.ends_with('m') {
+        let millis: f64 = value.trim_end_matches('m').parse().unwrap_or(0.0);
+        if millis >= 1000.0 {
+            return format!("{:.1}", millis / 1000.0);
+        }
+        return format!("{}m", millis as u64);
+    }
+
+    // Plain number (CPU cores)
+    if let Ok(cores) = value.parse::<f64>() {
+        if cores < 1.0 {
+            return format!("{}m", (cores * 1000.0) as u64);
+        }
+        return format!("{:.1}", cores);
+    }
+
+    value.to_string()
 }
 
 // Helper functions
@@ -1821,6 +2277,28 @@ fn get_node_status(resource: &Resource) -> StatusType {
     }
 
     StatusType::Unknown
+}
+
+fn get_resource_issue_status(resource: &Resource) -> Option<StatusType> {
+    let status = match resource.kind.as_str() {
+        "Node" => get_node_status(resource),
+        "Namespace" => {
+            let phase = get_json_value(&resource.status, &["phase"])
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+            if phase.eq_ignore_ascii_case("terminating") {
+                StatusType::Pending
+            } else {
+                StatusType::Unknown
+            }
+        }
+        _ => get_resource_status(resource),
+    };
+
+    match status {
+        StatusType::Pending | StatusType::Failed => Some(status),
+        _ => None,
+    }
 }
 
 fn format_age(timestamp: &Option<String>) -> String {

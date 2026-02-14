@@ -13,6 +13,7 @@ enum SidebarSection {
     Workloads,
     Network,
     Configuration,
+    Scaling,
     Cluster,
 }
 
@@ -22,6 +23,7 @@ impl SidebarSection {
             SidebarSection::Workloads => "WORKLOADS",
             SidebarSection::Network => "NETWORK",
             SidebarSection::Configuration => "CONFIGURATION",
+            SidebarSection::Scaling => "SCALING",
             SidebarSection::Cluster => "CLUSTER",
         }
     }
@@ -44,6 +46,10 @@ impl SidebarSection {
             SidebarSection::Configuration => &[
                 ResourceType::ConfigMaps,
                 ResourceType::Secrets,
+            ],
+            SidebarSection::Scaling => &[
+                ResourceType::HorizontalPodAutoscalers,
+                ResourceType::VerticalPodAutoscalers,
             ],
             SidebarSection::Cluster => &[
                 ResourceType::Nodes,
@@ -147,6 +153,7 @@ impl Sidebar {
             SidebarSection::Workloads,
             SidebarSection::Network,
             SidebarSection::Configuration,
+            SidebarSection::Scaling,
             SidebarSection::Cluster,
         ];
 
@@ -378,6 +385,8 @@ impl Sidebar {
             ResourceType::ReplicaSets => IconName::Copy,
             ResourceType::Nodes => IconName::HardDrive,
             ResourceType::Namespaces => IconName::Layers,
+            ResourceType::HorizontalPodAutoscalers => IconName::Scale,
+            ResourceType::VerticalPodAutoscalers => IconName::Scale,
         }
     }
 

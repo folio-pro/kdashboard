@@ -87,6 +87,14 @@ pub async fn watch_resources(
             let api: Api<Namespace> = Api::all(client.clone());
             watch_typed(api, "v1", "Namespace", "namespaces", None, &tx, &cancelled).await
         }
+        ResourceType::HorizontalPodAutoscalers => {
+            use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+            let api: Api<HorizontalPodAutoscaler> = ns_api(client, ns);
+            watch_typed(api, "autoscaling/v2", "HorizontalPodAutoscaler", "horizontalpodautoscalers", ns, &tx, &cancelled).await
+        }
+        ResourceType::VerticalPodAutoscalers => {
+            watch_vpa(client, ns, &tx, &cancelled).await
+        }
     }
 }
 
@@ -181,5 +189,165 @@ where
             .get("type")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
+    }
+}
+
+async fn watch_vpa(
+    client: &Client,
+    namespace: Option<&str>,
+    tx: &Sender<ResourceList>,
+    cancelled: &Arc<AtomicBool>,
+) -> Result<()> {
+    use kube::api::DynamicObject;
+    use kube::discovery::ApiResource;
+
+    let ar = ApiResource {
+        group: "autoscaling.k8s.io".to_string(),
+        version: "v1".to_string(),
+        kind: "VerticalPodAutoscaler".to_string(),
+        api_version: "autoscaling.k8s.io/v1".to_string(),
+        plural: "verticalpodautoscalers".to_string(),
+    };
+
+    let api: Api<DynamicObject> = match namespace {
+        Some(ns) => Api::namespaced_with(client.clone(), ns, &ar),
+        None => Api::all_with(client.clone(), &ar),
+    };
+
+    let ns_owned = namespace.map(|s| s.to_string());
+    let mut store: HashMap<String, Resource> = HashMap::new();
+
+    let stream = watcher::watcher(api, watcher::Config::default());
+    futures::pin_mut!(stream);
+
+    while let Some(event) = stream.try_next().await? {
+        if cancelled.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        match event {
+            Event::Applied(obj) => {
+                let resource = dynamic_to_resource(&obj);
+                store.insert(resource.metadata.uid.clone(), resource);
+            }
+            Event::Deleted(obj) => {
+                if let Some(uid) = obj.metadata.uid.as_ref() {
+                    store.remove(uid);
+                }
+            }
+            Event::Restarted(objects) => {
+                store.clear();
+                for obj in &objects {
+                    let resource = dynamic_to_resource(obj);
+                    store.insert(resource.metadata.uid.clone(), resource);
+                }
+            }
+        }
+
+        let list = ResourceList {
+            resource_type: "verticalpodautoscalers".to_string(),
+            namespace: ns_owned.clone(),
+            items: store.values().cloned().collect(),
+        };
+        if tx.send(list).is_err() {
+            return Ok(());
+        }
+    }
+
+    Ok(())
+}
+
+fn dynamic_to_resource(obj: &kube::api::DynamicObject) -> Resource {
+    use crate::types::{OwnerReference, ResourceMetadata};
+
+    let meta = &obj.metadata;
+    let metadata = ResourceMetadata {
+        name: meta.name.clone().unwrap_or_default(),
+        namespace: meta.namespace.clone(),
+        uid: meta.uid.clone().unwrap_or_default(),
+        resource_version: meta.resource_version.clone().unwrap_or_default(),
+        labels: meta.labels.clone(),
+        annotations: meta.annotations.clone(),
+        creation_timestamp: meta.creation_timestamp.as_ref().map(|t| t.0.to_rfc3339()),
+        owner_references: meta.owner_references.as_ref().map(|refs| {
+            refs.iter()
+                .map(|r| OwnerReference {
+                    api_version: r.api_version.clone(),
+                    kind: r.kind.clone(),
+                    name: r.name.clone(),
+                    uid: r.uid.clone(),
+                })
+                .collect()
+        }),
+    };
+
+    Resource {
+        api_version: "autoscaling.k8s.io/v1".to_string(),
+        kind: "VerticalPodAutoscaler".to_string(),
+        metadata,
+        spec: obj.data.get("spec").cloned(),
+        status: obj.data.get("status").cloned(),
+        data: None,
+        type_: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k8s_openapi::api::core::v1::Pod;
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+    use kube::api::DynamicObject;
+    use serde_json::json;
+
+    #[test]
+    fn obj_to_resource_extracts_standard_sections() {
+        let pod = Pod {
+            metadata: ObjectMeta {
+                name: Some("pod-a".to_string()),
+                namespace: Some("default".to_string()),
+                uid: Some("uid-a".to_string()),
+                ..Default::default()
+            },
+            spec: Some(Default::default()),
+            status: Some(Default::default()),
+        };
+
+        let resource = obj_to_resource(&pod, "v1", "Pod");
+
+        assert_eq!(resource.api_version, "v1");
+        assert_eq!(resource.kind, "Pod");
+        assert_eq!(resource.metadata.name, "pod-a");
+        assert_eq!(resource.metadata.uid, "uid-a");
+        assert!(resource.spec.is_some());
+        assert!(resource.status.is_some());
+        assert!(resource.data.is_none());
+    }
+
+    #[test]
+    fn dynamic_to_resource_maps_vpa_shape() {
+        let obj = DynamicObject {
+            types: None,
+            metadata: ObjectMeta {
+                name: Some("vpa-a".to_string()),
+                namespace: Some("ns-a".to_string()),
+                uid: Some("uid-vpa".to_string()),
+                ..Default::default()
+            },
+            data: json!({
+                "spec": { "targetRef": { "kind": "Deployment", "name": "web" } },
+                "status": { "recommendation": {} }
+            }),
+        };
+
+        let resource = dynamic_to_resource(&obj);
+
+        assert_eq!(resource.api_version, "autoscaling.k8s.io/v1");
+        assert_eq!(resource.kind, "VerticalPodAutoscaler");
+        assert_eq!(resource.metadata.name, "vpa-a");
+        assert_eq!(resource.metadata.namespace.as_deref(), Some("ns-a"));
+        assert!(resource.spec.is_some());
+        assert!(resource.status.is_some());
+        assert!(resource.data.is_none());
     }
 }

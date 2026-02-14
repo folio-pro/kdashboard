@@ -6,7 +6,7 @@ use gpui::*;
 use gpui::prelude::FluentBuilder;
 use k8s_client::{ConnectionStatus, Resource};
 use logs::PodLogsView;
-use resources::{BulkTableAction, DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails, PodAction, PodDetails, PortForwardView, PortForwardViewAction, ReplicaSetAction, ReplicaSetDetails, ResourceTable};
+use resources::{BulkTableAction, DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails, HpaAction, HpaDetails, PodAction, PodDetails, PortForwardView, PortForwardViewAction, ReplicaSetAction, ReplicaSetDetails, ResourceTable, VpaAction, VpaDetails};
 use terminal::PodTerminalView;
 use ui::{
     theme, secondary_btn, primary_icon_btn, Button, ButtonVariant, ButtonVariants, DropdownMenu,
@@ -32,6 +32,8 @@ pub struct AppView {
     pod_details: Option<Entity<PodDetails>>,
     deployment_details: Option<Entity<DeploymentDetails>>,
     replicaset_details: Option<Entity<ReplicaSetDetails>>,
+    hpa_details: Option<Entity<HpaDetails>>,
+    vpa_details: Option<Entity<VpaDetails>>,
     generic_details: Option<Entity<GenericResourceDetails>>,
     pod_logs: Option<Entity<PodLogsView>>,
     pod_terminal: Option<Entity<PodTerminalView>>,
@@ -63,6 +65,8 @@ impl AppView {
             pod_details: None,
             deployment_details: None,
             replicaset_details: None,
+            hpa_details: None,
+            vpa_details: None,
             generic_details: None,
             pod_logs: None,
             pod_terminal: None,
@@ -79,6 +83,8 @@ impl AppView {
         self.pod_details = None;
         self.deployment_details = None;
         self.replicaset_details = None;
+        self.hpa_details = None;
+        self.vpa_details = None;
         self.generic_details = None;
 
         update_app_state(cx, |state, _| {
@@ -115,6 +121,12 @@ impl Render for AppView {
             if selected.kind != "ReplicaSet" && self.replicaset_details.is_some() {
                 self.replicaset_details = None;
             }
+            if selected.kind != "HorizontalPodAutoscaler" && self.hpa_details.is_some() {
+                self.hpa_details = None;
+            }
+            if selected.kind != "VerticalPodAutoscaler" && self.vpa_details.is_some() {
+                self.vpa_details = None;
+            }
         }
 
         // Sync detail views with selected_resource
@@ -122,6 +134,8 @@ impl Render for AppView {
             self.pod_details = None;
             self.deployment_details = None;
             self.replicaset_details = None;
+            self.hpa_details = None;
+            self.vpa_details = None;
             self.generic_details = None;
         }
 
@@ -161,6 +175,14 @@ impl Render for AppView {
                     }
                 }
             });
+            table.set_on_ai_assist(|resource, cx| {
+                let prompt = AppView::build_ai_issue_prompt(resource);
+                cx.update_global::<AppState, _>(|state, _| {
+                    state.active_panel = ActivePanel::AI;
+                    state.queue_ai_prefill_prompt(prompt, true, Some(resource.clone()));
+                });
+                cx.notify();
+            });
         });
 
         // Check if we need to create detail views from global state
@@ -168,6 +190,8 @@ impl Render for AppView {
             let no_details_showing = self.pod_details.is_none()
                 && self.deployment_details.is_none()
                 && self.replicaset_details.is_none()
+                && self.hpa_details.is_none()
+                && self.vpa_details.is_none()
                 && self.generic_details.is_none();
 
             if no_details_showing {
@@ -259,6 +283,46 @@ impl Render for AppView {
                                                 state.set_selected_resource(None);
                                             });
                                             delete_resource_bg(cx, k8s_client::ResourceType::ReplicaSets, name, namespace);
+                                        }
+                                    }
+                                })
+                        }));
+                    }
+                    "HorizontalPodAutoscaler" => {
+                        self.hpa_details = Some(cx.new(|_| {
+                            HpaDetails::new(resource)
+                                .on_close(|cx| {
+                                    cx.update_global::<AppState, _>(|state, _cx| {
+                                        state.set_selected_resource(None);
+                                    });
+                                })
+                                .on_action(|action, cx| {
+                                    match action {
+                                        HpaAction::Delete { name, namespace } => {
+                                            cx.update_global::<AppState, _>(|state, _cx| {
+                                                state.set_selected_resource(None);
+                                            });
+                                            delete_resource_bg(cx, k8s_client::ResourceType::HorizontalPodAutoscalers, name, namespace);
+                                        }
+                                    }
+                                })
+                        }));
+                    }
+                    "VerticalPodAutoscaler" => {
+                        self.vpa_details = Some(cx.new(|_| {
+                            VpaDetails::new(resource)
+                                .on_close(|cx| {
+                                    cx.update_global::<AppState, _>(|state, _cx| {
+                                        state.set_selected_resource(None);
+                                    });
+                                })
+                                .on_action(|action, cx| {
+                                    match action {
+                                        VpaAction::Delete { name, namespace } => {
+                                            cx.update_global::<AppState, _>(|state, _cx| {
+                                                state.set_selected_resource(None);
+                                            });
+                                            delete_resource_bg(cx, k8s_client::ResourceType::VerticalPodAutoscalers, name, namespace);
                                         }
                                     }
                                 })
@@ -391,6 +455,40 @@ impl Render for AppView {
             });
         }
 
+        // Sync detail views with updated resource data from watch
+        if let Some(ref selected) = selected_resource {
+            if let Some(ref pd) = self.pod_details {
+                pd.update(cx, |view, _| {
+                    view.set_resource(selected.clone());
+                });
+            }
+            if let Some(ref dd) = self.deployment_details {
+                dd.update(cx, |view, _| {
+                    view.set_resource(selected.clone());
+                });
+            }
+            if let Some(ref rd) = self.replicaset_details {
+                rd.update(cx, |view, _| {
+                    view.set_resource(selected.clone());
+                });
+            }
+            if let Some(ref hd) = self.hpa_details {
+                hd.update(cx, |view, _| {
+                    view.set_resource(selected.clone());
+                });
+            }
+            if let Some(ref vd) = self.vpa_details {
+                vd.update(cx, |view, _| {
+                    view.set_resource(selected.clone());
+                });
+            }
+            if let Some(ref gd) = self.generic_details {
+                gd.update(cx, |view, _| {
+                    view.set_resource(selected.clone());
+                });
+            }
+        }
+
         // Check if we need to create PodTerminalView from global state
         {
             let state = app_state(cx);
@@ -425,6 +523,8 @@ impl Render for AppView {
         let showing_details = self.pod_details.is_some()
             || self.deployment_details.is_some()
             || self.replicaset_details.is_some()
+            || self.hpa_details.is_some()
+            || self.vpa_details.is_some()
             || self.generic_details.is_some();
         let showing_logs = self.pod_logs.is_some();
         let showing_terminal = self.pod_terminal.is_some();
@@ -520,6 +620,20 @@ impl AppView {
                     .into_any_element();
             }
             if let Some(details) = &self.replicaset_details {
+                return div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(details.clone())
+                    .into_any_element();
+            }
+            if let Some(details) = &self.hpa_details {
+                return div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(details.clone())
+                    .into_any_element();
+            }
+            if let Some(details) = &self.vpa_details {
                 return div()
                     .flex_1()
                     .overflow_hidden()
@@ -1157,6 +1271,35 @@ impl AppView {
             "Service" | "ConfigMap" | "Secret" | "Namespace" => MetricStatus::Running,
             _ => MetricStatus::Other,
         }
+    }
+
+    fn build_ai_issue_prompt(resource: &Resource) -> String {
+        let namespace = resource
+            .metadata
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+        let kind = resource.kind.clone();
+        let name = resource.metadata.name.clone();
+
+        let phase = resource
+            .status
+            .as_ref()
+            .and_then(|s| s.get("phase"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown");
+
+        if kind == "Pod" && phase.eq_ignore_ascii_case("Pending") {
+            return format!(
+                "Investigate why pod '{}' in namespace '{}' is Pending. Run automatic diagnostics first and provide root cause plus the next best action.",
+                name, namespace
+            );
+        }
+
+        format!(
+            "Investigate issues for {} '{}' in namespace '{}'. Analyze current state, identify likely root cause, and recommend the next best action.",
+            kind, name, namespace
+        )
     }
 
     fn render_right_panel(&mut self, window: &mut Window, cx: &mut Context<'_, Self>, active_panel: ActivePanel) -> impl IntoElement {
