@@ -27,5 +27,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("/", app_view::OpenSearchMode, None),
         KeyBinding::new("escape", app_view::CloseCommandBar, Some("CommandBar")),
         KeyBinding::new("enter", app_view::ExecuteCommandBar, Some("CommandBar")),
+        KeyBinding::new("tab", app_view::CommandBarTab, Some("CommandBar")),
+        KeyBinding::new("shift-tab", app_view::CommandBarTab, Some("CommandBar")),
+        KeyBinding::new("ctrl-i", app_view::CommandBarTab, Some("CommandBar")),
     ]);
 }

@@ -14,7 +14,7 @@ use resources::{
     ReplicaSetAction, ReplicaSetDetails, ResourceTable, VpaAction, VpaDetails,
 };
 use terminal::PodTerminalView;
-use ui::gpui_component::input::{Input, InputEvent, InputState};
+use ui::gpui_component::input::{InputEvent, InputState};
 use ui::{
     Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenu, PopupMenuItem,
     Sizable, Size, Spinner, primary_icon_btn, secondary_btn, theme,
@@ -26,7 +26,8 @@ actions!(
         OpenCommandMode,
         OpenSearchMode,
         CloseCommandBar,
-        ExecuteCommandBar
+        ExecuteCommandBar,
+        CommandBarTab
     ]
 );
 
@@ -41,8 +42,6 @@ enum MetricStatus {
 #[derive(Clone)]
 struct CommandCompletion {
     replacement: String,
-    label: String,
-    detail: String,
 }
 
 pub struct AppView {
@@ -67,6 +66,7 @@ pub struct AppView {
     command_input: Option<Entity<InputState>>,
     _command_subscription: Option<Subscription>,
     command_bar_open: bool,
+    command_bar_hint: Option<String>,
     command_bar_error: Option<String>,
     focus_handle: FocusHandle,
 }
@@ -107,6 +107,7 @@ impl AppView {
             command_input: None,
             _command_subscription: None,
             command_bar_open: false,
+            command_bar_hint: None,
             command_bar_error: None,
             focus_handle: cx.focus_handle(),
         }
@@ -139,6 +140,7 @@ impl AppView {
             InputEvent::PressEnter { .. } => this.execute_command_bar(cx),
             InputEvent::Change => {
                 this.command_bar_error = None;
+                this.command_bar_hint = None;
                 cx.notify();
             }
             _ => {}
@@ -166,6 +168,8 @@ impl AppView {
     fn open_command_mode(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.command_bar_open = true;
         self.command_bar_error = None;
+        self.command_bar_hint = None;
+        window.focus(&self.focus_handle);
         self.set_command_input_value(":".to_string(), window, cx);
         cx.notify();
     }
@@ -173,6 +177,8 @@ impl AppView {
     fn open_search_mode(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.command_bar_open = true;
         self.command_bar_error = None;
+        self.command_bar_hint = None;
+        window.focus(&self.focus_handle);
         self.set_command_input_value("/".to_string(), window, cx);
         cx.notify();
     }
@@ -180,6 +186,7 @@ impl AppView {
     fn close_command_bar(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.command_bar_open = false;
         self.command_bar_error = None;
+        self.command_bar_hint = None;
         self.set_command_input_value(String::new(), window, cx);
         cx.notify();
     }
@@ -195,6 +202,7 @@ impl AppView {
         if line.is_empty() {
             self.command_bar_open = false;
             self.command_bar_error = None;
+            self.command_bar_hint = None;
             cx.notify();
             return;
         }
@@ -205,6 +213,7 @@ impl AppView {
             });
             self.command_bar_open = false;
             self.command_bar_error = None;
+            self.command_bar_hint = None;
             cx.notify();
             return;
         }
@@ -219,6 +228,7 @@ impl AppView {
         if command_line.is_empty() {
             self.command_bar_open = false;
             self.command_bar_error = None;
+            self.command_bar_hint = None;
             cx.notify();
             return;
         }
@@ -231,6 +241,7 @@ impl AppView {
             "q" | "quit" => {
                 self.command_bar_open = false;
                 self.command_bar_error = None;
+                self.command_bar_hint = None;
                 true
             }
             "help" | "?" => {
@@ -245,6 +256,7 @@ impl AppView {
                     crate::switch_context(cx, (*ctx_name).to_string());
                     self.command_bar_open = false;
                     self.command_bar_error = None;
+                    self.command_bar_hint = None;
                 } else {
                     self.command_bar_error = Some("Usage: :ctx <context-name>".to_string());
                 }
@@ -260,6 +272,7 @@ impl AppView {
                     crate::load_resources(cx, resource_type, Some(namespace));
                     self.command_bar_open = false;
                     self.command_bar_error = None;
+                    self.command_bar_hint = None;
                 } else {
                     cx.update_global::<AppState, _>(|state, _| {
                         state.set_selected_type(k8s_client::ResourceType::Namespaces);
@@ -269,6 +282,7 @@ impl AppView {
                     crate::load_resources(cx, k8s_client::ResourceType::Namespaces, None);
                     self.command_bar_open = false;
                     self.command_bar_error = None;
+                    self.command_bar_hint = None;
                 }
                 true
             }
@@ -279,6 +293,7 @@ impl AppView {
                 });
                 self.command_bar_open = false;
                 self.command_bar_error = None;
+                self.command_bar_hint = None;
                 true
             }
             other => {
@@ -328,6 +343,27 @@ impl AppView {
         ]
     }
 
+    fn completion_command(alias: &str) -> String {
+        match alias {
+            "po" => "pods".to_string(),
+            "dp" => "deployments".to_string(),
+            "svc" => "services".to_string(),
+            "ing" => "ingresses".to_string(),
+            "cm" => "configmaps".to_string(),
+            "secret" => "secrets".to_string(),
+            "rs" => "replicasets".to_string(),
+            "sts" => "statefulsets".to_string(),
+            "ds" => "daemonsets".to_string(),
+            "job" => "jobs".to_string(),
+            "cj" => "cronjobs".to_string(),
+            "node" => "nodes".to_string(),
+            "ctx" => "context".to_string(),
+            "pf" => "portforward".to_string(),
+            "q" => "quit".to_string(),
+            other => other.to_string(),
+        }
+    }
+
     fn command_completions(&self, cx: &Context<'_, Self>) -> Vec<CommandCompletion> {
         let input = self.command_input_text(cx);
         let line = input.trim_start();
@@ -337,14 +373,10 @@ impl AppView {
             if trimmed.is_empty() {
                 return vec![CommandCompletion {
                     replacement: "/error".to_string(),
-                    label: "/<text>".to_string(),
-                    detail: "Filter resources by text".to_string(),
                 }];
             }
             return vec![CommandCompletion {
                 replacement: format!("/{}", trimmed),
-                label: format!("/{trimmed}"),
-                detail: "Press Enter to apply filter".to_string(),
             }];
         }
 
@@ -358,10 +390,8 @@ impl AppView {
             return Self::command_catalog()
                 .iter()
                 .take(8)
-                .map(|(cmd, detail)| CommandCompletion {
-                    replacement: format!(":{cmd}"),
-                    label: format!(":{cmd}"),
-                    detail: (*detail).to_string(),
+                .map(|(cmd, _detail)| CommandCompletion {
+                    replacement: format!(":{}", Self::completion_command(cmd)),
                 })
                 .collect();
         }
@@ -374,12 +404,13 @@ impl AppView {
         if args.is_empty() && !ends_with_space {
             return Self::command_catalog()
                 .iter()
-                .filter(|(cmd, _)| cmd.starts_with(&command))
+                .filter(|(cmd, _)| {
+                    cmd.starts_with(&command)
+                        || Self::completion_command(cmd).starts_with(&command)
+                })
                 .take(8)
-                .map(|(cmd, detail)| CommandCompletion {
-                    replacement: format!(":{cmd}"),
-                    label: format!(":{cmd}"),
-                    detail: (*detail).to_string(),
+                .map(|(cmd, _detail)| CommandCompletion {
+                    replacement: format!(":{}", Self::completion_command(cmd)),
                 })
                 .collect();
         }
@@ -397,9 +428,7 @@ impl AppView {
                 .filter(|ctx_name| ctx_name.starts_with(current_arg))
                 .take(8)
                 .map(|ctx_name| CommandCompletion {
-                    replacement: format!(":ctx {ctx_name}"),
-                    label: format!(":ctx {ctx_name}"),
-                    detail: "Switch context".to_string(),
+                    replacement: format!(":context {ctx_name}"),
                 })
                 .collect(),
             "ns" | "namespace" => state
@@ -408,9 +437,7 @@ impl AppView {
                 .filter(|ns| ns.starts_with(current_arg))
                 .take(8)
                 .map(|ns| CommandCompletion {
-                    replacement: format!(":ns {ns}"),
-                    label: format!(":ns {ns}"),
-                    detail: "Switch namespace".to_string(),
+                    replacement: format!(":namespace {ns}"),
                 })
                 .collect(),
             cmd => {
@@ -420,37 +447,34 @@ impl AppView {
 
                 if current_arg.starts_with('@') {
                     let ctx_prefix = current_arg.trim_start_matches('@');
+                    let completion_cmd = Self::completion_command(cmd);
                     return state
                         .contexts
                         .iter()
                         .filter(|ctx_name| ctx_name.starts_with(ctx_prefix))
                         .take(8)
                         .map(|ctx_name| CommandCompletion {
-                            replacement: format!(":{cmd} @{ctx_name}"),
-                            label: format!("@{ctx_name}"),
-                            detail: "Context selector".to_string(),
+                            replacement: format!(":{completion_cmd} @{ctx_name}"),
                         })
                         .collect();
                 }
 
                 if current_arg.starts_with('/') {
                     let f = current_arg.trim_start_matches('/');
+                    let completion_cmd = Self::completion_command(cmd);
                     return vec![CommandCompletion {
-                        replacement: format!(":{cmd} /{f}"),
-                        label: format!("/{f}"),
-                        detail: "Filter after opening resource".to_string(),
+                        replacement: format!(":{completion_cmd} /{f}"),
                     }];
                 }
 
+                let completion_cmd = Self::completion_command(cmd);
                 state
                     .namespaces
                     .iter()
                     .filter(|ns| ns.starts_with(current_arg))
                     .take(8)
                     .map(|ns| CommandCompletion {
-                        replacement: format!(":{cmd} {ns}"),
-                        label: ns.clone(),
-                        detail: "Namespace selector".to_string(),
+                        replacement: format!(":{completion_cmd} {ns}"),
                     })
                     .collect()
             }
@@ -468,14 +492,14 @@ impl AppView {
         }
 
         let key = event.keystroke.key.as_str();
-        if key == "tab" {
-            if let Some(first) = self.command_completions(cx).first() {
-                self.set_command_input_value(first.replacement.clone(), window, cx);
-            }
+        let key_char = event.keystroke.key_char.as_deref().unwrap_or("");
+        if key == "tab" || key == "iso_left_tab" || key_char == "\t" {
+            self.handle_command_bar_tab(window, cx);
             return;
         }
 
         if key == "enter" || key == "escape" {
+            self.command_bar_hint = None;
             return;
         }
 
@@ -490,6 +514,7 @@ impl AppView {
             let mut text = self.command_input_text(cx);
             text.pop();
             self.set_command_input_value(text, window, cx);
+            self.command_bar_hint = None;
             return;
         }
 
@@ -498,6 +523,33 @@ impl AppView {
                 let mut text = self.command_input_text(cx);
                 text.push_str(ch);
                 self.set_command_input_value(text, window, cx);
+                self.command_bar_hint = None;
+            }
+        }
+    }
+
+    fn handle_command_bar_tab(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        if !self.command_bar_open {
+            return;
+        }
+
+        let text = self.command_input_text(cx);
+
+        if let Some(hint) = self.command_bar_hint.as_ref() {
+            if hint.starts_with(&text) && hint.len() > text.len() {
+                self.set_command_input_value(hint.clone(), window, cx);
+                self.command_bar_hint = None;
+                cx.notify();
+                return;
+            }
+        }
+
+        if let Some(first) = self.command_completions(cx).first() {
+            if first.replacement.starts_with(&text) && first.replacement.len() > text.len() {
+                self.command_bar_hint = Some(first.replacement.clone());
+                cx.notify();
+            } else {
+                self.set_command_input_value(first.replacement.clone(), window, cx);
             }
         }
     }
@@ -557,6 +609,7 @@ impl AppView {
         crate::load_resources(cx, resource_type, namespace);
         self.command_bar_open = false;
         self.command_bar_error = None;
+        self.command_bar_hint = None;
         cx.notify();
     }
 
@@ -586,95 +639,55 @@ impl AppView {
     fn render_command_bar(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
-        let mode = if self.command_input_text(cx).starts_with('/') {
-            "SEARCH"
-        } else {
-            "COMMAND"
-        };
-        let completions = self.command_completions(cx);
-        let input = self.command_input.as_ref().map(|input| {
-            Input::new(input)
-                .appearance(false)
-                .cleanable(false)
-                .with_size(ui::Size::Large)
-        });
+        let input = self.command_input_text(cx);
+        let hint_suffix = self
+            .command_bar_hint
+            .as_ref()
+            .and_then(|hint| hint.strip_prefix(&input))
+            .unwrap_or("")
+            .to_string();
 
         div()
             .w_full()
-            .px(px(14.0))
-            .py(px(10.0))
+            .px(px(10.0))
+            .py(px(6.0))
             .bg(colors.surface)
             .border_t_1()
-            .border_color(colors.border_focused)
+            .border_color(colors.border)
             .font_family(theme.font_family_ui.clone())
             .flex()
-            .flex_col()
+            .items_center()
             .gap(px(8.0))
             .child(
                 div()
-                    .w_full()
                     .flex()
-                    .justify_between()
                     .items_center()
+                    .gap(px(0.0))
+                    .text_size(px(15.0))
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .child(
-                                div()
-                                    .px(px(8.0))
-                                    .py(px(3.0))
-                                    .rounded(theme.border_radius_sm)
-                                    .bg(colors.primary.opacity(0.18))
-                                    .text_size(px(10.0))
-                                    .text_color(colors.primary)
-                                    .child(mode),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(12.0))
-                                    .text_color(colors.text_muted)
-                                    .child("Type :command or /filter"),
-                            ),
+                            .text_color(colors.text)
+                            .child(input),
                     )
-                    .child(
-                        div()
-                            .text_size(px(12.0))
-                            .text_color(colors.text_muted)
-                            .child("Tab autocomplete | Enter run | Esc close"),
-                    ),
+                    .when(!hint_suffix.is_empty(), |el| {
+                        el.child(
+                            div()
+                                .text_color(colors.text_muted)
+                                .font_weight(FontWeight::BOLD)
+                                .child(hint_suffix),
+                        )
+                    }),
             )
             .child(
                 div()
-                    .px(px(12.0))
-                    .py(px(8.0))
-                    .rounded(theme.border_radius_sm)
-                    .bg(colors.surface)
-                    .border_1()
-                    .border_color(colors.border)
-                    .when_some(input, |el, input| el.child(input)),
+                    .text_size(px(11.0))
+                    .text_color(colors.text_muted)
+                    .child("Tab suggest/accept  Enter run  Esc close"),
             )
-            .when(!completions.is_empty(), |el| {
-                el.child(div().w_full().flex().flex_wrap().gap(px(6.0)).children(
-                    completions.into_iter().take(8).map(|completion| {
-                        div()
-                            .px(px(8.0))
-                            .py(px(4.0))
-                            .rounded(theme.border_radius_sm)
-                            .bg(colors.surface_elevated)
-                            .border_1()
-                            .border_color(colors.border)
-                            .text_size(px(11.0))
-                            .text_color(colors.text)
-                            .child(format!("{}  {}", completion.label, completion.detail))
-                    }),
-                ))
-            })
             .when_some(self.command_bar_error.as_ref(), |el, message| {
                 el.child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(px(11.0))
                         .text_color(colors.warning)
                         .child(message.clone()),
                 )
@@ -1194,6 +1207,9 @@ impl Render for AppView {
                     this.execute_command_bar(cx);
                 }),
             )
+            .on_action(cx.listener(|this, _action: &CommandBarTab, window, cx| {
+                this.handle_command_bar_tab(window, cx);
+            }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.command_bar_open {
                     this.handle_command_bar_keydown(event, window, cx);
