@@ -5,8 +5,12 @@ use gpui::*;
 use k8s_client::{Resource, ResourceType};
 use std::collections::{HashMap, HashSet};
 use ui::{
-    danger_btn, gpui_component::scroll::ScrollableElement, secondary_btn, theme, Icon, IconName,
-    ThemeColors,
+    danger_btn,
+    gpui_component::{
+        input::{Input, InputState},
+        scroll::ScrollableElement,
+    },
+    secondary_btn, theme, Icon, IconName, Sizable, ThemeColors,
 };
 
 /// Status type for resources
@@ -69,6 +73,13 @@ pub enum BulkTableAction {
     Label { key: String, value: String },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BulkDialog {
+    ConfirmDelete,
+    Scale,
+    Label,
+}
+
 pub struct ResourceTable {
     resources: Vec<Resource>,
     resource_type: ResourceType,
@@ -90,6 +101,12 @@ pub struct ResourceTable {
     resize_start_x: f32,
     /// Starting width for resize drag
     resize_start_width: f32,
+    bulk_dialog: Option<BulkDialog>,
+    bulk_error: Option<String>,
+    scale_input: Option<Entity<InputState>>,
+    label_key_input: Option<Entity<InputState>>,
+    label_value_input: Option<Entity<InputState>>,
+    suppress_row_open_once: bool,
 }
 
 impl ResourceTable {
@@ -109,6 +126,12 @@ impl ResourceTable {
             resizing_column: None,
             resize_start_x: 0.0,
             resize_start_width: 0.0,
+            bulk_dialog: None,
+            bulk_error: None,
+            scale_input: None,
+            label_key_input: None,
+            label_value_input: None,
+            suppress_row_open_once: false,
         }
     }
 
@@ -515,6 +538,126 @@ impl ResourceTable {
         }
     }
 
+    fn open_bulk_dialog(
+        &mut self,
+        dialog: BulkDialog,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.bulk_dialog = Some(dialog);
+        self.bulk_error = None;
+
+        match dialog {
+            BulkDialog::ConfirmDelete => {}
+            BulkDialog::Scale => {
+                if self.scale_input.is_none() {
+                    self.scale_input = Some(cx.new(|input_cx| {
+                        InputState::new(window, input_cx)
+                            .placeholder("Replicas")
+                            .default_value("1")
+                    }));
+                }
+            }
+            BulkDialog::Label => {
+                if self.label_key_input.is_none() {
+                    self.label_key_input = Some(cx.new(|input_cx| {
+                        InputState::new(window, input_cx)
+                            .placeholder("label key")
+                            .default_value("managed-by")
+                    }));
+                }
+                if self.label_value_input.is_none() {
+                    self.label_value_input = Some(cx.new(|input_cx| {
+                        InputState::new(window, input_cx)
+                            .placeholder("label value")
+                            .default_value("kdashboard")
+                    }));
+                }
+            }
+        }
+
+        cx.notify();
+    }
+
+    fn close_bulk_dialog(&mut self, cx: &mut Context<'_, Self>) {
+        self.bulk_dialog = None;
+        self.bulk_error = None;
+        cx.notify();
+    }
+
+    fn confirm_bulk_dialog(&mut self, cx: &mut Context<'_, Self>) {
+        let Some(dialog) = self.bulk_dialog else {
+            return;
+        };
+
+        match dialog {
+            BulkDialog::ConfirmDelete => {
+                self.trigger_bulk_action(BulkTableAction::Delete, cx);
+                self.bulk_dialog = None;
+                self.bulk_error = None;
+            }
+            BulkDialog::Scale => {
+                let replicas_text = self
+                    .scale_input
+                    .as_ref()
+                    .map(|input| input.read(cx).text().to_string())
+                    .map(|text| text.trim().to_string())
+                    .unwrap_or_default();
+                match replicas_text.parse::<i32>() {
+                    Ok(replicas) if replicas >= 0 => {
+                        self.trigger_bulk_action(BulkTableAction::Scale { replicas }, cx);
+                        self.bulk_dialog = None;
+                        self.bulk_error = None;
+                    }
+                    _ => {
+                        self.bulk_error =
+                            Some("Replicas must be a non-negative integer".to_string());
+                    }
+                }
+            }
+            BulkDialog::Label => {
+                let key = self
+                    .label_key_input
+                    .as_ref()
+                    .map(|input| input.read(cx).text().to_string())
+                    .map(|text| text.trim().to_string())
+                    .unwrap_or_default();
+                let value = self
+                    .label_value_input
+                    .as_ref()
+                    .map(|input| input.read(cx).text().to_string())
+                    .map(|text| text.trim().to_string())
+                    .unwrap_or_default();
+
+                if key.is_empty() {
+                    self.bulk_error = Some("Label key cannot be empty".to_string());
+                    return;
+                }
+
+                if value.is_empty() {
+                    self.bulk_error = Some("Label value cannot be empty".to_string());
+                    return;
+                }
+
+                self.trigger_bulk_action(BulkTableAction::Label { key, value }, cx);
+                self.bulk_dialog = None;
+                self.bulk_error = None;
+            }
+        }
+
+        cx.notify();
+    }
+
+    fn select_row(&mut self, index: usize, cx: &mut Context<'_, Self>) {
+        self.selected_index = Some(index);
+        if let Some(resource) = self.resources.get(index).cloned() {
+            if let Some(on_select) = &self.on_select {
+                on_select(index, &resource, cx);
+            }
+        }
+        cx.notify();
+    }
+
     fn can_scale(&self) -> bool {
         matches!(
             self.resource_type,
@@ -606,6 +749,7 @@ impl Render for ResourceTable {
         let colors = &theme.colors;
         let columns = self.get_columns();
         let selected_indices = self.selected_indices.clone();
+        let selected_index = self.selected_index;
         let resource_type = self.resource_type;
         let sort_state = self.sort_state.clone();
 
@@ -617,7 +761,8 @@ impl Render for ResourceTable {
                 (
                     *original_idx,
                     r.clone(),
-                    selected_indices.contains(original_idx),
+                    selected_indices.contains(original_idx)
+                        || selected_index == Some(*original_idx),
                 )
             })
             .collect();
@@ -632,6 +777,7 @@ impl Render for ResourceTable {
             .rounded(theme.border_radius_lg)
             .border_1()
             .border_color(colors.border)
+            .relative()
             .overflow_hidden();
 
         let visible_indices: Vec<usize> = sorted_resources.iter().map(|(idx, _)| *idx).collect();
@@ -652,25 +798,10 @@ impl Render for ResourceTable {
             cx,
             &columns,
             &sort_state,
-            visible_indices,
+            visible_indices.clone(),
             all_visible_selected,
             some_visible_selected,
         ));
-
-        if !is_empty {
-            container = container.child(
-                div()
-                    .w_full()
-                    .px(px(20.0))
-                    .py(px(6.0))
-                    .border_b_1()
-                    .border_color(colors.border.opacity(0.6))
-                    .bg(colors.surface)
-                    .text_size(px(11.0))
-                    .text_color(colors.text_muted)
-                    .child("Tip: double-click a row to open details"),
-            );
-        }
 
         // Table body - scrollable
         if is_empty {
@@ -715,6 +846,47 @@ impl Render for ResourceTable {
             );
         }
 
+        let key_nav_indices = visible_indices.clone();
+        container =
+            container.on_key_down(cx.listener(move |this, event: &KeyDownEvent, _window, cx| {
+                if key_nav_indices.is_empty() {
+                    return;
+                }
+
+                match event.keystroke.key.as_str() {
+                    "enter" => {
+                        if let Some(idx) = this.selected_index {
+                            this.open_row(idx, cx);
+                        }
+                    }
+                    "up" => {
+                        let current_pos = this
+                            .selected_index
+                            .and_then(|idx| key_nav_indices.iter().position(|v| *v == idx));
+                        let next_pos = current_pos.map(|p| p.saturating_sub(1)).unwrap_or(0);
+                        if let Some(next_idx) = key_nav_indices.get(next_pos) {
+                            this.select_row(*next_idx, cx);
+                        }
+                    }
+                    "down" => {
+                        let current_pos = this
+                            .selected_index
+                            .and_then(|idx| key_nav_indices.iter().position(|v| *v == idx));
+                        let next_pos = current_pos
+                            .map(|p| (p + 1).min(key_nav_indices.len().saturating_sub(1)))
+                            .unwrap_or(0);
+                        if let Some(next_idx) = key_nav_indices.get(next_pos) {
+                            this.select_row(*next_idx, cx);
+                        }
+                    }
+                    _ => {}
+                }
+            }));
+
+        if self.bulk_dialog.is_some() {
+            container = container.child(self.render_bulk_dialog(cx));
+        }
+
         container
     }
 }
@@ -746,14 +918,13 @@ impl ResourceTable {
             )
             .child({
                 let scale_button = if can_scale {
-                    secondary_btn("bulk-scale-btn", IconName::Scale, "Scale x1", colors).on_click(
-                        cx.listener(|this, _event, _window, cx| {
-                            this.trigger_bulk_action(BulkTableAction::Scale { replicas: 1 }, cx);
+                    secondary_btn("bulk-scale-btn", IconName::Scale, "Scale", colors).on_click(
+                        cx.listener(|this, _event, window, cx| {
+                            this.open_bulk_dialog(BulkDialog::Scale, window, cx);
                         }),
                     )
                 } else {
-                    secondary_btn("bulk-scale-btn", IconName::Scale, "Scale x1", colors)
-                        .opacity(0.5)
+                    secondary_btn("bulk-scale-btn", IconName::Scale, "Scale", colors).opacity(0.5)
                 };
 
                 div()
@@ -762,25 +933,207 @@ impl ResourceTable {
                     .gap(px(8.0))
                     .child(
                         secondary_btn("bulk-label-btn", IconName::Clipboard, "Label", colors)
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.trigger_bulk_action(
-                                    BulkTableAction::Label {
-                                        key: "managed-by".to_string(),
-                                        value: "kdashboard".to_string(),
-                                    },
-                                    cx,
-                                );
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                this.open_bulk_dialog(BulkDialog::Label, window, cx);
                             })),
                     )
                     .child(scale_button)
                     .child(
                         danger_btn("bulk-delete-btn", IconName::Trash, "Delete", colors).on_click(
-                            cx.listener(|this, _event, _window, cx| {
-                                this.trigger_bulk_action(BulkTableAction::Delete, cx);
+                            cx.listener(|this, _event, window, cx| {
+                                this.open_bulk_dialog(BulkDialog::ConfirmDelete, window, cx);
                             }),
                         ),
                     )
             })
+    }
+
+    fn render_bulk_dialog(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let theme = theme(cx);
+        let colors = &theme.colors;
+
+        let dialog = self.bulk_dialog.unwrap_or(BulkDialog::ConfirmDelete);
+
+        let (title, message) = match dialog {
+            BulkDialog::ConfirmDelete => (
+                "Delete selected resources",
+                format!(
+                    "This will permanently delete {} selected resource(s).",
+                    self.selected_count()
+                ),
+            ),
+            BulkDialog::Scale => (
+                "Scale selected resources",
+                format!(
+                    "Set replica count for {} selected resource(s).",
+                    self.selected_count()
+                ),
+            ),
+            BulkDialog::Label => (
+                "Label selected resources",
+                format!(
+                    "Apply label to {} selected resource(s).",
+                    self.selected_count()
+                ),
+            ),
+        };
+
+        let mut content = div()
+            .w(px(460.0))
+            .max_w(px(560.0))
+            .bg(colors.surface)
+            .border_1()
+            .border_color(colors.border)
+            .rounded(theme.border_radius_lg)
+            .overflow_hidden()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .px(px(18.0))
+                    .py(px(14.0))
+                    .border_b_1()
+                    .border_color(colors.border)
+                    .child(
+                        div()
+                            .text_size(px(14.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors.text)
+                            .child(title),
+                    ),
+            )
+            .child(
+                div()
+                    .px(px(18.0))
+                    .pt(px(12.0))
+                    .pb(px(8.0))
+                    .text_size(px(12.0))
+                    .text_color(colors.text_secondary)
+                    .child(message),
+            );
+
+        if dialog == BulkDialog::Scale {
+            let mut input_box = div()
+                .w_full()
+                .px(px(10.0))
+                .py(px(6.0))
+                .rounded(theme.border_radius_md)
+                .bg(colors.surface_elevated)
+                .border_1()
+                .border_color(colors.border);
+            if let Some(input) = self.scale_input.as_ref() {
+                input_box = input_box.child(
+                    Input::new(input)
+                        .appearance(false)
+                        .with_size(ui::Size::Small),
+                );
+            }
+            content = content.child(div().px(px(18.0)).pb(px(10.0)).child(input_box));
+        }
+
+        if dialog == BulkDialog::Label {
+            let mut key_box = div()
+                .w_full()
+                .px(px(10.0))
+                .py(px(6.0))
+                .rounded(theme.border_radius_md)
+                .bg(colors.surface_elevated)
+                .border_1()
+                .border_color(colors.border);
+            if let Some(input) = self.label_key_input.as_ref() {
+                key_box = key_box.child(
+                    Input::new(input)
+                        .appearance(false)
+                        .with_size(ui::Size::Small),
+                );
+            }
+
+            let mut value_box = div()
+                .w_full()
+                .px(px(10.0))
+                .py(px(6.0))
+                .rounded(theme.border_radius_md)
+                .bg(colors.surface_elevated)
+                .border_1()
+                .border_color(colors.border);
+            if let Some(input) = self.label_value_input.as_ref() {
+                value_box = value_box.child(
+                    Input::new(input)
+                        .appearance(false)
+                        .with_size(ui::Size::Small),
+                );
+            }
+
+            content = content
+                .child(div().px(px(18.0)).pb(px(10.0)).child(key_box))
+                .child(div().px(px(18.0)).pb(px(10.0)).child(value_box));
+        }
+
+        if let Some(error) = &self.bulk_error {
+            content = content.child(
+                div()
+                    .px(px(18.0))
+                    .pb(px(6.0))
+                    .text_size(px(11.0))
+                    .text_color(colors.error)
+                    .child(error.clone()),
+            );
+        }
+
+        let confirm_label = match dialog {
+            BulkDialog::ConfirmDelete => "Delete",
+            BulkDialog::Scale => "Apply scale",
+            BulkDialog::Label => "Apply label",
+        };
+
+        content = content.child(
+            div()
+                .px(px(18.0))
+                .py(px(14.0))
+                .border_t_1()
+                .border_color(colors.border)
+                .flex()
+                .justify_end()
+                .gap(px(8.0))
+                .child(
+                    secondary_btn("bulk-dialog-cancel", IconName::Close, "Cancel", colors)
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.close_bulk_dialog(cx);
+                        })),
+                )
+                .child(
+                    if dialog == BulkDialog::ConfirmDelete {
+                        danger_btn(
+                            "bulk-dialog-confirm",
+                            IconName::Trash,
+                            confirm_label,
+                            colors,
+                        )
+                    } else {
+                        secondary_btn(
+                            "bulk-dialog-confirm",
+                            IconName::Check,
+                            confirm_label,
+                            colors,
+                        )
+                    }
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.confirm_bulk_dialog(cx);
+                    })),
+                ),
+        );
+
+        div()
+            .absolute()
+            .top(px(0.0))
+            .left(px(0.0))
+            .right(px(0.0))
+            .bottom(px(0.0))
+            .bg(colors.background.opacity(0.7))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(content)
     }
 
     fn render_header(
@@ -1054,8 +1407,12 @@ impl ResourceTable {
             .cursor_pointer()
             .hover(|style| style.bg(hover_bg))
             .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
-                // Only double click opens details. Row selection highlighting is checkbox-driven.
-                if event.click_count() == 2 {
+                if this.suppress_row_open_once {
+                    this.suppress_row_open_once = false;
+                    return;
+                }
+                if event.click_count() >= 1 {
+                    this.select_row(index, cx);
                     this.open_row(index, cx);
                 }
             }))
@@ -1098,6 +1455,7 @@ impl ResourceTable {
                         ))
                         .cursor_pointer()
                         .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
+                            this.suppress_row_open_once = true;
                             this.toggle_row_checkbox(row_index, cx);
                         }))
                         .into_any_element();
