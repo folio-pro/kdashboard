@@ -6,7 +6,7 @@ use gpui::*;
 use k8s_client::{PortForwardInfo, Resource};
 use std::collections::HashMap;
 use ui::gpui_component::input::{Input as TextInput, InputState};
-use ui::{Icon, IconName, Sizable, Size, danger_btn, theme};
+use ui::{back_btn, danger_btn, theme, Icon, IconName, Sizable, Size};
 
 /// Actions that can be triggered from PodDetails
 #[derive(Clone, Debug)]
@@ -202,8 +202,7 @@ impl Render for PodDetails {
                     .pt(px(24.0))
                     .flex()
                     .flex_col()
-                    .gap(px(24.0))
-                    .child(self.render_breadcrumb(cx))
+                    .gap(px(18.0))
                     .child(self.render_header(cx)),
             )
             .child(
@@ -221,65 +220,6 @@ impl Render for PodDetails {
 
 impl PodDetails {
     impl_yaml_editor_methods!();
-
-    // ── Breadcrumb ──────────────────────────────────────────────────────
-
-    fn render_breadcrumb(&self, cx: &Context<'_, Self>) -> impl IntoElement {
-        let theme = theme(cx);
-        let colors = &theme.colors;
-        let name = self.resource.metadata.name.clone();
-
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(px(8.0))
-            .min_w(px(0.0))
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .text_size(px(13.0))
-                    .text_color(colors.text_muted)
-                    .child("Cluster"),
-            )
-            .child(
-                Icon::new(IconName::ChevronRight)
-                    .size(px(14.0))
-                    .color(colors.text_muted),
-            )
-            .child(
-                div()
-                    .id("bc-pods")
-                    .flex_shrink_0()
-                    .cursor_pointer()
-                    .text_size(px(13.0))
-                    .text_color(colors.text_muted)
-                    .hover(|s| s.text_color(colors.text_secondary))
-                    .on_click(cx.listener(|this, _, _window, cx| {
-                        if let Some(on_close) = &this.on_close {
-                            on_close(cx);
-                        }
-                        cx.notify();
-                    }))
-                    .child("Pods"),
-            )
-            .child(
-                Icon::new(IconName::ChevronRight)
-                    .size(px(14.0))
-                    .color(colors.text_muted),
-            )
-            .child(
-                div()
-                    .min_w(px(0.0))
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_ellipsis()
-                    .text_size(px(13.0))
-                    .text_color(colors.text)
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(name),
-            )
-    }
 
     // ── Header ──────────────────────────────────────────────────────────
 
@@ -319,6 +259,16 @@ impl PodDetails {
                     .flex()
                     .items_center()
                     .gap(px(16.0))
+                    .child(
+                        back_btn("pod-details-back-btn", colors).on_click(cx.listener(
+                            |this, _, _window, cx| {
+                                if let Some(on_close) = &this.on_close {
+                                    on_close(cx);
+                                }
+                                cx.notify();
+                            },
+                        )),
+                    )
                     // Pod icon box
                     .child(
                         div()
@@ -531,9 +481,9 @@ impl PodDetails {
             .gap(px(24.0));
 
         // Port forward panel (above events in the right column)
-        right_col = right_col.child(self.render_port_forward_panel(cx));
+        right_col = right_col.child(div().w_full().child(self.render_port_forward_panel(cx)));
 
-        right_col = right_col.child(self.render_events_card(cx, resource));
+        right_col = right_col.child(div().w_full().child(self.render_events_card(cx, resource)));
 
         div()
             .w_full()

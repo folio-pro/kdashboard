@@ -26,7 +26,7 @@ impl AppView {
             return;
         }
         let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Pregunta sobre el recurso seleccionado...")
+            InputState::new(window, cx).placeholder("Ask about the selected resource...")
         });
         let sub = cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| {
             if let InputEvent::PressEnter { secondary } = ev {
@@ -178,7 +178,7 @@ impl AppView {
                                     div()
                                         .text_size(px(12.0))
                                         .text_color(colors.text_muted)
-                                        .child("Escribe una pregunta para empezar."),
+                                        .child("Type a question to get started."),
                                 )
                             })
                             .when(is_sending, |el| {
@@ -190,7 +190,7 @@ impl AppView {
                                             .bg(colors.surface_elevated)
                                             .text_size(px(12.0))
                                             .text_color(colors.text_muted)
-                                            .child("Pensando..."),
+                                            .child("Thinking..."),
                                     ),
                                 )
                             }),
@@ -218,7 +218,7 @@ impl AppView {
                             .when_some(prompt_input, |el, input| el.child(input)),
                     )
                     .child(
-                        secondary_btn("ai-panel-send-btn", IconName::ArrowLeft, "Enviar", colors)
+                        secondary_btn("ai-panel-send-btn", IconName::ArrowLeft, "Send", colors)
                             .when(is_sending, |el| el.opacity(0.5))
                             .on_click(cx.listener(move |this, _event, _window, cx| {
                                 this.send_ai_prompt(cx);

@@ -781,7 +781,7 @@ impl PodTerminalView {
                         .text_size(px(11.0))
                         .font_family(theme.font_family.clone())
                         .text_color(colors.text_muted)
-                        .child("Session: 00:00:00"),
+                        .child("Session active"),
                 ),
             )
     }

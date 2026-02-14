@@ -657,6 +657,21 @@ impl Render for ResourceTable {
             some_visible_selected,
         ));
 
+        if !is_empty {
+            container = container.child(
+                div()
+                    .w_full()
+                    .px(px(20.0))
+                    .py(px(6.0))
+                    .border_b_1()
+                    .border_color(colors.border.opacity(0.6))
+                    .bg(colors.surface)
+                    .text_size(px(11.0))
+                    .text_color(colors.text_muted)
+                    .child("Tip: double-click a row to open details"),
+            );
+        }
+
         // Table body - scrollable
         if is_empty {
             container = container.child(
@@ -678,7 +693,7 @@ impl Render for ResourceTable {
                         div()
                             .text_size(theme.font_size_small)
                             .text_color(colors.text_muted)
-                            .child("Connect to a cluster to view resources"),
+                            .child("Try adjusting namespace/filter or refresh cluster data"),
                     ),
             );
         } else {

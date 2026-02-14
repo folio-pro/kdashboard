@@ -2,7 +2,7 @@ use gpui::*;
 use k8s_client::Resource;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use ui::{Icon, IconName, theme};
+use ui::{theme, Icon, IconName};
 
 // ── Helper functions ────────────────────────────────────────────────────
 
@@ -240,6 +240,7 @@ pub fn render_detail_card(
     }
 
     div()
+        .w_full()
         .rounded(theme.border_radius_lg)
         .border_1()
         .border_color(colors.border)
@@ -490,7 +491,7 @@ pub fn render_detail_events_card(cx: &App, events: Vec<ResourceEvent>) -> impl I
             count,
             if count != 1 { "s" } else { "" }
         )),
-        div().flex().flex_col().children(event_items),
+        div().w_full().flex().flex_col().children(event_items),
     )
 }
 

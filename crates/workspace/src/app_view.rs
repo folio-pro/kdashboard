@@ -739,15 +739,16 @@ impl AppView {
         showing_settings: bool,
     ) -> impl IntoElement {
         let overlay_bg = theme(cx).colors.background;
-
         // Show port forwards view (full screen)
         if showing_port_forwards {
             if let Some(pf_view) = &self.port_forward_view {
                 let mut content = div()
                     .flex_1()
+                    .flex()
+                    .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(pf_view.clone());
+                    .child(div().flex_1().overflow_hidden().child(pf_view.clone()));
                 if showing_settings {
                     content = content.child(
                         div()
@@ -769,9 +770,11 @@ impl AppView {
             if let Some(terminal_view) = &self.pod_terminal {
                 let mut content = div()
                     .flex_1()
+                    .flex()
+                    .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(terminal_view.clone());
+                    .child(div().flex_1().overflow_hidden().child(terminal_view.clone()));
                 if showing_settings {
                     content = content.child(
                         div()
@@ -793,9 +796,11 @@ impl AppView {
             if let Some(logs_view) = &self.pod_logs {
                 let mut content = div()
                     .flex_1()
+                    .flex()
+                    .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(logs_view.clone());
+                    .child(div().flex_1().overflow_hidden().child(logs_view.clone()));
                 if showing_settings {
                     content = content.child(
                         div()
@@ -817,9 +822,11 @@ impl AppView {
             if let Some(details) = &self.pod_details {
                 let mut content = div()
                     .flex_1()
+                    .flex()
+                    .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(details.clone());
+                    .child(div().flex_1().overflow_hidden().child(details.clone()));
                 if showing_settings {
                     content = content.child(
                         div()
@@ -837,9 +844,11 @@ impl AppView {
             if let Some(details) = &self.deployment_details {
                 let mut content = div()
                     .flex_1()
+                    .flex()
+                    .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(details.clone());
+                    .child(div().flex_1().overflow_hidden().child(details.clone()));
                 if showing_settings {
                     content = content.child(
                         div()
@@ -857,9 +866,11 @@ impl AppView {
             if let Some(details) = &self.replicaset_details {
                 let mut content = div()
                     .flex_1()
+                    .flex()
+                    .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(details.clone());
+                    .child(div().flex_1().overflow_hidden().child(details.clone()));
                 if showing_settings {
                     content = content.child(
                         div()
@@ -877,9 +888,11 @@ impl AppView {
             if let Some(details) = &self.hpa_details {
                 let mut content = div()
                     .flex_1()
+                    .flex()
+                    .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(details.clone());
+                    .child(div().flex_1().overflow_hidden().child(details.clone()));
                 if showing_settings {
                     content = content.child(
                         div()
@@ -897,9 +910,11 @@ impl AppView {
             if let Some(details) = &self.vpa_details {
                 let mut content = div()
                     .flex_1()
+                    .flex()
+                    .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(details.clone());
+                    .child(div().flex_1().overflow_hidden().child(details.clone()));
                 if showing_settings {
                     content = content.child(
                         div()
@@ -917,9 +932,11 @@ impl AppView {
             if let Some(details) = &self.generic_details {
                 let mut content = div()
                     .flex_1()
+                    .flex()
+                    .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(details.clone());
+                    .child(div().flex_1().overflow_hidden().child(details.clone()));
                 if showing_settings {
                     content = content.child(
                         div()
@@ -1367,12 +1384,8 @@ impl AppView {
         let colors = &theme.colors;
         let resource_type = state.selected_type;
 
-        // Compute metrics from resources
-        let resources = state
-            .resources
-            .as_ref()
-            .map(|r| &r.items[..])
-            .unwrap_or(&[]);
+        // Compute metrics from currently visible resources (after filter)
+        let resources: Vec<&Resource> = state.filtered_resources();
 
         let total = resources.len();
         let mut running = 0usize;

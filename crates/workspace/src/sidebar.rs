@@ -299,12 +299,49 @@ impl Sidebar {
         if !self.collapsed {
             header = header.child(
                 div()
+                    .flex_1()
                     .font_family(theme.font_family_ui.clone())
                     .text_size(px(14.0))
                     .font_weight(FontWeight::BOLD)
                     .text_color(colors.text)
                     .child("K8S MANAGER"),
             );
+        }
+
+        let collapse_icon = if self.collapsed {
+            IconName::ChevronRight
+        } else {
+            IconName::ChevronLeft
+        };
+
+        header = header.child(
+            div()
+                .id("sidebar-toggle")
+                .ml_auto()
+                .w(px(22.0))
+                .h(px(22.0))
+                .rounded(theme.border_radius_md)
+                .cursor_pointer()
+                .hover(|style| style.bg(colors.selection_hover))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    Icon::new(collapse_icon)
+                        .size(px(14.0))
+                        .color(colors.text_muted),
+                )
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    this.collapsed = !this.collapsed;
+                    cx.update_global::<crate::app_state::AppState, _>(|state, _| {
+                        state.toggle_sidebar();
+                    });
+                    cx.notify();
+                })),
+        );
+
+        if self.collapsed {
+            header = header.justify_center();
         }
 
         header

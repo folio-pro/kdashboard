@@ -5,7 +5,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 use k8s_client::Resource;
 use serde_json::Value;
-use ui::{Icon, IconName, danger_btn, theme};
+use ui::{back_btn, danger_btn, theme, Icon, IconName};
 
 #[derive(Clone, Debug)]
 pub enum GenericAction {
@@ -119,6 +119,16 @@ impl GenericResourceDetails {
             .items_center()
             .gap(px(8.0))
             .min_w(px(0.0))
+            .child(
+                back_btn("generic-details-back-btn", colors).on_click(cx.listener(
+                    |this, _, _window, cx| {
+                        if let Some(on_close) = &this.on_close {
+                            on_close(cx);
+                        }
+                        cx.notify();
+                    },
+                )),
+            )
             .child(
                 div()
                     .flex_shrink_0()

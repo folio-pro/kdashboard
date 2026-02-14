@@ -70,11 +70,7 @@ impl TitleBar {
                     .size(px(12.0))
                     .rounded_full()
                     .bg(colors.warning)
-                    .cursor_pointer()
-                    .on_click(|_event, window, _cx| {
-                        // TODO: GPUI does not expose window.minimize() yet
-                        tracing::info!("Minimize clicked (not implemented in GPUI)");
-                    }),
+                    .opacity(0.45),
             )
             // Maximize button
             .child(
@@ -83,11 +79,7 @@ impl TitleBar {
                     .size(px(12.0))
                     .rounded_full()
                     .bg(colors.success)
-                    .cursor_pointer()
-                    .on_click(|_event, window, _cx| {
-                        // TODO: GPUI does not expose window.toggle_fullscreen() yet
-                        tracing::info!("Maximize clicked (not implemented in GPUI)");
-                    }),
+                    .opacity(0.45),
             )
             // Close button
             .child(
@@ -96,11 +88,14 @@ impl TitleBar {
                     .size(px(12.0))
                     .rounded_full()
                     .bg(colors.error)
-                    .cursor_pointer()
-                    .on_click(|_event, _window, cx| {
-                        // TODO: GPUI does not expose cx.quit() yet
-                        tracing::info!("Close clicked (not implemented in GPUI)");
-                    }),
+                    .opacity(0.45),
+            )
+            .child(
+                div()
+                    .ml(px(8.0))
+                    .text_size(theme.font_size_small)
+                    .text_color(colors.text_muted)
+                    .child("window controls unavailable"),
             )
     }
 }
