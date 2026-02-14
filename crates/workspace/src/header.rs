@@ -2,7 +2,10 @@ use crate::app_state::AppState;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use ui::gpui_component::input::{Input, InputEvent, InputState};
-use ui::{Icon, IconName, Sizable, theme};
+use ui::{
+    theme, Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenu,
+    PopupMenuItem, Sizable,
+};
 
 pub struct Header {
     search_input: Option<Entity<InputState>>,
@@ -53,6 +56,58 @@ impl Render for Header {
 
         let theme = theme(cx);
         let colors = &theme.colors;
+        let state = cx.global::<AppState>();
+        let namespace = state.namespace.clone();
+        let namespaces = state.namespaces.clone();
+
+        let namespace_label: SharedString = namespace
+            .clone()
+            .unwrap_or_else(|| "All Namespaces".to_string())
+            .into();
+
+        let current_ns = namespace.clone();
+        let namespace_button = Button::new("header-namespace")
+            .icon(IconName::Layers)
+            .label(namespace_label)
+            .compact()
+            .with_variant(ButtonVariant::Ghost)
+            .dropdown_caret(true)
+            .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
+                let mut m = menu.scrollable(true);
+                let is_all = current_ns.is_none();
+                m = m.item(
+                    PopupMenuItem::new("All Namespaces")
+                        .checked(is_all)
+                        .on_click(|_, _window, cx| {
+                            cx.update_global::<AppState, _>(|state, _| {
+                                state.set_namespace(None);
+                            });
+                            let resource_type = cx.global::<AppState>().selected_type;
+                            crate::load_resources(cx, resource_type, None);
+                        }),
+                );
+
+                for ns in &namespaces {
+                    let ns_for_state = ns.clone();
+                    let ns_for_reload = ns.clone();
+                    let is_selected = current_ns.as_ref() == Some(ns);
+                    m = m.item(
+                        PopupMenuItem::new(ns.clone())
+                            .checked(is_selected)
+                            .on_click(move |_, _window, cx| {
+                                let ns = ns_for_state.clone();
+                                let ns2 = ns_for_reload.clone();
+                                cx.update_global::<AppState, _>(|state, _| {
+                                    state.set_namespace(Some(ns));
+                                });
+                                let resource_type = cx.global::<AppState>().selected_type;
+                                crate::load_resources(cx, resource_type, Some(ns2));
+                            }),
+                    );
+                }
+
+                m
+            });
 
         // Build search input
         let search_input = self.search_input.as_ref().map(|input| {
@@ -102,44 +157,49 @@ impl Render for Header {
             )
             // Right: settings entry (replaces static user info)
             .child(
-                div().flex().items_center().gap(px(16.0)).child(
-                    div()
-                        .id("header-settings-link")
-                        .flex()
-                        .items_center()
-                        .gap(px(10.0))
-                        .cursor_pointer()
-                        .hover(|style| style.opacity(0.85))
-                        .child(
-                            div()
-                                .w(px(32.0))
-                                .h(px(32.0))
-                                .rounded_full()
-                                .bg(colors.surface)
-                                .border_1()
-                                .border_color(colors.border)
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(
-                                    Icon::new(IconName::Settings)
-                                        .size(px(14.0))
-                                        .color(colors.text_muted),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(13.0))
-                                .text_color(colors.text)
-                                .child("Settings"),
-                        )
-                        .on_click(cx.listener(|_this, _event, _window, cx| {
-                            cx.update_global::<AppState, _>(|state, _| {
-                                state.open_settings();
-                            });
-                            cx.notify();
-                        })),
-                ),
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(16.0))
+                    .child(namespace_button)
+                    .child(
+                        div()
+                            .id("header-settings-link")
+                            .flex()
+                            .items_center()
+                            .gap(px(10.0))
+                            .cursor_pointer()
+                            .hover(|style| style.opacity(0.85))
+                            .child(
+                                div()
+                                    .w(px(32.0))
+                                    .h(px(32.0))
+                                    .rounded_full()
+                                    .bg(colors.surface)
+                                    .border_1()
+                                    .border_color(colors.border)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(
+                                        Icon::new(IconName::Settings)
+                                            .size(px(14.0))
+                                            .color(colors.text_muted),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.0))
+                                    .text_color(colors.text)
+                                    .child("Settings"),
+                            )
+                            .on_click(cx.listener(|_this, _event, _window, cx| {
+                                cx.update_global::<AppState, _>(|state, _| {
+                                    state.open_settings();
+                                });
+                                cx.notify();
+                            })),
+                    ),
             )
     }
 }

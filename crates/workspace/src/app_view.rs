@@ -1055,18 +1055,13 @@ impl AppView {
         let theme = theme(cx);
         let colors = &theme.colors;
         let resource_type = state.selected_type;
-        let namespace = state.namespace.clone();
-        let namespaces = state.namespaces.clone();
 
         let mut container = div().size_full().flex().flex_col().gap(px(14.0));
 
-        // 1. Breadcrumb (context > namespace)
-        container = container.child(self.render_breadcrumb(cx, &namespace, namespaces));
-
-        // 2. Page header (title + subtitle + action buttons)
+        // 1. Page header (title + subtitle + action buttons)
         container = container.child(self.render_page_header(cx, resource_type));
 
-        // 3. Metric cards
+        // 2. Metric cards
         container = container.child(self.render_metric_cards(cx, state));
 
         // Error message
@@ -1085,7 +1080,7 @@ impl AppView {
             );
         }
 
-        // 4. Resource table or loading state
+        // 3. Resource table or loading state
         if state.is_loading {
             container = container.child(
                 div()
@@ -1281,71 +1276,6 @@ impl AppView {
                 )
                 .into_any_element(),
         )
-    }
-
-    /// Render breadcrumb navigation (namespace selector)
-    fn render_breadcrumb(
-        &self,
-        cx: &Context<'_, Self>,
-        namespace: &Option<String>,
-        namespaces: Vec<String>,
-    ) -> impl IntoElement {
-        let theme = theme(cx);
-        let ns_label: SharedString = namespace
-            .clone()
-            .unwrap_or_else(|| "All Namespaces".to_string())
-            .into();
-
-        // Namespace selector dropdown
-        let current_ns = namespace.clone();
-        let namespace_button = Button::new("breadcrumb-namespace")
-            .icon(IconName::Layers)
-            .label(ns_label)
-            .compact()
-            .with_variant(ButtonVariant::Ghost)
-            .dropdown_caret(true)
-            .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
-                let mut m = menu.scrollable(true);
-                // "All Namespaces" option
-                let is_all = current_ns.is_none();
-                m = m.item(
-                    PopupMenuItem::new("All Namespaces")
-                        .checked(is_all)
-                        .on_click(|_, _window, cx| {
-                            cx.update_global::<AppState, _>(|state, _| {
-                                state.set_namespace(None);
-                            });
-                            let resource_type = cx.global::<AppState>().selected_type;
-                            crate::load_resources(cx, resource_type, None);
-                        }),
-                );
-                for ns in &namespaces {
-                    let ns_for_state = ns.clone();
-                    let ns_for_reload = ns.clone();
-                    let is_selected = current_ns.as_ref() == Some(ns);
-                    m = m.item(
-                        PopupMenuItem::new(ns.clone())
-                            .checked(is_selected)
-                            .on_click(move |_, _window, cx| {
-                                let ns = ns_for_state.clone();
-                                let ns2 = ns_for_reload.clone();
-                                cx.update_global::<AppState, _>(|state, _| {
-                                    state.set_namespace(Some(ns));
-                                });
-                                let resource_type = cx.global::<AppState>().selected_type;
-                                crate::load_resources(cx, resource_type, Some(ns2));
-                            }),
-                    );
-                }
-                m
-            });
-
-        div()
-            .flex()
-            .items_center()
-            .gap(px(4.0))
-            .font_family(theme.font_family_ui.clone())
-            .child(namespace_button)
     }
 
     /// Render the page header with title, subtitle, and action buttons
