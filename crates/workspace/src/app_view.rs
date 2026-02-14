@@ -676,6 +676,7 @@ impl Render for AppView {
             .relative()
             .bg(colors.background)
             .text_color(colors.text)
+            .text_size(theme.font_size)
             .font_family(theme.font_family.clone())
             .flex()
             .flex_col()

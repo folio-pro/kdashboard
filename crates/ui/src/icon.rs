@@ -144,11 +144,13 @@ impl RenderOnce for Icon {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = crate::theme::theme(cx);
         let color = self.color.unwrap_or(theme.colors.text);
+        let size = if self.size <= px(0.0) {
+            px(1.0)
+        } else {
+            self.size
+        };
 
-        svg()
-            .path(self.name.path())
-            .size(self.size)
-            .text_color(color)
+        svg().path(self.name.path()).size(size).text_color(color)
     }
 }
 
@@ -156,6 +158,8 @@ impl RenderOnce for Icon {
 /// that accept `impl Into<gpui_component::Icon>`.
 impl From<IconName> for gpui_component::Icon {
     fn from(name: IconName) -> gpui_component::Icon {
-        gpui_component::Icon::default().path(name.path())
+        gpui_component::Icon::default()
+            .path(name.path())
+            .size(px(16.0))
     }
 }

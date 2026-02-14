@@ -1439,6 +1439,10 @@ pub async fn stream_pod_logs(
         .await
         .context("Failed to stream pod logs")?;
 
+    // Notify UI that the stream is connected, even before the first log line arrives.
+    // This avoids keeping the view in a perpetual loading state for quiet pods.
+    let _ = tx.send(Ok(String::new()));
+
     let mut line = String::new();
     loop {
         if cancelled.load(Ordering::SeqCst) {

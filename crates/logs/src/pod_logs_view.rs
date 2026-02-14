@@ -368,6 +368,14 @@ impl PodLogsView {
                         }
                         Err(mpsc::TryRecvError::Empty) => break,
                         Err(mpsc::TryRecvError::Disconnected) => {
+                            let _ = cx.update(|cx: &mut App| {
+                                let _ = view.update(cx, |this, cx| {
+                                    if this.stream_generation == stream_generation {
+                                        this.is_loading = false;
+                                        cx.notify();
+                                    }
+                                });
+                            });
                             should_break = true;
                             break;
                         }
