@@ -4,6 +4,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
+use gpui_component::{VirtualListScrollHandle, v_virtual_list};
 use k8s_client::{get_client, get_pod_logs, stream_pod_logs};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -124,6 +125,8 @@ struct ColorSpan {
     color: Hsla,
 }
 
+const MODAL_WRAP_CHUNK_CHARS: usize = 80;
+
 pub struct PodLogsView {
     pod_name: String,
     namespace: String,
@@ -150,13 +153,18 @@ pub struct PodLogsView {
     stream_generation: u64,
     word_wrap: bool,
     log_modal: Option<LogModalState>,
+    selected_log_index: Option<usize>,
 
     // Search input
     search_input: Option<Entity<InputState>>,
     _search_subscription: Option<Subscription>,
 
     // Scroll
-    scroll_handle: ScrollHandle,
+    logs_scroll_handle: VirtualListScrollHandle,
+
+    // Filter cache
+    filtered_indices: Vec<usize>,
+    filter_dirty: bool,
 
     // Callbacks
     on_action: Option<Box<dyn Fn(PodLogsAction, &mut Context<'_, Self>) + 'static>>,
@@ -185,9 +193,12 @@ impl PodLogsView {
             stream_generation: 0,
             word_wrap: false,
             log_modal: None,
+            selected_log_index: None,
             search_input: None,
             _search_subscription: None,
-            scroll_handle: ScrollHandle::new(),
+            logs_scroll_handle: VirtualListScrollHandle::new(),
+            filtered_indices: Vec::new(),
+            filter_dirty: true,
             on_action: None,
             on_close: None,
         }
@@ -208,6 +219,7 @@ impl PodLogsView {
                         .map(|i| i.read(cx).text().to_string())
                         .unwrap_or_default();
                     this.search_query = text;
+                    this.filter_dirty = true;
                     cx.notify();
                 }
                 InputEvent::PressEnter { .. } => {
@@ -354,7 +366,7 @@ impl PodLogsView {
                                     match msg {
                                         Ok(line) => {
                                             if let Some(entry) = Self::parse_log_line(&line) {
-                                                this.logs.push(entry);
+                                                this.append_log(entry);
                                             }
                                         }
                                         Err(e) => {
@@ -443,6 +455,7 @@ impl PodLogsView {
                             match result {
                                 Ok(logs_text) => {
                                     this.logs = Self::parse_logs(&logs_text);
+                                    this.filter_dirty = true;
                                     this.error = None;
                                 }
                                 Err(e) => {
@@ -470,7 +483,7 @@ impl PodLogsView {
     }
 
     pub fn refresh(&mut self, cx: &mut Context<'_, Self>) {
-        self.logs.clear();
+        self.clear_logs();
         if self.is_streaming {
             self.start_stream(cx);
         } else {
@@ -493,17 +506,29 @@ impl PodLogsView {
 
     pub fn set_logs(&mut self, logs: Vec<PodLogEntry>) {
         self.logs = logs;
+        self.filter_dirty = true;
+        self.selected_log_index = None;
+        self.log_modal = None;
     }
 
     pub fn append_log(&mut self, entry: PodLogEntry) {
         self.logs.push(entry);
+        self.filter_dirty = true;
     }
 
     pub fn clear_logs(&mut self) {
         self.logs.clear();
+        self.filtered_indices.clear();
+        self.filter_dirty = false;
+        self.selected_log_index = None;
+        self.log_modal = None;
     }
 
-    fn filtered_logs(&self) -> Vec<&PodLogEntry> {
+    fn update_filtered_indices(&mut self) {
+        if !self.filter_dirty {
+            return;
+        }
+
         // Pre-compile regex if in regex mode
         let compiled_regex = if self.regex_mode && !self.search_query.is_empty() {
             regex::Regex::new(&self.search_query).ok()
@@ -511,9 +536,16 @@ impl PodLogsView {
             None
         };
 
-        self.logs
-            .iter()
-            .filter(|log| {
+        let search_lower = if self.search_query.is_empty() {
+            None
+        } else {
+            Some(self.search_query.to_lowercase())
+        };
+
+        self.filtered_indices.clear();
+        self.filtered_indices.reserve(self.logs.len());
+
+        for (idx, log) in self.logs.iter().enumerate() {
                 // Level filter
                 let level_match = match self.level_filter {
                     LogLevelFilter::All => true,
@@ -523,19 +555,21 @@ impl PodLogsView {
                 };
 
                 // Search filter
-                let search_match = if self.search_query.is_empty() {
+                let search_match = if search_lower.is_none() {
                     true
                 } else if let Some(ref re) = compiled_regex {
                     re.is_match(&log.message)
                 } else {
-                    log.message
-                        .to_lowercase()
-                        .contains(&self.search_query.to_lowercase())
+                    let message_lower = log.message.to_lowercase();
+                    message_lower.contains(search_lower.as_ref().unwrap())
                 };
 
-                level_match && search_match
-            })
-            .collect()
+                if level_match && search_match {
+                    self.filtered_indices.push(idx);
+                }
+        }
+
+        self.filter_dirty = false;
     }
 }
 
@@ -570,7 +604,7 @@ impl Render for PodLogsView {
             .child(self.render_filter_toolbar(cx))
             .child(self.render_logs_content(cx))
             .when_some(self.log_modal.clone(), |el, modal| {
-                el.child(self.render_log_modal(cx, modal))
+                el.child(self.render_log_sidebar(cx, modal))
             })
     }
 }
@@ -965,6 +999,7 @@ impl PodLogsView {
                     )
                     .on_click(cx.listener(|this, _event, _window, cx| {
                         this.regex_mode = !this.regex_mode;
+                        this.filter_dirty = true;
                         cx.notify();
                     })),
             )
@@ -1045,7 +1080,7 @@ impl PodLogsView {
                             .child("Clear"),
                     )
                     .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.logs.clear();
+                        this.clear_logs();
                         if let Some(on_action) = &this.on_action {
                             on_action(PodLogsAction::Clear, cx);
                         }
@@ -1198,18 +1233,23 @@ impl PodLogsView {
             )
             .on_click(cx.listener(move |this, _event, _window, cx| {
                 this.level_filter = level;
+                this.filter_dirty = true;
                 cx.notify();
             }))
     }
 
     // ── Logs Content Area ───────────────────────────────────────────────
 
-    fn render_logs_content(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+    fn render_logs_content(&mut self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        self.update_filtered_indices();
+
         let theme = theme(cx);
         let colors = &theme.colors;
-        let logs = self.filtered_logs();
+        let item_count = self.filtered_indices.len();
+        let item_sizes = std::rc::Rc::new(vec![size(px(0.0), px(22.0)); item_count]);
         let is_loading = self.is_loading;
         let error = self.error.clone();
+        let list_scroll_handle = self.logs_scroll_handle.clone();
 
         // Outer: fills remaining vertical space, clips everything
         div()
@@ -1245,18 +1285,11 @@ impl PodLogsView {
                                     .id("logs-scroll")
                                     .w_full()
                                     .h_full()
-                                    .when(self.word_wrap, |el| el.overflow_y_scroll())
-                                    .when(!self.word_wrap, |el| el.overflow_scroll())
-                                    .track_scroll(&self.scroll_handle)
                                     .bg(colors.surface_elevated)
-                                    .p(px(16.0))
-                                    .flex()
-                                    .flex_col()
-                                    .when(!self.word_wrap, |el| el.items_start())
-                                    .gap(px(2.0))
                                     .when(is_loading, |el| {
                                         el.child(
                                             div()
+                                                .p(px(16.0))
                                                 .text_size(px(12.0))
                                                 .text_color(colors.text_muted)
                                                 .font_family(theme.font_family.clone())
@@ -1266,6 +1299,7 @@ impl PodLogsView {
                                     .when(error.is_some(), |el| {
                                         el.child(
                                             div()
+                                                .p(px(16.0))
                                                 .text_size(px(12.0))
                                                 .text_color(colors.error)
                                                 .font_family(theme.font_family.clone())
@@ -1275,19 +1309,82 @@ impl PodLogsView {
                                                 )),
                                         )
                                     })
-                                    .when(!is_loading && self.error.is_none(), |el| {
-                                        el.children(
-                                            logs.iter().enumerate().map(|(idx, log)| {
-                                                self.render_log_line(cx, idx, log)
-                                            }),
+                                    .when(!is_loading && self.error.is_none() && self.word_wrap, |el| {
+                                        el.child(
+                                            div()
+                                                .w_full()
+                                                .h_full()
+                                                .overflow_y_scrollbar()
+                                                .p(px(16.0))
+                                                .flex()
+                                                .flex_col()
+                                                .gap(px(2.0))
+                                                .children(self.filtered_indices.iter().filter_map(|&idx| {
+                                                    self.logs
+                                                        .get(idx)
+                                                        .cloned()
+                                                        .map(|log| {
+                                                            Self::render_log_line(
+                                                                cx,
+                                                                idx,
+                                                                log,
+                                                                self.show_timestamps,
+                                                                self.word_wrap,
+                                                                self.selected_log_index == Some(idx),
+                                                            )
+                                                        })
+                                                })),
                                         )
+                                    })
+                                    .when(!is_loading && self.error.is_none() && !self.word_wrap, |el| {
+                                        if item_count == 0 {
+                                            el.child(
+                                                div()
+                                                    .p(px(16.0))
+                                                    .text_size(px(12.0))
+                                                    .text_color(colors.text_muted)
+                                                    .font_family(theme.font_family.clone())
+                                                    .child("No log lines match the current filters."),
+                                            )
+                                        } else {
+                                            el.child(
+                                                v_virtual_list(
+                                                    cx.entity(),
+                                                    "logs-virtual-list",
+                                                    item_sizes,
+                                                    move |this, visible_range, _window, cx| {
+                                                        visible_range
+                                                            .filter_map(|visible_idx| {
+                                                                let log_idx = this
+                                                                    .filtered_indices
+                                                                    .get(visible_idx)
+                                                                    .copied()?;
+                                                                let log =
+                                                                    this.logs.get(log_idx)?.clone();
+                                                                Some(Self::render_log_line(
+                                                                    cx,
+                                                                    log_idx,
+                                                                    log,
+                                                                    this.show_timestamps,
+                                                                    this.word_wrap,
+                                                                    this.selected_log_index == Some(log_idx),
+                                                                ))
+                                                            })
+                                                            .collect::<Vec<_>>()
+                                                    },
+                                                )
+                                                .track_scroll(&list_scroll_handle)
+                                                .p(px(16.0))
+                                                .gap(px(2.0)),
+                                            )
+                                        }
                                     }),
                             ),
                     ),
             )
     }
 
-    fn render_log_modal(&self, cx: &Context<'_, Self>, modal: LogModalState) -> impl IntoElement {
+    fn render_log_sidebar(&self, cx: &Context<'_, Self>, modal: LogModalState) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
@@ -1312,124 +1409,121 @@ impl PodLogsView {
 
         div()
             .absolute()
-            .left(px(0.0))
+            .right(px(0.0))
             .top(px(0.0))
-            .w_full()
             .h_full()
-            .bg(colors.background.opacity(0.72))
-            .p(px(24.0))
+            .w(px(560.0))
+            .max_w(px(900.0))
+            .bg(colors.surface_elevated)
+            .border_l_1()
+            .border_color(colors.border)
+            .overflow_hidden()
+            .flex()
+            .flex_col()
             .child(
                 div()
                     .w_full()
-                    .h_full()
-                    .max_w(px(980.0))
-                    .mx_auto()
-                    .bg(colors.surface_elevated)
-                    .border_1()
-                    .border_color(colors.border)
-                    .rounded(theme.border_radius_lg)
-                    .overflow_hidden()
+                    .flex_shrink_0()
                     .flex()
-                    .flex_col()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(10.0))
+                    .px(px(16.0))
+                    .py(px(12.0))
+                    .border_b_1()
+                    .border_color(colors.border)
                     .child(
                         div()
-                            .w_full()
-                            .flex_shrink_0()
                             .flex()
                             .items_center()
-                            .justify_between()
                             .gap(px(10.0))
-                            .px(px(16.0))
-                            .py(px(12.0))
-                            .border_b_1()
-                            .border_color(colors.border)
+                            .min_w(px(0.0))
+                            .flex_1()
                             .child(
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(10.0))
-                                    .min_w(px(0.0))
-                                    .flex_1()
-                                    .child(
-                                        div()
-                                            .px(px(8.0))
-                                            .py(px(3.0))
-                                            .rounded(theme.border_radius_sm)
-                                            .bg(colors.primary.opacity(0.12))
-                                            .text_size(px(11.0))
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .font_family(theme.font_family_ui.clone())
-                                            .text_color(colors.primary)
-                                            .child(level_label),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(12.0))
-                                            .font_family(theme.font_family.clone())
-                                            .text_color(colors.text_secondary)
-                                            .overflow_hidden()
-                                            .whitespace_nowrap()
-                                            .text_ellipsis()
-                                            .child(Self::format_log_timestamp(&modal.timestamp)),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(11.0))
-                                            .font_family(theme.font_family_ui.clone())
-                                            .text_color(colors.text_muted)
-                                            .child(format!("Format: {}", modal.format_label)),
-                                    ),
+                                    .text_size(px(13.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .font_family(theme.font_family_ui.clone())
+                                    .text_color(colors.text)
+                                    .child("Log details"),
                             )
                             .child(
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(8.0))
-                                    .child(
-                                        secondary_btn(
-                                            "log-modal-copy-btn",
-                                            IconName::Copy,
-                                            "Copy",
-                                            colors,
-                                        )
-                                        .on_click(
-                                            cx.listener(|this, _event, _window, cx| {
-                                                if let Some(modal) = &this.log_modal {
-                                                    cx.write_to_clipboard(
-                                                        ClipboardItem::new_string(
-                                                            modal.content.clone(),
-                                                        ),
-                                                    );
-                                                }
-                                            }),
-                                        ),
-                                    )
-                                    .child(
-                                        secondary_btn(
-                                            "log-modal-close-btn",
-                                            IconName::Close,
-                                            "Close",
-                                            colors,
-                                        )
-                                        .on_click(
-                                            cx.listener(|this, _event, _window, cx| {
-                                                this.log_modal = None;
-                                                cx.notify();
-                                            }),
-                                        ),
-                                    ),
+                                    .px(px(8.0))
+                                    .py(px(3.0))
+                                    .rounded(theme.border_radius_sm)
+                                    .bg(colors.primary.opacity(0.12))
+                                    .text_size(px(11.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .font_family(theme.font_family_ui.clone())
+                                    .text_color(colors.primary)
+                                    .child(level_label),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .font_family(theme.font_family.clone())
+                                    .text_color(colors.text_secondary)
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_ellipsis()
+                                    .child(Self::format_log_timestamp(&modal.timestamp)),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .font_family(theme.font_family_ui.clone())
+                                    .text_color(colors.text_muted)
+                                    .child(format!("Format: {}", modal.format_label)),
                             ),
                     )
                     .child(
                         div()
-                            .id("log-modal-content-scroll")
-                            .flex_1()
-                            .min_h(px(0.0))
-                            .overflow_y_scrollbar()
-                            .p(px(16.0))
-                            .bg(colors.surface)
-                            .children(rendered_lines),
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(
+                                secondary_btn(
+                                    "log-sidebar-copy-btn",
+                                    IconName::Copy,
+                                    "Copy",
+                                    colors,
+                                )
+                                .on_click(
+                                    cx.listener(|this, _event, _window, cx| {
+                                        if let Some(modal) = &this.log_modal {
+                                            cx.write_to_clipboard(ClipboardItem::new_string(
+                                                modal.content.clone(),
+                                            ));
+                                        }
+                                    }),
+                                ),
+                            )
+                            .child(
+                                secondary_btn(
+                                    "log-sidebar-close-btn",
+                                    IconName::Close,
+                                    "Close",
+                                    colors,
+                                )
+                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                    cx.stop_propagation();
+                                    this.log_modal = None;
+                                    this.selected_log_index = None;
+                                    cx.notify();
+                                })),
+                            ),
                     ),
+            )
+            .child(
+                div()
+                    .id("log-sidebar-content-scroll")
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_y_scrollbar()
+                    .p(px(16.0))
+                    .bg(colors.surface)
+                    .children(rendered_lines),
             )
     }
 
@@ -1447,23 +1541,56 @@ impl PodLogsView {
         div()
             .id(ElementId::Name(format!("log-modal-line-{}", idx).into()))
             .flex()
+            .flex_wrap()
             .items_start()
             .gap(px(0.0))
             .w_full()
             .min_w(px(0.0))
-            .children(spans.into_iter().map(|span| {
-                div()
-                    .text_size(px(12.0))
-                    .font_family(theme.font_family.clone())
-                    .text_color(span.color)
-                    .whitespace_nowrap()
-                    .child(if span.text.is_empty() {
-                        " ".to_string()
-                    } else {
-                        span.text
+            .children(spans.into_iter().flat_map(|span| {
+                Self::chunk_text_for_wrap(&span.text, MODAL_WRAP_CHUNK_CHARS)
+                    .into_iter()
+                    .map(move |chunk| {
+                        div()
+                            .text_size(px(12.0))
+                            .font_family(theme.font_family.clone())
+                            .text_color(span.color)
+                            .child(if chunk.is_empty() {
+                                " ".to_string()
+                            } else {
+                                chunk
+                            })
+                            .into_any_element()
                     })
-                    .into_any_element()
             }))
+    }
+
+    fn chunk_text_for_wrap(text: &str, max_chars: usize) -> Vec<String> {
+        if text.is_empty() || max_chars == 0 {
+            return vec![text.to_string()];
+        }
+
+        let mut chunks = Vec::new();
+        let mut start = 0;
+        let mut count = 0;
+
+        for (i, _) in text.char_indices() {
+            if count == max_chars {
+                chunks.push(text[start..i].to_string());
+                start = i;
+                count = 0;
+            }
+            count += 1;
+        }
+
+        if start < text.len() {
+            chunks.push(text[start..].to_string());
+        }
+
+        if chunks.is_empty() {
+            chunks.push(String::new());
+        }
+
+        chunks
     }
 
     // ── Terminal Header ─────────────────────────────────────────────────
@@ -1530,11 +1657,13 @@ impl PodLogsView {
     // ── Log Line ────────────────────────────────────────────────────────
 
     fn render_log_line(
-        &self,
         cx: &Context<'_, Self>,
         idx: usize,
-        log: &PodLogEntry,
-    ) -> impl IntoElement {
+        log: PodLogEntry,
+        show_timestamps: bool,
+        word_wrap: bool,
+        is_selected: bool,
+    ) -> AnyElement {
         let theme = theme(cx);
         let colors = &theme.colors;
         let timestamp_display = Self::format_log_timestamp(&log.timestamp);
@@ -1547,8 +1676,6 @@ impl PodLogsView {
             DetectedLevel::Debug => (colors.text_muted, "DEBUG", colors.text_secondary),
         };
 
-        let word_wrap = self.word_wrap;
-
         div()
             .id(ElementId::Name(format!("log-line-{}", idx).into()))
             .w_full()
@@ -1558,9 +1685,10 @@ impl PodLogsView {
             .items_start()
             .gap(px(12.0))
             .cursor_pointer()
+            .when(is_selected, |el| el.bg(colors.primary.opacity(0.12)))
             .hover(|s| s.bg(colors.selection_hover))
             // Timestamp
-            .when(self.show_timestamps && !log.timestamp.is_empty(), |el| {
+            .when(show_timestamps && !log.timestamp.is_empty(), |el| {
                 el.child(
                     div()
                         .w(px(96.0))
@@ -1603,8 +1731,10 @@ impl PodLogsView {
                     format_label,
                     content: formatted,
                 });
+                this.selected_log_index = Some(idx);
                 cx.notify();
             }))
+            .into_any_element()
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────

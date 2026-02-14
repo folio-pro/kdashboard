@@ -4,6 +4,7 @@ use editor::YamlEditor;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use k8s_client::Resource;
+use ui::gpui_component::tooltip::Tooltip;
 use ui::{back_btn, danger_btn, theme, Icon, IconName, Sizable};
 
 /// Actions that can be triggered from DeploymentDetails
@@ -111,6 +112,10 @@ impl Render for DeploymentDetails {
 
 impl DeploymentDetails {
     impl_yaml_editor_methods!();
+
+    fn image_display_name(image: &str) -> String {
+        image.rsplit('/').next().unwrap_or(image).to_string()
+    }
 
     fn render_breadcrumb(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let theme = theme(cx);
@@ -451,6 +456,7 @@ impl DeploymentDetails {
                     .and_then(|v| v.as_str())
                     .unwrap_or("-")
                     .to_string();
+                let image_short = Self::image_display_name(&image);
 
                 let cpu_request = container
                     .get("resources")
@@ -533,25 +539,50 @@ impl DeploymentDetails {
                                             .flex()
                                             .flex_col()
                                             .gap(px(2.0))
-                                            .child(
+                                            .child(with_double_click_copy(
                                                 div()
+                                                    .id(ElementId::Name(
+                                                        format!(
+                                                            "deployment-container-name-{}",
+                                                            idx
+                                                        )
+                                                        .into(),
+                                                    ))
                                                     .overflow_hidden()
                                                     .whitespace_nowrap()
                                                     .text_ellipsis()
                                                     .text_size(px(14.0))
                                                     .text_color(colors.text)
                                                     .font_weight(FontWeight::SEMIBOLD)
-                                                    .child(name),
-                                            )
-                                            .child(
+                                                    .child(name.clone()),
+                                                name,
+                                            ))
+                                            .child(with_double_click_copy(
                                                 div()
+                                                    .id(ElementId::Name(
+                                                        format!(
+                                                            "deployment-container-image-{}",
+                                                            idx
+                                                        )
+                                                        .into(),
+                                                    ))
                                                     .overflow_hidden()
                                                     .whitespace_nowrap()
                                                     .text_ellipsis()
                                                     .text_size(px(12.0))
                                                     .text_color(colors.text_secondary)
-                                                    .child(image),
-                                            ),
+                                                    .child(image_short)
+                                                    .tooltip({
+                                                        let full_image = image.clone();
+                                                        move |_, cx| {
+                                                            cx.new(|_| {
+                                                                Tooltip::new(full_image.clone())
+                                                            })
+                                                            .into()
+                                                        }
+                                                    }),
+                                                image.clone(),
+                                            )),
                                     ),
                             )
                             .child(

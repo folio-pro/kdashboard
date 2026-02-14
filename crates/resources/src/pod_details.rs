@@ -6,6 +6,7 @@ use gpui::*;
 use k8s_client::{PortForwardInfo, Resource};
 use std::collections::HashMap;
 use ui::gpui_component::input::{Input as TextInput, InputState};
+use ui::gpui_component::tooltip::Tooltip;
 use ui::{back_btn, danger_btn, theme, Icon, IconName, Sizable, Size};
 
 /// Actions that can be triggered from PodDetails
@@ -885,6 +886,7 @@ impl PodDetails {
                     .and_then(|v| v.as_str())
                     .unwrap_or("-")
                     .to_string();
+                let image_short = Self::image_display_name(&image);
 
                 let status = container_statuses
                     .iter()
@@ -999,8 +1001,11 @@ impl PodDetails {
                                             .flex()
                                             .flex_col()
                                             .gap(px(2.0))
-                                            .child(
+                                            .child(with_double_click_copy(
                                                 div()
+                                                    .id(ElementId::Name(
+                                                        format!("container-name-{}", idx).into(),
+                                                    ))
                                                     .overflow_hidden()
                                                     .whitespace_nowrap()
                                                     .text_ellipsis()
@@ -1008,16 +1013,30 @@ impl PodDetails {
                                                     .text_color(colors.text)
                                                     .font_weight(FontWeight::SEMIBOLD)
                                                     .child(name.clone()),
-                                            )
-                                            .child(
+                                                name.clone(),
+                                            ))
+                                            .child(with_double_click_copy(
                                                 div()
+                                                    .id(ElementId::Name(
+                                                        format!("container-image-{}", idx).into(),
+                                                    ))
                                                     .overflow_hidden()
                                                     .whitespace_nowrap()
                                                     .text_ellipsis()
                                                     .text_size(px(12.0))
                                                     .text_color(colors.text_secondary)
-                                                    .child(image),
-                                            ),
+                                                    .child(image_short)
+                                                    .tooltip({
+                                                        let full_image = image.clone();
+                                                        move |_, cx| {
+                                                            cx.new(|_| {
+                                                                Tooltip::new(full_image.clone())
+                                                            })
+                                                            .into()
+                                                        }
+                                                    }),
+                                                image.clone(),
+                                            )),
                                     ),
                             )
                             // Right: restarts + status badge
@@ -1170,6 +1189,12 @@ impl PodDetails {
     fn render_events_card(&self, cx: &Context<'_, Self>, resource: &Resource) -> impl IntoElement {
         let events = derive_pod_events(resource);
         render_detail_events_card(cx, events)
+    }
+}
+
+impl PodDetails {
+    fn image_display_name(image: &str) -> String {
+        image.rsplit('/').next().unwrap_or(image).to_string()
     }
 }
 

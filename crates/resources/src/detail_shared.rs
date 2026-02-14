@@ -2,6 +2,8 @@ use gpui::*;
 use k8s_client::Resource;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use ui::gpui_component::notification::Notification;
+use ui::gpui_component::WindowExt;
 use ui::{theme, Icon, IconName};
 
 // ── Helper functions ────────────────────────────────────────────────────
@@ -185,6 +187,23 @@ pub fn compute_diff(original: &str, current: &str) -> Vec<Div> {
     compute_diff_with_colors(original, current, &colors)
 }
 
+pub fn with_double_click_copy(element: Stateful<Div>, text: impl Into<String>) -> Stateful<Div> {
+    let copy_text = text.into();
+    element.on_click(
+        move |event: &ClickEvent, window: &mut Window, cx: &mut App| {
+            if event.click_count() < 2 || copy_text.is_empty() {
+                return;
+            }
+            cx.write_to_clipboard(ClipboardItem::new_string(copy_text.clone()));
+            window.push_notification(
+                Notification::success("Text copied to clipboard").title("Copied"),
+                cx,
+            );
+            cx.stop_propagation();
+        },
+    )
+}
+
 // ── Shared types ────────────────────────────────────────────────────────
 
 #[allow(dead_code)]
@@ -263,22 +282,27 @@ pub fn render_detail_labels_card(cx: &App, resource: &Resource) -> impl IntoElem
 
     let count = labels.len();
 
-    let label_badges: Vec<Div> = labels
+    let label_badges: Vec<AnyElement> = labels
         .iter()
         .map(|(k, v)| {
-            div()
-                .px(px(12.0))
-                .py(px(6.0))
-                .rounded(theme.border_radius_md)
-                .bg(colors.surface_elevated)
-                .flex()
-                .items_center()
-                .child(
-                    div()
-                        .text_size(px(12.0))
-                        .text_color(colors.text_secondary)
-                        .child(format!("{}={}", k, v)),
-                )
+            with_double_click_copy(
+                div()
+                    .id(ElementId::Name(format!("label-badge-{}", k).into()))
+                    .px(px(12.0))
+                    .py(px(6.0))
+                    .rounded(theme.border_radius_md)
+                    .bg(colors.surface_elevated)
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(colors.text_secondary)
+                            .child(format!("{}={}", k, v)),
+                    ),
+                format!("{}={}", k, v),
+            )
+            .into_any_element()
         })
         .collect();
 
@@ -309,6 +333,7 @@ pub fn render_detail_resource_stat(
     let theme = theme(cx);
     let colors = &theme.colors;
 
+    let value_text = format!("{}{}", value, unit);
     let mut card = div()
         .flex_1()
         .p(px(16.0))
@@ -329,28 +354,34 @@ pub fn render_detail_resource_stat(
                 .flex()
                 .items_end()
                 .gap(px(4.0))
-                .child(
+                .child(with_double_click_copy(
                     div()
+                        .id("resource-stat-value")
                         .text_size(px(24.0))
                         .text_color(colors.text)
                         .font_weight(FontWeight::BOLD)
                         .child(value.to_string()),
-                )
-                .child(
+                    value_text.clone(),
+                ))
+                .child(with_double_click_copy(
                     div()
+                        .id("resource-stat-unit")
                         .text_size(px(14.0))
                         .text_color(colors.text_muted)
                         .child(unit.to_string()),
-                ),
+                    value_text.clone(),
+                )),
         );
 
     if let Some(limit_text) = limit {
-        card = card.child(
+        card = card.child(with_double_click_copy(
             div()
+                .id("resource-stat-limit")
                 .text_size(px(11.0))
                 .text_color(colors.text_muted)
                 .child(limit_text.to_string()),
-        );
+            limit_text.to_string(),
+        ));
     }
 
     card
@@ -384,8 +415,9 @@ pub fn render_detail_info_rows(
                     .text_color(colors.text_secondary)
                     .child(label.to_string()),
             )
-            .child(
+            .child(with_double_click_copy(
                 div()
+                    .id(ElementId::Name(format!("info-row-value-{}", idx).into()))
                     .flex_1()
                     .min_w(px(0.0))
                     .overflow_hidden()
@@ -393,8 +425,9 @@ pub fn render_detail_info_rows(
                     .text_ellipsis()
                     .text_size(px(13.0))
                     .text_color(value_color.unwrap_or(colors.text))
-                    .child(value),
-            )
+                    .child(value.clone()),
+                value,
+            ))
         })
         .collect()
 }
@@ -460,25 +493,31 @@ pub fn render_detail_events_card(cx: &App, events: Vec<ResourceEvent>) -> impl I
                     .flex()
                     .flex_col()
                     .gap(px(4.0))
-                    .child(
+                    .child(with_double_click_copy(
                         div()
+                            .id(ElementId::Name(format!("event-title-{}", idx).into()))
                             .text_size(px(13.0))
                             .text_color(colors.text)
                             .font_weight(FontWeight::MEDIUM)
-                            .child(event.title),
-                    )
-                    .child(
+                            .child(event.title.clone()),
+                        event.title,
+                    ))
+                    .child(with_double_click_copy(
                         div()
+                            .id(ElementId::Name(format!("event-description-{}", idx).into()))
                             .text_size(px(12.0))
                             .text_color(colors.text_secondary)
-                            .child(event.description),
-                    )
-                    .child(
+                            .child(event.description.clone()),
+                        event.description,
+                    ))
+                    .child(with_double_click_copy(
                         div()
+                            .id(ElementId::Name(format!("event-time-{}", idx).into()))
                             .text_size(px(11.0))
                             .text_color(colors.text_muted)
-                            .child(event.time),
-                    ),
+                            .child(event.time.clone()),
+                        event.time,
+                    )),
             )
         })
         .collect();
