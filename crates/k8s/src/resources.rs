@@ -1,9 +1,9 @@
 use crate::types::{OwnerReference, Resource, ResourceList, ResourceMetadata, ResourceType};
 use anyhow::{Context, Result};
-use kube::api::{Api, DeleteParams, ListParams, LogParams, Patch, PatchParams};
 use kube::Client;
+use kube::api::{Api, DeleteParams, ListParams, LogParams, Patch, PatchParams};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::{Arc, mpsc::Sender};
 fn opt_time_to_string(
     time: Option<k8s_openapi::apimachinery::pkg::apis::meta::v1::Time>,
 ) -> Option<String> {
@@ -15,12 +15,14 @@ pub(crate) fn metadata_from<T: kube::Resource<DynamicType = ()>>(
     meta: &k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta,
 ) -> ResourceMetadata {
     let owner_references = meta.owner_references.as_ref().map(|refs| {
-        refs.iter().map(|r| OwnerReference {
-            api_version: r.api_version.clone(),
-            kind: r.kind.clone(),
-            name: r.name.clone(),
-            uid: r.uid.clone(),
-        }).collect()
+        refs.iter()
+            .map(|r| OwnerReference {
+                api_version: r.api_version.clone(),
+                kind: r.kind.clone(),
+                name: r.name.clone(),
+                uid: r.uid.clone(),
+            })
+            .collect()
     });
 
     ResourceMetadata {
@@ -616,12 +618,14 @@ async fn list_vpas(client: &Client, namespace: Option<&str>) -> Result<ResourceL
                 annotations: meta.annotations.clone(),
                 creation_timestamp: meta.creation_timestamp.as_ref().map(|t| t.0.to_rfc3339()),
                 owner_references: meta.owner_references.as_ref().map(|refs| {
-                    refs.iter().map(|r| OwnerReference {
-                        api_version: r.api_version.clone(),
-                        kind: r.kind.clone(),
-                        name: r.name.clone(),
-                        uid: r.uid.clone(),
-                    }).collect()
+                    refs.iter()
+                        .map(|r| OwnerReference {
+                            api_version: r.api_version.clone(),
+                            kind: r.kind.clone(),
+                            name: r.name.clone(),
+                            uid: r.uid.clone(),
+                        })
+                        .collect()
                 }),
             };
             Resource {
@@ -731,14 +735,15 @@ pub async fn get_resource(
             let secret = api.get(name).await.context("Failed to get secret")?;
             let metadata = metadata_from(&secret, &secret.metadata);
             let secret_type = secret.type_.clone();
-            let data_map: Option<std::collections::BTreeMap<String, String>> = secret.data.map(|d| {
-                d.into_iter()
-                    .map(|(k, v)| {
-                        use base64::Engine;
-                        (k, base64::engine::general_purpose::STANDARD.encode(&v.0))
-                    })
-                    .collect()
-            });
+            let data_map: Option<std::collections::BTreeMap<String, String>> =
+                secret.data.map(|d| {
+                    d.into_iter()
+                        .map(|(k, v)| {
+                            use base64::Engine;
+                            (k, base64::engine::general_purpose::STANDARD.encode(&v.0))
+                        })
+                        .collect()
+                });
             Ok(Resource {
                 api_version: "v1".to_string(),
                 kind: "Secret".to_string(),
@@ -932,12 +937,14 @@ pub async fn get_resource(
                 annotations: meta.annotations.clone(),
                 creation_timestamp: meta.creation_timestamp.as_ref().map(|t| t.0.to_rfc3339()),
                 owner_references: meta.owner_references.as_ref().map(|refs| {
-                    refs.iter().map(|r| OwnerReference {
-                        api_version: r.api_version.clone(),
-                        kind: r.kind.clone(),
-                        name: r.name.clone(),
-                        uid: r.uid.clone(),
-                    }).collect()
+                    refs.iter()
+                        .map(|r| OwnerReference {
+                            api_version: r.api_version.clone(),
+                            kind: r.kind.clone(),
+                            name: r.name.clone(),
+                            uid: r.uid.clone(),
+                        })
+                        .collect()
                 }),
             };
             Ok(Resource {
@@ -1456,7 +1463,11 @@ pub async fn stream_pod_logs(
     Ok(())
 }
 
-pub async fn get_pod_events(client: &Client, pod_name: &str, namespace: &str) -> Result<Vec<crate::types::Event>> {
+pub async fn get_pod_events(
+    client: &Client,
+    pod_name: &str,
+    namespace: &str,
+) -> Result<Vec<crate::types::Event>> {
     use k8s_openapi::api::core::v1::Event;
 
     let api: Api<Event> = Api::namespaced(client.clone(), namespace);
@@ -1467,10 +1478,7 @@ pub async fn get_pod_events(client: &Client, pod_name: &str, namespace: &str) ->
         ))
         .timeout(30);
 
-    let events = api
-        .list(&lp)
-        .await
-        .context("Failed to get pod events")?;
+    let events = api.list(&lp).await.context("Failed to get pod events")?;
 
     Ok(events
         .items
@@ -1484,7 +1492,10 @@ pub async fn get_pod_events(client: &Client, pod_name: &str, namespace: &str) ->
             count: e.count.unwrap_or(0),
             first_timestamp: e.first_timestamp.map(|t| t.0.to_string()),
             last_timestamp: e.last_timestamp.map(|t| t.0.to_string()),
-            source: e.source.map(|s| s.component.unwrap_or_default()).unwrap_or_default(),
+            source: e
+                .source
+                .map(|s| s.component.unwrap_or_default())
+                .unwrap_or_default(),
         })
         .collect())
 }
@@ -1492,9 +1503,9 @@ pub async fn get_pod_events(client: &Client, pod_name: &str, namespace: &str) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use k8s_openapi::chrono::{TimeZone, Utc};
     use k8s_openapi::api::core::v1::Pod;
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference, Time};
+    use k8s_openapi::chrono::{TimeZone, Utc};
     use std::collections::BTreeMap;
 
     #[test]
@@ -1538,7 +1549,10 @@ mod tests {
             mapped.creation_timestamp.as_deref(),
             Some("2025-01-01T12:00:00+00:00")
         );
-        assert_eq!(mapped.labels.as_ref().and_then(|m| m.get("app")), Some(&"demo".to_string()));
+        assert_eq!(
+            mapped.labels.as_ref().and_then(|m| m.get("app")),
+            Some(&"demo".to_string())
+        );
         assert_eq!(mapped.owner_references.as_ref().map(|v| v.len()), Some(1));
         assert_eq!(
             mapped

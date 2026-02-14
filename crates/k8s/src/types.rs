@@ -233,14 +233,8 @@ mod tests {
         assert_eq!(ResourceType::Namespaces.api_kind(), "Namespace");
         assert!(!ResourceType::Namespaces.is_namespaced());
 
-        assert_eq!(
-            ResourceType::HorizontalPodAutoscalers.display_name(),
-            "HPA"
-        );
-        assert_eq!(
-            ResourceType::VerticalPodAutoscalers.display_name(),
-            "VPA"
-        );
+        assert_eq!(ResourceType::HorizontalPodAutoscalers.display_name(), "HPA");
+        assert_eq!(ResourceType::VerticalPodAutoscalers.display_name(), "VPA");
     }
 
     #[test]

@@ -1,5 +1,5 @@
-use gpui::*;
 use gpui::prelude::FluentBuilder;
+use gpui::*;
 use ui::gpui_component::input::{Input, InputEvent, InputState};
 
 // Pencil mockup colors for the editor theme
@@ -65,9 +65,12 @@ impl YamlEditor {
                 .default_value(content)
         });
 
-        let sub = cx.subscribe(&input, |_this, _input, ev: &InputEvent, _cx| {
-            if let InputEvent::Change = ev {}
-        });
+        let sub = cx.subscribe(
+            &input,
+            |_this, _input, ev: &InputEvent, _cx| {
+                if let InputEvent::Change = ev {}
+            },
+        );
 
         self.input_state = Some(input);
         self._input_subscription = Some(sub);
@@ -78,11 +81,10 @@ impl Render for YamlEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         self.ensure_input(window, cx);
 
-        let editor = self.input_state.as_ref().map(|state| {
-            Input::new(state)
-                .h_full()
-                .disabled(self.read_only)
-        });
+        let editor = self
+            .input_state
+            .as_ref()
+            .map(|state| Input::new(state).h_full().disabled(self.read_only));
 
         div()
             .key_context("YamlEditor")
@@ -129,23 +131,25 @@ impl Render for YamlEditor {
                                     .flex()
                                     .items_center()
                                     .gap(px(6.0))
-                                    .child(div().size(px(6.0)).rounded_full().bg(rgb(EDITOR_ACCENT)))
+                                    .child(
+                                        div().size(px(6.0)).rounded_full().bg(rgb(EDITOR_ACCENT)),
+                                    )
                                     .child(
                                         div()
                                             .text_size(px(12.0))
                                             .text_color(rgb(EDITOR_TEXT_SECONDARY))
                                             .font_weight(FontWeight::MEDIUM)
-                                            .child("YAML")
-                                    )
-                            )
-                    )
+                                            .child("YAML"),
+                                    ),
+                            ),
+                    ),
             )
             // ── Code editor ──
             .child(
                 div()
                     .flex_1()
                     .min_h(px(0.0))
-                    .when_some(editor, |el: Div, editor| el.child(editor))
+                    .when_some(editor, |el: Div, editor| el.child(editor)),
             )
     }
 }

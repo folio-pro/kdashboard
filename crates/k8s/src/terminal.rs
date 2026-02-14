@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use dashmap::DashMap;
-use kube::api::{Api, AttachParams};
 use kube::Client;
+use kube::api::{Api, AttachParams};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};

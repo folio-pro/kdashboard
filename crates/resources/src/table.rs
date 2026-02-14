@@ -3,7 +3,7 @@ use k8s_client::{Resource, ResourceType};
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use ui::{danger_btn, secondary_btn, theme, Icon, IconName, ThemeColors};
+use ui::{Icon, IconName, ThemeColors, danger_btn, secondary_btn, theme};
 
 /// Status type for resources
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,7 +74,8 @@ pub struct ResourceTable {
     on_select: Option<Box<dyn Fn(usize, &Resource, &mut Context<'_, Self>) + 'static>>,
     on_open: Option<Box<dyn Fn(&Resource, &mut Context<'_, Self>) + 'static>>,
     on_ai_assist: Option<Box<dyn Fn(&Resource, &mut Context<'_, Self>) + 'static>>,
-    on_bulk_action: Option<Box<dyn Fn(BulkTableAction, Vec<Resource>, &mut Context<'_, Self>) + 'static>>,
+    on_bulk_action:
+        Option<Box<dyn Fn(BulkTableAction, Vec<Resource>, &mut Context<'_, Self>) + 'static>>,
     /// Custom column widths (column name -> width in pixels)
     column_widths: HashMap<String, f32>,
     /// Current sort state
@@ -110,7 +111,10 @@ impl ResourceTable {
     pub fn set_resources(&mut self, resources: Vec<Resource>) {
         self.resources = resources;
         self.selected_indices.retain(|i| *i < self.resources.len());
-        if self.selected_index.is_some_and(|i| i >= self.resources.len()) {
+        if self
+            .selected_index
+            .is_some_and(|i| i >= self.resources.len())
+        {
             self.selected_index = None;
         }
     }
@@ -131,7 +135,10 @@ impl ResourceTable {
         self.selected_indices.len()
     }
 
-    pub fn on_select(mut self, handler: impl Fn(usize, &Resource, &mut Context<'_, Self>) + 'static) -> Self {
+    pub fn on_select(
+        mut self,
+        handler: impl Fn(usize, &Resource, &mut Context<'_, Self>) + 'static,
+    ) -> Self {
         self.on_select = Some(Box::new(handler));
         self
     }
@@ -140,7 +147,10 @@ impl ResourceTable {
         self.on_open = Some(Box::new(handler));
     }
 
-    pub fn set_on_ai_assist(&mut self, handler: impl Fn(&Resource, &mut Context<'_, Self>) + 'static) {
+    pub fn set_on_ai_assist(
+        &mut self,
+        handler: impl Fn(&Resource, &mut Context<'_, Self>) + 'static,
+    ) {
         self.on_ai_assist = Some(Box::new(handler));
     }
 
@@ -218,7 +228,9 @@ impl ResourceTable {
         let header_width = (column.len() as f32 * 7.0) + 40.0; // extra for sort icon and padding
 
         // Calculate max content width
-        let content_width = self.resources.iter()
+        let content_width = self
+            .resources
+            .iter()
             .map(|resource| self.get_cell_text_length(column, resource))
             .fold(0.0_f32, |a, b| a.max(b));
 
@@ -239,11 +251,12 @@ impl ResourceTable {
                 let base = resource.metadata.name.len() as f32 * char_width;
                 base + icon_width // account for icon
             }
-            "Namespace" => {
-                resource.metadata.namespace.as_ref()
-                    .map(|s| s.len() as f32 * char_width)
-                    .unwrap_or(char_width)
-            }
+            "Namespace" => resource
+                .metadata
+                .namespace
+                .as_ref()
+                .map(|s| s.len() as f32 * char_width)
+                .unwrap_or(char_width),
             "Status" => {
                 let status = get_resource_status(resource);
                 (status.label().len() as f32 * char_width) + 36.0 // pill padding + dot + gap
@@ -253,12 +266,10 @@ impl ResourceTable {
                 (restarts.to_string().len() as f32 * char_width).max(30.0)
             }
             "Age" => 50.0, // ages are short like "5d", "12h"
-            "Type" => {
-                get_json_value(&resource.spec, &["type"])
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.len() as f32 * char_width)
-                    .unwrap_or(60.0)
-            }
+            "Type" => get_json_value(&resource.spec, &["type"])
+                .and_then(|v| v.as_str())
+                .map(|s| s.len() as f32 * char_width)
+                .unwrap_or(60.0),
             "Cluster-IP" => 110.0, // IP addresses are fixed length
             "Ports" => {
                 let ports = get_service_ports(resource);
@@ -269,18 +280,14 @@ impl ResourceTable {
                 let roles = get_node_roles(resource);
                 (roles.len() as f32 * char_width).max(60.0)
             }
-            "Version" => {
-                get_json_value(&resource.status, &["nodeInfo", "kubeletVersion"])
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.len() as f32 * char_width)
-                    .unwrap_or(80.0)
-            }
-            "Node" => {
-                get_json_value(&resource.spec, &["nodeName"])
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.len() as f32 * char_width)
-                    .unwrap_or(60.0)
-            }
+            "Version" => get_json_value(&resource.status, &["nodeInfo", "kubeletVersion"])
+                .and_then(|v| v.as_str())
+                .map(|s| s.len() as f32 * char_width)
+                .unwrap_or(80.0),
+            "Node" => get_json_value(&resource.spec, &["nodeName"])
+                .and_then(|v| v.as_str())
+                .map(|s| s.len() as f32 * char_width)
+                .unwrap_or(60.0),
             _ => 80.0,
         };
 
@@ -289,7 +296,8 @@ impl ResourceTable {
 
     /// Sort resources based on current sort state
     fn get_sorted_resources(&self) -> Vec<(usize, Resource)> {
-        let mut indexed: Vec<(usize, Resource)> = self.resources
+        let mut indexed: Vec<(usize, Resource)> = self
+            .resources
             .iter()
             .enumerate()
             .map(|(i, r)| (i, r.clone()))
@@ -504,7 +512,10 @@ impl ResourceTable {
     }
 
     fn can_scale(&self) -> bool {
-        matches!(self.resource_type, ResourceType::Deployments | ResourceType::StatefulSets)
+        matches!(
+            self.resource_type,
+            ResourceType::Deployments | ResourceType::StatefulSets
+        )
     }
 }
 
@@ -596,13 +607,16 @@ impl Render for ResourceTable {
 
         // Get sorted resources with original indices
         let sorted_resources = self.get_sorted_resources();
-        let resources: Vec<_> = sorted_resources.iter().map(|(original_idx, r)| {
-            (
-                *original_idx,
-                r.clone(),
-                selected_indices.contains(original_idx),
-            )
-        }).collect();
+        let resources: Vec<_> = sorted_resources
+            .iter()
+            .map(|(original_idx, r)| {
+                (
+                    *original_idx,
+                    r.clone(),
+                    selected_indices.contains(original_idx),
+                )
+            })
+            .collect();
 
         let is_empty = resources.is_empty();
 
@@ -621,7 +635,8 @@ impl Render for ResourceTable {
             .iter()
             .filter(|idx| self.selected_indices.contains(idx))
             .count();
-        let all_visible_selected = !visible_indices.is_empty() && selected_visible_count == visible_indices.len();
+        let all_visible_selected =
+            !visible_indices.is_empty() && selected_visible_count == visible_indices.len();
         let some_visible_selected = selected_visible_count > 0 && !all_visible_selected;
 
         if !self.selected_indices.is_empty() {
@@ -653,20 +668,23 @@ impl Render for ResourceTable {
                             .text_size(theme.font_size)
                             .text_color(colors.text_muted)
                             .font_weight(FontWeight::MEDIUM)
-                            .child("No resources found")
+                            .child("No resources found"),
                     )
                     .child(
                         div()
                             .text_size(theme.font_size_small)
                             .text_color(colors.text_muted)
-                            .child("Connect to a cluster to view resources")
-                    )
+                            .child("Connect to a cluster to view resources"),
+                    ),
             );
         } else {
             // Scrollable body container
-            let rows: Vec<_> = resources.into_iter().map(|(idx, resource, selected)| {
-                self.render_row(cx, &columns, idx, resource, selected, resource_type)
-            }).collect();
+            let rows: Vec<_> = resources
+                .into_iter()
+                .map(|(idx, resource, selected)| {
+                    self.render_row(cx, &columns, idx, resource, selected, resource_type)
+                })
+                .collect();
 
             container = container.child(
                 div()
@@ -674,12 +692,7 @@ impl Render for ResourceTable {
                     .flex_1()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll_handle)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .children(rows)
-                    )
+                    .child(div().flex().flex_col().children(rows)),
             );
         }
 
@@ -710,45 +723,45 @@ impl ResourceTable {
                     .text_size(px(12.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colors.text_secondary)
-                    .child(format!("{} selected", count))
+                    .child(format!("{} selected", count)),
             )
-            .child(
-                {
-                    let scale_button = if can_scale {
-                        secondary_btn("bulk-scale-btn", IconName::Scale, "Scale x1", colors)
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.trigger_bulk_action(BulkTableAction::Scale { replicas: 1 }, cx);
-                            }))
-                    } else {
-                        secondary_btn("bulk-scale-btn", IconName::Scale, "Scale x1", colors)
-                            .opacity(0.5)
-                    };
+            .child({
+                let scale_button = if can_scale {
+                    secondary_btn("bulk-scale-btn", IconName::Scale, "Scale x1", colors).on_click(
+                        cx.listener(|this, _event, _window, cx| {
+                            this.trigger_bulk_action(BulkTableAction::Scale { replicas: 1 }, cx);
+                        }),
+                    )
+                } else {
+                    secondary_btn("bulk-scale-btn", IconName::Scale, "Scale x1", colors)
+                        .opacity(0.5)
+                };
 
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.0))
-                        .child(
-                            secondary_btn("bulk-label-btn", IconName::Clipboard, "Label", colors)
-                                .on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.trigger_bulk_action(
-                                        BulkTableAction::Label {
-                                            key: "managed-by".to_string(),
-                                            value: "kdashboard".to_string(),
-                                        },
-                                        cx,
-                                    );
-                                }))
-                        )
-                        .child(scale_button)
-                        .child(
-                            danger_btn("bulk-delete-btn", IconName::Trash, "Delete", colors)
-                                .on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.trigger_bulk_action(BulkTableAction::Delete, cx);
-                                }))
-                        )
-                }
-            )
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        secondary_btn("bulk-label-btn", IconName::Clipboard, "Label", colors)
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                this.trigger_bulk_action(
+                                    BulkTableAction::Label {
+                                        key: "managed-by".to_string(),
+                                        value: "kdashboard".to_string(),
+                                    },
+                                    cx,
+                                );
+                            })),
+                    )
+                    .child(scale_button)
+                    .child(
+                        danger_btn("bulk-delete-btn", IconName::Trash, "Delete", colors).on_click(
+                            cx.listener(|this, _event, _window, cx| {
+                                this.trigger_bulk_action(BulkTableAction::Delete, cx);
+                            }),
+                        ),
+                    )
+            })
     }
 
     fn render_header(
@@ -804,7 +817,10 @@ impl ResourceTable {
                 elements.push(cell.into_any_element());
 
                 // Add resize handle between columns (except after last column and not for checkbox/actions)
-                if !is_last && column_type != ColumnType::Checkbox && column_type != ColumnType::Actions {
+                if !is_last
+                    && column_type != ColumnType::Checkbox
+                    && column_type != ColumnType::Actions
+                {
                     let resizer = self.render_resize_handle(cx, col_name, width, colors);
                     elements.push(resizer.into_any_element());
                 }
@@ -831,18 +847,19 @@ impl ResourceTable {
         // Create the header cell content
         let cell_content: Div = match column_type {
             ColumnType::Checkbox => {
-                div().flex().items_center().justify_center().child(
-                    render_checkbox_visual(all_visible_selected, some_visible_selected, colors),
-                )
-            }
-            ColumnType::Actions => {
                 div()
-            }
-            _ => {
-                let mut content = div()
                     .flex()
                     .items_center()
-                    .gap(px(4.0));
+                    .justify_center()
+                    .child(render_checkbox_visual(
+                        all_visible_selected,
+                        some_visible_selected,
+                        colors,
+                    ))
+            }
+            ColumnType::Actions => div(),
+            _ => {
+                let mut content = div().flex().items_center().gap(px(4.0));
 
                 content = match align {
                     Align::Left => content,
@@ -850,10 +867,7 @@ impl ResourceTable {
                     Align::Right => content.flex_row_reverse(),
                 };
 
-                content = content.child(
-                    div()
-                        .child(col_name.to_uppercase())
-                );
+                content = content.child(div().child(col_name.to_uppercase()));
 
                 // Add sort indicator if sorted
                 if is_sorted {
@@ -861,16 +875,12 @@ impl ResourceTable {
                         SortDirection::Ascending => IconName::ChevronUp,
                         SortDirection::Descending => IconName::ChevronDown,
                     };
-                    content = content.child(
-                        Icon::new(icon)
-                            .size(px(12.0))
-                            .color(colors.text)
-                    );
+                    content = content.child(Icon::new(icon).size(px(12.0)).color(colors.text));
                 } else if is_sortable {
                     content = content.child(
                         Icon::new(IconName::ChevronsUpDown)
                             .size(px(12.0))
-                            .color(colors.text_muted.opacity(0.5))
+                            .color(colors.text_muted.opacity(0.5)),
                     );
                 }
 
@@ -900,9 +910,11 @@ impl ResourceTable {
 
         if column_type == ColumnType::Checkbox {
             let indices = visible_indices;
-            cell.cursor_pointer().on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
-                this.set_all_selected(&indices, !all_visible_selected, cx);
-            }))
+            cell.cursor_pointer().on_click(cx.listener(
+                move |this, _event: &ClickEvent, _window, cx| {
+                    this.set_all_selected(&indices, !all_visible_selected, cx);
+                },
+            ))
         } else if is_sortable {
             cell.cursor_pointer()
                 .hover(|style| style.text_color(colors.text))
@@ -934,12 +946,7 @@ impl ResourceTable {
             .items_center()
             .justify_center()
             .cursor(CursorStyle::ResizeColumn)
-            .child(
-                div()
-                    .w(px(1.0))
-                    .h(px(20.0))
-                    .bg(border_color.opacity(0.5))
-            )
+            .child(div().w(px(1.0)).h(px(20.0)).bg(border_color.opacity(0.5)))
             .hover(|style| style.bg(primary_color.opacity(0.1)))
             .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
                 // Double-click to auto-fit column width
@@ -948,18 +955,23 @@ impl ResourceTable {
                 }
             }))
             .on_drag(
-                DragValue { column: resize_col_name.clone(), start_width: current_width },
-                |_drag, _position, _window, cx| cx.new(|_| EmptyView)
+                DragValue {
+                    column: resize_col_name.clone(),
+                    start_width: current_width,
+                },
+                |_drag, _position, _window, cx| cx.new(|_| EmptyView),
             )
-            .on_drag_move(cx.listener(move |this, event: &DragMoveEvent<DragValue>, _window, cx| {
-                let drag_value = event.drag(cx);
-                if this.resizing_column.is_none() {
+            .on_drag_move(cx.listener(
+                move |this, event: &DragMoveEvent<DragValue>, _window, cx| {
+                    let drag_value = event.drag(cx);
+                    if this.resizing_column.is_none() {
+                        let x: f32 = event.event.position.x.into();
+                        this.start_resize(&drag_value.column, x, drag_value.start_width);
+                    }
                     let x: f32 = event.event.position.x.into();
-                    this.start_resize(&drag_value.column, x, drag_value.start_width);
-                }
-                let x: f32 = event.event.position.x.into();
-                this.update_resize(x, cx);
-            }))
+                    this.update_resize(x, cx);
+                },
+            ))
     }
 
     fn render_row(
@@ -1001,7 +1013,8 @@ impl ResourceTable {
             // Add spacer to match resize handle width
             if i < columns.len() - 1 {
                 let col = &columns[i];
-                if col.column_type != ColumnType::Checkbox && col.column_type != ColumnType::Actions {
+                if col.column_type != ColumnType::Checkbox && col.column_type != ColumnType::Actions
+                {
                     row_children.push(div().w(px(8.0)).into_any_element());
                 }
             }
@@ -1044,85 +1057,127 @@ impl ResourceTable {
         let colors = &theme.colors;
         let checked = self.selected_indices.contains(&row_index);
 
-        columns.iter().enumerate().map(|(_i, col)| {
-            let width = self.get_column_width(col.name, col.default_width);
-            if col.column_type == ColumnType::Checkbox {
-                return div()
-                    .id(ElementId::Name(format!("row-checkbox-{}", row_index).into()))
+        columns
+            .iter()
+            .enumerate()
+            .map(|(_i, col)| {
+                let width = self.get_column_width(col.name, col.default_width);
+                if col.column_type == ColumnType::Checkbox {
+                    return div()
+                        .id(ElementId::Name(
+                            format!("row-checkbox-{}", row_index).into(),
+                        ))
+                        .w(px(width))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(render_row_checkbox_visual(
+                            checked,
+                            row_selected,
+                            &row_group,
+                            colors,
+                        ))
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
+                            this.toggle_row_checkbox(row_index, cx);
+                        }))
+                        .into_any_element();
+                }
+
+                let mut cell = div()
                     .w(px(width))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(render_row_checkbox_visual(checked, row_selected, &row_group, colors))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
-                        this.toggle_row_checkbox(row_index, cx);
-                    }))
-                    .into_any_element();
-            }
+                    .text_size(px(13.0))
+                    .text_color(colors.text)
+                    .overflow_hidden()
+                    .text_ellipsis();
 
-            let mut cell = div()
-                .w(px(width))
-                .text_size(px(13.0))
-                .text_color(colors.text)
-                .overflow_hidden()
-                .text_ellipsis();
+                cell = match col.align {
+                    Align::Left => cell,
+                    Align::Center => cell.flex().justify_center(),
+                    Align::Right => cell.flex().justify_end(),
+                };
+                if col.name == "Name" {
+                    cell = cell.pl(px(2.0));
+                }
 
-            cell = match col.align {
-                Align::Left => cell,
-                Align::Center => cell.flex().justify_center(),
-                Align::Right => cell.flex().justify_end(),
-            };
-            if col.name == "Name" {
-                cell = cell.pl(px(2.0));
-            }
+                if col.name == "Actions" {
+                    return self
+                        .render_actions_cell(cell, colors, resource, cx)
+                        .into_any_element();
+                }
 
-            if col.name == "Actions" {
-                return self
-                    .render_actions_cell(cell, colors, resource, cx)
-                    .into_any_element();
-            }
-
-            // Get value based on column and resource type
-            match resource_type {
-                ResourceType::Pods => self.get_pod_cell_value(cell, col.name, resource, colors),
-                ResourceType::Deployments => self.get_deployment_cell_value(cell, col.name, resource, colors),
-                ResourceType::ReplicaSets => self.get_replicaset_cell_value(cell, col.name, resource, colors),
-                ResourceType::StatefulSets => self.get_statefulset_cell_value(cell, col.name, resource, colors),
-                ResourceType::DaemonSets => self.get_daemonset_cell_value(cell, col.name, resource, colors),
-                ResourceType::Jobs => self.get_job_cell_value(cell, col.name, resource, colors),
-                ResourceType::CronJobs => self.get_cronjob_cell_value(cell, col.name, resource, colors),
-                ResourceType::Services => self.get_service_cell_value(cell, col.name, resource, colors),
-                ResourceType::Ingresses => self.get_ingress_cell_value(cell, col.name, resource, colors),
-                ResourceType::ConfigMaps => self.get_configmap_cell_value(cell, col.name, resource, colors),
-                ResourceType::Secrets => self.get_secret_cell_value(cell, col.name, resource, colors),
-                ResourceType::Nodes => self.get_node_cell_value(cell, col.name, resource, colors),
-                ResourceType::Namespaces => self.get_namespace_cell_value(cell, col.name, resource, colors),
-                ResourceType::HorizontalPodAutoscalers => self.get_hpa_cell_value(cell, col.name, resource, colors),
-                ResourceType::VerticalPodAutoscalers => self.get_vpa_cell_value(cell, col.name, resource, colors),
-            }
-            .into_any_element()
-        }).collect()
+                // Get value based on column and resource type
+                match resource_type {
+                    ResourceType::Pods => self.get_pod_cell_value(cell, col.name, resource, colors),
+                    ResourceType::Deployments => {
+                        self.get_deployment_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::ReplicaSets => {
+                        self.get_replicaset_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::StatefulSets => {
+                        self.get_statefulset_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::DaemonSets => {
+                        self.get_daemonset_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::Jobs => self.get_job_cell_value(cell, col.name, resource, colors),
+                    ResourceType::CronJobs => {
+                        self.get_cronjob_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::Services => {
+                        self.get_service_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::Ingresses => {
+                        self.get_ingress_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::ConfigMaps => {
+                        self.get_configmap_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::Secrets => {
+                        self.get_secret_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::Nodes => {
+                        self.get_node_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::Namespaces => {
+                        self.get_namespace_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::HorizontalPodAutoscalers => {
+                        self.get_hpa_cell_value(cell, col.name, resource, colors)
+                    }
+                    ResourceType::VerticalPodAutoscalers => {
+                        self.get_vpa_cell_value(cell, col.name, resource, colors)
+                    }
+                }
+                .into_any_element()
+            })
+            .collect()
     }
 
-    fn get_pod_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_pod_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
-            "Name" => {
-                cell.flex()
-                    .items_center()
-                    .child(
-                        div()
-                            .text_ellipsis()
-                            .overflow_hidden()
-                            .text_color(colors.text)
-                            .child(resource.metadata.name.clone())
-                    )
-            }
-            "Namespace" => {
-                cell.text_color(colors.text_secondary)
-                    .child(resource.metadata.namespace.clone().unwrap_or_else(|| "-".to_string()))
-            }
+            "Name" => cell.flex().items_center().child(
+                div()
+                    .text_ellipsis()
+                    .overflow_hidden()
+                    .text_color(colors.text)
+                    .child(resource.metadata.name.clone()),
+            ),
+            "Namespace" => cell.text_color(colors.text_secondary).child(
+                resource
+                    .metadata
+                    .namespace
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
             "Status" => {
                 // Pill-shaped status badge with translucent background
                 let status = get_resource_status(resource);
@@ -1138,19 +1193,15 @@ impl ResourceTable {
                         .bg(status_color.opacity(0.12))
                         .child(
                             // Status dot
-                            div()
-                                .w(px(6.0))
-                                .h(px(6.0))
-                                .rounded_full()
-                                .bg(status_color)
+                            div().w(px(6.0)).h(px(6.0)).rounded_full().bg(status_color),
                         )
                         .child(
                             div()
                                 .text_size(px(12.0))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(status_color)
-                                .child(status.label())
-                        )
+                                .child(status.label()),
+                        ),
                 )
             }
             "Restarts" => {
@@ -1162,28 +1213,35 @@ impl ResourceTable {
                 } else {
                     colors.text_secondary
                 };
-                cell.text_color(text_color)
-                    .child(restarts.to_string())
+                cell.text_color(text_color).child(restarts.to_string())
             }
             "Age" => {
                 let age = format_age(&resource.metadata.creation_timestamp);
-                cell.text_color(colors.text_secondary)
-                    .child(age)
+                cell.text_color(colors.text_secondary).child(age)
             }
             "Node" => {
                 let node = get_json_value(&resource.spec, &["nodeName"])
                     .and_then(|v| v.as_str().map(String::from))
                     .unwrap_or_else(|| "\u{2014}".to_string());
-                let text_color = if node == "\u{2014}" { colors.text_muted } else { colors.text_secondary };
-                cell.text_color(text_color)
-                    .child(node)
+                let text_color = if node == "\u{2014}" {
+                    colors.text_muted
+                } else {
+                    colors.text_secondary
+                };
+                cell.text_color(text_color).child(node)
             }
             "Actions" => render_actions(cell, colors),
             _ => cell.child("-"),
         }
     }
 
-    fn get_deployment_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_deployment_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => {
@@ -1195,19 +1253,22 @@ impl ResourceTable {
                     .child(
                         Icon::new(IconName::Deployments)
                             .size(px(14.0))
-                            .color(icon_color)
+                            .color(icon_color),
                     )
                     .child(
                         div()
                             .text_ellipsis()
                             .overflow_hidden()
-                            .child(resource.metadata.name.clone())
+                            .child(resource.metadata.name.clone()),
                     )
             }
-            "Namespace" => {
-                cell.text_color(colors.text_secondary)
-                    .child(resource.metadata.namespace.clone().unwrap_or_else(|| "-".to_string()))
-            }
+            "Namespace" => cell.text_color(colors.text_secondary).child(
+                resource
+                    .metadata
+                    .namespace
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
             "Ready" => {
                 let (ready, total) = get_deployment_ready_count(resource);
                 cell.child(format!("{}/{}", ready, total))
@@ -1228,37 +1289,44 @@ impl ResourceTable {
             }
             "Age" => {
                 let age = format_age(&resource.metadata.creation_timestamp);
-                cell.text_color(colors.text_secondary)
-                    .child(age)
+                cell.text_color(colors.text_secondary).child(age)
             }
             "Actions" => render_actions(cell, colors),
             _ => cell.child("-"),
         }
     }
 
-    fn get_service_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_service_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
-            "Name" => {
-                cell.flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        Icon::new(IconName::Services)
-                            .size(px(14.0))
-                            .color(colors.success)
-                    )
-                    .child(
-                        div()
-                            .text_ellipsis()
-                            .overflow_hidden()
-                            .child(resource.metadata.name.clone())
-                    )
-            }
-            "Namespace" => {
-                cell.text_color(colors.text_secondary)
-                    .child(resource.metadata.namespace.clone().unwrap_or_else(|| "-".to_string()))
-            }
+            "Name" => cell
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .child(
+                    Icon::new(IconName::Services)
+                        .size(px(14.0))
+                        .color(colors.success),
+                )
+                .child(
+                    div()
+                        .text_ellipsis()
+                        .overflow_hidden()
+                        .child(resource.metadata.name.clone()),
+                ),
+            "Namespace" => cell.text_color(colors.text_secondary).child(
+                resource
+                    .metadata
+                    .namespace
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
             "Type" => {
                 let svc_type = get_json_value(&resource.spec, &["type"])
                     .and_then(|v| v.as_str().map(String::from))
@@ -1269,13 +1337,11 @@ impl ResourceTable {
                 let cluster_ip = get_json_value(&resource.spec, &["clusterIP"])
                     .and_then(|v| v.as_str().map(String::from))
                     .unwrap_or_else(|| "-".to_string());
-                cell.text_color(colors.text_secondary)
-                    .child(cluster_ip)
+                cell.text_color(colors.text_secondary).child(cluster_ip)
             }
             "Ports" => {
                 let ports = get_service_ports(resource);
-                cell.text_color(colors.text_secondary)
-                    .child(ports)
+                cell.text_color(colors.text_secondary).child(ports)
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1283,7 +1349,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_node_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_node_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => {
@@ -1292,35 +1364,37 @@ impl ResourceTable {
                 cell.flex()
                     .items_center()
                     .gap(px(8.0))
-                    .child(
-                        Icon::new(IconName::Nodes)
-                            .size(px(14.0))
-                            .color(icon_color)
-                    )
+                    .child(Icon::new(IconName::Nodes).size(px(14.0)).color(icon_color))
                     .child(
                         div()
                             .text_ellipsis()
                             .overflow_hidden()
-                            .child(resource.metadata.name.clone())
+                            .child(resource.metadata.name.clone()),
                     )
             }
             "Status" => {
                 let status = get_node_status(resource);
                 let status_color = status.color(colors);
-                let label = if status == StatusType::Ready { "Ready" } else if status == StatusType::Failed { "NotReady" } else { "Unknown" };
-                cell.flex().items_center().child(render_status_pill(status_color, label))
+                let label = if status == StatusType::Ready {
+                    "Ready"
+                } else if status == StatusType::Failed {
+                    "NotReady"
+                } else {
+                    "Unknown"
+                };
+                cell.flex()
+                    .items_center()
+                    .child(render_status_pill(status_color, label))
             }
             "Roles" => {
                 let roles = get_node_roles(resource);
-                cell.text_color(colors.text_secondary)
-                    .child(roles)
+                cell.text_color(colors.text_secondary).child(roles)
             }
             "Version" => {
                 let version = get_json_value(&resource.status, &["nodeInfo", "kubeletVersion"])
                     .and_then(|v| v.as_str().map(String::from))
                     .unwrap_or_else(|| "-".to_string());
-                cell.text_color(colors.text_secondary)
-                    .child(version)
+                cell.text_color(colors.text_secondary).child(version)
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1328,7 +1402,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_replicaset_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_replicaset_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Copy, colors),
@@ -1337,19 +1417,22 @@ impl ResourceTable {
                 let desired = get_json_value(&resource.spec, &["replicas"])
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(desired.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(desired.to_string())
             }
             "Current" => {
                 let current = get_json_value(&resource.status, &["replicas"])
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(current.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(current.to_string())
             }
             "Ready" => {
                 let ready = get_json_value(&resource.status, &["readyReplicas"])
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(ready.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(ready.to_string())
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1357,7 +1440,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_statefulset_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_statefulset_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Layers, colors),
@@ -1377,7 +1466,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_daemonset_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_daemonset_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Layers, colors),
@@ -1386,25 +1481,29 @@ impl ResourceTable {
                 let desired = get_json_value(&resource.status, &["desiredNumberScheduled"])
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(desired.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(desired.to_string())
             }
             "Current" => {
                 let current = get_json_value(&resource.status, &["currentNumberScheduled"])
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(current.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(current.to_string())
             }
             "Ready" => {
                 let ready = get_json_value(&resource.status, &["numberReady"])
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(ready.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(ready.to_string())
             }
             "Up-to-date" => {
                 let updated = get_json_value(&resource.status, &["updatedNumberScheduled"])
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(updated.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(updated.to_string())
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1412,7 +1511,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_job_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_job_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Box, colors),
@@ -1427,10 +1532,10 @@ impl ResourceTable {
                 cell.child(format!("{}/{}", succeeded, completions))
             }
             "Duration" => {
-                let start = get_json_value(&resource.status, &["startTime"])
-                    .and_then(|v| v.as_str());
-                let completion = get_json_value(&resource.status, &["completionTime"])
-                    .and_then(|v| v.as_str());
+                let start =
+                    get_json_value(&resource.status, &["startTime"]).and_then(|v| v.as_str());
+                let completion =
+                    get_json_value(&resource.status, &["completionTime"]).and_then(|v| v.as_str());
                 let duration = match (start, completion) {
                     (Some(s), Some(c)) => {
                         if let (Ok(start_dt), Ok(end_dt)) = (
@@ -1453,7 +1558,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_cronjob_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_cronjob_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Box, colors),
@@ -1462,14 +1573,19 @@ impl ResourceTable {
                 let schedule = get_json_value(&resource.spec, &["schedule"])
                     .and_then(|v| v.as_str())
                     .unwrap_or("-");
-                cell.text_color(colors.text_secondary).child(schedule.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(schedule.to_string())
             }
             "Suspend" => {
                 let suspend = get_json_value(&resource.spec, &["suspend"])
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 let text = if suspend { "Yes" } else { "No" };
-                let color = if suspend { colors.warning } else { colors.text_muted };
+                let color = if suspend {
+                    colors.warning
+                } else {
+                    colors.text_muted
+                };
                 cell.text_color(color).child(text)
             }
             "Active" => {
@@ -1477,7 +1593,8 @@ impl ResourceTable {
                     .and_then(|v| v.as_array())
                     .map(|a| a.len())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(active.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(active.to_string())
             }
             "Last Schedule" => {
                 let last = get_json_value(&resource.status, &["lastScheduleTime"])
@@ -1491,7 +1608,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_ingress_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_ingress_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Network, colors),
@@ -1500,13 +1623,15 @@ impl ResourceTable {
                 let class = get_json_value(&resource.spec, &["ingressClassName"])
                     .and_then(|v| v.as_str())
                     .unwrap_or("-");
-                cell.text_color(colors.text_secondary).child(class.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(class.to_string())
             }
             "Hosts" => {
                 let hosts = get_json_value(&resource.spec, &["rules"])
                     .and_then(|v| v.as_array())
                     .map(|rules| {
-                        rules.iter()
+                        rules
+                            .iter()
                             .filter_map(|r| r.get("host").and_then(|h| h.as_str()))
                             .collect::<Vec<_>>()
                             .join(", ")
@@ -1519,10 +1644,13 @@ impl ResourceTable {
                     .and_then(|v| v.as_array())
                     .and_then(|arr| arr.first())
                     .and_then(|ing| {
-                        ing.get("ip").or(ing.get("hostname")).and_then(|v| v.as_str())
+                        ing.get("ip")
+                            .or(ing.get("hostname"))
+                            .and_then(|v| v.as_str())
                     })
                     .unwrap_or("-");
-                cell.text_color(colors.text_secondary).child(address.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(address.to_string())
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1530,18 +1658,26 @@ impl ResourceTable {
         }
     }
 
-    fn get_configmap_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_configmap_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::FileText, colors),
             "Namespace" => render_namespace(cell, resource, colors),
             "Data" => {
-                let count = resource.data
+                let count = resource
+                    .data
                     .as_ref()
                     .and_then(|d| d.as_object())
                     .map(|o| o.len())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(count.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(count.to_string())
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1549,22 +1685,31 @@ impl ResourceTable {
         }
     }
 
-    fn get_secret_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_secret_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Key, colors),
             "Namespace" => render_namespace(cell, resource, colors),
             "Type" => {
                 let secret_type = resource.type_.as_deref().unwrap_or("Opaque");
-                cell.text_color(colors.text_secondary).child(secret_type.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(secret_type.to_string())
             }
             "Data" => {
-                let count = resource.data
+                let count = resource
+                    .data
                     .as_ref()
                     .and_then(|d| d.as_object())
                     .map(|o| o.len())
                     .unwrap_or(0);
-                cell.text_color(colors.text_secondary).child(count.to_string())
+                cell.text_color(colors.text_secondary)
+                    .child(count.to_string())
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1572,7 +1717,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_namespace_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_namespace_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Layers, colors),
@@ -1586,7 +1737,9 @@ impl ResourceTable {
                     _ => StatusType::Unknown,
                 };
                 let status_color = status.color(colors);
-                cell.flex().items_center().child(render_status_pill(status_color, &phase))
+                cell.flex()
+                    .items_center()
+                    .child(render_status_pill(status_color, &phase))
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1594,7 +1747,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_hpa_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_hpa_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Scale, colors),
@@ -1621,16 +1780,19 @@ impl ResourceTable {
                     .and_then(|v| v.as_array());
 
                 let metrics_str = if let Some(metrics_arr) = metrics {
-                    metrics_arr.iter()
+                    metrics_arr
+                        .iter()
                         .filter_map(|m| {
                             let metric_type = m.get("type").and_then(|t| t.as_str()).unwrap_or("");
                             match metric_type {
                                 "Resource" => {
-                                    let name = m.get("resource")
+                                    let name = m
+                                        .get("resource")
                                         .and_then(|r| r.get("name"))
                                         .and_then(|n| n.as_str())
                                         .unwrap_or("");
-                                    let current = m.get("resource")
+                                    let current = m
+                                        .get("resource")
                                         .and_then(|r| r.get("current"))
                                         .and_then(|c| c.get("averageUtilization"))
                                         .and_then(|a| a.as_u64());
@@ -1638,11 +1800,14 @@ impl ResourceTable {
                                     // Get target from spec
                                     let target = get_json_value(&resource.spec, &["metrics"])
                                         .and_then(|v| v.as_array())
-                                        .and_then(|arr| arr.iter().find(|sm| {
-                                            sm.get("resource")
-                                                .and_then(|r| r.get("name"))
-                                                .and_then(|n| n.as_str()) == Some(name)
-                                        }))
+                                        .and_then(|arr| {
+                                            arr.iter().find(|sm| {
+                                                sm.get("resource")
+                                                    .and_then(|r| r.get("name"))
+                                                    .and_then(|n| n.as_str())
+                                                    == Some(name)
+                                            })
+                                        })
                                         .and_then(|sm| sm.get("resource"))
                                         .and_then(|r| r.get("target"))
                                         .and_then(|t| t.get("averageUtilization"))
@@ -1650,32 +1815,46 @@ impl ResourceTable {
 
                                     match (current, target) {
                                         (Some(c), Some(t)) => {
-                                            let label = if name == "cpu" { "CPU" } else if name == "memory" { "Mem" } else { name };
+                                            let label = if name == "cpu" {
+                                                "CPU"
+                                            } else if name == "memory" {
+                                                "Mem"
+                                            } else {
+                                                name
+                                            };
                                             Some(format!("{}:{}%/{}", label, c, t))
                                         }
-                                        _ => None
+                                        _ => None,
                                     }
                                 }
-                                _ => None
+                                _ => None,
                             }
                         })
                         .collect::<Vec<_>>()
                         .join(" ")
                 } else {
                     // Fallback: show spec metrics targets
-                    let spec_metrics = get_json_value(&resource.spec, &["metrics"])
-                        .and_then(|v| v.as_array());
+                    let spec_metrics =
+                        get_json_value(&resource.spec, &["metrics"]).and_then(|v| v.as_array());
                     if let Some(arr) = spec_metrics {
                         arr.iter()
                             .filter_map(|m| {
-                                let name = m.get("resource")
+                                let name = m
+                                    .get("resource")
                                     .and_then(|r| r.get("name"))
                                     .and_then(|n| n.as_str())?;
-                                let target = m.get("resource")
+                                let target = m
+                                    .get("resource")
                                     .and_then(|r| r.get("target"))
                                     .and_then(|t| t.get("averageUtilization"))
                                     .and_then(|a| a.as_u64())?;
-                                let label = if name == "cpu" { "CPU" } else if name == "memory" { "Mem" } else { name };
+                                let label = if name == "cpu" {
+                                    "CPU"
+                                } else if name == "memory" {
+                                    "Mem"
+                                } else {
+                                    name
+                                };
                                 Some(format!("{}:-/{}%", label, target))
                             })
                             .collect::<Vec<_>>()
@@ -1687,7 +1866,11 @@ impl ResourceTable {
 
                 cell.text_color(colors.text_secondary)
                     .text_size(px(12.0))
-                    .child(if metrics_str.is_empty() { "-".to_string() } else { metrics_str })
+                    .child(if metrics_str.is_empty() {
+                        "-".to_string()
+                    } else {
+                        metrics_str
+                    })
             }
             "Replicas" => {
                 let current = get_json_value(&resource.status, &["currentReplicas"])
@@ -1714,18 +1897,14 @@ impl ResourceTable {
                             div()
                                 .text_color(color)
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .child(current.to_string())
+                                .child(current.to_string()),
                         )
-                        .child(
-                            div()
-                                .text_color(colors.text_muted)
-                                .child("/")
-                        )
+                        .child(div().text_color(colors.text_muted).child("/"))
                         .child(
                             div()
                                 .text_color(colors.text_secondary)
-                                .child(desired.to_string())
-                        )
+                                .child(desired.to_string()),
+                        ),
                 )
             }
             "Min/Max" => {
@@ -1741,7 +1920,9 @@ impl ResourceTable {
             "Status" => {
                 let (status, label) = get_hpa_status(resource);
                 let status_color = status.color(colors);
-                cell.flex().items_center().child(render_status_pill(status_color, label))
+                cell.flex()
+                    .items_center()
+                    .child(render_status_pill(status_color, label))
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1749,7 +1930,13 @@ impl ResourceTable {
         }
     }
 
-    fn get_vpa_cell_value(&self, cell: Div, column: &str, resource: &Resource, colors: &ThemeColors) -> Div {
+    fn get_vpa_cell_value(
+        &self,
+        cell: Div,
+        column: &str,
+        resource: &Resource,
+        colors: &ThemeColors,
+    ) -> Div {
         match column {
             "Checkbox" => render_checkbox(cell, colors),
             "Name" => render_name_with_icon(cell, resource, IconName::Scale, colors),
@@ -1789,7 +1976,11 @@ impl ResourceTable {
             "CPU Rec." => {
                 // Get CPU recommendation from first container
                 let recommendation = get_vpa_recommendation(resource, "cpu");
-                let color = if recommendation.contains('-') { colors.text_muted } else { colors.text_secondary };
+                let color = if recommendation.contains('-') {
+                    colors.text_muted
+                } else {
+                    colors.text_secondary
+                };
                 cell.text_color(color)
                     .text_size(px(12.0))
                     .child(recommendation)
@@ -1797,7 +1988,11 @@ impl ResourceTable {
             "Mem Rec." => {
                 // Get Memory recommendation from first container
                 let recommendation = get_vpa_recommendation(resource, "memory");
-                let color = if recommendation.contains('-') { colors.text_muted } else { colors.text_secondary };
+                let color = if recommendation.contains('-') {
+                    colors.text_muted
+                } else {
+                    colors.text_secondary
+                };
                 cell.text_color(color)
                     .text_size(px(12.0))
                     .child(recommendation)
@@ -1805,7 +2000,9 @@ impl ResourceTable {
             "Status" => {
                 let (status, label) = get_vpa_status(resource);
                 let status_color = status.color(colors);
-                cell.flex().items_center().child(render_status_pill(status_color, label))
+                cell.flex()
+                    .items_center()
+                    .child(render_status_pill(status_color, label))
             }
             "Age" => render_age(cell, resource, colors),
             "Actions" => render_actions(cell, colors),
@@ -1827,7 +2024,9 @@ impl ResourceTable {
                 let resource_for_action = resource.clone();
                 cell.child(
                     div()
-                        .id(ElementId::Name(format!("ai-action-{}", resource.metadata.uid).into()))
+                        .id(ElementId::Name(
+                            format!("ai-action-{}", resource.metadata.uid).into(),
+                        ))
                         .cursor_pointer()
                         .flex()
                         .items_center()
@@ -1901,7 +2100,12 @@ fn render_checkbox_visual(checked: bool, indeterminate: bool, colors: &ThemeColo
     checkbox
 }
 
-fn render_row_checkbox_visual(checked: bool, _selected_row: bool, row_group: &str, colors: &ThemeColors) -> Div {
+fn render_row_checkbox_visual(
+    checked: bool,
+    _selected_row: bool,
+    row_group: &str,
+    colors: &ThemeColors,
+) -> Div {
     let mut checkbox = render_checkbox_visual(checked, false, colors);
     if !checked {
         checkbox = checkbox.group_hover(row_group.to_string(), |style| {
@@ -1917,28 +2121,34 @@ fn render_checkbox(cell: Div, colors: &ThemeColors) -> Div {
     cell.child(render_checkbox_visual(false, false, colors))
 }
 
-fn render_name_with_icon(cell: Div, resource: &Resource, icon: IconName, colors: &ThemeColors) -> Div {
+fn render_name_with_icon(
+    cell: Div,
+    resource: &Resource,
+    icon: IconName,
+    colors: &ThemeColors,
+) -> Div {
     let status = get_resource_status(resource);
     let icon_color = status.color(colors);
     cell.flex()
         .items_center()
         .gap(px(8.0))
-        .child(
-            Icon::new(icon)
-                .size(px(14.0))
-                .color(icon_color)
-        )
+        .child(Icon::new(icon).size(px(14.0)).color(icon_color))
         .child(
             div()
                 .text_ellipsis()
                 .overflow_hidden()
-                .child(resource.metadata.name.clone())
+                .child(resource.metadata.name.clone()),
         )
 }
 
 fn render_namespace(cell: Div, resource: &Resource, colors: &ThemeColors) -> Div {
-    cell.text_color(colors.text_secondary)
-        .child(resource.metadata.namespace.clone().unwrap_or_else(|| "-".to_string()))
+    cell.text_color(colors.text_secondary).child(
+        resource
+            .metadata
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "-".to_string()),
+    )
 }
 
 fn render_age(cell: Div, resource: &Resource, colors: &ThemeColors) -> Div {
@@ -1957,19 +2167,13 @@ fn render_status_pill(status_color: Hsla, label: &str) -> Div {
         .py(px(4.0))
         .rounded(theme.border_radius_full)
         .bg(status_color.opacity(0.12))
-        .child(
-            div()
-                .w(px(6.0))
-                .h(px(6.0))
-                .rounded_full()
-                .bg(status_color)
-        )
+        .child(div().w(px(6.0)).h(px(6.0)).rounded_full().bg(status_color))
         .child(
             div()
                 .text_size(px(12.0))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(status_color)
-                .child(label.to_string())
+                .child(label.to_string()),
         )
 }
 
@@ -1983,8 +2187,7 @@ fn get_hpa_status(resource: &Resource) -> (StatusType, &'static str) {
         .unwrap_or(0);
 
     // Check conditions
-    let conditions = get_json_value(&resource.status, &["conditions"])
-        .and_then(|v| v.as_array());
+    let conditions = get_json_value(&resource.status, &["conditions"]).and_then(|v| v.as_array());
 
     if let Some(conds) = conditions {
         // Check for ScalingLimited condition
@@ -2016,14 +2219,16 @@ fn get_hpa_status(resource: &Resource) -> (StatusType, &'static str) {
 /// Get VPA status based on conditions
 fn get_vpa_status(resource: &Resource) -> (StatusType, &'static str) {
     // Check if there's a recommendation
-    let has_recommendation = get_json_value(&resource.status, &["recommendation", "containerRecommendations"])
-        .and_then(|v| v.as_array())
-        .map(|a| !a.is_empty())
-        .unwrap_or(false);
+    let has_recommendation = get_json_value(
+        &resource.status,
+        &["recommendation", "containerRecommendations"],
+    )
+    .and_then(|v| v.as_array())
+    .map(|a| !a.is_empty())
+    .unwrap_or(false);
 
     // Check conditions
-    let conditions = get_json_value(&resource.status, &["conditions"])
-        .and_then(|v| v.as_array());
+    let conditions = get_json_value(&resource.status, &["conditions"]).and_then(|v| v.as_array());
 
     if let Some(conds) = conditions {
         for cond in conds {
@@ -2054,27 +2259,37 @@ fn get_vpa_status(resource: &Resource) -> (StatusType, &'static str) {
 
 /// Get VPA CPU or memory recommendation for first container
 fn get_vpa_recommendation(resource: &Resource, resource_name: &str) -> String {
-    let containers = get_json_value(&resource.status, &["recommendation", "containerRecommendations"])
-        .and_then(|v| v.as_array());
+    let containers = get_json_value(
+        &resource.status,
+        &["recommendation", "containerRecommendations"],
+    )
+    .and_then(|v| v.as_array());
 
     if let Some(containers) = containers {
         if let Some(first) = containers.first() {
-            let target = first.get("target")
+            let target = first
+                .get("target")
                 .and_then(|t| t.get(resource_name))
                 .and_then(|v| v.as_str());
 
-            let lower = first.get("lowerBound")
+            let lower = first
+                .get("lowerBound")
                 .and_then(|t| t.get(resource_name))
                 .and_then(|v| v.as_str());
 
-            let upper = first.get("upperBound")
+            let upper = first
+                .get("upperBound")
                 .and_then(|t| t.get(resource_name))
                 .and_then(|v| v.as_str());
 
             if let Some(t) = target {
                 // Format: target (lower-upper)
                 let bounds = match (lower, upper) {
-                    (Some(l), Some(u)) => format!(" ({}-{})", format_resource_value(l), format_resource_value(u)),
+                    (Some(l), Some(u)) => format!(
+                        " ({}-{})",
+                        format_resource_value(l),
+                        format_resource_value(u)
+                    ),
                     _ => String::new(),
                 };
                 return format!("{}{}", format_resource_value(t), bounds);
@@ -2139,18 +2354,18 @@ fn get_json_value<'a>(value: &'a Option<Value>, path: &[&str]) -> Option<&'a Val
 }
 
 fn get_pod_ready_count(resource: &Resource) -> (u64, u64) {
-    let container_statuses = get_json_value(&resource.status, &["containerStatuses"])
-        .and_then(|v| v.as_array());
+    let container_statuses =
+        get_json_value(&resource.status, &["containerStatuses"]).and_then(|v| v.as_array());
 
-    let containers = get_json_value(&resource.spec, &["containers"])
-        .and_then(|v| v.as_array());
+    let containers = get_json_value(&resource.spec, &["containers"]).and_then(|v| v.as_array());
 
     let total = containers.map(|c| c.len() as u64).unwrap_or(1);
     let ready = container_statuses
         .map(|statuses| {
-            statuses.iter().filter(|s| {
-                s.get("ready").and_then(|r| r.as_bool()).unwrap_or(false)
-            }).count() as u64
+            statuses
+                .iter()
+                .filter(|s| s.get("ready").and_then(|r| r.as_bool()).unwrap_or(false))
+                .count() as u64
         })
         .unwrap_or(0);
 
@@ -2158,14 +2373,15 @@ fn get_pod_ready_count(resource: &Resource) -> (u64, u64) {
 }
 
 fn get_pod_restarts(resource: &Resource) -> u64 {
-    let container_statuses = get_json_value(&resource.status, &["containerStatuses"])
-        .and_then(|v| v.as_array());
+    let container_statuses =
+        get_json_value(&resource.status, &["containerStatuses"]).and_then(|v| v.as_array());
 
     container_statuses
         .map(|statuses| {
-            statuses.iter().map(|s| {
-                s.get("restartCount").and_then(|r| r.as_u64()).unwrap_or(0)
-            }).sum()
+            statuses
+                .iter()
+                .map(|s| s.get("restartCount").and_then(|r| r.as_u64()).unwrap_or(0))
+                .sum()
         })
         .unwrap_or(0)
 }
@@ -2183,16 +2399,19 @@ fn get_deployment_ready_count(resource: &Resource) -> (u64, u64) {
 }
 
 fn get_service_ports(resource: &Resource) -> String {
-    let ports = get_json_value(&resource.spec, &["ports"])
-        .and_then(|v| v.as_array());
+    let ports = get_json_value(&resource.spec, &["ports"]).and_then(|v| v.as_array());
 
     ports
         .map(|ports| {
-            ports.iter().filter_map(|p| {
-                let port = p.get("port").and_then(|v| v.as_u64())?;
-                let protocol = p.get("protocol").and_then(|v| v.as_str()).unwrap_or("TCP");
-                Some(format!("{}/{}", port, protocol))
-            }).collect::<Vec<_>>().join(", ")
+            ports
+                .iter()
+                .filter_map(|p| {
+                    let port = p.get("port").and_then(|v| v.as_u64())?;
+                    let protocol = p.get("protocol").and_then(|v| v.as_str()).unwrap_or("TCP");
+                    Some(format!("{}/{}", port, protocol))
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
         })
         .unwrap_or_else(|| "-".to_string())
 }
@@ -2260,8 +2479,7 @@ fn get_resource_status(resource: &Resource) -> StatusType {
 }
 
 fn get_node_status(resource: &Resource) -> StatusType {
-    let conditions = get_json_value(&resource.status, &["conditions"])
-        .and_then(|v| v.as_array());
+    let conditions = get_json_value(&resource.status, &["conditions"]).and_then(|v| v.as_array());
 
     if let Some(conditions) = conditions {
         for cond in conditions {
@@ -2340,11 +2558,17 @@ fn get_age_seconds(timestamp: &Option<String>) -> i64 {
     };
 
     let now = chrono::Utc::now();
-    now.signed_duration_since(date.with_timezone(&chrono::Utc)).num_seconds()
+    now.signed_duration_since(date.with_timezone(&chrono::Utc))
+        .num_seconds()
 }
 
 /// Compare two resources by a column
-fn compare_resources_by_column(a: &Resource, b: &Resource, column: &str, resource_type: ResourceType) -> Ordering {
+fn compare_resources_by_column(
+    a: &Resource,
+    b: &Resource,
+    column: &str,
+    resource_type: ResourceType,
+) -> Ordering {
     match column {
         "Name" => a.metadata.name.cmp(&b.metadata.name),
         "Namespace" => {
@@ -2368,15 +2592,31 @@ fn compare_resources_by_column(a: &Resource, b: &Resource, column: &str, resourc
                     let (ready_a, total_a) = get_pod_ready_count(a);
                     let (ready_b, total_b) = get_pod_ready_count(b);
                     // Sort by ratio, then by ready count
-                    let ratio_a = if total_a > 0 { ready_a as f64 / total_a as f64 } else { 0.0 };
-                    let ratio_b = if total_b > 0 { ready_b as f64 / total_b as f64 } else { 0.0 };
+                    let ratio_a = if total_a > 0 {
+                        ready_a as f64 / total_a as f64
+                    } else {
+                        0.0
+                    };
+                    let ratio_b = if total_b > 0 {
+                        ready_b as f64 / total_b as f64
+                    } else {
+                        0.0
+                    };
                     ratio_a.partial_cmp(&ratio_b).unwrap_or(Ordering::Equal)
                 }
                 ResourceType::Deployments => {
                     let (ready_a, total_a) = get_deployment_ready_count(a);
                     let (ready_b, total_b) = get_deployment_ready_count(b);
-                    let ratio_a = if total_a > 0 { ready_a as f64 / total_a as f64 } else { 0.0 };
-                    let ratio_b = if total_b > 0 { ready_b as f64 / total_b as f64 } else { 0.0 };
+                    let ratio_a = if total_a > 0 {
+                        ready_a as f64 / total_a as f64
+                    } else {
+                        0.0
+                    };
+                    let ratio_b = if total_b > 0 {
+                        ready_b as f64 / total_b as f64
+                    } else {
+                        0.0
+                    };
                     ratio_a.partial_cmp(&ratio_b).unwrap_or(Ordering::Equal)
                 }
                 _ => Ordering::Equal,
@@ -2458,9 +2698,9 @@ fn compare_resources_by_column(a: &Resource, b: &Resource, column: &str, resourc
 /// Get ordering value for status (for sorting)
 fn status_order(status: StatusType) -> u8 {
     match status {
-        StatusType::Failed => 0,    // Failed first (most urgent)
-        StatusType::Pending => 1,   // Then pending
-        StatusType::Unknown => 2,   // Then unknown
-        StatusType::Ready => 3,     // Ready last (least urgent)
+        StatusType::Failed => 0,  // Failed first (most urgent)
+        StatusType::Pending => 1, // Then pending
+        StatusType::Unknown => 2, // Then unknown
+        StatusType::Ready => 3,   // Ready last (least urgent)
     }
 }

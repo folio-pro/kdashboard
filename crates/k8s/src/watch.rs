@@ -2,13 +2,13 @@ use crate::resources::metadata_from;
 use crate::types::{Resource, ResourceList, ResourceType};
 use anyhow::Result;
 use futures::TryStreamExt;
+use kube::Client;
 use kube::api::Api;
 use kube::runtime::watcher::{self, Event};
-use kube::Client;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
-use std::sync::Arc;
 
 /// Start a watch stream for the given resource type and namespace.
 /// Sends a full `ResourceList` through `tx` whenever the data changes.
@@ -30,7 +30,16 @@ pub async fn watch_resources(
         ResourceType::Deployments => {
             use k8s_openapi::api::apps::v1::Deployment;
             let api: Api<Deployment> = ns_api(client, ns);
-            watch_typed(api, "apps/v1", "Deployment", "deployments", ns, &tx, &cancelled).await
+            watch_typed(
+                api,
+                "apps/v1",
+                "Deployment",
+                "deployments",
+                ns,
+                &tx,
+                &cancelled,
+            )
+            .await
         }
         ResourceType::Services => {
             use k8s_openapi::api::core::v1::Service;
@@ -50,17 +59,44 @@ pub async fn watch_resources(
         ResourceType::Ingresses => {
             use k8s_openapi::api::networking::v1::Ingress;
             let api: Api<Ingress> = ns_api(client, ns);
-            watch_typed(api, "networking.k8s.io/v1", "Ingress", "ingresses", ns, &tx, &cancelled).await
+            watch_typed(
+                api,
+                "networking.k8s.io/v1",
+                "Ingress",
+                "ingresses",
+                ns,
+                &tx,
+                &cancelled,
+            )
+            .await
         }
         ResourceType::StatefulSets => {
             use k8s_openapi::api::apps::v1::StatefulSet;
             let api: Api<StatefulSet> = ns_api(client, ns);
-            watch_typed(api, "apps/v1", "StatefulSet", "statefulsets", ns, &tx, &cancelled).await
+            watch_typed(
+                api,
+                "apps/v1",
+                "StatefulSet",
+                "statefulsets",
+                ns,
+                &tx,
+                &cancelled,
+            )
+            .await
         }
         ResourceType::DaemonSets => {
             use k8s_openapi::api::apps::v1::DaemonSet;
             let api: Api<DaemonSet> = ns_api(client, ns);
-            watch_typed(api, "apps/v1", "DaemonSet", "daemonsets", ns, &tx, &cancelled).await
+            watch_typed(
+                api,
+                "apps/v1",
+                "DaemonSet",
+                "daemonsets",
+                ns,
+                &tx,
+                &cancelled,
+            )
+            .await
         }
         ResourceType::Jobs => {
             use k8s_openapi::api::batch::v1::Job;
@@ -75,7 +111,16 @@ pub async fn watch_resources(
         ResourceType::ReplicaSets => {
             use k8s_openapi::api::apps::v1::ReplicaSet;
             let api: Api<ReplicaSet> = ns_api(client, ns);
-            watch_typed(api, "apps/v1", "ReplicaSet", "replicasets", ns, &tx, &cancelled).await
+            watch_typed(
+                api,
+                "apps/v1",
+                "ReplicaSet",
+                "replicasets",
+                ns,
+                &tx,
+                &cancelled,
+            )
+            .await
         }
         ResourceType::Nodes => {
             use k8s_openapi::api::core::v1::Node;
@@ -90,11 +135,18 @@ pub async fn watch_resources(
         ResourceType::HorizontalPodAutoscalers => {
             use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
             let api: Api<HorizontalPodAutoscaler> = ns_api(client, ns);
-            watch_typed(api, "autoscaling/v2", "HorizontalPodAutoscaler", "horizontalpodautoscalers", ns, &tx, &cancelled).await
+            watch_typed(
+                api,
+                "autoscaling/v2",
+                "HorizontalPodAutoscaler",
+                "horizontalpodautoscalers",
+                ns,
+                &tx,
+                &cancelled,
+            )
+            .await
         }
-        ResourceType::VerticalPodAutoscalers => {
-            watch_vpa(client, ns, &tx, &cancelled).await
-        }
+        ResourceType::VerticalPodAutoscalers => watch_vpa(client, ns, &tx, &cancelled).await,
     }
 }
 

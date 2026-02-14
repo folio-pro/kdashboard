@@ -61,8 +61,8 @@ pub async fn list_contexts() -> Result<Vec<String>> {
     let content = tokio::fs::read_to_string(&path)
         .await
         .context("Failed to read kubeconfig")?;
-    let config: KubeConfig = serde_yaml::from_str(&content)
-        .context("Failed to parse kubeconfig")?;
+    let config: KubeConfig =
+        serde_yaml::from_str(&content).context("Failed to parse kubeconfig")?;
     Ok(config.contexts.into_iter().map(|c| c.name).collect())
 }
 
@@ -71,8 +71,8 @@ pub async fn get_current_context() -> Result<String> {
     let content = tokio::fs::read_to_string(&path)
         .await
         .context("Failed to read kubeconfig")?;
-    let config: KubeConfig = serde_yaml::from_str(&content)
-        .context("Failed to parse kubeconfig")?;
+    let config: KubeConfig =
+        serde_yaml::from_str(&content).context("Failed to parse kubeconfig")?;
     config
         .current_context
         .context("No current context set in kubeconfig")
@@ -84,13 +84,12 @@ pub async fn set_context(context_name: &str) -> Result<()> {
         .await
         .context("Failed to read kubeconfig")?;
 
-    let mut config: serde_yaml::Value = serde_yaml::from_str(&content)
-        .context("Failed to parse kubeconfig")?;
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&content).context("Failed to parse kubeconfig")?;
 
     config["current-context"] = serde_yaml::Value::String(context_name.to_string());
 
-    let output = serde_yaml::to_string(&config)
-        .context("Failed to serialize kubeconfig")?;
+    let output = serde_yaml::to_string(&config).context("Failed to serialize kubeconfig")?;
 
     tokio::fs::write(&path, output)
         .await

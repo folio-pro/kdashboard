@@ -1,10 +1,10 @@
-use gpui::*;
-use gpui::prelude::FluentBuilder;
-use k8s_client::Resource;
-use ui::{theme, Icon, IconName, danger_btn};
-use editor::YamlEditor;
-use crate::detail_tabs::{DetailTab, EditorSubTab};
 use crate::detail_shared::*;
+use crate::detail_tabs::{DetailTab, EditorSubTab};
+use editor::YamlEditor;
+use gpui::prelude::FluentBuilder;
+use gpui::*;
+use k8s_client::Resource;
+use ui::{Icon, IconName, danger_btn, theme};
 
 /// Actions that can be triggered from ReplicaSetDetails
 #[derive(Clone, Debug)]
@@ -52,7 +52,10 @@ impl ReplicaSetDetails {
         self
     }
 
-    pub fn on_action(mut self, handler: impl Fn(ReplicaSetAction, &mut Context<'_, Self>) + 'static) -> Self {
+    pub fn on_action(
+        mut self,
+        handler: impl Fn(ReplicaSetAction, &mut Context<'_, Self>) + 'static,
+    ) -> Self {
         self.on_action = Some(Box::new(handler));
         self
     }
@@ -81,7 +84,7 @@ impl Render for ReplicaSetDetails {
                     .flex_col()
                     .gap(px(24.0))
                     .child(self.render_breadcrumb(cx))
-                    .child(self.render_header(cx))
+                    .child(self.render_header(cx)),
             )
             .child(
                 div()
@@ -90,7 +93,7 @@ impl Render for ReplicaSetDetails {
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll_handle)
                     .p(px(24.0))
-                    .child(self.render_content(cx))
+                    .child(self.render_content(cx)),
             )
             .into_any_element()
     }
@@ -115,9 +118,13 @@ impl ReplicaSetDetails {
                     .flex_shrink_0()
                     .text_size(px(13.0))
                     .text_color(colors.text_muted)
-                    .child("Cluster")
+                    .child("Cluster"),
             )
-            .child(Icon::new(IconName::ChevronRight).size(px(14.0)).color(colors.text_muted))
+            .child(
+                Icon::new(IconName::ChevronRight)
+                    .size(px(14.0))
+                    .color(colors.text_muted),
+            )
             .child(
                 div()
                     .id("bc-replicasets")
@@ -132,9 +139,13 @@ impl ReplicaSetDetails {
                         }
                         cx.notify();
                     }))
-                    .child("ReplicaSets")
+                    .child("ReplicaSets"),
             )
-            .child(Icon::new(IconName::ChevronRight).size(px(14.0)).color(colors.text_muted))
+            .child(
+                Icon::new(IconName::ChevronRight)
+                    .size(px(14.0))
+                    .color(colors.text_muted),
+            )
             .child(
                 div()
                     .min_w(px(0.0))
@@ -144,7 +155,7 @@ impl ReplicaSetDetails {
                     .text_size(px(13.0))
                     .text_color(colors.text)
                     .font_weight(FontWeight::MEDIUM)
-                    .child(name)
+                    .child(name),
             )
     }
 
@@ -154,13 +165,21 @@ impl ReplicaSetDetails {
         let resource = &self.resource;
 
         let name = resource.metadata.name.clone();
-        let namespace = resource.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
+        let namespace = resource
+            .metadata
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
 
-        let desired = resource.spec.as_ref()
+        let desired = resource
+            .spec
+            .as_ref()
             .and_then(|s| s.get("replicas"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        let ready = resource.status.as_ref()
+        let ready = resource
+            .status
+            .as_ref()
             .and_then(|s| s.get("readyReplicas"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
@@ -200,8 +219,8 @@ impl ReplicaSetDetails {
                             .child(
                                 Icon::new(IconName::Layers)
                                     .size(px(24.0))
-                                    .color(colors.primary)
-                            )
+                                    .color(colors.primary),
+                            ),
                     )
                     .child(
                         div()
@@ -217,7 +236,7 @@ impl ReplicaSetDetails {
                                     .text_size(px(20.0))
                                     .text_color(colors.text)
                                     .font_weight(FontWeight::BOLD)
-                                    .child(name)
+                                    .child(name),
                             )
                             .child(
                                 div()
@@ -228,21 +247,16 @@ impl ReplicaSetDetails {
                                         div()
                                             .text_size(px(13.0))
                                             .text_color(colors.text_secondary)
-                                            .child(namespace)
+                                            .child(namespace),
                                     )
-                                    .child(
-                                        div()
-                                            .size(px(4.0))
-                                            .rounded_full()
-                                            .bg(colors.text_muted)
-                                    )
+                                    .child(div().size(px(4.0)).rounded_full().bg(colors.text_muted))
                                     .child(
                                         div()
                                             .text_size(px(13.0))
                                             .text_color(colors.text_secondary)
-                                            .child(replicas_text)
-                                    )
-                            )
+                                            .child(replicas_text),
+                                    ),
+                            ),
                     )
                     .child(
                         div()
@@ -254,20 +268,15 @@ impl ReplicaSetDetails {
                             .flex()
                             .items_center()
                             .gap(px(6.0))
-                            .child(
-                                div()
-                                    .size(px(6.0))
-                                    .rounded_full()
-                                    .bg(status_color)
-                            )
+                            .child(div().size(px(6.0)).rounded_full().bg(status_color))
                             .child(
                                 div()
                                     .text_size(px(12.0))
                                     .text_color(status_color)
                                     .font_weight(FontWeight::MEDIUM)
-                                    .child(status_text.to_string())
-                            )
-                    )
+                                    .child(status_text.to_string()),
+                            ),
+                    ),
             )
             .child(
                 div()
@@ -277,18 +286,24 @@ impl ReplicaSetDetails {
                     .gap(px(12.0))
                     .child(self.render_edit_button(cx))
                     .child(
-                        danger_btn("delete-btn", IconName::Trash, "Delete", colors)
-                            .on_click(cx.listener(|this, _event, _window, cx| {
+                        danger_btn("delete-btn", IconName::Trash, "Delete", colors).on_click(
+                            cx.listener(|this, _event, _window, cx| {
                                 if let Some(on_action) = &this.on_action {
                                     let action = ReplicaSetAction::Delete {
                                         name: this.resource.metadata.name.clone(),
-                                        namespace: this.resource.metadata.namespace.clone().unwrap_or_else(|| "default".to_string()),
+                                        namespace: this
+                                            .resource
+                                            .metadata
+                                            .namespace
+                                            .clone()
+                                            .unwrap_or_else(|| "default".to_string()),
                                     };
                                     on_action(action, cx);
                                 }
                                 cx.notify();
-                            }))
-                    )
+                            }),
+                        ),
+                    ),
             )
     }
 
@@ -308,7 +323,7 @@ impl ReplicaSetDetails {
                     .gap(px(24.0))
                     .child(self.render_info_card(cx, resource))
                     .child(self.render_replicas_card(cx, resource))
-                    .child(render_detail_labels_card(cx, resource))
+                    .child(render_detail_labels_card(cx, resource)),
             )
             .child(
                 div()
@@ -317,7 +332,7 @@ impl ReplicaSetDetails {
                     .flex()
                     .flex_col()
                     .gap(px(24.0))
-                    .child(self.render_events_card(cx, resource))
+                    .child(self.render_events_card(cx, resource)),
             )
     }
 
@@ -326,28 +341,45 @@ impl ReplicaSetDetails {
         let colors = &theme.colors;
 
         let name = resource.metadata.name.clone();
-        let namespace = resource.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
+        let namespace = resource
+            .metadata
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
 
-        let desired = resource.spec.as_ref()
+        let desired = resource
+            .spec
+            .as_ref()
             .and_then(|s| s.get("replicas"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        let ready = resource.status.as_ref()
+        let ready = resource
+            .status
+            .as_ref()
             .and_then(|s| s.get("readyReplicas"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
         let replicas_text = format!("{} / {}", ready, desired);
 
-        let created = resource.metadata.creation_timestamp.clone().unwrap_or_else(|| "-".to_string());
+        let created = resource
+            .metadata
+            .creation_timestamp
+            .clone()
+            .unwrap_or_else(|| "-".to_string());
 
-        let generation = resource.status.as_ref()
+        let generation = resource
+            .status
+            .as_ref()
             .and_then(|s| s.get("observedGeneration"))
             .and_then(|v| v.as_u64())
             .map(|v| v.to_string())
             .unwrap_or_else(|| "-".to_string());
 
         // Owner reference (usually a Deployment)
-        let owner = resource.metadata.owner_references.as_ref()
+        let owner = resource
+            .metadata
+            .owner_references
+            .as_ref()
             .and_then(|refs| refs.first())
             .map(|r| format!("{}/{}", r.kind, r.name))
             .unwrap_or_else(|| "-".to_string());
@@ -363,156 +395,198 @@ impl ReplicaSetDetails {
 
         let row_items = render_detail_info_rows(colors, rows);
 
-        render_detail_card(cx, "ReplicaSet Information", None,
-            div().flex().flex_col().children(row_items)
+        render_detail_card(
+            cx,
+            "ReplicaSet Information",
+            None,
+            div().flex().flex_col().children(row_items),
         )
     }
 
-    fn render_replicas_card(&self, cx: &Context<'_, Self>, resource: &Resource) -> impl IntoElement {
+    fn render_replicas_card(
+        &self,
+        cx: &Context<'_, Self>,
+        resource: &Resource,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
-        let containers = get_json_array(&resource.spec, &["template", "spec", "containers"]).unwrap_or_default();
-        let ready = resource.status.as_ref()
+        let containers =
+            get_json_array(&resource.spec, &["template", "spec", "containers"]).unwrap_or_default();
+        let ready = resource
+            .status
+            .as_ref()
             .and_then(|s| s.get("readyReplicas"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
         let count_text = format!("{} running", ready);
 
-        let container_items: Vec<Div> = containers.iter().enumerate().map(|(idx, container)| {
-            let name = container.get("name").and_then(|v| v.as_str()).unwrap_or("-").to_string();
-            let image = container.get("image").and_then(|v| v.as_str()).unwrap_or("-").to_string();
+        let container_items: Vec<Div> = containers
+            .iter()
+            .enumerate()
+            .map(|(idx, container)| {
+                let name = container
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
+                let image = container
+                    .get("image")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
 
-            let cpu_request = container.get("resources")
-                .and_then(|r| r.get("requests"))
-                .and_then(|r| r.get("cpu"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("-")
-                .to_string();
-            let cpu_limit = container.get("resources")
-                .and_then(|r| r.get("limits"))
-                .and_then(|r| r.get("cpu"))
-                .and_then(|v| v.as_str())
-                .map(|s| format!("/ {} limit", s));
-            let mem_request = container.get("resources")
-                .and_then(|r| r.get("requests"))
-                .and_then(|r| r.get("memory"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("-")
-                .to_string();
-            let mem_limit = container.get("resources")
-                .and_then(|r| r.get("limits"))
-                .and_then(|r| r.get("memory"))
-                .and_then(|v| v.as_str())
-                .map(|s| format!("/ {} limit", s));
+                let cpu_request = container
+                    .get("resources")
+                    .and_then(|r| r.get("requests"))
+                    .and_then(|r| r.get("cpu"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
+                let cpu_limit = container
+                    .get("resources")
+                    .and_then(|r| r.get("limits"))
+                    .and_then(|r| r.get("cpu"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| format!("/ {} limit", s));
+                let mem_request = container
+                    .get("resources")
+                    .and_then(|r| r.get("requests"))
+                    .and_then(|r| r.get("memory"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
+                let mem_limit = container
+                    .get("resources")
+                    .and_then(|r| r.get("limits"))
+                    .and_then(|r| r.get("memory"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| format!("/ {} limit", s));
 
-            let (cpu_num, cpu_unit) = parse_resource_value(&cpu_request);
-            let (mem_num, mem_unit) = parse_resource_value(&mem_request);
+                let (cpu_num, cpu_unit) = parse_resource_value(&cpu_request);
+                let (mem_num, mem_unit) = parse_resource_value(&mem_request);
 
-            let is_running = ready > 0;
-            let status_color = if is_running { colors.success } else { colors.warning };
-            let state_text = if is_running { "Running" } else { "Pending" };
+                let is_running = ready > 0;
+                let status_color = if is_running {
+                    colors.success
+                } else {
+                    colors.warning
+                };
+                let state_text = if is_running { "Running" } else { "Pending" };
 
-            div()
-                .w_full()
-                .p(px(20.0))
-                .when(idx > 0, |el: Div| el.border_t_1().border_color(colors.border))
-                .flex()
-                .flex_col()
-                .gap(px(16.0))
-                .child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .flex()
-                                .items_center()
-                                .gap(px(12.0))
-                                .child(
-                                    div()
-                                        .flex_shrink_0()
-                                        .size(px(36.0))
-                                        .rounded(theme.border_radius_md)
-                                        .bg(colors.primary)
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .child(
-                                            Icon::new(IconName::Box)
-                                                .size(px(18.0))
-                                                .color(colors.background)
-                                        )
-                                )
-                                .child(
-                                    div()
-                                        .min_w(px(0.0))
-                                        .flex()
-                                        .flex_col()
-                                        .gap(px(2.0))
-                                        .child(
-                                            div()
-                                                .overflow_hidden()
-                                                .whitespace_nowrap()
-                                                .text_ellipsis()
-                                                .text_size(px(14.0))
-                                                .text_color(colors.text)
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .child(name)
-                                        )
-                                        .child(
-                                            div()
-                                                .overflow_hidden()
-                                                .whitespace_nowrap()
-                                                .text_ellipsis()
-                                                .text_size(px(12.0))
-                                                .text_color(colors.text_secondary)
-                                                .child(image)
-                                        )
-                                )
-                        )
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .px(px(10.0))
-                                .py(px(4.0))
-                                .rounded(theme.border_radius_full)
-                                .bg(status_color.opacity(0.12))
-                                .flex()
-                                .items_center()
-                                .gap(px(6.0))
-                                .child(
-                                    div()
-                                        .size(px(6.0))
-                                        .rounded_full()
-                                        .bg(status_color)
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(12.0))
-                                        .text_color(status_color)
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child(state_text.to_string())
-                                )
-                        )
-                )
-                .child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .gap(px(16.0))
-                        .child(render_detail_resource_stat(cx, "CPU", &cpu_num, &cpu_unit, cpu_limit.as_deref()))
-                        .child(render_detail_resource_stat(cx, "MEMORY", &mem_num, &mem_unit, mem_limit.as_deref()))
-                )
-        }).collect();
+                div()
+                    .w_full()
+                    .p(px(20.0))
+                    .when(idx > 0, |el: Div| {
+                        el.border_t_1().border_color(colors.border)
+                    })
+                    .flex()
+                    .flex_col()
+                    .gap(px(16.0))
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.0))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(12.0))
+                                    .child(
+                                        div()
+                                            .flex_shrink_0()
+                                            .size(px(36.0))
+                                            .rounded(theme.border_radius_md)
+                                            .bg(colors.primary)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(
+                                                Icon::new(IconName::Box)
+                                                    .size(px(18.0))
+                                                    .color(colors.background),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .min_w(px(0.0))
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(2.0))
+                                            .child(
+                                                div()
+                                                    .overflow_hidden()
+                                                    .whitespace_nowrap()
+                                                    .text_ellipsis()
+                                                    .text_size(px(14.0))
+                                                    .text_color(colors.text)
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .child(name),
+                                            )
+                                            .child(
+                                                div()
+                                                    .overflow_hidden()
+                                                    .whitespace_nowrap()
+                                                    .text_ellipsis()
+                                                    .text_size(px(12.0))
+                                                    .text_color(colors.text_secondary)
+                                                    .child(image),
+                                            ),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .px(px(10.0))
+                                    .py(px(4.0))
+                                    .rounded(theme.border_radius_full)
+                                    .bg(status_color.opacity(0.12))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(div().size(px(6.0)).rounded_full().bg(status_color))
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .text_color(status_color)
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .child(state_text.to_string()),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .gap(px(16.0))
+                            .child(render_detail_resource_stat(
+                                cx,
+                                "CPU",
+                                &cpu_num,
+                                &cpu_unit,
+                                cpu_limit.as_deref(),
+                            ))
+                            .child(render_detail_resource_stat(
+                                cx,
+                                "MEMORY",
+                                &mem_num,
+                                &mem_unit,
+                                mem_limit.as_deref(),
+                            )),
+                    )
+            })
+            .collect();
 
-        render_detail_card(cx, "Replicas", Some(count_text),
-            div().flex().flex_col().children(container_items)
+        render_detail_card(
+            cx,
+            "Replicas",
+            Some(count_text),
+            div().flex().flex_col().children(container_items),
         )
     }
 
@@ -529,11 +603,15 @@ fn derive_replicaset_events(resource: &Resource) -> Vec<ResourceEvent> {
     let name = &resource.metadata.name;
     let _namespace = resource.metadata.namespace.as_deref().unwrap_or("default");
 
-    let desired = resource.spec.as_ref()
+    let desired = resource
+        .spec
+        .as_ref()
         .and_then(|s| s.get("replicas"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    let ready = resource.status.as_ref()
+    let ready = resource
+        .status
+        .as_ref()
         .and_then(|s| s.get("readyReplicas"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
@@ -548,16 +626,26 @@ fn derive_replicaset_events(resource: &Resource) -> Vec<ResourceEvent> {
     } else if ready < desired {
         events.push(ResourceEvent {
             title: "Scaling".to_string(),
-            description: format!("Scaling ReplicaSet {} from {} to {} replicas", name, ready, desired),
+            description: format!(
+                "Scaling ReplicaSet {} from {} to {} replicas",
+                name, ready, desired
+            ),
             time: format_relative_time(resource),
             event_type: EventType::Warning,
         });
     }
 
-    let containers = get_json_array(&resource.spec, &["template", "spec", "containers"]).unwrap_or_default();
+    let containers =
+        get_json_array(&resource.spec, &["template", "spec", "containers"]).unwrap_or_default();
     for container in &containers {
-        let image = container.get("image").and_then(|v| v.as_str()).unwrap_or("-");
-        let container_name = container.get("name").and_then(|v| v.as_str()).unwrap_or("-");
+        let image = container
+            .get("image")
+            .and_then(|v| v.as_str())
+            .unwrap_or("-");
+        let container_name = container
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("-");
 
         events.push(ResourceEvent {
             title: "Created".to_string(),

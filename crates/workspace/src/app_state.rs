@@ -1,6 +1,8 @@
-use gpui::*;
-use k8s_client::{ConnectionStatus, PortForwardInfo, Resource, ResourceList, ResourceType, SortDirection};
 use crate::settings::AIProvider;
+use gpui::*;
+use k8s_client::{
+    ConnectionStatus, PortForwardInfo, Resource, ResourceList, ResourceType, SortDirection,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActivePanel {
@@ -72,6 +74,7 @@ pub struct AppState {
 
     // Panel state
     pub active_panel: ActivePanel,
+    pub settings_open: bool,
     pub sidebar_collapsed: bool,
 
     // Sort state
@@ -115,6 +118,7 @@ impl AppState {
             active_view: ActiveView::ResourceTable,
             pod_context: None,
             active_panel: ActivePanel::None,
+            settings_open: false,
             sidebar_collapsed: false,
             sort_column: None,
             sort_direction: SortDirection::Ascending,
@@ -144,7 +148,13 @@ impl AppState {
         });
     }
 
-    pub fn open_pod_logs(&mut self, pod_name: String, namespace: String, containers: Vec<String>, selected_container: Option<String>) {
+    pub fn open_pod_logs(
+        &mut self,
+        pod_name: String,
+        namespace: String,
+        containers: Vec<String>,
+        selected_container: Option<String>,
+    ) {
         self.pod_context = Some(PodContext {
             pod_name,
             namespace,
@@ -154,7 +164,13 @@ impl AppState {
         self.active_view = ActiveView::PodLogs;
     }
 
-    pub fn open_pod_terminal(&mut self, pod_name: String, namespace: String, containers: Vec<String>, selected_container: Option<String>) {
+    pub fn open_pod_terminal(
+        &mut self,
+        pod_name: String,
+        namespace: String,
+        containers: Vec<String>,
+        selected_container: Option<String>,
+    ) {
         self.pod_context = Some(PodContext {
             pod_name,
             namespace,
@@ -177,7 +193,11 @@ impl AppState {
         // Sync selected_resource with updated data from watch
         if let (Some(selected), Some(res_list)) = (&self.selected_resource, &resources) {
             // Find the updated version of the selected resource by UID
-            if let Some(updated) = res_list.items.iter().find(|r| r.metadata.uid == selected.metadata.uid) {
+            if let Some(updated) = res_list
+                .items
+                .iter()
+                .find(|r| r.metadata.uid == selected.metadata.uid)
+            {
                 self.selected_resource = Some(updated.clone());
             }
         }
@@ -232,9 +252,18 @@ impl AppState {
     pub fn set_ai_connection_testing(&mut self, testing: bool) {
         self.ai_connection_testing = testing;
         if testing {
-            self.ai_connection_message = Some("Probando conexión con el proveedor...".to_string());
+            self.ai_connection_message =
+                Some("Testing connection with the selected provider...".to_string());
             self.ai_connection_success = None;
         }
+    }
+
+    pub fn open_settings(&mut self) {
+        self.settings_open = true;
+    }
+
+    pub fn close_settings(&mut self) {
+        self.settings_open = false;
     }
 
     pub fn set_ai_connection_result(&mut self, result: Result<String, String>) {

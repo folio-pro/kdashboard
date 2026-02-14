@@ -95,7 +95,11 @@ mod tests {
     use k8s_client::{Resource, ResourceMetadata};
     use serde_json::json;
 
-    fn sample_resource(spec: Option<Value>, status: Option<Value>, data: Option<Value>) -> Resource {
+    fn sample_resource(
+        spec: Option<Value>,
+        status: Option<Value>,
+        data: Option<Value>,
+    ) -> Resource {
         Resource {
             api_version: "v1".to_string(),
             kind: "ConfigMap".to_string(),
@@ -118,7 +122,9 @@ mod tests {
 
     #[test]
     fn validate_yaml_accepts_valid_yaml() {
-        assert!(validate_yaml("apiVersion: v1\nkind: Pod\nmetadata:\n  name: demo\n"));
+        assert!(validate_yaml(
+            "apiVersion: v1\nkind: Pod\nmetadata:\n  name: demo\n"
+        ));
     }
 
     #[test]

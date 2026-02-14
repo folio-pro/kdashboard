@@ -1,6 +1,6 @@
 use gpui::*;
 use k8s_client::PortForwardInfo;
-use ui::{theme, Icon, IconName};
+use ui::{Icon, IconName, theme};
 
 /// Actions emitted by the PortForwardView
 #[derive(Clone, Debug)]
@@ -24,7 +24,10 @@ impl PortForwardView {
         }
     }
 
-    pub fn on_action(mut self, handler: impl Fn(PortForwardViewAction, &mut Context<'_, Self>) + 'static) -> Self {
+    pub fn on_action(
+        mut self,
+        handler: impl Fn(PortForwardViewAction, &mut Context<'_, Self>) + 'static,
+    ) -> Self {
         self.on_action = Some(Box::new(handler));
         self
     }
@@ -64,14 +67,14 @@ impl Render for PortForwardView {
                             .text_size(px(28.0))
                             .text_color(colors.text)
                             .font_weight(FontWeight::BOLD)
-                            .child("Port Forwards")
+                            .child("Port Forwards"),
                     )
                     .child(
                         div()
                             .text_size(px(14.0))
                             .text_color(colors.text_muted)
-                            .child("Manage active port forwarding sessions")
-                    )
+                            .child("Manage active port forwarding sessions"),
+                    ),
             )
             // Content
             .child(
@@ -81,7 +84,7 @@ impl Render for PortForwardView {
                     .overflow_y_scroll()
                     .px(px(24.0))
                     .pb(px(24.0))
-                    .child(self.render_table(cx))
+                    .child(self.render_table(cx)),
             )
     }
 }
@@ -217,32 +220,24 @@ impl PortForwardView {
                 )
                 // Status badge
                 .child(
-                    div()
-                        .w(px(100.0))
-                        .flex_shrink_0()
-                        .child(
-                            div()
-                                .px(px(8.0))
-                                .py(px(3.0))
-                                .rounded(theme.border_radius_full)
-                                .bg(colors.success.opacity(0.12))
-                                .flex()
-                                .items_center()
-                                .gap(px(5.0))
-                                .child(
-                                    div()
-                                        .size(px(6.0))
-                                        .rounded_full()
-                                        .bg(colors.success),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(11.0))
-                                        .text_color(colors.success)
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child("Active"),
-                                ),
-                        ),
+                    div().w(px(100.0)).flex_shrink_0().child(
+                        div()
+                            .px(px(8.0))
+                            .py(px(3.0))
+                            .rounded(theme.border_radius_full)
+                            .bg(colors.success.opacity(0.12))
+                            .flex()
+                            .items_center()
+                            .gap(px(5.0))
+                            .child(div().size(px(6.0)).rounded_full().bg(colors.success))
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(colors.success)
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child("Active"),
+                            ),
+                    ),
                 )
                 // Actions
                 .child(

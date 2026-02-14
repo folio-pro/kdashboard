@@ -1,8 +1,8 @@
-use gpui::*;
+use crate::app_state::AppState;
 use gpui::prelude::FluentBuilder;
-use crate::app_state::{ActiveView, AppState};
+use gpui::*;
 use ui::gpui_component::input::{Input, InputEvent, InputState};
-use ui::{theme, Icon, IconName, Sizable};
+use ui::{Icon, IconName, Sizable, theme};
 
 pub struct Header {
     search_input: Option<Entity<InputState>>,
@@ -21,9 +21,8 @@ impl Header {
         if self.search_input.is_some() {
             return;
         }
-        let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Search pods, deployments...")
-        });
+        let input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search pods, deployments..."));
         let sub = cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| {
             if let InputEvent::Change = ev {
                 let text = this
@@ -103,49 +102,44 @@ impl Render for Header {
             )
             // Right: settings entry (replaces static user info)
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(16.0))
-                    .child(
-                        div()
-                            .id("header-settings-link")
-                            .flex()
-                            .items_center()
-                            .gap(px(10.0))
-                            .cursor_pointer()
-                            .hover(|style| style.opacity(0.85))
-                            .child(
-                                div()
-                                    .w(px(32.0))
-                                    .h(px(32.0))
-                                    .rounded_full()
-                                    .bg(colors.surface)
-                                    .border_1()
-                                    .border_color(colors.border)
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child(
-                                        Icon::new(IconName::Settings)
-                                            .size(px(14.0))
-                                            .color(colors.text_muted),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(13.0))
-                                    .text_color(colors.text)
-                                    .child("Settings"),
-                            )
-                            .on_click(cx.listener(|_this, _event, _window, cx| {
-                                cx.update_global::<AppState, _>(|state, _| {
-                                    state.active_view = ActiveView::Settings;
-                                    state.set_selected_resource(None);
-                                });
-                                cx.notify();
-                            })),
-                    ),
+                div().flex().items_center().gap(px(16.0)).child(
+                    div()
+                        .id("header-settings-link")
+                        .flex()
+                        .items_center()
+                        .gap(px(10.0))
+                        .cursor_pointer()
+                        .hover(|style| style.opacity(0.85))
+                        .child(
+                            div()
+                                .w(px(32.0))
+                                .h(px(32.0))
+                                .rounded_full()
+                                .bg(colors.surface)
+                                .border_1()
+                                .border_color(colors.border)
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(
+                                    Icon::new(IconName::Settings)
+                                        .size(px(14.0))
+                                        .color(colors.text_muted),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(13.0))
+                                .text_color(colors.text)
+                                .child("Settings"),
+                        )
+                        .on_click(cx.listener(|_this, _event, _window, cx| {
+                            cx.update_global::<AppState, _>(|state, _| {
+                                state.open_settings();
+                            });
+                            cx.notify();
+                        })),
+                ),
             )
     }
 }

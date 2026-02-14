@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gpui::*;
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry, HighlightTheme};
+use gpui_component::highlighter::{HighlightTheme, LanguageConfig, LanguageRegistry};
 use gpui_component::theme::Theme as GpuiTheme;
 
 #[derive(Clone)]
@@ -49,30 +49,30 @@ impl ThemeColors {
     pub fn dark() -> Self {
         Self {
             // Background - Slate Navy (#0A0F1C, #1E293B, #0F172A)
-            background: hsla(220.0 / 360.0, 0.47, 0.075, 1.0),   // #0A0F1C
-            surface: hsla(217.0 / 360.0, 0.33, 0.175, 1.0),      // #1E293B
+            background: hsla(220.0 / 360.0, 0.47, 0.075, 1.0), // #0A0F1C
+            surface: hsla(217.0 / 360.0, 0.33, 0.175, 1.0),    // #1E293B
             surface_elevated: hsla(222.0 / 360.0, 0.47, 0.112, 1.0), // #0F172A
 
-            // Text - White / Slate (#FFFFFF, #94A3B8, #64748B)
-            text: hsla(0.0, 0.0, 1.0, 1.0),                      // #FFFFFF
-            text_secondary: hsla(215.0 / 360.0, 0.20, 0.65, 1.0), // #94A3B8
-            text_muted: hsla(215.0 / 360.0, 0.16, 0.47, 1.0),    // #64748B
-            text_accent: hsla(188.0 / 360.0, 0.86, 0.53, 1.0),   // #22D3EE
+            // Text - White / Slate tuned for higher readability
+            text: hsla(0.0, 0.0, 1.0, 1.0), // #FFFFFF
+            text_secondary: hsla(215.0 / 360.0, 0.22, 0.73, 1.0), // lighter secondary text
+            text_muted: hsla(215.0 / 360.0, 0.18, 0.62, 1.0), // higher-contrast muted text
+            text_accent: hsla(188.0 / 360.0, 0.86, 0.53, 1.0), // #22D3EE
 
             // Border - Slate (#334155)
-            border: hsla(215.0 / 360.0, 0.25, 0.27, 1.0),        // #334155
+            border: hsla(215.0 / 360.0, 0.25, 0.27, 1.0), // #334155
             border_focused: hsla(188.0 / 360.0, 0.86, 0.53, 1.0), // #22D3EE
 
             // Status - Tailwind (#22C55E, #F59E0B, #EF4444, #22D3EE)
-            success: hsla(142.0 / 360.0, 0.71, 0.45, 1.0),       // #22C55E
-            warning: hsla(38.0 / 360.0, 0.92, 0.50, 1.0),        // #F59E0B
-            error: hsla(0.0, 0.84, 0.60, 1.0),                    // #EF4444
-            info: hsla(188.0 / 360.0, 0.86, 0.53, 1.0),          // #22D3EE
+            success: hsla(142.0 / 360.0, 0.71, 0.45, 1.0), // #22C55E
+            warning: hsla(38.0 / 360.0, 0.92, 0.50, 1.0),  // #F59E0B
+            error: hsla(0.0, 0.84, 0.60, 1.0),             // #EF4444
+            info: hsla(188.0 / 360.0, 0.86, 0.53, 1.0),    // #22D3EE
 
             // Interactive - Cyan Accent
-            primary: hsla(188.0 / 360.0, 0.86, 0.53, 1.0),       // #22D3EE
+            primary: hsla(188.0 / 360.0, 0.86, 0.53, 1.0), // #22D3EE
             primary_hover: hsla(189.0 / 360.0, 0.95, 0.43, 1.0), // #06B6D4
-            secondary: hsla(217.0 / 360.0, 0.33, 0.175, 1.0),    // #1E293B (surface)
+            secondary: hsla(217.0 / 360.0, 0.33, 0.175, 1.0), // #1E293B (surface)
             secondary_hover: hsla(215.0 / 360.0, 0.25, 0.27, 1.0), // #334155
 
             // Selection
@@ -250,7 +250,8 @@ fn apply_k8s_theme(cx: &mut App) {
     }
 
     // Apply Pencil editor syntax highlighting colors
-    let pencil_highlight: HighlightTheme = serde_json::from_str(r##"{
+    let pencil_highlight: HighlightTheme = serde_json::from_str(
+        r##"{
         "name": "Pencil Dark",
         "appearance": "dark",
         "style": {
@@ -296,7 +297,8 @@ fn apply_k8s_theme(cx: &mut App) {
                 "link_uri":             { "color": "#22d3eeff" }
             }
         }
-    }"##)
+    }"##,
+    )
     .expect("valid Pencil highlight theme JSON");
 
     theme.highlight_theme = Arc::new(pencil_highlight);

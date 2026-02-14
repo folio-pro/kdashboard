@@ -96,32 +96,24 @@ impl Render for LogsView {
                         div()
                             .text_size(theme.font_size_small)
                             .text_color(colors.text_muted)
-                            .child(format!(
-                                "Logs: {} ({} lines)",
-                                self.pod_name,
-                                log_count
-                            )),
+                            .child(format!("Logs: {} ({} lines)", self.pod_name, log_count)),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .child(
-                                div()
-                                    .px(px(8.0))
-                                    .py(px(4.0))
-                                    .rounded(theme.border_radius)
-                                    .bg(if self.auto_scroll {
-                                        colors.primary.opacity(0.2)
-                                    } else {
-                                        colors.secondary
-                                    })
-                                    .text_size(theme.font_size_small)
-                                    .text_color(colors.text)
-                                    .cursor_pointer()
-                                    .child("Auto-scroll"),
-                            ),
+                        div().flex().items_center().gap(px(8.0)).child(
+                            div()
+                                .px(px(8.0))
+                                .py(px(4.0))
+                                .rounded(theme.border_radius)
+                                .bg(if self.auto_scroll {
+                                    colors.primary.opacity(0.2)
+                                } else {
+                                    colors.secondary
+                                })
+                                .text_size(theme.font_size_small)
+                                .text_color(colors.text)
+                                .cursor_pointer()
+                                .child("Auto-scroll"),
+                        ),
                     ),
             )
             // Logs content

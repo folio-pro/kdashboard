@@ -1,5 +1,5 @@
 use gpui::*;
-use ui::{theme, Sizable};
+use ui::{Sizable, theme};
 
 #[derive(Clone)]
 pub struct ChatMessage {
@@ -155,46 +155,38 @@ impl AIPanelView {
         let theme = theme(cx);
         let colors = &theme.colors;
 
-        div()
-            .w_full()
-            .flex()
-            .justify_start()
-            .child(
-                div()
-                    .max_w(px(300.0))
-                    .p(px(12.0))
-                    .rounded(theme.border_radius)
-                    .bg(colors.surface_elevated)
-                    .text_size(theme.font_size)
-                    .text_color(colors.text)
-                    .child(content.to_string()),
-            )
+        div().w_full().flex().justify_start().child(
+            div()
+                .max_w(px(300.0))
+                .p(px(12.0))
+                .rounded(theme.border_radius)
+                .bg(colors.surface_elevated)
+                .text_size(theme.font_size)
+                .text_color(colors.text)
+                .child(content.to_string()),
+        )
     }
 
     fn render_loading(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
-        div()
-            .w_full()
-            .flex()
-            .justify_start()
-            .child(
-                div()
-                    .p(px(12.0))
-                    .rounded(theme.border_radius)
-                    .bg(colors.surface_elevated)
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(ui::Spinner::new().with_size(ui::Size::XSmall))
-                    .child(
-                        div()
-                            .text_size(theme.font_size_small)
-                            .text_color(colors.text_muted)
-                            .child("Thinking..."),
-                    ),
-            )
+        div().w_full().flex().justify_start().child(
+            div()
+                .p(px(12.0))
+                .rounded(theme.border_radius)
+                .bg(colors.surface_elevated)
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .child(ui::Spinner::new().with_size(ui::Size::XSmall))
+                .child(
+                    div()
+                        .text_size(theme.font_size_small)
+                        .text_color(colors.text_muted)
+                        .child("Thinking..."),
+                ),
+        )
     }
 
     fn render_input_area(&self, cx: &Context<'_, Self>, input: String) -> impl IntoElement {
@@ -202,7 +194,10 @@ impl AIPanelView {
         let colors = &theme.colors;
 
         let (text_color, display_text) = if input.is_empty() {
-            (colors.text_muted, "Ask about your Kubernetes resources...".to_string())
+            (
+                colors.text_muted,
+                "Ask about your Kubernetes resources...".to_string(),
+            )
         } else {
             (colors.text, input)
         };

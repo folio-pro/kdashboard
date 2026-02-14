@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use dashmap::DashMap;
-use kube::api::Api;
 use kube::Client;
+use kube::api::Api;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
@@ -84,10 +84,8 @@ pub async fn start_port_forward(
                                     return;
                                 };
 
-                                let (mut tcp_read, mut tcp_write) =
-                                    tcp_stream.split();
-                                let (mut pf_read, mut pf_write) =
-                                    tokio::io::split(&mut upstream);
+                                let (mut tcp_read, mut tcp_write) = tcp_stream.split();
+                                let (mut pf_read, mut pf_write) = tokio::io::split(&mut upstream);
 
                                 let client_to_pod = async {
                                     let mut buf = [0u8; 8192];
@@ -116,10 +114,7 @@ pub async fn start_port_forward(
                                 let _ = tokio::try_join!(client_to_pod, pod_to_client);
                             }
                             Err(e) => {
-                                error!(
-                                    "Port-forward connection failed (session {}): {}",
-                                    sid, e
-                                );
+                                error!("Port-forward connection failed (session {}): {}", sid, e);
                             }
                         }
                     });

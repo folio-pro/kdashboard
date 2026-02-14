@@ -1,8 +1,8 @@
 use gpui::*;
 use k8s_client::{ConnectionStatus, ResourceList, ResourceType};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 
 /// Generation counter to cancel previous watch when user switches resource/namespace
 static WATCH_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -56,7 +56,11 @@ pub fn load_resources(cx: &mut App, resource_type: ResourceType, namespace: Opti
                         )
                         .await
                         {
-                            tracing::error!("Watch error for {}: {}", resource_type.display_name(), e);
+                            tracing::error!(
+                                "Watch error for {}: {}",
+                                resource_type.display_name(),
+                                e
+                            );
                             return Err(e);
                         }
                         Ok(())
@@ -90,7 +94,10 @@ pub fn load_resources(cx: &mut App, resource_type: ResourceType, namespace: Opti
                                     }
                                     match handle.try_join() {
                                         Ok(Ok(())) => {
-                                            tracing::info!("Watch stream ended for {}", resource_type.display_name());
+                                            tracing::info!(
+                                                "Watch stream ended for {}",
+                                                resource_type.display_name()
+                                            );
                                         }
                                         Ok(Err(e)) => {
                                             let _ = tx.send(ResourceUpdate::Error(format!(
@@ -227,19 +234,30 @@ pub fn switch_context(cx: &mut App, context_name: String) {
     });
 
     cx.spawn(async move |cx| {
-        cx.background_executor()
-            .timer(std::time::Duration::from_millis(50))
-            .await;
-
-        for _ in 0..100 {
-            while let Ok(update) = rx.try_recv() {
-                let _ = cx.update(|cx| {
-                    handle_resource_update(cx, update);
-                });
-            }
+        loop {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(50))
                 .await;
+
+            let mut disconnected = false;
+            loop {
+                match rx.try_recv() {
+                    Ok(update) => {
+                        let _ = cx.update(|cx| {
+                            handle_resource_update(cx, update);
+                        });
+                    }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
+                }
+            }
+
+            if disconnected {
+                break;
+            }
         }
 
         // After context switch, trigger load_resources which will start a new watch

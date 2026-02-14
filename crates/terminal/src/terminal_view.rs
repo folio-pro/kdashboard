@@ -5,13 +5,13 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor};
-use gpui::*;
 use gpui::prelude::FluentBuilder;
-use k8s_client::{get_client, TerminalOutput, TerminalClosed};
+use gpui::*;
+use k8s_client::{TerminalClosed, TerminalOutput, get_client};
 use std::sync::mpsc;
 use ui::{
-    back_btn, secondary_btn, danger_btn, theme, Button, ButtonVariant, ButtonVariants,
-    DropdownMenu, Icon, IconName, PopupMenu, PopupMenuItem, Sizable,
+    Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenu, PopupMenuItem,
+    Sizable, back_btn, danger_btn, secondary_btn, theme,
 };
 
 use crate::colors;
@@ -61,7 +61,12 @@ pub struct PodTerminalView {
 }
 
 impl PodTerminalView {
-    pub fn new(pod_name: String, namespace: String, containers: Vec<String>, cx: &mut Context<'_, Self>) -> Self {
+    pub fn new(
+        pod_name: String,
+        namespace: String,
+        containers: Vec<String>,
+        cx: &mut Context<'_, Self>,
+    ) -> Self {
         let selected_container = containers.first().cloned();
         Self {
             pod_name,
@@ -101,22 +106,27 @@ impl PodTerminalView {
                 let client = match get_client().await {
                     Ok(c) => c,
                     Err(e) => {
-                        let _ = tx.send(TerminalMessage::Error(format!("Failed to get K8s client: {}", e)));
+                        let _ = tx.send(TerminalMessage::Error(format!(
+                            "Failed to get K8s client: {}",
+                            e
+                        )));
                         return;
                     }
                 };
 
                 // Output callback - sends terminal output to GPUI
                 let output_tx = tx.clone();
-                let on_output: k8s_client::OutputCallback = Box::new(move |output: TerminalOutput| {
-                    let _ = output_tx.send(TerminalMessage::Output(output.data));
-                });
+                let on_output: k8s_client::OutputCallback =
+                    Box::new(move |output: TerminalOutput| {
+                        let _ = output_tx.send(TerminalMessage::Output(output.data));
+                    });
 
                 // Close callback - notifies GPUI when session ends
                 let close_tx = tx.clone();
-                let on_close: k8s_client::CloseCallback = Box::new(move |closed: TerminalClosed| {
-                    let _ = close_tx.send(TerminalMessage::Closed(closed.reason));
-                });
+                let on_close: k8s_client::CloseCallback =
+                    Box::new(move |closed: TerminalClosed| {
+                        let _ = close_tx.send(TerminalMessage::Closed(closed.reason));
+                    });
 
                 match k8s_client::start_terminal_session(
                     &client,
@@ -127,12 +137,17 @@ impl PodTerminalView {
                     Some(30),
                     on_output,
                     on_close,
-                ).await {
+                )
+                .await
+                {
                     Ok(session) => {
                         let _ = tx.send(TerminalMessage::Connected(session.session_id));
                     }
                     Err(e) => {
-                        let _ = tx.send(TerminalMessage::Error(format!("Failed to start terminal: {}", e)));
+                        let _ = tx.send(TerminalMessage::Error(format!(
+                            "Failed to start terminal: {}",
+                            e
+                        )));
                     }
                 }
             });
@@ -141,7 +156,9 @@ impl PodTerminalView {
         // Poll for messages from the background thread
         cx.spawn(async move |cx| {
             loop {
-                cx.background_executor().timer(std::time::Duration::from_millis(8)).await;
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(8))
+                    .await;
 
                 // Drain all available messages into a batch
                 let mut messages = Vec::new();
@@ -160,7 +177,9 @@ impl PodTerminalView {
                 let mut should_stop = disconnected;
 
                 if !messages.is_empty() {
-                    let has_terminal_stop = messages.iter().any(|m| matches!(m, TerminalMessage::Closed(_) | TerminalMessage::Error(_)));
+                    let has_terminal_stop = messages.iter().any(|m| {
+                        matches!(m, TerminalMessage::Closed(_) | TerminalMessage::Error(_))
+                    });
                     let _ = view.update(&mut *cx, |this, cx| {
                         for msg in messages {
                             match msg {
@@ -202,7 +221,8 @@ impl PodTerminalView {
                     break;
                 }
             }
-        }).detach();
+        })
+        .detach();
     }
 
     /// Send input to the terminal session via direct channel (no thread spawning)
@@ -281,7 +301,7 @@ impl Render for PodTerminalView {
                     .flex_col()
                     .overflow_hidden()
                     .p(px(24.0))
-                    .child(self.render_terminal_container(cx))
+                    .child(self.render_terminal_container(cx)),
             )
     }
 }
@@ -309,16 +329,15 @@ impl PodTerminalView {
                     .items_center()
                     .gap(px(16.0))
                     // Back button (36x36, rounded 6, surface bg, border)
-                    .child(
-                        back_btn("terminal-back-btn", colors)
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.close_session();
-                                if let Some(on_close) = &this.on_close {
-                                    on_close(cx);
-                                }
-                                cx.notify();
-                            }))
-                    )
+                    .child(back_btn("terminal-back-btn", colors).on_click(cx.listener(
+                        |this, _event, _window, cx| {
+                            this.close_session();
+                            if let Some(on_close) = &this.on_close {
+                                on_close(cx);
+                            }
+                            cx.notify();
+                        },
+                    )))
                     // Title group
                     .child(
                         div()
@@ -331,16 +350,16 @@ impl PodTerminalView {
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .font_family(theme.font_family_ui.clone())
                                     .text_color(colors.text)
-                                    .child("Terminal")
+                                    .child("Terminal"),
                             )
                             .child(
                                 div()
                                     .text_size(px(12.0))
                                     .font_family(theme.font_family.clone())
                                     .text_color(colors.text_muted)
-                                    .child(self.pod_name.clone())
-                            )
-                    )
+                                    .child(self.pod_name.clone()),
+                            ),
+                    ),
             )
             // Right: container select + shell select + reconnect + disconnect
             .child(
@@ -360,7 +379,7 @@ impl PodTerminalView {
                                 cx.defer(move |cx| {
                                     Self::reconnect(view, cx);
                                 });
-                            }))
+                            })),
                     )
                     // Disconnect button (red)
                     .child(
@@ -368,14 +387,17 @@ impl PodTerminalView {
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 this.close_session();
                                 cx.notify();
-                            }))
-                    )
+                            })),
+                    ),
             )
     }
 
     fn render_container_dropdown(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let containers = self.containers.clone();
-        let current_label = self.selected_container.clone().unwrap_or_else(|| "default".to_string());
+        let current_label = self
+            .selected_container
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
         let selected = self.selected_container.clone();
         let view = cx.entity().downgrade();
 
@@ -392,20 +414,18 @@ impl PodTerminalView {
                         let is_selected = selected.as_deref() == Some(c.as_str());
                         let container = c.clone();
                         let view = view.clone();
-                        m = m.item(
-                            PopupMenuItem::new(c.clone())
-                                .checked(is_selected)
-                                .on_click(move |_, _window, cx| {
-                                    let container = container.clone();
-                                    let _ = view.update(cx, |this, cx| {
-                                        this.selected_container = Some(container);
-                                        let view = cx.entity().clone();
-                                        cx.defer(move |cx| {
-                                            Self::reconnect(view, cx);
-                                        });
+                        m = m.item(PopupMenuItem::new(c.clone()).checked(is_selected).on_click(
+                            move |_, _window, cx| {
+                                let container = container.clone();
+                                let _ = view.update(cx, |this, cx| {
+                                    this.selected_container = Some(container);
+                                    let view = cx.entity().clone();
+                                    cx.defer(move |cx| {
+                                        Self::reconnect(view, cx);
                                     });
-                                }),
-                        );
+                                });
+                            },
+                        ));
                     }
                     m
                 }),
@@ -430,17 +450,15 @@ impl PodTerminalView {
                         let is_selected = *shell == current.as_str();
                         let shell_str = shell.to_string();
                         let view = view.clone();
-                        m = m.item(
-                            PopupMenuItem::new(*shell)
-                                .checked(is_selected)
-                                .on_click(move |_, _window, cx| {
-                                    let shell_str = shell_str.clone();
-                                    let _ = view.update(cx, |this, cx| {
-                                        this.selected_shell = shell_str;
-                                        cx.notify();
-                                    });
-                                }),
-                        );
+                        m = m.item(PopupMenuItem::new(*shell).checked(is_selected).on_click(
+                            move |_, _window, cx| {
+                                let shell_str = shell_str.clone();
+                                let _ = view.update(cx, |this, cx| {
+                                    this.selected_shell = shell_str;
+                                    cx.notify();
+                                });
+                            },
+                        ));
                     }
                     m
                 }),
@@ -513,20 +531,15 @@ impl PodTerminalView {
                     .flex()
                     .items_center()
                     .gap(px(6.0))
-                    .child(
-                        div()
-                            .size(px(8.0))
-                            .rounded_full()
-                            .bg(status_color)
-                    )
+                    .child(div().size(px(8.0)).rounded_full().bg(status_color))
                     .child(
                         div()
                             .text_size(px(11.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .font_family(theme.font_family.clone())
                             .text_color(status_color)
-                            .child(status_text)
-                    )
+                            .child(status_text),
+                    ),
             )
             // Separator
             .child(self.render_toolbar_separator(colors))
@@ -541,17 +554,14 @@ impl PodTerminalView {
                         // Send clear-screen escape sequence
                         this.send_input("\x0c");
                         cx.notify();
-                    }))
+                    })),
             )
             // Spacer
             .child(div().flex_1())
     }
 
     fn render_toolbar_separator(&self, colors: &ui::ThemeColors) -> impl IntoElement {
-        div()
-            .w(px(1.0))
-            .h(px(20.0))
-            .bg(colors.border)
+        div().w(px(1.0)).h(px(20.0)).bg(colors.border)
     }
 
     fn render_toolbar_button(
@@ -574,18 +584,14 @@ impl PodTerminalView {
             .border_color(colors.border)
             .cursor_pointer()
             .hover(|s| s.bg(colors.selection_hover))
-            .child(
-                Icon::new(icon)
-                    .size(px(14.0))
-                    .color(colors.text_secondary)
-            )
+            .child(Icon::new(icon).size(px(14.0)).color(colors.text_secondary))
             .child(
                 div()
                     .text_size(px(11.0))
                     .font_weight(FontWeight::MEDIUM)
                     .font_family(theme.font_family_ui.clone())
                     .text_color(colors.text_secondary)
-                    .child(label.to_string())
+                    .child(label.to_string()),
             )
     }
 }
@@ -610,31 +616,29 @@ impl PodTerminalView {
                     .border_color(colors.border)
                     .overflow_hidden()
                     .child(
-                        div()
-                            .flex_1()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .gap(px(12.0))
-                                    .child(ui::Spinner::new().with_size(ui::Size::Medium))
-                                    .child(
-                                        div()
-                                            .text_size(px(14.0))
-                                            .font_family(theme.font_family_ui.clone())
-                                            .text_color(colors.text_muted)
-                                            .child(format!("Connecting to {}...", self.pod_name))
-                                    )
-                            )
+                        div().flex_1().flex().items_center().justify_center().child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .gap(px(12.0))
+                                .child(ui::Spinner::new().with_size(ui::Size::Medium))
+                                .child(
+                                    div()
+                                        .text_size(px(14.0))
+                                        .font_family(theme.font_family_ui.clone())
+                                        .text_color(colors.text_muted)
+                                        .child(format!("Connecting to {}...", self.pod_name)),
+                                ),
+                        ),
                     )
                     .into_any_element()
             }
             TerminalConnectionState::Error => {
-                let error_msg = self.error_message.clone().unwrap_or_else(|| "Unknown error".to_string());
+                let error_msg = self
+                    .error_message
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".to_string());
                 div()
                     .flex_1()
                     .flex()
@@ -645,45 +649,43 @@ impl PodTerminalView {
                     .border_color(colors.border)
                     .overflow_hidden()
                     .child(
-                        div()
-                            .flex_1()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .gap(px(12.0))
-                                    .child(
-                                        Icon::new(IconName::Close)
-                                            .size(px(32.0))
-                                            .color(colors.error)
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(14.0))
-                                            .font_family(theme.font_family_ui.clone())
-                                            .text_color(colors.error)
-                                            .child("Failed to connect")
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(12.0))
-                                            .font_family(theme.font_family_ui.clone())
-                                            .text_color(colors.text_muted)
-                                            .max_w(px(400.0))
-                                            .child(error_msg)
-                                    )
-                            )
+                        div().flex_1().flex().items_center().justify_center().child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .gap(px(12.0))
+                                .child(
+                                    Icon::new(IconName::Close)
+                                        .size(px(32.0))
+                                        .color(colors.error),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(14.0))
+                                        .font_family(theme.font_family_ui.clone())
+                                        .text_color(colors.error)
+                                        .child("Failed to connect"),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.0))
+                                        .font_family(theme.font_family_ui.clone())
+                                        .text_color(colors.text_muted)
+                                        .max_w(px(400.0))
+                                        .child(error_msg),
+                                ),
+                        ),
                     )
                     .into_any_element()
             }
             _ => {
                 // Connected or Disconnected - terminal container with header + body
                 let container_name = self.selected_container.as_deref().unwrap_or("default");
-                let prompt_path = format!("root@{}:/app#", self.pod_name.split('-').next().unwrap_or(&self.pod_name));
+                let prompt_path = format!(
+                    "root@{}:/app#",
+                    self.pod_name.split('-').next().unwrap_or(&self.pod_name)
+                );
 
                 div()
                     .id("terminal-container")
@@ -729,7 +731,7 @@ impl PodTerminalView {
                             // Terminal header
                             .child(self.render_terminal_header(&prompt_path, container_name, theme))
                             // Terminal body
-                            .child(self.render_terminal_body(theme, cx))
+                            .child(self.render_terminal_body(theme, cx)),
                     )
                     .into_any_element()
             }
@@ -762,37 +764,29 @@ impl PodTerminalView {
                     .child(
                         Icon::new(IconName::Terminal)
                             .size(px(16.0))
-                            .color(colors.text_muted)
+                            .color(colors.text_muted),
                     )
                     .child(
                         div()
                             .text_size(px(12.0))
                             .font_family(theme.font_family.clone())
                             .text_color(colors.text_secondary)
-                            .child(format!("{}  ~", prompt_path))
-                    )
+                            .child(format!("{}  ~", prompt_path)),
+                    ),
             )
             // Right: session time
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .font_family(theme.font_family.clone())
-                            .text_color(colors.text_muted)
-                            .child("Session: 00:00:00")
-                    )
+                div().flex().items_center().gap(px(8.0)).child(
+                    div()
+                        .text_size(px(11.0))
+                        .font_family(theme.font_family.clone())
+                        .text_color(colors.text_muted)
+                        .child("Session: 00:00:00"),
+                ),
             )
     }
 
-    fn render_terminal_body(
-        &self,
-        theme: &ui::Theme,
-        cx: &Context<'_, Self>,
-    ) -> AnyElement {
+    fn render_terminal_body(&self, theme: &ui::Theme, cx: &Context<'_, Self>) -> AnyElement {
         let emulator = match &self.emulator {
             Some(e) => e,
             None => {
@@ -824,9 +818,16 @@ impl PodTerminalView {
             // Convert viewport row to grid line, accounting for scroll offset.
             // viewport_to_point: Line(row as i32) - display_offset
             let line = Line(row_idx as i32) - display_offset;
-            row_elements.push(
-                self.render_grid_row(row_idx, line, grid, num_cols, &cursor, term_colors, default_fg_hsla, font_family)
-            );
+            row_elements.push(self.render_grid_row(
+                row_idx,
+                line,
+                grid,
+                num_cols,
+                &cursor,
+                term_colors,
+                default_fg_hsla,
+                font_family,
+            ));
         }
 
         // Calculate scrollbar metrics
@@ -861,7 +862,7 @@ impl PodTerminalView {
                     .flex()
                     .flex_col()
                     .p(px(16.0))
-                    .children(row_elements)
+                    .children(row_elements),
             )
             // Scrollbar
             .when(has_scrollbar, |el: Stateful<Div>| {
@@ -898,9 +899,9 @@ impl PodTerminalView {
                                         .w(px(4.0))
                                         .h(px(thumb_h))
                                         .rounded(px(2.0))
-                                        .bg(theme.colors.text_muted.opacity(0.4))
-                                )
-                        )
+                                        .bg(theme.colors.text_muted.opacity(0.4)),
+                                ),
+                        ),
                 )
             })
             .into_any_element()
@@ -923,8 +924,7 @@ impl PodTerminalView {
         let mut current_hs: Option<HighlightStyle> = None;
 
         // Track cursor position for this row
-        let cursor_on_this_row = cursor.shape != CursorShape::Hidden
-            && cursor.point.line == line;
+        let cursor_on_this_row = cursor.shape != CursorShape::Hidden && cursor.point.line == line;
         let mut cursor_byte_range: Option<Range<usize>> = None;
 
         for col in 0..num_cols {
@@ -936,7 +936,11 @@ impl PodTerminalView {
             }
 
             let byte_start = text.len();
-            let ch = if cell.flags.contains(Flags::HIDDEN) { ' ' } else { cell.c };
+            let ch = if cell.flags.contains(Flags::HIDDEN) {
+                ' '
+            } else {
+                cell.c
+            };
             text.push(ch);
             let byte_end = text.len();
 
@@ -975,11 +979,14 @@ impl PodTerminalView {
         if let Some(range) = cursor_byte_range {
             let cursor_hsla = colors::rgb_to_hsla(colors::CURSOR_COLOR);
             let bg_hsla = colors::rgb_to_hsla(colors::DEFAULT_BG);
-            highlights.push((range, HighlightStyle {
-                color: Some(bg_hsla),
-                background_color: Some(cursor_hsla),
-                ..Default::default()
-            }));
+            highlights.push((
+                range,
+                HighlightStyle {
+                    color: Some(bg_hsla),
+                    background_color: Some(cursor_hsla),
+                    ..Default::default()
+                },
+            ));
         }
 
         // Ensure text is non-empty for StyledText
@@ -996,10 +1003,7 @@ impl PodTerminalView {
             .text_size(px(font_size))
             .font_family(font_family.clone())
             .text_color(default_fg)
-            .child(
-                StyledText::new(SharedString::from(text))
-                    .with_highlights(highlights)
-            )
+            .child(StyledText::new(SharedString::from(text)).with_highlights(highlights))
             .into_any_element()
     }
 
@@ -1112,7 +1116,11 @@ fn cell_to_highlight(
         let bg_color = cell.fg;
         let bg = if matches!(bg_color, Color::Named(NamedColor::Foreground)) {
             // When inverted, foreground becoming background — use default fg color as bg
-            Some(colors::to_hsla(Color::Named(NamedColor::Foreground), term_colors, true))
+            Some(colors::to_hsla(
+                Color::Named(NamedColor::Foreground),
+                term_colors,
+                true,
+            ))
         } else {
             Some(colors::to_hsla(bg_color, term_colors, true))
         };
@@ -1129,7 +1137,10 @@ fn cell_to_highlight(
 
     // Apply DIM flag
     let fg = if cell.flags.contains(Flags::DIM) {
-        Hsla { a: fg.a * 0.66, ..fg }
+        Hsla {
+            a: fg.a * 0.66,
+            ..fg
+        }
     } else {
         fg
     };

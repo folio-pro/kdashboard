@@ -37,18 +37,32 @@ fn btn_label(text: impl Into<SharedString>, color: Hsla) -> Div {
 // ── Public button builders ──────────────────────────────────────────
 
 /// Secondary (outlined) action button — e.g. "Edit YAML", "Refresh", "Logs", "Validate".
-pub fn secondary_btn(id: impl Into<ElementId>, icon: IconName, label: impl Into<SharedString>, colors: &ThemeColors) -> Stateful<Div> {
+pub fn secondary_btn(
+    id: impl Into<ElementId>,
+    icon: IconName,
+    label: impl Into<SharedString>,
+    colors: &ThemeColors,
+) -> Stateful<Div> {
     btn_base(id)
         .bg(colors.surface)
         .border_1()
         .border_color(colors.border)
         .hover(|s| s.opacity(0.8))
-        .child(Icon::new(icon).size(px(BTN_ICON_SIZE)).color(colors.text_secondary))
+        .child(
+            Icon::new(icon)
+                .size(px(BTN_ICON_SIZE))
+                .color(colors.text_secondary),
+        )
         .child(btn_label(label, colors.text))
 }
 
 /// Primary (filled) action button — e.g. "Apply", "Create".
-pub fn primary_btn(id: impl Into<ElementId>, label: impl Into<SharedString>, bg: Hsla, text_color: Hsla) -> Stateful<Div> {
+pub fn primary_btn(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    bg: Hsla,
+    text_color: Hsla,
+) -> Stateful<Div> {
     btn_base(id)
         .bg(bg)
         .hover(|s| s.opacity(0.9))
@@ -56,7 +70,13 @@ pub fn primary_btn(id: impl Into<ElementId>, label: impl Into<SharedString>, bg:
 }
 
 /// Primary button with an icon — e.g. "Create Pod".
-pub fn primary_icon_btn(id: impl Into<ElementId>, icon: IconName, label: impl Into<SharedString>, bg: Hsla, text_color: Hsla) -> Stateful<Div> {
+pub fn primary_icon_btn(
+    id: impl Into<ElementId>,
+    icon: IconName,
+    label: impl Into<SharedString>,
+    bg: Hsla,
+    text_color: Hsla,
+) -> Stateful<Div> {
     btn_base(id)
         .bg(bg)
         .hover(|s| s.opacity(0.9))
@@ -65,7 +85,12 @@ pub fn primary_icon_btn(id: impl Into<ElementId>, icon: IconName, label: impl In
 }
 
 /// Danger (destructive) button — e.g. "Delete".
-pub fn danger_btn(id: impl Into<ElementId>, icon: IconName, label: impl Into<SharedString>, colors: &ThemeColors) -> Stateful<Div> {
+pub fn danger_btn(
+    id: impl Into<ElementId>,
+    icon: IconName,
+    label: impl Into<SharedString>,
+    colors: &ThemeColors,
+) -> Stateful<Div> {
     btn_base(id)
         .bg(colors.error)
         .hover(|s| s.opacity(0.9))
@@ -134,4 +159,3 @@ pub fn editor_tab(
         )
     }
 }
-

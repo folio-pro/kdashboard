@@ -1,23 +1,42 @@
-use gpui::*;
+use crate::detail_shared::*;
+use crate::detail_tabs::{DetailTab, EditorSubTab};
+use editor::YamlEditor;
 use gpui::prelude::FluentBuilder;
+use gpui::*;
 use k8s_client::{PortForwardInfo, Resource};
 use std::collections::HashMap;
 use ui::gpui_component::input::{Input as TextInput, InputState};
-use ui::{theme, Icon, IconName, Sizable, Size, danger_btn};
-use editor::YamlEditor;
-use crate::detail_tabs::{DetailTab, EditorSubTab};
-use crate::detail_shared::*;
+use ui::{Icon, IconName, Sizable, Size, danger_btn, theme};
 
 /// Actions that can be triggered from PodDetails
 #[derive(Clone, Debug)]
 pub enum PodAction {
-    ViewLogs { pod_name: String, namespace: String, containers: Vec<String>, selected_container: Option<String> },
-    OpenTerminal { pod_name: String, namespace: String, containers: Vec<String>, selected_container: Option<String> },
-    Delete { pod_name: String, namespace: String },
-    PortForward { pod_name: String, namespace: String, container_port: u16, local_port: Option<u16> },
-    StopPortForward { session_id: String },
+    ViewLogs {
+        pod_name: String,
+        namespace: String,
+        containers: Vec<String>,
+        selected_container: Option<String>,
+    },
+    OpenTerminal {
+        pod_name: String,
+        namespace: String,
+        containers: Vec<String>,
+        selected_container: Option<String>,
+    },
+    Delete {
+        pod_name: String,
+        namespace: String,
+    },
+    PortForward {
+        pod_name: String,
+        namespace: String,
+        container_port: u16,
+        local_port: Option<u16>,
+    },
+    StopPortForward {
+        session_id: String,
+    },
 }
-
 
 /// Info about a discovered container port for the port-forward panel
 #[derive(Clone, Debug)]
@@ -83,7 +102,12 @@ impl PodDetails {
     /// Find an active port forward for this pod + container port
     fn find_active_forward(&self, container_port: u16) -> Option<&PortForwardInfo> {
         let pod_name = &self.resource.metadata.name;
-        let namespace = self.resource.metadata.namespace.as_deref().unwrap_or("default");
+        let namespace = self
+            .resource
+            .metadata
+            .namespace
+            .as_deref()
+            .unwrap_or("default");
         self.port_forwards.iter().find(|pf| {
             pf.pod_name == *pod_name
                 && pf.namespace == namespace
@@ -130,7 +154,10 @@ impl PodDetails {
         self
     }
 
-    pub fn on_action(mut self, handler: impl Fn(PodAction, &mut Context<'_, Self>) + 'static) -> Self {
+    pub fn on_action(
+        mut self,
+        handler: impl Fn(PodAction, &mut Context<'_, Self>) + 'static,
+    ) -> Self {
         self.on_action = Some(Box::new(handler));
         self
     }
@@ -177,7 +204,7 @@ impl Render for PodDetails {
                     .flex_col()
                     .gap(px(24.0))
                     .child(self.render_breadcrumb(cx))
-                    .child(self.render_header(cx))
+                    .child(self.render_header(cx)),
             )
             .child(
                 div()
@@ -186,7 +213,7 @@ impl Render for PodDetails {
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll_handle)
                     .p(px(24.0))
-                    .child(self.render_content(cx))
+                    .child(self.render_content(cx)),
             )
             .into_any_element()
     }
@@ -213,9 +240,13 @@ impl PodDetails {
                     .flex_shrink_0()
                     .text_size(px(13.0))
                     .text_color(colors.text_muted)
-                    .child("Cluster")
+                    .child("Cluster"),
             )
-            .child(Icon::new(IconName::ChevronRight).size(px(14.0)).color(colors.text_muted))
+            .child(
+                Icon::new(IconName::ChevronRight)
+                    .size(px(14.0))
+                    .color(colors.text_muted),
+            )
             .child(
                 div()
                     .id("bc-pods")
@@ -230,9 +261,13 @@ impl PodDetails {
                         }
                         cx.notify();
                     }))
-                    .child("Pods")
+                    .child("Pods"),
             )
-            .child(Icon::new(IconName::ChevronRight).size(px(14.0)).color(colors.text_muted))
+            .child(
+                Icon::new(IconName::ChevronRight)
+                    .size(px(14.0))
+                    .color(colors.text_muted),
+            )
             .child(
                 div()
                     .min_w(px(0.0))
@@ -242,7 +277,7 @@ impl PodDetails {
                     .text_size(px(13.0))
                     .text_color(colors.text)
                     .font_weight(FontWeight::MEDIUM)
-                    .child(name)
+                    .child(name),
             )
     }
 
@@ -254,9 +289,15 @@ impl PodDetails {
         let resource = &self.resource;
 
         let name = resource.metadata.name.clone();
-        let namespace = resource.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-        let node_name = get_json_str(&resource.spec, &["nodeName"]).unwrap_or_else(|| "-".to_string());
-        let phase = get_json_str(&resource.status, &["phase"]).unwrap_or_else(|| "Unknown".to_string());
+        let namespace = resource
+            .metadata
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+        let node_name =
+            get_json_str(&resource.spec, &["nodeName"]).unwrap_or_else(|| "-".to_string());
+        let phase =
+            get_json_str(&resource.status, &["phase"]).unwrap_or_else(|| "Unknown".to_string());
 
         let (status_color, status_bg) = match phase.as_str() {
             "Running" | "Succeeded" => (colors.success, colors.success.opacity(0.12)),
@@ -293,8 +334,8 @@ impl PodDetails {
                             .child(
                                 Icon::new(IconName::Box)
                                     .size(px(24.0))
-                                    .color(colors.primary)
-                            )
+                                    .color(colors.primary),
+                            ),
                     )
                     // Name + namespace · node
                     .child(
@@ -311,7 +352,7 @@ impl PodDetails {
                                     .text_size(px(20.0))
                                     .text_color(colors.text)
                                     .font_weight(FontWeight::BOLD)
-                                    .child(name)
+                                    .child(name),
                             )
                             .child(
                                 div()
@@ -322,21 +363,16 @@ impl PodDetails {
                                         div()
                                             .text_size(px(13.0))
                                             .text_color(colors.text_secondary)
-                                            .child(namespace)
+                                            .child(namespace),
                                     )
-                                    .child(
-                                        div()
-                                            .size(px(4.0))
-                                            .rounded_full()
-                                            .bg(colors.text_muted)
-                                    )
+                                    .child(div().size(px(4.0)).rounded_full().bg(colors.text_muted))
                                     .child(
                                         div()
                                             .text_size(px(13.0))
                                             .text_color(colors.text_secondary)
-                                            .child(node_name)
-                                    )
-                            )
+                                            .child(node_name),
+                                    ),
+                            ),
                     )
                     // Status badge
                     .child(
@@ -349,20 +385,15 @@ impl PodDetails {
                             .flex()
                             .items_center()
                             .gap(px(6.0))
-                            .child(
-                                div()
-                                    .size(px(6.0))
-                                    .rounded_full()
-                                    .bg(status_color)
-                            )
+                            .child(div().size(px(6.0)).rounded_full().bg(status_color))
                             .child(
                                 div()
                                     .text_size(px(12.0))
                                     .text_color(status_color)
                                     .font_weight(FontWeight::MEDIUM)
-                                    .child(phase)
-                            )
-                    )
+                                    .child(phase),
+                            ),
+                    ),
             )
             // Right: action buttons
             .child(
@@ -373,20 +404,31 @@ impl PodDetails {
                     .gap(px(12.0))
                     .child(self.render_edit_button(cx))
                     .child(self.render_secondary_button(cx, "logs-btn", IconName::Logs, "Logs"))
-                    .child(self.render_secondary_button(cx, "terminal-btn", IconName::Terminal, "Terminal"))
+                    .child(self.render_secondary_button(
+                        cx,
+                        "terminal-btn",
+                        IconName::Terminal,
+                        "Terminal",
+                    ))
                     .child(
-                        danger_btn("delete-btn", IconName::Trash, "Delete", colors)
-                            .on_click(cx.listener(|this, _event, _window, cx| {
+                        danger_btn("delete-btn", IconName::Trash, "Delete", colors).on_click(
+                            cx.listener(|this, _event, _window, cx| {
                                 if let Some(on_action) = &this.on_action {
                                     let action = PodAction::Delete {
                                         pod_name: this.resource.metadata.name.clone(),
-                                        namespace: this.resource.metadata.namespace.clone().unwrap_or_else(|| "default".to_string()),
+                                        namespace: this
+                                            .resource
+                                            .metadata
+                                            .namespace
+                                            .clone()
+                                            .unwrap_or_else(|| "default".to_string()),
                                     };
                                     on_action(action, cx);
                                 }
                                 cx.notify();
-                            }))
-                    )
+                            }),
+                        ),
+                    ),
             )
     }
 
@@ -408,14 +450,24 @@ impl PodDetails {
         if is_logs {
             btn = btn.on_click(cx.listener(move |this, _event, _window, cx| {
                 if let Some(on_action) = &this.on_action {
-                    let all_containers: Vec<String> = get_json_array(&this.resource.spec, &["containers"])
-                        .unwrap_or_default()
-                        .iter()
-                        .filter_map(|c| c.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
-                        .collect();
+                    let all_containers: Vec<String> =
+                        get_json_array(&this.resource.spec, &["containers"])
+                            .unwrap_or_default()
+                            .iter()
+                            .filter_map(|c| {
+                                c.get("name")
+                                    .and_then(|n| n.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                            .collect();
                     let action = PodAction::ViewLogs {
                         pod_name: this.resource.metadata.name.clone(),
-                        namespace: this.resource.metadata.namespace.clone().unwrap_or_else(|| "default".to_string()),
+                        namespace: this
+                            .resource
+                            .metadata
+                            .namespace
+                            .clone()
+                            .unwrap_or_else(|| "default".to_string()),
                         selected_container: all_containers.first().cloned(),
                         containers: all_containers,
                     };
@@ -426,14 +478,24 @@ impl PodDetails {
         } else if is_terminal {
             btn = btn.on_click(cx.listener(move |this, _event, _window, cx| {
                 if let Some(on_action) = &this.on_action {
-                    let all_containers: Vec<String> = get_json_array(&this.resource.spec, &["containers"])
-                        .unwrap_or_default()
-                        .iter()
-                        .filter_map(|c| c.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
-                        .collect();
+                    let all_containers: Vec<String> =
+                        get_json_array(&this.resource.spec, &["containers"])
+                            .unwrap_or_default()
+                            .iter()
+                            .filter_map(|c| {
+                                c.get("name")
+                                    .and_then(|n| n.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                            .collect();
                     let action = PodAction::OpenTerminal {
                         pod_name: this.resource.metadata.name.clone(),
-                        namespace: this.resource.metadata.namespace.clone().unwrap_or_else(|| "default".to_string()),
+                        namespace: this
+                            .resource
+                            .metadata
+                            .namespace
+                            .clone()
+                            .unwrap_or_else(|| "default".to_string()),
                         selected_container: all_containers.first().cloned(),
                         containers: all_containers,
                     };
@@ -539,7 +601,11 @@ impl PodDetails {
                     gpui::transparent_black()
                 };
 
-                let icon_color = if is_active { colors.success } else { colors.primary };
+                let icon_color = if is_active {
+                    colors.success
+                } else {
+                    colors.primary
+                };
 
                 let mut row = div()
                     .w_full()
@@ -608,10 +674,7 @@ impl PodDetails {
                                         .items_center()
                                         .gap(px(6.0))
                                         .child(
-                                            div()
-                                                .size(px(6.0))
-                                                .rounded_full()
-                                                .bg(colors.success),
+                                            div().size(px(6.0)).rounded_full().bg(colors.success),
                                         )
                                         .child(
                                             div()
@@ -623,41 +686,38 @@ impl PodDetails {
                                 ),
                         )
                         .child(
-                            div()
-                                .flex_shrink_0()
-                                .ml(px(12.0))
-                                .child(
-                                    div()
-                                        .id(ElementId::Name(format!("pf-stop-{}", cp).into()))
-                                        .cursor_pointer()
-                                        .px(px(14.0))
-                                        .py(px(6.0))
-                                        .rounded(theme.border_radius_md)
-                                        .bg(colors.error.opacity(0.12))
-                                        .text_size(px(12.0))
-                                        .text_color(colors.error)
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .hover(|s| s.bg(colors.error.opacity(0.2)))
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(6.0))
-                                        .child(
-                                            Icon::new(IconName::Close)
-                                                .size(px(12.0))
-                                                .color(colors.error),
-                                        )
-                                        .child("Stop")
-                                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                                            if let Some(on_action) = &this.on_action {
-                                                on_action(
-                                                    PodAction::StopPortForward {
-                                                        session_id: session_id.clone(),
-                                                    },
-                                                    cx,
-                                                );
-                                            }
-                                        })),
-                                ),
+                            div().flex_shrink_0().ml(px(12.0)).child(
+                                div()
+                                    .id(ElementId::Name(format!("pf-stop-{}", cp).into()))
+                                    .cursor_pointer()
+                                    .px(px(14.0))
+                                    .py(px(6.0))
+                                    .rounded(theme.border_radius_md)
+                                    .bg(colors.error.opacity(0.12))
+                                    .text_size(px(12.0))
+                                    .text_color(colors.error)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .hover(|s| s.bg(colors.error.opacity(0.2)))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(
+                                        Icon::new(IconName::Close)
+                                            .size(px(12.0))
+                                            .color(colors.error),
+                                    )
+                                    .child("Stop")
+                                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                                        if let Some(on_action) = &this.on_action {
+                                            on_action(
+                                                PodAction::StopPortForward {
+                                                    session_id: session_id.clone(),
+                                                },
+                                                cx,
+                                            );
+                                        }
+                                    })),
+                            ),
                         );
                 } else {
                     // Inactive state: show input + start button
@@ -685,52 +745,49 @@ impl PodDetails {
                                 .when_some(input_el, |el, input| el.child(input)),
                         )
                         .child(
-                            div()
-                                .flex_shrink_0()
-                                .ml(px(16.0))
-                                .child(
-                                    div()
-                                        .id(ElementId::Name(format!("pf-start-{}", cp).into()))
-                                        .cursor_pointer()
-                                        .px(px(14.0))
-                                        .py(px(6.0))
-                                        .rounded(theme.border_radius_md)
-                                        .bg(colors.primary)
-                                        .text_size(px(12.0))
-                                        .text_color(colors.background)
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .hover(|s| s.bg(colors.primary_hover))
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(6.0))
-                                        .child(
-                                            Icon::new(IconName::Play)
-                                                .size(px(12.0))
-                                                .color(colors.background),
-                                        )
-                                        .child("Start")
-                                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                                            if let Some(on_action) = &this.on_action {
-                                                let local_port = this
-                                                    .pf_inputs
-                                                    .get(&cp)
-                                                    .and_then(|state| {
-                                                        let val = state.read(cx).value().to_string();
-                                                        val.trim().parse::<u16>().ok()
-                                                    })
-                                                    .filter(|&p| p > 0);
-                                                on_action(
-                                                    PodAction::PortForward {
-                                                        pod_name: pod_name_fwd.clone(),
-                                                        namespace: namespace_fwd.clone(),
-                                                        container_port: cp,
-                                                        local_port,
-                                                    },
-                                                    cx,
-                                                );
-                                            }
-                                        })),
-                                ),
+                            div().flex_shrink_0().ml(px(16.0)).child(
+                                div()
+                                    .id(ElementId::Name(format!("pf-start-{}", cp).into()))
+                                    .cursor_pointer()
+                                    .px(px(14.0))
+                                    .py(px(6.0))
+                                    .rounded(theme.border_radius_md)
+                                    .bg(colors.primary)
+                                    .text_size(px(12.0))
+                                    .text_color(colors.background)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .hover(|s| s.bg(colors.primary_hover))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(
+                                        Icon::new(IconName::Play)
+                                            .size(px(12.0))
+                                            .color(colors.background),
+                                    )
+                                    .child("Start")
+                                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                                        if let Some(on_action) = &this.on_action {
+                                            let local_port = this
+                                                .pf_inputs
+                                                .get(&cp)
+                                                .and_then(|state| {
+                                                    let val = state.read(cx).value().to_string();
+                                                    val.trim().parse::<u16>().ok()
+                                                })
+                                                .filter(|&p| p > 0);
+                                            on_action(
+                                                PodAction::PortForward {
+                                                    pod_name: pod_name_fwd.clone(),
+                                                    namespace: namespace_fwd.clone(),
+                                                    container_port: cp,
+                                                    local_port,
+                                                },
+                                                cx,
+                                            );
+                                        }
+                                    })),
+                            ),
                         );
                 }
 
@@ -806,15 +863,28 @@ impl PodDetails {
 
     // ── Pod Information card ────────────────────────────────────────────
 
-    fn render_pod_info_card(&self, cx: &Context<'_, Self>, resource: &Resource) -> impl IntoElement {
+    fn render_pod_info_card(
+        &self,
+        cx: &Context<'_, Self>,
+        resource: &Resource,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
         let name = resource.metadata.name.clone();
-        let namespace = resource.metadata.namespace.clone().unwrap_or_else(|| "default".to_string());
-        let node_name = get_json_str(&resource.spec, &["nodeName"]).unwrap_or_else(|| "-".to_string());
+        let namespace = resource
+            .metadata
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+        let node_name =
+            get_json_str(&resource.spec, &["nodeName"]).unwrap_or_else(|| "-".to_string());
         let pod_ip = get_json_str(&resource.status, &["podIP"]).unwrap_or_else(|| "-".to_string());
-        let created = resource.metadata.creation_timestamp.clone().unwrap_or_else(|| "-".to_string());
+        let created = resource
+            .metadata
+            .creation_timestamp
+            .clone()
+            .unwrap_or_else(|| "-".to_string());
         let restarts = get_pod_restarts(resource);
 
         let rows: Vec<(&str, String, Option<Hsla>)> = vec![
@@ -828,258 +898,320 @@ impl PodDetails {
 
         let row_items = render_detail_info_rows(colors, rows);
 
-        render_detail_card(cx, "Pod Information", None,
-            div().flex().flex_col().children(row_items)
+        render_detail_card(
+            cx,
+            "Pod Information",
+            None,
+            div().flex().flex_col().children(row_items),
         )
     }
 
     // ── Containers card ─────────────────────────────────────────────────
 
-    fn render_containers_card(&self, cx: &Context<'_, Self>, resource: &Resource) -> impl IntoElement {
+    fn render_containers_card(
+        &self,
+        cx: &Context<'_, Self>,
+        resource: &Resource,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
         let containers = get_json_array(&resource.spec, &["containers"]).unwrap_or_default();
-        let container_statuses = get_json_array(&resource.status, &["containerStatuses"]).unwrap_or_default();
+        let container_statuses =
+            get_json_array(&resource.status, &["containerStatuses"]).unwrap_or_default();
         let count = containers.len();
 
-        let container_items: Vec<Div> = containers.iter().enumerate().map(|(idx, container)| {
-            let name = container.get("name").and_then(|v| v.as_str()).unwrap_or("-").to_string();
-            let image = container.get("image").and_then(|v| v.as_str()).unwrap_or("-").to_string();
+        let container_items: Vec<Div> = containers
+            .iter()
+            .enumerate()
+            .map(|(idx, container)| {
+                let name = container
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
+                let image = container
+                    .get("image")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
 
-            let status = container_statuses.iter().find(|s| {
-                s.get("name").and_then(|n| n.as_str()) == Some(&name)
-            });
+                let status = container_statuses
+                    .iter()
+                    .find(|s| s.get("name").and_then(|n| n.as_str()) == Some(&name));
 
-            let is_running = status
-                .and_then(|s| s.get("state"))
-                .and_then(|s| s.get("running"))
-                .is_some();
+                let is_running = status
+                    .and_then(|s| s.get("state"))
+                    .and_then(|s| s.get("running"))
+                    .is_some();
 
-            let restarts = status
-                .and_then(|s| s.get("restartCount"))
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
+                let restarts = status
+                    .and_then(|s| s.get("restartCount"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
 
-            let state_text = if is_running {
-                "Running"
-            } else if status.and_then(|s| s.get("state")).and_then(|s| s.get("waiting")).is_some() {
-                "Waiting"
-            } else if status.and_then(|s| s.get("state")).and_then(|s| s.get("terminated")).is_some() {
-                "Terminated"
-            } else {
-                "Unknown"
-            };
+                let state_text = if is_running {
+                    "Running"
+                } else if status
+                    .and_then(|s| s.get("state"))
+                    .and_then(|s| s.get("waiting"))
+                    .is_some()
+                {
+                    "Waiting"
+                } else if status
+                    .and_then(|s| s.get("state"))
+                    .and_then(|s| s.get("terminated"))
+                    .is_some()
+                {
+                    "Terminated"
+                } else {
+                    "Unknown"
+                };
 
-            let cpu_request = container.get("resources")
-                .and_then(|r| r.get("requests"))
-                .and_then(|r| r.get("cpu"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("-")
-                .to_string();
-            let cpu_limit = container.get("resources")
-                .and_then(|r| r.get("limits"))
-                .and_then(|r| r.get("cpu"))
-                .and_then(|v| v.as_str())
-                .map(|s| format!("/ {} limit", s));
-            let mem_request = container.get("resources")
-                .and_then(|r| r.get("requests"))
-                .and_then(|r| r.get("memory"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("-")
-                .to_string();
-            let mem_limit = container.get("resources")
-                .and_then(|r| r.get("limits"))
-                .and_then(|r| r.get("memory"))
-                .and_then(|v| v.as_str())
-                .map(|s| format!("/ {} limit", s));
+                let cpu_request = container
+                    .get("resources")
+                    .and_then(|r| r.get("requests"))
+                    .and_then(|r| r.get("cpu"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
+                let cpu_limit = container
+                    .get("resources")
+                    .and_then(|r| r.get("limits"))
+                    .and_then(|r| r.get("cpu"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| format!("/ {} limit", s));
+                let mem_request = container
+                    .get("resources")
+                    .and_then(|r| r.get("requests"))
+                    .and_then(|r| r.get("memory"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
+                let mem_limit = container
+                    .get("resources")
+                    .and_then(|r| r.get("limits"))
+                    .and_then(|r| r.get("memory"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| format!("/ {} limit", s));
 
-            let (cpu_num, cpu_unit) = parse_resource_value(&cpu_request);
-            let (mem_num, mem_unit) = parse_resource_value(&mem_request);
+                let (cpu_num, cpu_unit) = parse_resource_value(&cpu_request);
+                let (mem_num, mem_unit) = parse_resource_value(&mem_request);
 
-            let status_color = if is_running { colors.success } else { colors.warning };
+                let status_color = if is_running {
+                    colors.success
+                } else {
+                    colors.warning
+                };
 
-            div()
-                .w_full()
-                .p(px(20.0))
-                .when(idx > 0, |el: Div| el.border_t_1().border_color(colors.border))
-                .flex()
-                .flex_col()
-                .gap(px(16.0))
-                // Container header row
-                .child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        // Left: icon + name/image
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .flex()
-                                .items_center()
-                                .gap(px(12.0))
-                                .child(
-                                    div()
-                                        .flex_shrink_0()
-                                        .size(px(36.0))
-                                        .rounded(theme.border_radius_md)
-                                        .bg(colors.primary)
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .child(
-                                            Icon::new(IconName::Box)
-                                                .size(px(18.0))
-                                                .color(colors.background)
-                                        )
-                                )
-                                .child(
-                                    div()
-                                        .min_w(px(0.0))
-                                        .flex()
-                                        .flex_col()
-                                        .gap(px(2.0))
-                                        .child(
+                div()
+                    .w_full()
+                    .p(px(20.0))
+                    .when(idx > 0, |el: Div| {
+                        el.border_t_1().border_color(colors.border)
+                    })
+                    .flex()
+                    .flex_col()
+                    .gap(px(16.0))
+                    // Container header row
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            // Left: icon + name/image
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.0))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(12.0))
+                                    .child(
+                                        div()
+                                            .flex_shrink_0()
+                                            .size(px(36.0))
+                                            .rounded(theme.border_radius_md)
+                                            .bg(colors.primary)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(
+                                                Icon::new(IconName::Box)
+                                                    .size(px(18.0))
+                                                    .color(colors.background),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .min_w(px(0.0))
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(2.0))
+                                            .child(
+                                                div()
+                                                    .overflow_hidden()
+                                                    .whitespace_nowrap()
+                                                    .text_ellipsis()
+                                                    .text_size(px(14.0))
+                                                    .text_color(colors.text)
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .child(name.clone()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .overflow_hidden()
+                                                    .whitespace_nowrap()
+                                                    .text_ellipsis()
+                                                    .text_size(px(12.0))
+                                                    .text_color(colors.text_secondary)
+                                                    .child(image),
+                                            ),
+                                    ),
+                            )
+                            // Right: restarts + status badge
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.0))
+                                    .when(restarts > 0, |el: Div| {
+                                        el.child(
                                             div()
-                                                .overflow_hidden()
-                                                .whitespace_nowrap()
-                                                .text_ellipsis()
-                                                .text_size(px(14.0))
-                                                .text_color(colors.text)
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .child(name.clone())
+                                                .px(px(10.0))
+                                                .py(px(4.0))
+                                                .rounded(theme.border_radius_full)
+                                                .bg(colors.warning.opacity(0.12))
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(6.0))
+                                                .child(
+                                                    Icon::new(IconName::Refresh)
+                                                        .size(px(12.0))
+                                                        .color(colors.warning),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(px(12.0))
+                                                        .text_color(colors.warning)
+                                                        .font_weight(FontWeight::MEDIUM)
+                                                        .child(format!("Restarts: {}", restarts)),
+                                                ),
                                         )
-                                        .child(
-                                            div()
-                                                .overflow_hidden()
-                                                .whitespace_nowrap()
-                                                .text_ellipsis()
-                                                .text_size(px(12.0))
-                                                .text_color(colors.text_secondary)
-                                                .child(image)
-                                        )
-                                )
-                        )
-                        // Right: restarts + status badge
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .flex()
-                                .items_center()
-                                .gap(px(8.0))
-                                .when(restarts > 0, |el: Div| {
-                                    el.child(
+                                    })
+                                    .child(
                                         div()
                                             .px(px(10.0))
                                             .py(px(4.0))
                                             .rounded(theme.border_radius_full)
-                                            .bg(colors.warning.opacity(0.12))
+                                            .bg(status_color.opacity(0.12))
                                             .flex()
                                             .items_center()
                                             .gap(px(6.0))
                                             .child(
-                                                Icon::new(IconName::Refresh)
-                                                    .size(px(12.0))
-                                                    .color(colors.warning)
+                                                div().size(px(6.0)).rounded_full().bg(status_color),
                                             )
                                             .child(
                                                 div()
                                                     .text_size(px(12.0))
-                                                    .text_color(colors.warning)
+                                                    .text_color(status_color)
                                                     .font_weight(FontWeight::MEDIUM)
-                                                    .child(format!("Restarts: {}", restarts))
+                                                    .child(state_text.to_string()),
+                                            ),
+                                    ),
+                            ),
+                    )
+                    // Resource stat cards
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .gap(px(16.0))
+                            .child(render_detail_resource_stat(
+                                cx,
+                                "CPU",
+                                &cpu_num,
+                                &cpu_unit,
+                                cpu_limit.as_deref(),
+                            ))
+                            .child(render_detail_resource_stat(
+                                cx,
+                                "MEMORY",
+                                &mem_num,
+                                &mem_unit,
+                                mem_limit.as_deref(),
+                            )),
+                    )
+                    // Container ports display
+                    .when_some(
+                        container.get("ports").and_then(|p| p.as_array()).cloned(),
+                        move |el: Div, ports| {
+                            if ports.is_empty() {
+                                return el;
+                            }
+                            let port_items: Vec<Div> = ports
+                                .iter()
+                                .filter_map(|p| {
+                                    let container_port =
+                                        p.get("containerPort").and_then(|v| v.as_u64())? as u16;
+                                    let protocol =
+                                        p.get("protocol").and_then(|v| v.as_str()).unwrap_or("TCP");
+                                    let port_name =
+                                        p.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                                    let label = if port_name.is_empty() {
+                                        format!("{}/{}", container_port, protocol)
+                                    } else {
+                                        format!("{} ({}/{})", port_name, container_port, protocol)
+                                    };
+
+                                    Some(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(6.0))
+                                            .child(
+                                                Icon::new(IconName::PortForward)
+                                                    .size(px(12.0))
+                                                    .color(colors.text_muted),
                                             )
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.0))
+                                                    .text_color(colors.text_secondary)
+                                                    .child(label),
+                                            ),
                                     )
                                 })
-                                .child(
-                                    div()
-                                        .px(px(10.0))
-                                        .py(px(4.0))
-                                        .rounded(theme.border_radius_full)
-                                        .bg(status_color.opacity(0.12))
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(6.0))
-                                        .child(
-                                            div()
-                                                .size(px(6.0))
-                                                .rounded_full()
-                                                .bg(status_color)
-                                        )
-                                        .child(
-                                            div()
-                                                .text_size(px(12.0))
-                                                .text_color(status_color)
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .child(state_text.to_string())
-                                        )
-                                )
-                        )
-                )
-                // Resource stat cards
-                .child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .gap(px(16.0))
-                        .child(render_detail_resource_stat(cx, "CPU", &cpu_num, &cpu_unit, cpu_limit.as_deref()))
-                        .child(render_detail_resource_stat(cx, "MEMORY", &mem_num, &mem_unit, mem_limit.as_deref()))
-                )
-                // Container ports display
-                .when_some(
-                    container.get("ports").and_then(|p| p.as_array()).cloned(),
-                    move |el: Div, ports| {
-                        if ports.is_empty() {
-                            return el;
-                        }
-                        let port_items: Vec<Div> = ports.iter().filter_map(|p| {
-                            let container_port = p.get("containerPort").and_then(|v| v.as_u64())? as u16;
-                            let protocol = p.get("protocol").and_then(|v| v.as_str()).unwrap_or("TCP");
-                            let port_name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                            let label = if port_name.is_empty() {
-                                format!("{}/{}", container_port, protocol)
-                            } else {
-                                format!("{} ({}/{})", port_name, container_port, protocol)
-                            };
+                                .collect();
 
-                            Some(div()
-                                .flex()
-                                .items_center()
-                                .gap(px(6.0))
-                                .child(
-                                    Icon::new(IconName::PortForward)
-                                        .size(px(12.0))
-                                        .color(colors.text_muted)
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(12.0))
-                                        .text_color(colors.text_secondary)
-                                        .child(label)
-                                ))
-                        }).collect();
+                            if port_items.is_empty() {
+                                return el;
+                            }
 
-                        if port_items.is_empty() {
-                            return el;
-                        }
+                            el.child(
+                                div()
+                                    .w_full()
+                                    .flex()
+                                    .flex_wrap()
+                                    .gap(px(12.0))
+                                    .children(port_items),
+                            )
+                        },
+                    )
+            })
+            .collect();
 
-                        el.child(
-                            div()
-                                .w_full()
-                                .flex()
-                                .flex_wrap()
-                                .gap(px(12.0))
-                                .children(port_items)
-                        )
-                    }
-                )
-        }).collect();
-
-        render_detail_card(cx, "Containers", Some(format!("{} container{}", count, if count != 1 { "s" } else { "" })),
-            div().flex().flex_col().children(container_items)
+        render_detail_card(
+            cx,
+            "Containers",
+            Some(format!(
+                "{} container{}",
+                count,
+                if count != 1 { "s" } else { "" }
+            )),
+            div().flex().flex_col().children(container_items),
         )
     }
 
@@ -1099,7 +1231,8 @@ fn derive_pod_events(resource: &Resource) -> Vec<ResourceEvent> {
     let namespace = resource.metadata.namespace.as_deref().unwrap_or("default");
 
     let containers = get_json_array(&resource.spec, &["containers"]).unwrap_or_default();
-    let container_statuses = get_json_array(&resource.status, &["containerStatuses"]).unwrap_or_default();
+    let container_statuses =
+        get_json_array(&resource.status, &["containerStatuses"]).unwrap_or_default();
 
     // Started events from running containers
     for cs in &container_statuses {
@@ -1116,7 +1249,10 @@ fn derive_pod_events(resource: &Resource) -> Vec<ResourceEvent> {
 
     // Created events from containers
     for container in &containers {
-        let container_name = container.get("name").and_then(|v| v.as_str()).unwrap_or("-");
+        let container_name = container
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("-");
         events.push(ResourceEvent {
             title: "Created".to_string(),
             description: format!("Created container {}", container_name),
@@ -1127,7 +1263,10 @@ fn derive_pod_events(resource: &Resource) -> Vec<ResourceEvent> {
 
     // Pulled events from container images
     for container in &containers {
-        let image = container.get("image").and_then(|v| v.as_str()).unwrap_or("-");
+        let image = container
+            .get("image")
+            .and_then(|v| v.as_str())
+            .unwrap_or("-");
         events.push(ResourceEvent {
             title: "Pulled".to_string(),
             description: format!("Successfully pulled image {}", image),
@@ -1159,9 +1298,10 @@ fn derive_pod_events(resource: &Resource) -> Vec<ResourceEvent> {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 fn get_pod_restarts(resource: &Resource) -> u64 {
-    let container_statuses = get_json_array(&resource.status, &["containerStatuses"])
-        .unwrap_or_default();
-    container_statuses.iter().map(|s| {
-        s.get("restartCount").and_then(|r| r.as_u64()).unwrap_or(0)
-    }).sum()
+    let container_statuses =
+        get_json_array(&resource.status, &["containerStatuses"]).unwrap_or_default();
+    container_statuses
+        .iter()
+        .map(|s| s.get("restartCount").and_then(|r| r.as_u64()).unwrap_or(0))
+        .sum()
 }

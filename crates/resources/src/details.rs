@@ -27,11 +27,21 @@ impl Render for ResourceDetails {
             let name = resource.metadata.name.clone();
             let kind = resource.kind.clone();
             let api_version = resource.api_version.clone();
-            let namespace = resource.metadata.namespace.clone().unwrap_or_else(|| "-".to_string());
+            let namespace = resource
+                .metadata
+                .namespace
+                .clone()
+                .unwrap_or_else(|| "-".to_string());
             let uid = resource.metadata.uid.clone();
-            let created = resource.metadata.creation_timestamp.clone().unwrap_or_else(|| "-".to_string());
+            let created = resource
+                .metadata
+                .creation_timestamp
+                .clone()
+                .unwrap_or_else(|| "-".to_string());
 
-            let labels: Vec<(String, String)> = resource.metadata.labels
+            let labels: Vec<(String, String)> = resource
+                .metadata
+                .labels
                 .as_ref()
                 .map(|l| l.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                 .unwrap_or_default();
@@ -66,16 +76,12 @@ impl Render for ResourceDetails {
                 // Labels section
                 .child(self.render_labels(cx, labels));
         } else {
-            container = container
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .text_size(theme.font_size)
-                        .text_color(colors.text_muted)
-                        .child("Select a resource to view details"),
-                );
+            container = container.flex().items_center().justify_center().child(
+                div()
+                    .text_size(theme.font_size)
+                    .text_color(colors.text_muted)
+                    .child("Select a resource to view details"),
+            );
         }
 
         container
@@ -118,7 +124,11 @@ impl ResourceDetails {
             )
     }
 
-    fn render_labels(&self, cx: &Context<'_, Self>, labels: Vec<(String, String)>) -> impl IntoElement {
+    fn render_labels(
+        &self,
+        cx: &Context<'_, Self>,
+        labels: Vec<(String, String)>,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
@@ -159,7 +169,12 @@ impl ResourceDetails {
             )
     }
 
-    fn render_row(&self, cx: &Context<'_, Self>, label: &'static str, value: String) -> impl IntoElement {
+    fn render_row(
+        &self,
+        cx: &Context<'_, Self>,
+        label: &'static str,
+        value: String,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 

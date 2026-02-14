@@ -1,20 +1,34 @@
 mod ai_chat_panel;
 
-use crate::app_state::{app_state, update_app_state, ActivePanel, ActiveView, AppState};
+use self::ai_chat_panel::{load_opencode_models, run_ai_connection_test};
+use crate::app_state::{ActivePanel, ActiveView, AppState, app_state, update_app_state};
+use crate::settings::AIProvider;
 use crate::{Header, Sidebar, TitleBar};
-use gpui::*;
 use gpui::prelude::FluentBuilder;
+use gpui::*;
 use k8s_client::{ConnectionStatus, Resource};
 use logs::PodLogsView;
-use resources::{BulkTableAction, DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails, HpaAction, HpaDetails, PodAction, PodDetails, PortForwardView, PortForwardViewAction, ReplicaSetAction, ReplicaSetDetails, ResourceTable, VpaAction, VpaDetails};
-use terminal::PodTerminalView;
-use ui::{
-    theme, secondary_btn, primary_icon_btn, Button, ButtonVariant, ButtonVariants, DropdownMenu,
-    Icon, IconName, PopupMenu, PopupMenuItem, Sizable,
+use resources::{
+    BulkTableAction, DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails,
+    HpaAction, HpaDetails, PodAction, PodDetails, PortForwardView, PortForwardViewAction,
+    ReplicaSetAction, ReplicaSetDetails, ResourceTable, VpaAction, VpaDetails,
 };
-use crate::settings::AIProvider;
-use self::ai_chat_panel::{load_opencode_models, run_ai_connection_test};
-use ui::gpui_component::input::InputState;
+use terminal::PodTerminalView;
+use ui::gpui_component::input::{Input, InputEvent, InputState};
+use ui::{
+    Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenu, PopupMenuItem,
+    Sizable, Size, Spinner, primary_icon_btn, secondary_btn, theme,
+};
+
+actions!(
+    app_view,
+    [
+        OpenCommandMode,
+        OpenSearchMode,
+        CloseCommandBar,
+        ExecuteCommandBar
+    ]
+);
 
 /// Status categories for metric cards
 enum MetricStatus {
@@ -22,6 +36,13 @@ enum MetricStatus {
     Pending,
     Failed,
     Other,
+}
+
+#[derive(Clone)]
+struct CommandCompletion {
+    replacement: String,
+    label: String,
+    detail: String,
 }
 
 pub struct AppView {
@@ -43,13 +64,20 @@ pub struct AppView {
     ai_clear_input_pending: bool,
     ai_scroll_handle: ScrollHandle,
     ai_panel_maximized: bool,
+    command_input: Option<Entity<InputState>>,
+    _command_subscription: Option<Subscription>,
+    command_bar_open: bool,
+    command_bar_error: Option<String>,
+    focus_handle: FocusHandle,
 }
 
 impl AppView {
     pub fn new(cx: &mut Context<'_, Self>) -> Self {
         let state = app_state(cx);
         let sidebar_collapsed = state.sidebar_collapsed;
-        let resources = state.resources.as_ref()
+        let resources = state
+            .resources
+            .as_ref()
             .map(|r| r.items.clone())
             .unwrap_or_default();
         let resource_type = state.selected_type;
@@ -76,6 +104,11 @@ impl AppView {
             ai_clear_input_pending: false,
             ai_scroll_handle: ScrollHandle::new(),
             ai_panel_maximized: false,
+            command_input: None,
+            _command_subscription: None,
+            command_bar_open: false,
+            command_bar_error: None,
+            focus_handle: cx.focus_handle(),
         }
     }
 
@@ -93,14 +126,569 @@ impl AppView {
 
         cx.notify();
     }
+
+    fn ensure_command_input(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        if self.command_input.is_some() {
+            return;
+        }
+
+        let input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Type :command or /filter"));
+
+        let sub = cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| match ev {
+            InputEvent::PressEnter { .. } => this.execute_command_bar(cx),
+            InputEvent::Change => {
+                this.command_bar_error = None;
+                cx.notify();
+            }
+            _ => {}
+        });
+
+        self.command_input = Some(input);
+        self._command_subscription = Some(sub);
+    }
+
+    fn set_command_input_value(
+        &mut self,
+        value: String,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.ensure_command_input(window, cx);
+        if let Some(input) = &self.command_input {
+            let value = value.clone();
+            input.update(cx, move |input_state, cx| {
+                input_state.set_value(value.clone(), window, cx);
+            });
+        }
+    }
+
+    fn open_command_mode(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.command_bar_open = true;
+        self.command_bar_error = None;
+        self.set_command_input_value(":".to_string(), window, cx);
+        cx.notify();
+    }
+
+    fn open_search_mode(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.command_bar_open = true;
+        self.command_bar_error = None;
+        self.set_command_input_value("/".to_string(), window, cx);
+        cx.notify();
+    }
+
+    fn close_command_bar(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.command_bar_open = false;
+        self.command_bar_error = None;
+        self.set_command_input_value(String::new(), window, cx);
+        cx.notify();
+    }
+
+    fn execute_command_bar(&mut self, cx: &mut Context<'_, Self>) {
+        let text = self
+            .command_input
+            .as_ref()
+            .map(|i| i.read(cx).text().to_string())
+            .unwrap_or_default();
+
+        let line = text.trim();
+        if line.is_empty() {
+            self.command_bar_open = false;
+            self.command_bar_error = None;
+            cx.notify();
+            return;
+        }
+
+        if let Some(filter) = line.strip_prefix('/') {
+            cx.update_global::<AppState, _>(|state, _| {
+                state.set_filter(filter.trim().to_string());
+            });
+            self.command_bar_open = false;
+            self.command_bar_error = None;
+            cx.notify();
+            return;
+        }
+
+        let Some(command_line) = line.strip_prefix(':') else {
+            self.command_bar_error = Some("Command must start with ':' or '/'".to_string());
+            cx.notify();
+            return;
+        };
+
+        let command_line = command_line.trim();
+        if command_line.is_empty() {
+            self.command_bar_open = false;
+            self.command_bar_error = None;
+            cx.notify();
+            return;
+        }
+
+        let mut parts = command_line.split_whitespace();
+        let command = parts.next().unwrap_or_default().to_ascii_lowercase();
+        let args: Vec<&str> = parts.collect();
+
+        let handled = match command.as_str() {
+            "q" | "quit" => {
+                self.command_bar_open = false;
+                self.command_bar_error = None;
+                true
+            }
+            "help" | "?" => {
+                self.command_bar_error = Some(
+                    "K9s-like commands: :po :dp :svc :ing :cm :secret :rs :sts :ds :job :cj :node :ns :hpa :vpa :ctx <name> :ns <name> :pf and /filter"
+                        .to_string(),
+                );
+                true
+            }
+            "ctx" | "context" | "contexts" => {
+                if let Some(ctx_name) = args.first() {
+                    crate::switch_context(cx, (*ctx_name).to_string());
+                    self.command_bar_open = false;
+                    self.command_bar_error = None;
+                } else {
+                    self.command_bar_error = Some("Usage: :ctx <context-name>".to_string());
+                }
+                true
+            }
+            "ns" | "namespace" => {
+                if let Some(ns) = args.first() {
+                    let namespace = (*ns).to_string();
+                    let resource_type = cx.global::<AppState>().selected_type;
+                    cx.update_global::<AppState, _>(|state, _| {
+                        state.set_namespace(Some(namespace.clone()));
+                    });
+                    crate::load_resources(cx, resource_type, Some(namespace));
+                    self.command_bar_open = false;
+                    self.command_bar_error = None;
+                } else {
+                    cx.update_global::<AppState, _>(|state, _| {
+                        state.set_selected_type(k8s_client::ResourceType::Namespaces);
+                        state.active_view = ActiveView::ResourceTable;
+                        state.set_selected_resource(None);
+                    });
+                    crate::load_resources(cx, k8s_client::ResourceType::Namespaces, None);
+                    self.command_bar_open = false;
+                    self.command_bar_error = None;
+                }
+                true
+            }
+            "pf" | "portforward" | "port-forwards" | "portforwards" => {
+                cx.update_global::<AppState, _>(|state, _| {
+                    state.active_view = ActiveView::PortForwards;
+                    state.set_selected_resource(None);
+                });
+                self.command_bar_open = false;
+                self.command_bar_error = None;
+                true
+            }
+            other => {
+                if let Some(resource_type) = Self::resource_type_from_alias(other) {
+                    self.execute_resource_command(resource_type, &args, cx);
+                    true
+                } else {
+                    false
+                }
+            }
+        };
+
+        if !handled {
+            self.command_bar_error = Some(format!("Unknown command '{}'. Try :help", command));
+            cx.notify();
+        }
+    }
+
+    fn command_input_text(&self, cx: &Context<'_, Self>) -> String {
+        self.command_input
+            .as_ref()
+            .map(|i| i.read(cx).text().to_string())
+            .unwrap_or_default()
+    }
+
+    fn command_catalog() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("po", "Pods"),
+            ("dp", "Deployments"),
+            ("svc", "Services"),
+            ("ing", "Ingresses"),
+            ("cm", "ConfigMaps"),
+            ("secret", "Secrets"),
+            ("rs", "ReplicaSets"),
+            ("sts", "StatefulSets"),
+            ("ds", "DaemonSets"),
+            ("job", "Jobs"),
+            ("cj", "CronJobs"),
+            ("node", "Nodes"),
+            ("ns", "Namespaces"),
+            ("hpa", "HorizontalPodAutoscalers"),
+            ("vpa", "VerticalPodAutoscalers"),
+            ("ctx", "Switch context"),
+            ("pf", "Open port forwards"),
+            ("help", "Show command help"),
+            ("q", "Close command bar"),
+        ]
+    }
+
+    fn command_completions(&self, cx: &Context<'_, Self>) -> Vec<CommandCompletion> {
+        let input = self.command_input_text(cx);
+        let line = input.trim_start();
+
+        if let Some(prefix) = line.strip_prefix('/') {
+            let trimmed = prefix.trim();
+            if trimmed.is_empty() {
+                return vec![CommandCompletion {
+                    replacement: "/error".to_string(),
+                    label: "/<text>".to_string(),
+                    detail: "Filter resources by text".to_string(),
+                }];
+            }
+            return vec![CommandCompletion {
+                replacement: format!("/{}", trimmed),
+                label: format!("/{trimmed}"),
+                detail: "Press Enter to apply filter".to_string(),
+            }];
+        }
+
+        let Some(rest) = line.strip_prefix(':') else {
+            return Vec::new();
+        };
+
+        let state = app_state(cx);
+        let rest = rest.trim_start();
+        if rest.is_empty() {
+            return Self::command_catalog()
+                .iter()
+                .take(8)
+                .map(|(cmd, detail)| CommandCompletion {
+                    replacement: format!(":{cmd}"),
+                    label: format!(":{cmd}"),
+                    detail: (*detail).to_string(),
+                })
+                .collect();
+        }
+
+        let mut parts = rest.split_whitespace();
+        let command = parts.next().unwrap_or_default().to_ascii_lowercase();
+        let args: Vec<&str> = parts.collect();
+        let ends_with_space = rest.ends_with(' ');
+
+        if args.is_empty() && !ends_with_space {
+            return Self::command_catalog()
+                .iter()
+                .filter(|(cmd, _)| cmd.starts_with(&command))
+                .take(8)
+                .map(|(cmd, detail)| CommandCompletion {
+                    replacement: format!(":{cmd}"),
+                    label: format!(":{cmd}"),
+                    detail: (*detail).to_string(),
+                })
+                .collect();
+        }
+
+        let current_arg = if ends_with_space {
+            ""
+        } else {
+            args.last().copied().unwrap_or("")
+        };
+
+        match command.as_str() {
+            "ctx" | "context" | "contexts" => state
+                .contexts
+                .iter()
+                .filter(|ctx_name| ctx_name.starts_with(current_arg))
+                .take(8)
+                .map(|ctx_name| CommandCompletion {
+                    replacement: format!(":ctx {ctx_name}"),
+                    label: format!(":ctx {ctx_name}"),
+                    detail: "Switch context".to_string(),
+                })
+                .collect(),
+            "ns" | "namespace" => state
+                .namespaces
+                .iter()
+                .filter(|ns| ns.starts_with(current_arg))
+                .take(8)
+                .map(|ns| CommandCompletion {
+                    replacement: format!(":ns {ns}"),
+                    label: format!(":ns {ns}"),
+                    detail: "Switch namespace".to_string(),
+                })
+                .collect(),
+            cmd => {
+                if Self::resource_type_from_alias(cmd).is_none() {
+                    return Vec::new();
+                }
+
+                if current_arg.starts_with('@') {
+                    let ctx_prefix = current_arg.trim_start_matches('@');
+                    return state
+                        .contexts
+                        .iter()
+                        .filter(|ctx_name| ctx_name.starts_with(ctx_prefix))
+                        .take(8)
+                        .map(|ctx_name| CommandCompletion {
+                            replacement: format!(":{cmd} @{ctx_name}"),
+                            label: format!("@{ctx_name}"),
+                            detail: "Context selector".to_string(),
+                        })
+                        .collect();
+                }
+
+                if current_arg.starts_with('/') {
+                    let f = current_arg.trim_start_matches('/');
+                    return vec![CommandCompletion {
+                        replacement: format!(":{cmd} /{f}"),
+                        label: format!("/{f}"),
+                        detail: "Filter after opening resource".to_string(),
+                    }];
+                }
+
+                state
+                    .namespaces
+                    .iter()
+                    .filter(|ns| ns.starts_with(current_arg))
+                    .take(8)
+                    .map(|ns| CommandCompletion {
+                        replacement: format!(":{cmd} {ns}"),
+                        label: ns.clone(),
+                        detail: "Namespace selector".to_string(),
+                    })
+                    .collect()
+            }
+        }
+    }
+
+    fn handle_command_bar_keydown(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        if !self.command_bar_open {
+            return;
+        }
+
+        let key = event.keystroke.key.as_str();
+        if key == "tab" {
+            if let Some(first) = self.command_completions(cx).first() {
+                self.set_command_input_value(first.replacement.clone(), window, cx);
+            }
+            return;
+        }
+
+        if key == "enter" || key == "escape" {
+            return;
+        }
+
+        if event.keystroke.modifiers.control
+            || event.keystroke.modifiers.alt
+            || event.keystroke.modifiers.platform
+        {
+            return;
+        }
+
+        if key == "backspace" {
+            let mut text = self.command_input_text(cx);
+            text.pop();
+            self.set_command_input_value(text, window, cx);
+            return;
+        }
+
+        if let Some(ch) = event.keystroke.key_char.as_ref() {
+            if !ch.is_empty() {
+                let mut text = self.command_input_text(cx);
+                text.push_str(ch);
+                self.set_command_input_value(text, window, cx);
+            }
+        }
+    }
+
+    fn execute_resource_command(
+        &mut self,
+        resource_type: k8s_client::ResourceType,
+        args: &[&str],
+        cx: &mut Context<'_, Self>,
+    ) {
+        let mut namespace_override: Option<String> = None;
+        let mut context_override: Option<String> = None;
+        let mut filter_override: Option<String> = None;
+
+        for arg in args {
+            if let Some(ctx_name) = arg.strip_prefix('@') {
+                if !ctx_name.is_empty() {
+                    context_override = Some(ctx_name.to_string());
+                }
+            } else if let Some(filter) = arg.strip_prefix('/') {
+                filter_override = Some(filter.to_string());
+            } else if !arg.is_empty() {
+                namespace_override = Some((*arg).to_string());
+            }
+        }
+
+        if let Some(ctx_name) = context_override {
+            crate::switch_context(cx, ctx_name);
+        }
+
+        cx.update_global::<AppState, _>(|state, _| {
+            state.set_selected_type(resource_type);
+            state.active_view = ActiveView::ResourceTable;
+            state.set_selected_resource(None);
+
+            if let Some(filter) = &filter_override {
+                state.set_filter(filter.clone());
+            } else {
+                state.set_filter(String::new());
+            }
+
+            if resource_type.is_namespaced() {
+                if let Some(ns) = &namespace_override {
+                    state.set_namespace(Some(ns.clone()));
+                }
+            } else {
+                state.set_namespace(None);
+            }
+        });
+
+        let namespace = if resource_type.is_namespaced() {
+            namespace_override.or_else(|| cx.global::<AppState>().namespace.clone())
+        } else {
+            None
+        };
+
+        crate::load_resources(cx, resource_type, namespace);
+        self.command_bar_open = false;
+        self.command_bar_error = None;
+        cx.notify();
+    }
+
+    fn resource_type_from_alias(alias: &str) -> Option<k8s_client::ResourceType> {
+        match alias {
+            "po" | "pod" | "pods" => Some(k8s_client::ResourceType::Pods),
+            "dp" | "deploy" | "deployment" | "deployments" => {
+                Some(k8s_client::ResourceType::Deployments)
+            }
+            "svc" | "service" | "services" => Some(k8s_client::ResourceType::Services),
+            "ing" | "ingress" | "ingresses" => Some(k8s_client::ResourceType::Ingresses),
+            "cm" | "configmap" | "configmaps" => Some(k8s_client::ResourceType::ConfigMaps),
+            "sec" | "secret" | "secrets" => Some(k8s_client::ResourceType::Secrets),
+            "rs" | "replicaset" | "replicasets" => Some(k8s_client::ResourceType::ReplicaSets),
+            "sts" | "statefulset" | "statefulsets" => Some(k8s_client::ResourceType::StatefulSets),
+            "ds" | "daemonset" | "daemonsets" => Some(k8s_client::ResourceType::DaemonSets),
+            "job" | "jobs" => Some(k8s_client::ResourceType::Jobs),
+            "cj" | "cronjob" | "cronjobs" => Some(k8s_client::ResourceType::CronJobs),
+            "no" | "node" | "nodes" => Some(k8s_client::ResourceType::Nodes),
+            "namespaces" => Some(k8s_client::ResourceType::Namespaces),
+            "hpa" => Some(k8s_client::ResourceType::HorizontalPodAutoscalers),
+            "vpa" => Some(k8s_client::ResourceType::VerticalPodAutoscalers),
+            _ => None,
+        }
+    }
+
+    fn render_command_bar(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let theme = theme(cx);
+        let colors = &theme.colors;
+        let mode = if self.command_input_text(cx).starts_with('/') {
+            "SEARCH"
+        } else {
+            "COMMAND"
+        };
+        let completions = self.command_completions(cx);
+        let input = self.command_input.as_ref().map(|input| {
+            Input::new(input)
+                .appearance(false)
+                .cleanable(false)
+                .with_size(ui::Size::Large)
+        });
+
+        div()
+            .w_full()
+            .px(px(14.0))
+            .py(px(10.0))
+            .bg(colors.surface)
+            .border_t_1()
+            .border_color(colors.border_focused)
+            .font_family(theme.font_family_ui.clone())
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(
+                                div()
+                                    .px(px(8.0))
+                                    .py(px(3.0))
+                                    .rounded(theme.border_radius_sm)
+                                    .bg(colors.primary.opacity(0.18))
+                                    .text_size(px(10.0))
+                                    .text_color(colors.primary)
+                                    .child(mode),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(colors.text_muted)
+                                    .child("Type :command or /filter"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(colors.text_muted)
+                            .child("Tab autocomplete | Enter run | Esc close"),
+                    ),
+            )
+            .child(
+                div()
+                    .px(px(12.0))
+                    .py(px(8.0))
+                    .rounded(theme.border_radius_sm)
+                    .bg(colors.surface)
+                    .border_1()
+                    .border_color(colors.border)
+                    .when_some(input, |el, input| el.child(input)),
+            )
+            .when(!completions.is_empty(), |el| {
+                el.child(div().w_full().flex().flex_wrap().gap(px(6.0)).children(
+                    completions.into_iter().take(8).map(|completion| {
+                        div()
+                            .px(px(8.0))
+                            .py(px(4.0))
+                            .rounded(theme.border_radius_sm)
+                            .bg(colors.surface_elevated)
+                            .border_1()
+                            .border_color(colors.border)
+                            .text_size(px(11.0))
+                            .text_color(colors.text)
+                            .child(format!("{}  {}", completion.label, completion.detail))
+                    }),
+                ))
+            })
+            .when_some(self.command_bar_error.as_ref(), |el, message| {
+                el.child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(colors.warning)
+                        .child(message.clone()),
+                )
+            })
+    }
 }
 
 impl Render for AppView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         // Sync state with views
         let (resources, resource_type, selected_resource) = {
             let state = app_state(cx);
-            let resources: Vec<Resource> = state.filtered_resources().into_iter().cloned().collect();
+            let resources: Vec<Resource> =
+                state.filtered_resources().into_iter().cloned().collect();
             let resource_type = state.selected_type;
             let selected_resource = state.selected_resource.clone();
             (resources, resource_type, selected_resource)
@@ -204,36 +792,73 @@ impl Render for AppView {
                                         state.set_selected_resource(None);
                                     });
                                 })
-                                .on_action(|action, cx| {
-                                    match action {
-                                        PodAction::ViewLogs { pod_name, namespace, containers, selected_container } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.open_pod_logs(pod_name.clone(), namespace.clone(), containers.clone(), selected_container.clone());
-                                            });
-                                        }
-                                        PodAction::OpenTerminal { pod_name, namespace, containers, selected_container } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.open_pod_terminal(pod_name.clone(), namespace.clone(), containers.clone(), selected_container.clone());
-                                            });
-                                        }
-                                        PodAction::Delete { pod_name, namespace } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.set_selected_resource(None);
-                                            });
-                                            delete_resource_bg(cx, k8s_client::ResourceType::Pods, pod_name.clone(), namespace.clone());
-                                        }
-                                        PodAction::PortForward { pod_name, namespace, container_port, local_port } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.pf_error = None;
-                                            });
-                                            start_port_forward_bg(cx, pod_name, namespace, container_port, local_port);
-                                        }
-                                        PodAction::StopPortForward { session_id } => {
-                                            let _ = k8s_client::stop_port_forward(&session_id);
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.remove_port_forward(&session_id);
-                                            });
-                                        }
+                                .on_action(|action, cx| match action {
+                                    PodAction::ViewLogs {
+                                        pod_name,
+                                        namespace,
+                                        containers,
+                                        selected_container,
+                                    } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.open_pod_logs(
+                                                pod_name.clone(),
+                                                namespace.clone(),
+                                                containers.clone(),
+                                                selected_container.clone(),
+                                            );
+                                        });
+                                    }
+                                    PodAction::OpenTerminal {
+                                        pod_name,
+                                        namespace,
+                                        containers,
+                                        selected_container,
+                                    } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.open_pod_terminal(
+                                                pod_name.clone(),
+                                                namespace.clone(),
+                                                containers.clone(),
+                                                selected_container.clone(),
+                                            );
+                                        });
+                                    }
+                                    PodAction::Delete {
+                                        pod_name,
+                                        namespace,
+                                    } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.set_selected_resource(None);
+                                        });
+                                        delete_resource_bg(
+                                            cx,
+                                            k8s_client::ResourceType::Pods,
+                                            pod_name.clone(),
+                                            namespace.clone(),
+                                        );
+                                    }
+                                    PodAction::PortForward {
+                                        pod_name,
+                                        namespace,
+                                        container_port,
+                                        local_port,
+                                    } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.pf_error = None;
+                                        });
+                                        start_port_forward_bg(
+                                            cx,
+                                            pod_name,
+                                            namespace,
+                                            container_port,
+                                            local_port,
+                                        );
+                                    }
+                                    PodAction::StopPortForward { session_id } => {
+                                        let _ = k8s_client::stop_port_forward(&session_id);
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.remove_port_forward(&session_id);
+                                        });
                                     }
                                 })
                         }));
@@ -247,20 +872,23 @@ impl Render for AppView {
                                         state.set_selected_resource(None);
                                     });
                                 })
-                                .on_action(|action, cx| {
-                                    match action {
-                                        DeploymentAction::Delete { name, namespace } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.set_selected_resource(None);
-                                            });
-                                            delete_resource_bg(cx, k8s_client::ResourceType::Deployments, name, namespace);
-                                        }
-                                        DeploymentAction::SelectPod { resource: pod } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.selected_type = k8s_client::ResourceType::Pods;
-                                                state.set_selected_resource(Some(pod));
-                                            });
-                                        }
+                                .on_action(|action, cx| match action {
+                                    DeploymentAction::Delete { name, namespace } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.set_selected_resource(None);
+                                        });
+                                        delete_resource_bg(
+                                            cx,
+                                            k8s_client::ResourceType::Deployments,
+                                            name,
+                                            namespace,
+                                        );
+                                    }
+                                    DeploymentAction::SelectPod { resource: pod } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.selected_type = k8s_client::ResourceType::Pods;
+                                            state.set_selected_resource(Some(pod));
+                                        });
                                     }
                                 })
                         });
@@ -276,14 +904,17 @@ impl Render for AppView {
                                         state.set_selected_resource(None);
                                     });
                                 })
-                                .on_action(|action, cx| {
-                                    match action {
-                                        ReplicaSetAction::Delete { name, namespace } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.set_selected_resource(None);
-                                            });
-                                            delete_resource_bg(cx, k8s_client::ResourceType::ReplicaSets, name, namespace);
-                                        }
+                                .on_action(|action, cx| match action {
+                                    ReplicaSetAction::Delete { name, namespace } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.set_selected_resource(None);
+                                        });
+                                        delete_resource_bg(
+                                            cx,
+                                            k8s_client::ResourceType::ReplicaSets,
+                                            name,
+                                            namespace,
+                                        );
                                     }
                                 })
                         }));
@@ -296,14 +927,17 @@ impl Render for AppView {
                                         state.set_selected_resource(None);
                                     });
                                 })
-                                .on_action(|action, cx| {
-                                    match action {
-                                        HpaAction::Delete { name, namespace } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.set_selected_resource(None);
-                                            });
-                                            delete_resource_bg(cx, k8s_client::ResourceType::HorizontalPodAutoscalers, name, namespace);
-                                        }
+                                .on_action(|action, cx| match action {
+                                    HpaAction::Delete { name, namespace } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.set_selected_resource(None);
+                                        });
+                                        delete_resource_bg(
+                                            cx,
+                                            k8s_client::ResourceType::HorizontalPodAutoscalers,
+                                            name,
+                                            namespace,
+                                        );
                                     }
                                 })
                         }));
@@ -316,14 +950,17 @@ impl Render for AppView {
                                         state.set_selected_resource(None);
                                     });
                                 })
-                                .on_action(|action, cx| {
-                                    match action {
-                                        VpaAction::Delete { name, namespace } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.set_selected_resource(None);
-                                            });
-                                            delete_resource_bg(cx, k8s_client::ResourceType::VerticalPodAutoscalers, name, namespace);
-                                        }
+                                .on_action(|action, cx| match action {
+                                    VpaAction::Delete { name, namespace } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.set_selected_resource(None);
+                                        });
+                                        delete_resource_bg(
+                                            cx,
+                                            k8s_client::ResourceType::VerticalPodAutoscalers,
+                                            name,
+                                            namespace,
+                                        );
                                     }
                                 })
                         }));
@@ -350,14 +987,12 @@ impl Render for AppView {
                                         state.set_selected_resource(None);
                                     });
                                 })
-                                .on_action(move |action, cx| {
-                                    match action {
-                                        GenericAction::Delete { name, namespace } => {
-                                            cx.update_global::<AppState, _>(|state, _cx| {
-                                                state.set_selected_resource(None);
-                                            });
-                                            delete_resource_bg(cx, rt, name, namespace);
-                                        }
+                                .on_action(move |action, cx| match action {
+                                    GenericAction::Delete { name, namespace } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.set_selected_resource(None);
+                                        });
+                                        delete_resource_bg(cx, rt, name, namespace);
                                     }
                                 })
                         }));
@@ -375,12 +1010,11 @@ impl Render for AppView {
                     let namespace = pod_ctx.namespace.clone();
                     let containers = pod_ctx.containers.clone();
                     let logs_view = cx.new(|_| {
-                        PodLogsView::new(pod_name, namespace, containers)
-                            .on_close(|cx| {
-                                cx.update_global::<AppState, _>(|state, _cx| {
-                                    state.close_pod_view();
-                                });
-                            })
+                        PodLogsView::new(pod_name, namespace, containers).on_close(|cx| {
+                            cx.update_global::<AppState, _>(|state, _cx| {
+                                state.close_pod_view();
+                            });
+                        })
                     });
                     // Start fetching logs
                     PodLogsView::init(logs_view.clone(), cx);
@@ -404,28 +1038,31 @@ impl Render for AppView {
                                     state.active_view = ActiveView::ResourceTable;
                                 });
                             })
-                            .on_action(|action, cx| {
-                                match action {
-                                    PortForwardViewAction::Stop { session_id } => {
-                                        let _ = k8s_client::stop_port_forward(&session_id);
-                                        cx.update_global::<AppState, _>(|state, _cx| {
-                                            state.remove_port_forward(&session_id);
-                                        });
+                            .on_action(|action, cx| match action {
+                                PortForwardViewAction::Stop { session_id } => {
+                                    let _ = k8s_client::stop_port_forward(&session_id);
+                                    cx.update_global::<AppState, _>(|state, _cx| {
+                                        state.remove_port_forward(&session_id);
+                                    });
+                                }
+                                PortForwardViewAction::OpenBrowser { local_port } => {
+                                    let url = format!("http://localhost:{}", local_port);
+                                    #[cfg(target_os = "macos")]
+                                    {
+                                        let _ =
+                                            std::process::Command::new("open").arg(&url).spawn();
                                     }
-                                    PortForwardViewAction::OpenBrowser { local_port } => {
-                                        let url = format!("http://localhost:{}", local_port);
-                                        #[cfg(target_os = "macos")]
-                                        {
-                                            let _ = std::process::Command::new("open").arg(&url).spawn();
-                                        }
-                                        #[cfg(target_os = "linux")]
-                                        {
-                                            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-                                        }
-                                        #[cfg(target_os = "windows")]
-                                        {
-                                            let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn();
-                                        }
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        let _ = std::process::Command::new("xdg-open")
+                                            .arg(&url)
+                                            .spawn();
+                                    }
+                                    #[cfg(target_os = "windows")]
+                                    {
+                                        let _ = std::process::Command::new("cmd")
+                                            .args(["/C", "start", &url])
+                                            .spawn();
                                     }
                                 }
                             })
@@ -498,12 +1135,11 @@ impl Render for AppView {
                     let namespace = pod_ctx.namespace.clone();
                     let containers = pod_ctx.containers.clone();
                     let terminal_view = cx.new(|cx| {
-                        PodTerminalView::new(pod_name, namespace, containers, cx)
-                            .on_close(|cx| {
-                                cx.update_global::<AppState, _>(|state, _cx| {
-                                    state.close_pod_view();
-                                });
-                            })
+                        PodTerminalView::new(pod_name, namespace, containers, cx).on_close(|cx| {
+                            cx.update_global::<AppState, _>(|state, _cx| {
+                                state.close_pod_view();
+                            });
+                        })
                     });
                     // Start the terminal session
                     PodTerminalView::init(terminal_view.clone(), cx);
@@ -513,6 +1149,8 @@ impl Render for AppView {
                 self.pod_terminal = None;
             }
         }
+
+        self.ensure_command_input(window, cx);
 
         // Render
         let theme = theme(cx);
@@ -529,10 +1167,61 @@ impl Render for AppView {
         let showing_logs = self.pod_logs.is_some();
         let showing_terminal = self.pod_terminal.is_some();
         let showing_port_forwards = self.port_forward_view.is_some();
-        let showing_settings = active_view == ActiveView::Settings;
+        let showing_settings = state.settings_open || active_view == ActiveView::Settings;
 
         div()
+            .id("workspace-root")
+            .track_focus(&self.focus_handle)
+            .on_click(cx.listener(|this, _event, window, _cx| {
+                window.focus(&this.focus_handle);
+            }))
+            .key_context(if self.command_bar_open {
+                "CommandBar"
+            } else {
+                "Workspace"
+            })
+            .on_action(cx.listener(|this, _action: &OpenCommandMode, window, cx| {
+                this.open_command_mode(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &OpenSearchMode, window, cx| {
+                this.open_search_mode(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &CloseCommandBar, window, cx| {
+                this.close_command_bar(window, cx);
+            }))
+            .on_action(
+                cx.listener(|this, _action: &ExecuteCommandBar, _window, cx| {
+                    this.execute_command_bar(cx);
+                }),
+            )
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.command_bar_open {
+                    this.handle_command_bar_keydown(event, window, cx);
+                    return;
+                }
+
+                let key = event.keystroke.key.as_str();
+                let key_char = event.keystroke.key_char.as_deref().unwrap_or("");
+                let open_command = key_char == ":"
+                    || key == ":"
+                    || (key == ";"
+                        && event.keystroke.modifiers.shift
+                        && !event.keystroke.modifiers.control
+                        && !event.keystroke.modifiers.alt)
+                    || (key == "semicolon" && key_char == ":");
+                let open_search =
+                    (key_char == "/" || key == "/" || (key == "slash" && key_char == "/"))
+                        && !event.keystroke.modifiers.control
+                        && !event.keystroke.modifiers.alt;
+
+                if open_command {
+                    this.open_command_mode(window, cx);
+                } else if open_search {
+                    this.open_search_mode(window, cx);
+                }
+            }))
             .size_full()
+            .relative()
             .bg(colors.background)
             .text_color(colors.text)
             .font_family(theme.font_family.clone())
@@ -556,96 +1245,248 @@ impl Render for AppView {
                             .flex_col()
                             .overflow_hidden()
                             // Header (only show in table mode)
-                            .when(!showing_details && !showing_logs && !showing_terminal && !showing_port_forwards && !showing_settings, |el: Div| el.child(self.header.clone()))
+                            .when(
+                                !showing_details
+                                    && !showing_logs
+                                    && !showing_terminal
+                                    && !showing_port_forwards,
+                                |el: Div| el.child(self.header.clone()),
+                            )
                             // Content
-                            .child(self.render_content(_window, cx, active_view.clone(), active_panel, showing_details, showing_logs, showing_terminal, showing_port_forwards)),
+                            .child(self.render_content(
+                                window,
+                                cx,
+                                active_view.clone(),
+                                active_panel,
+                                showing_details,
+                                showing_logs,
+                                showing_terminal,
+                                showing_port_forwards,
+                                showing_settings,
+                            )),
                     ),
             )
+            .when(self.command_bar_open, |el| {
+                el.child(
+                    div()
+                        .absolute()
+                        .bottom(px(0.0))
+                        .left(px(0.0))
+                        .right(px(0.0))
+                        .child(self.render_command_bar(cx)),
+                )
+            })
     }
 }
 
 impl AppView {
-    fn render_content(&mut self, window: &mut Window, cx: &mut Context<'_, Self>, active_view: ActiveView, active_panel: ActivePanel, showing_details: bool, showing_logs: bool, showing_terminal: bool, showing_port_forwards: bool) -> impl IntoElement {
-        if active_view == ActiveView::Settings {
-            return self.render_settings_view(cx).into_any_element();
-        }
+    fn render_content(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+        _active_view: ActiveView,
+        active_panel: ActivePanel,
+        showing_details: bool,
+        showing_logs: bool,
+        showing_terminal: bool,
+        showing_port_forwards: bool,
+        showing_settings: bool,
+    ) -> impl IntoElement {
+        let overlay_bg = theme(cx).colors.background;
 
         // Show port forwards view (full screen)
         if showing_port_forwards {
             if let Some(pf_view) = &self.port_forward_view {
-                return div()
+                let mut content = div()
                     .flex_1()
+                    .relative()
                     .overflow_hidden()
-                    .child(pf_view.clone())
-                    .into_any_element();
+                    .child(pf_view.clone());
+                if showing_settings {
+                    content = content.child(
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(0.0))
+                            .right(px(0.0))
+                            .bottom(px(0.0))
+                            .bg(overlay_bg)
+                            .child(self.render_settings_view(cx)),
+                    );
+                }
+                return content.into_any_element();
             }
         }
 
         // Show terminal view (full screen)
         if showing_terminal {
             if let Some(terminal_view) = &self.pod_terminal {
-                return div()
+                let mut content = div()
                     .flex_1()
+                    .relative()
                     .overflow_hidden()
-                    .child(terminal_view.clone())
-                    .into_any_element();
+                    .child(terminal_view.clone());
+                if showing_settings {
+                    content = content.child(
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(0.0))
+                            .right(px(0.0))
+                            .bottom(px(0.0))
+                            .bg(overlay_bg)
+                            .child(self.render_settings_view(cx)),
+                    );
+                }
+                return content.into_any_element();
             }
         }
 
         // Show logs view (full screen)
         if showing_logs {
             if let Some(logs_view) = &self.pod_logs {
-                return div()
+                let mut content = div()
                     .flex_1()
+                    .relative()
                     .overflow_hidden()
-                    .child(logs_view.clone())
-                    .into_any_element();
+                    .child(logs_view.clone());
+                if showing_settings {
+                    content = content.child(
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(0.0))
+                            .right(px(0.0))
+                            .bottom(px(0.0))
+                            .bg(overlay_bg)
+                            .child(self.render_settings_view(cx)),
+                    );
+                }
+                return content.into_any_element();
             }
         }
 
         // Show details view
         if showing_details {
             if let Some(details) = &self.pod_details {
-                return div()
+                let mut content = div()
                     .flex_1()
+                    .relative()
                     .overflow_hidden()
-                    .child(details.clone())
-                    .into_any_element();
+                    .child(details.clone());
+                if showing_settings {
+                    content = content.child(
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(0.0))
+                            .right(px(0.0))
+                            .bottom(px(0.0))
+                            .bg(overlay_bg)
+                            .child(self.render_settings_view(cx)),
+                    );
+                }
+                return content.into_any_element();
             }
             if let Some(details) = &self.deployment_details {
-                return div()
+                let mut content = div()
                     .flex_1()
+                    .relative()
                     .overflow_hidden()
-                    .child(details.clone())
-                    .into_any_element();
+                    .child(details.clone());
+                if showing_settings {
+                    content = content.child(
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(0.0))
+                            .right(px(0.0))
+                            .bottom(px(0.0))
+                            .bg(overlay_bg)
+                            .child(self.render_settings_view(cx)),
+                    );
+                }
+                return content.into_any_element();
             }
             if let Some(details) = &self.replicaset_details {
-                return div()
+                let mut content = div()
                     .flex_1()
+                    .relative()
                     .overflow_hidden()
-                    .child(details.clone())
-                    .into_any_element();
+                    .child(details.clone());
+                if showing_settings {
+                    content = content.child(
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(0.0))
+                            .right(px(0.0))
+                            .bottom(px(0.0))
+                            .bg(overlay_bg)
+                            .child(self.render_settings_view(cx)),
+                    );
+                }
+                return content.into_any_element();
             }
             if let Some(details) = &self.hpa_details {
-                return div()
+                let mut content = div()
                     .flex_1()
+                    .relative()
                     .overflow_hidden()
-                    .child(details.clone())
-                    .into_any_element();
+                    .child(details.clone());
+                if showing_settings {
+                    content = content.child(
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(0.0))
+                            .right(px(0.0))
+                            .bottom(px(0.0))
+                            .bg(overlay_bg)
+                            .child(self.render_settings_view(cx)),
+                    );
+                }
+                return content.into_any_element();
             }
             if let Some(details) = &self.vpa_details {
-                return div()
+                let mut content = div()
                     .flex_1()
+                    .relative()
                     .overflow_hidden()
-                    .child(details.clone())
-                    .into_any_element();
+                    .child(details.clone());
+                if showing_settings {
+                    content = content.child(
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(0.0))
+                            .right(px(0.0))
+                            .bottom(px(0.0))
+                            .bg(overlay_bg)
+                            .child(self.render_settings_view(cx)),
+                    );
+                }
+                return content.into_any_element();
             }
             if let Some(details) = &self.generic_details {
-                return div()
+                let mut content = div()
                     .flex_1()
+                    .relative()
                     .overflow_hidden()
-                    .child(details.clone())
-                    .into_any_element();
+                    .child(details.clone());
+                if showing_settings {
+                    content = content.child(
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(0.0))
+                            .right(px(0.0))
+                            .bottom(px(0.0))
+                            .bg(overlay_bg)
+                            .child(self.render_settings_view(cx)),
+                    );
+                }
+                return content.into_any_element();
             }
         }
 
@@ -685,10 +1526,75 @@ impl AppView {
             );
         }
 
+        if showing_settings {
+            content = content.child(
+                div()
+                    .absolute()
+                    .top(px(0.0))
+                    .left(px(0.0))
+                    .right(px(0.0))
+                    .bottom(px(0.0))
+                    .bg(overlay_bg)
+                    .child(self.render_settings_view(cx)),
+            );
+        }
+
         content.into_any_element()
     }
 
-    fn render_resource_area(&self, cx: &Context<'_, Self>, state: &crate::app_state::AppState) -> impl IntoElement {
+    fn render_resource_area(
+        &self,
+        cx: &Context<'_, Self>,
+        state: &crate::app_state::AppState,
+    ) -> impl IntoElement {
+        if state.connection_status == ConnectionStatus::Connecting {
+            let theme = theme(cx);
+            let colors = &theme.colors;
+
+            return div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .w_full()
+                        .max_w(px(680.0))
+                        .px(px(22.0))
+                        .py(px(20.0))
+                        .rounded(theme.border_radius_lg)
+                        .bg(colors.surface_elevated)
+                        .border_1()
+                        .border_color(colors.border.opacity(0.5))
+                        .font_family(theme.font_family_ui.clone())
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(12.0))
+                        .child(
+                            div().child(
+                                Spinner::new()
+                                    .icon(IconName::Refresh)
+                                    .color(colors.text)
+                                    .with_size(Size::Large),
+                            ),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(16.0))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(colors.text)
+                                .child("Connecting to Kubernetes cluster..."),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(13.0))
+                                .text_color(colors.text_muted)
+                                .child("Loading contexts, namespaces, and resources."),
+                        ),
+                );
+        }
+
         if state.connection_status == ConnectionStatus::Error {
             if let Some(connection_feedback) = self.render_connection_feedback(cx, state) {
                 return div()
@@ -696,31 +1602,20 @@ impl AppView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .child(
-                        div()
-                            .w_full()
-                            .max_w(px(860.0))
-                            .child(connection_feedback),
-                    );
+                    .child(div().w_full().max_w(px(860.0)).child(connection_feedback));
             }
         }
 
         let theme = theme(cx);
         let colors = &theme.colors;
         let resource_type = state.selected_type;
-        let context = state.context.clone();
         let namespace = state.namespace.clone();
-        let contexts = state.contexts.clone();
         let namespaces = state.namespaces.clone();
 
-        let mut container = div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .gap(px(14.0));
+        let mut container = div().size_full().flex().flex_col().gap(px(14.0));
 
         // 1. Breadcrumb (context > namespace)
-        container = container.child(self.render_breadcrumb(cx, &context, &namespace, contexts, namespaces));
+        container = container.child(self.render_breadcrumb(cx, &namespace, namespaces));
 
         // 2. Page header (title + subtitle + action buttons)
         container = container.child(self.render_page_header(cx, resource_type));
@@ -735,14 +1630,14 @@ impl AppView {
                     .flex()
                     .items_center()
                     .gap(px(8.0))
-                    .child(ui::Spinner::new().with_size(ui::Size::Small))
+                    .child(Spinner::new().with_size(Size::Small))
                     .child(
                         div()
                             .font_family(theme.font_family_ui.clone())
                             .text_size(theme.font_size_small)
                             .text_color(colors.text_muted)
-                            .child("Loading resources...")
-                    )
+                            .child("Loading resources..."),
+                    ),
             );
         }
 
@@ -758,7 +1653,7 @@ impl AppView {
                     .border_color(colors.error.opacity(0.3))
                     .text_size(theme.font_size_small)
                     .text_color(colors.error)
-                    .child(error.clone())
+                    .child(error.clone()),
             );
         }
 
@@ -767,7 +1662,7 @@ impl AppView {
             div()
                 .flex_1()
                 .overflow_hidden()
-                .child(self.resource_table.clone())
+                .child(self.resource_table.clone()),
         );
 
         container
@@ -789,35 +1684,36 @@ impl AppView {
             .clone()
             .unwrap_or_else(|| "Unknown Kubernetes connection error".to_string());
 
-        let (possible_cause, step_1, step_2, step_3) = if raw_error.contains("Failed to read kubeconfig") {
-            (
-                "~/.kube/config does not exist or is not readable.",
-                "1) Verify ~/.kube/config exists.",
-                "2) Run: kubectl config current-context.",
-                "3) Check file read permissions.",
-            )
-        } else if raw_error.contains("No current context set in kubeconfig") {
-            (
-                "No active context is set in kubeconfig.",
-                "1) List contexts: kubectl config get-contexts.",
-                "2) Set one: kubectl config use-context <name>.",
-                "3) Click Retry connection.",
-            )
-        } else if raw_error.contains("Failed to list namespaces") {
-            (
-                "The current context does not have enough permissions in the cluster.",
-                "1) Run: kubectl auth can-i list namespaces.",
-                "2) Switch to a context with permissions.",
-                "3) Click Retry connection.",
-            )
-        } else {
-            (
-                "The Kubernetes client could not be created with the current configuration.",
-                "1) Verify kubectl works in your terminal.",
-                "2) Check the active context in kubeconfig.",
-                "3) Click Retry connection.",
-            )
-        };
+        let (possible_cause, step_1, step_2, step_3) =
+            if raw_error.contains("Failed to read kubeconfig") {
+                (
+                    "~/.kube/config does not exist or is not readable.",
+                    "1) Verify ~/.kube/config exists.",
+                    "2) Run: kubectl config current-context.",
+                    "3) Check file read permissions.",
+                )
+            } else if raw_error.contains("No current context set in kubeconfig") {
+                (
+                    "No active context is set in kubeconfig.",
+                    "1) List contexts: kubectl config get-contexts.",
+                    "2) Set one: kubectl config use-context <name>.",
+                    "3) Click Retry connection.",
+                )
+            } else if raw_error.contains("Failed to list namespaces") {
+                (
+                    "The current context does not have enough permissions in the cluster.",
+                    "1) Run: kubectl auth can-i list namespaces.",
+                    "2) Switch to a context with permissions.",
+                    "3) Click Retry connection.",
+                )
+            } else {
+                (
+                    "The Kubernetes client could not be created with the current configuration.",
+                    "1) Verify kubectl works in your terminal.",
+                    "2) Check the active context in kubeconfig.",
+                    "3) Click Retry connection.",
+                )
+            };
 
         Some(
             div()
@@ -881,81 +1777,48 @@ impl AppView {
                         .child(format!("Technical details: {}", raw_error)),
                 )
                 .child(
-                    div()
+                    div().w_full().pt(px(6.0)).child(
+                        secondary_btn(
+                            "connection-retry-btn",
+                            IconName::Refresh,
+                            "Retry connection",
+                            colors,
+                        )
                         .w_full()
-                        .pt(px(6.0))
-                        .child(
-                            secondary_btn("connection-retry-btn", IconName::Refresh, "Retry connection", colors)
-                                .w_full()
-                                .justify_center()
-                                .px(px(14.0))
-                                .py(px(10.0))
-                                .on_click(cx.listener(|_this, _event, _window, cx| {
-                                    cx.update_global::<AppState, _>(|state, _| {
-                                        state.set_connection_status(ConnectionStatus::Connecting, None);
-                                        state.set_error(None);
-                                    });
-                                    let state = cx.global::<AppState>();
-                                    let resource_type = state.selected_type;
-                                    let namespace = state.namespace.clone();
-                                    crate::load_resources(cx, resource_type, namespace);
-                                    cx.notify();
-                                })),
-                        ),
+                        .justify_center()
+                        .px(px(14.0))
+                        .py(px(10.0))
+                        .on_click(cx.listener(
+                            |_this, _event, _window, cx| {
+                                cx.update_global::<AppState, _>(|state, _| {
+                                    state.set_connection_status(ConnectionStatus::Connecting, None);
+                                    state.set_error(None);
+                                });
+                                let state = cx.global::<AppState>();
+                                let resource_type = state.selected_type;
+                                let namespace = state.namespace.clone();
+                                crate::load_resources(cx, resource_type, namespace);
+                                cx.notify();
+                            },
+                        )),
+                    ),
                 )
                 .into_any_element(),
         )
     }
 
-    /// Render breadcrumb navigation (context > namespace) with dropdown menus to switch
+    /// Render breadcrumb navigation (namespace selector)
     fn render_breadcrumb(
         &self,
         cx: &Context<'_, Self>,
-        context: &Option<String>,
         namespace: &Option<String>,
-        contexts: Vec<String>,
         namespaces: Vec<String>,
     ) -> impl IntoElement {
         let theme = theme(cx);
-        let colors = &theme.colors;
-
-        let context_label: SharedString = context
-            .clone()
-            .unwrap_or_else(|| "No context".to_string())
-            .into();
         let ns_label: SharedString = namespace
             .clone()
             .unwrap_or_else(|| "All Namespaces".to_string())
             .into();
-
-        // Context selector dropdown
-        let current_ctx = context.clone();
-        let context_button = Button::new("breadcrumb-context")
-            .icon(IconName::Cloud)
-            .label(context_label)
-            .compact()
-            .with_variant(ButtonVariant::Ghost)
-            .dropdown_caret(true)
-            .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
-                let mut m = menu.scrollable(true);
-                for ctx in &contexts {
-                    let ctx_value = ctx.clone();
-                    let is_selected = current_ctx.as_ref() == Some(ctx);
-                    m = m.item(
-                        PopupMenuItem::new(ctx.clone())
-                            .checked(is_selected)
-                            .on_click(move |_, _window, cx| {
-                                let ctx = ctx_value.clone();
-                                let ctx_for_switch = ctx.clone();
-                                cx.update_global::<AppState, _>(|state, _| {
-                                    state.set_context(Some(ctx));
-                                });
-                                crate::switch_context(cx, ctx_for_switch);
-                            }),
-                    );
-                }
-                m
-            });
 
         // Namespace selector dropdown
         let current_ns = namespace.clone();
@@ -1006,17 +1869,15 @@ impl AppView {
             .items_center()
             .gap(px(4.0))
             .font_family(theme.font_family_ui.clone())
-            .child(context_button)
-            .child(
-                Icon::new(IconName::ChevronRight)
-                    .size(px(14.0))
-                    .color(colors.text_muted),
-            )
             .child(namespace_button)
     }
 
     /// Render the page header with title, subtitle, and action buttons
-    fn render_page_header(&self, cx: &Context<'_, Self>, resource_type: k8s_client::ResourceType) -> impl IntoElement {
+    fn render_page_header(
+        &self,
+        cx: &Context<'_, Self>,
+        resource_type: k8s_client::ResourceType,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
@@ -1037,16 +1898,18 @@ impl AppView {
                             .text_size(px(28.0))
                             .font_weight(FontWeight::BOLD)
                             .text_color(colors.text)
-                            .child(resource_type.display_name())
+                            .child(resource_type.display_name()),
                     )
                     .child(
                         div()
                             .font_family(theme.font_family_ui.clone())
                             .text_size(px(14.0))
                             .text_color(colors.text_muted)
-                            .child(format!("Manage and monitor your {} resources",
-                                resource_type.display_name().to_lowercase()))
-                    )
+                            .child(format!(
+                                "Manage and monitor your {} resources",
+                                resource_type.display_name().to_lowercase()
+                            )),
+                    ),
             )
             // Right: action buttons
             .child(
@@ -1063,7 +1926,7 @@ impl AppView {
                                 let namespace = state.namespace.clone();
                                 crate::load_resources(cx, resource_type, namespace);
                                 cx.notify();
-                            }))
+                            })),
                     )
                     .child(
                         secondary_btn("page-ai-btn", IconName::AI, "AI Assistant", colors)
@@ -1072,34 +1935,45 @@ impl AppView {
                                     state.toggle_panel(ActivePanel::AI);
                                 });
                                 cx.notify();
-                            }))
+                            })),
                     )
                     .child(
                         secondary_btn("page-settings-btn", IconName::Settings, "Settings", colors)
                             .on_click(cx.listener(|_this, _event, _window, cx| {
                                 cx.update_global::<AppState, _>(|state, _| {
-                                    state.active_view = ActiveView::Settings;
-                                    state.set_selected_resource(None);
+                                    state.open_settings();
                                 });
                                 cx.notify();
-                            }))
+                            })),
                     )
                     // Create button - disabled (not yet implemented)
                     .child(
-                        primary_icon_btn("page-create-btn", IconName::Plus, format!("Create {}", resource_type.api_kind()), colors.primary, colors.background)
-                            .opacity(0.5)
-                    )
+                        primary_icon_btn(
+                            "page-create-btn",
+                            IconName::Plus,
+                            format!("Create {}", resource_type.api_kind()),
+                            colors.primary,
+                            colors.background,
+                        )
+                        .opacity(0.5),
+                    ),
             )
     }
 
     /// Render the 4 metric cards (Total, Running, Pending, Failed)
-    fn render_metric_cards(&self, cx: &Context<'_, Self>, state: &crate::app_state::AppState) -> impl IntoElement {
+    fn render_metric_cards(
+        &self,
+        cx: &Context<'_, Self>,
+        state: &crate::app_state::AppState,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
         let resource_type = state.selected_type;
 
         // Compute metrics from resources
-        let resources = state.resources.as_ref()
+        let resources = state
+            .resources
+            .as_ref()
             .map(|r| &r.items[..])
             .unwrap_or(&[]);
 
@@ -1146,14 +2020,22 @@ impl AppView {
                 cx,
                 "PENDING",
                 &pending.to_string(),
-                if pending > 0 { Some("waiting".to_string()) } else { None },
+                if pending > 0 {
+                    Some("waiting".to_string())
+                } else {
+                    None
+                },
                 colors.warning,
             ))
             .child(self.render_single_metric(
                 cx,
                 "FAILED",
                 &failed.to_string(),
-                if failed > 0 { Some("attention".to_string()) } else { None },
+                if failed > 0 {
+                    Some("attention".to_string())
+                } else {
+                    None
+                },
                 colors.error,
             ))
     }
@@ -1188,27 +2070,23 @@ impl AppView {
                     .text_size(px(10.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colors.text_muted)
-                    .child(label.to_string())
+                    .child(label.to_string()),
             )
             // Value row: number + optional subtitle
             .child({
-                let mut row = div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .child(
-                        div()
-                            .text_size(px(22.0))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(colors.text)
-                            .child(value.to_string())
-                    );
+                let mut row = div().flex().items_center().gap(px(6.0)).child(
+                    div()
+                        .text_size(px(22.0))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(colors.text)
+                        .child(value.to_string()),
+                );
                 if let Some(sub) = subtitle {
                     row = row.child(
                         div()
                             .text_size(px(11.0))
                             .text_color(subtitle_color)
-                            .child(sub)
+                            .child(sub),
                     );
                 }
                 row
@@ -1222,7 +2100,9 @@ impl AppView {
         let kind = resource.kind.as_str();
         match kind {
             "Pod" => {
-                let phase = resource.status.as_ref()
+                let phase = resource
+                    .status
+                    .as_ref()
                     .and_then(|s| s.get("phase"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
@@ -1235,11 +2115,15 @@ impl AppView {
                 }
             }
             "Deployment" => {
-                let available = resource.status.as_ref()
+                let available = resource
+                    .status
+                    .as_ref()
                     .and_then(|s| s.get("availableReplicas"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                let desired = resource.spec.as_ref()
+                let desired = resource
+                    .spec
+                    .as_ref()
                     .and_then(|s| s.get("replicas"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
@@ -1252,7 +2136,9 @@ impl AppView {
                 }
             }
             "Node" => {
-                let conditions = resource.status.as_ref()
+                let conditions = resource
+                    .status
+                    .as_ref()
                     .and_then(|s| s.get("conditions"))
                     .and_then(|v| v.as_array());
                 if let Some(conds) = conditions {
@@ -1302,7 +2188,12 @@ impl AppView {
         )
     }
 
-    fn render_right_panel(&mut self, window: &mut Window, cx: &mut Context<'_, Self>, active_panel: ActivePanel) -> impl IntoElement {
+    fn render_right_panel(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+        active_panel: ActivePanel,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
         let is_ai_panel = active_panel == ActivePanel::AI;
@@ -1354,7 +2245,11 @@ impl AppView {
                                         .cursor_pointer()
                                         .text_color(colors.text_muted)
                                         .hover(|style| style.text_color(colors.text))
-                                        .child(Icon::new(IconName::Maximize).size(px(14.0)).color(colors.text_muted))
+                                        .child(
+                                            Icon::new(IconName::Maximize)
+                                                .size(px(14.0))
+                                                .color(colors.text_muted),
+                                        )
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             this.ai_panel_maximized = !this.ai_panel_maximized;
                                             cx.notify();
@@ -1385,18 +2280,18 @@ impl AppView {
                     .overflow_hidden()
                     .p(px(16.0))
                     .child(
-                        div()
-                            .size_full()
-                            .min_h(px(0.0))
-                            .overflow_hidden()
-                            .child(match active_panel {
-                                ActivePanel::AI => self.render_ai_panel_body(window, cx).into_any_element(),
+                        div().size_full().min_h(px(0.0)).overflow_hidden().child(
+                            match active_panel {
+                                ActivePanel::AI => {
+                                    self.render_ai_panel_body(window, cx).into_any_element()
+                                }
                                 _ => div()
                                     .text_size(theme.font_size)
                                     .text_color(colors.text_muted)
                                     .child(format!("{} panel content", title))
                                     .into_any_element(),
-                            }),
+                            },
+                        ),
                     ),
             )
     }
@@ -1423,39 +2318,13 @@ impl AppView {
         let opencode_models_loading = state.opencode_models_loading;
         let selected_model = state.opencode_selected_model.clone();
 
-        let provider_button = Button::new("settings-ai-provider")
-            .icon(IconName::AI)
-            .label(provider.display_name())
-            .compact()
-            .with_variant(ButtonVariant::Ghost)
-            .dropdown_caret(true)
-            .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
-                let mut m = menu.scrollable(false);
-                for option in [AIProvider::OpenCode, AIProvider::ClaudeCode] {
-                    let is_selected = option == provider;
-                    m = m.item(
-                        PopupMenuItem::new(option.display_name())
-                            .checked(is_selected)
-                            .on_click(move |_, _window, cx| {
-                                cx.update_global::<AppState, _>(|state, _| {
-                                    state.set_ai_provider(option);
-                                });
-                                if option == AIProvider::OpenCode {
-                                    load_opencode_models(cx);
-                                }
-                            }),
-                    );
-                }
-                m
-            });
-
         let status_text = if is_testing {
-            "Probando conexión..."
+            "Testing connection..."
         } else {
             match state.ai_connection_success {
-                Some(true) => "Conexión OK",
-                Some(false) => "Conexión fallida",
-                None => "Sin prueba",
+                Some(true) => "Connection OK",
+                Some(false) => "Connection failed",
+                None => "Not tested yet",
             }
         };
         let status_color = if is_testing {
@@ -1467,174 +2336,490 @@ impl AppView {
         } else {
             colors.text_muted
         };
+        let status_icon = if is_testing {
+            IconName::Refresh
+        } else if state.ai_connection_success == Some(true) {
+            IconName::Check
+        } else if state.ai_connection_success == Some(false) {
+            IconName::Error
+        } else {
+            IconName::Info
+        };
+        let test_button_icon = if is_testing {
+            IconName::Refresh
+        } else {
+            IconName::Play
+        };
+        let test_button_label = if is_testing {
+            "Testing..."
+        } else {
+            "Test connection"
+        };
 
         div()
-            .flex_1()
+            .size_full()
             .overflow_hidden()
             .p(px(24.0))
+            .flex()
+            .flex_col()
             .child(
                 div()
-                    .size_full()
+                    .w_full()
+                    .h_full()
                     .flex()
                     .flex_col()
                     .gap(px(16.0))
+                    .p(px(20.0))
+                    .rounded(theme.border_radius_lg)
+                    .bg(colors.background)
+                    .border_1()
+                    .border_color(colors.border)
                     .child(
                         div()
                             .flex()
-                            .flex_col()
-                            .gap(px(4.0))
+                            .items_start()
+                            .justify_between()
+                            .gap(px(12.0))
                             .child(
                                 div()
-                                    .font_family(theme.font_family_ui.clone())
-                                    .text_size(px(28.0))
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(colors.text)
-                                    .child("Settings")
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(6.0))
+                                    .child(
+                                        div()
+                                            .font_family(theme.font_family_ui.clone())
+                                            .text_size(px(28.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(colors.text)
+                                            .child("Settings")
+                                    )
+                                    .child(
+                                        div()
+                                            .font_family(theme.font_family_ui.clone())
+                                            .text_size(px(14.0))
+                                            .text_color(colors.text_muted)
+                                            .child("Configure your AI provider, model, and quick validation flow for the assistant panel.")
+                                    )
                             )
                             .child(
-                                div()
-                                    .font_family(theme.font_family_ui.clone())
-                                    .text_size(px(14.0))
-                                    .text_color(colors.text_muted)
-                                    .child("Configura la conexión con IA para OpenCode o ClaudeCode")
+                                secondary_btn("settings-close-btn", IconName::Close, "Close", colors)
+                                    .on_click(cx.listener(|_this, _event, _window, cx| {
+                                        cx.update_global::<AppState, _>(|state, _| {
+                                            state.close_settings();
+                                        });
+                                        cx.notify();
+                                    }))
                             )
                     )
                     .child(
                         div()
+                            .id("settings-scroll")
                             .w_full()
-                            .max_w(px(860.0))
-                            .p(px(16.0))
-                            .rounded(theme.border_radius_lg)
-                            .bg(colors.surface)
-                            .border_1()
-                            .border_color(colors.border)
+                            .max_w(px(960.0))
+                            .min_h(px(0.0))
+                            .overflow_y_scroll()
                             .flex()
                             .flex_col()
-                            .gap(px(14.0))
+                            .gap(px(12.0))
+                            .pr(px(4.0))
                             .child(
                                 div()
-                                    .text_size(px(16.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(colors.text)
-                                    .child("AI Connection")
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(12.0))
-                                    .text_color(colors.text_muted)
-                                    .child("Selecciona el proveedor para las pruebas y para el panel de IA.")
-                            )
-                            .child(provider_button)
-                            .when(provider == AIProvider::OpenCode, |el| {
-                                let model_label = selected_model
-                                    .clone()
-                                    .unwrap_or_else(|| "Selecciona modelo".to_string());
-                                let models_for_menu = opencode_models.clone();
-                                let selected_for_menu = selected_model.clone();
-
-                                let model_button = Button::new("settings-opencode-model")
-                                    .icon(IconName::Layers)
-                                    .label(model_label)
-                                    .compact()
-                                    .with_variant(ButtonVariant::Ghost)
-                                    .dropdown_caret(true)
-                                    .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
-                                        let mut m = menu.scrollable(true);
-                                        for model in &models_for_menu {
-                                            let model_value = model.clone();
-                                            let is_selected = selected_for_menu.as_ref() == Some(model);
-                                            m = m.item(
-                                                PopupMenuItem::new(model.clone())
-                                                    .checked(is_selected)
-                                                    .on_click(move |_, _window, cx| {
-                                                        cx.update_global::<AppState, _>(|state, _| {
-                                                            state.set_opencode_selected_model(Some(model_value.clone()));
-                                                        });
-                                                    }),
-                                            );
-                                        }
-                                        m
-                                    });
-
-                                el.child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(12.0))
-                                        .child(model_button)
-                                        .child(
-                                            secondary_btn("settings-opencode-models-refresh", IconName::Refresh, "Actualizar modelos", colors)
-                                                .when(opencode_models_loading, |btn| btn.opacity(0.5))
-                                                .on_click(cx.listener(move |_this, _event, _window, cx| {
-                                                    if !opencode_models_loading {
-                                                        load_opencode_models(cx);
-                                                    }
-                                                }))
-                                        )
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(12.0))
-                                        .text_color(colors.text_muted)
-                                        .child(if opencode_models_loading {
-                                            "Cargando modelos de OpenCode...".to_string()
-                                        } else if opencode_models.is_empty() {
-                                            "No se pudieron cargar modelos. Revisa auth/red y pulsa actualizar.".to_string()
-                                        } else {
-                                            format!("{} modelos disponibles", opencode_models.len())
-                                        })
-                                )
-                            })
-                            .child(
-                                div()
-                                    .text_size(px(12.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(status_color)
-                                    .child(status_text)
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(12.0))
-                                    .child(
-                                        secondary_btn("settings-ai-test-btn", IconName::Play, "Probar conexión", colors)
-                                            .when(is_testing, |el| el.opacity(0.5))
-                                            .on_click(cx.listener(move |_this, _event, _window, cx| {
-                                                if !is_testing {
-                                                    run_ai_connection_test(cx, provider, selected_model.clone());
-                                                }
-                                            }))
-                                    )
-                                    .child(
-                                        secondary_btn("settings-open-ai-panel-btn", IconName::AI, "Abrir panel IA", colors)
-                                            .on_click(cx.listener(|_this, _event, _window, cx| {
-                                                cx.update_global::<AppState, _>(|state, _| {
-                                                    if state.active_panel != ActivePanel::AI {
-                                                        state.active_panel = ActivePanel::AI;
-                                                    }
-                                                    state.active_view = ActiveView::ResourceTable;
-                                                });
-                                                cx.notify();
-                                            }))
-                                    )
-                            )
-                            .child(
-                                div()
-                                    .p(px(12.0))
-                                    .rounded(theme.border_radius_md)
+                                    .w_full()
+                                    .p(px(14.0))
+                                    .rounded(theme.border_radius_lg)
                                     .bg(colors.surface_elevated)
                                     .border_1()
                                     .border_color(colors.border)
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap(px(12.0))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(4.0))
+                                            .child(
+                                                div()
+                                                    .text_size(px(13.0))
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .text_color(colors.text)
+                                                    .child("AI status")
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.0))
+                                                    .text_color(colors.text_muted)
+                                                    .child("Run a quick check after changing provider or model.")
+                                            )
+                                    )
+                                    .child(
+                                        div()
+                                            .px(px(10.0))
+                                            .py(px(6.0))
+                                            .rounded(theme.border_radius_md)
+                                            .bg(colors.surface)
+                                            .border_1()
+                                            .border_color(colors.border)
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(6.0))
+                                            .child(Icon::new(status_icon).size(px(13.0)).color(status_color))
+                                            .text_size(px(12.0))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(status_color)
+                                            .child(status_text)
+                                    )
+                            )
+                            .child(
+                                div()
+                                    .w_full()
+                                    .p(px(16.0))
+                                    .rounded(theme.border_radius_lg)
+                                    .bg(colors.surface)
+                                    .border_1()
+                                    .border_color(colors.border)
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(14.0))
+                                    .child(
+                                        div()
+                                            .text_size(px(16.0))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(colors.text)
+                                            .child("AI Connection")
+                                    )
                                     .child(
                                         div()
                                             .text_size(px(12.0))
-                                            .text_color(colors.text)
-                                            .whitespace_nowrap()
+                                            .text_color(colors.text_muted)
+                                            .child("Choose which provider is used by connection tests and by the AI panel.")
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(8.0))
                                             .child(
-                                                format!("\"{}\"", state.ai_connection_message
-                                                    .clone()
-                                                    .unwrap_or_else(|| "No hay salida todavía. Usa \"Probar conexión\" para crear la comunicación.".to_string()))
+                                                div()
+                                                    .text_size(px(12.0))
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .text_color(colors.text_muted)
+                                                    .child("Provider")
+                                            )
+                                            .child(
+                                                div()
+                                                    .w_full()
+                                                    .flex()
+                                                    .flex_wrap()
+                                                    .gap(px(10.0))
+                                                    .child({
+                                                        let is_selected = provider == AIProvider::OpenCode;
+                                                        let mut card = div()
+                                                            .id("settings-provider-opencode")
+                                                            .flex_1()
+                                                            .min_w(px(260.0))
+                                                            .p(px(12.0))
+                                                            .rounded(theme.border_radius_md)
+                                                            .border_1()
+                                                            .cursor_pointer()
+                                                            .bg(if is_selected {
+                                                                colors.primary.opacity(0.12)
+                                                            } else {
+                                                                colors.surface
+                                                            })
+                                                            .border_color(if is_selected {
+                                                                colors.primary
+                                                            } else {
+                                                                colors.border
+                                                            })
+                                                            .hover(|style| style.opacity(0.9))
+                                                            .on_click(cx.listener(|_this, _event, _window, cx| {
+                                                                cx.update_global::<AppState, _>(|state, _| {
+                                                                    state.set_ai_provider(AIProvider::OpenCode);
+                                                                });
+                                                                load_opencode_models(cx);
+                                                            }))
+                                                            .child(
+                                                                div()
+                                                                    .flex()
+                                                                    .items_center()
+                                                                    .gap(px(8.0))
+                                                                    .child(Icon::new(IconName::Cloud).size(px(14.0)).color(
+                                                                        if is_selected {
+                                                                            colors.primary
+                                                                        } else {
+                                                                            colors.text_secondary
+                                                                        },
+                                                                    ))
+                                                                    .child(
+                                                                        div()
+                                                                            .text_size(px(13.0))
+                                                                            .font_weight(FontWeight::SEMIBOLD)
+                                                                            .text_color(colors.text)
+                                                                            .child("OpenCode")
+                                                                    )
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .mt(px(6.0))
+                                                                    .text_size(px(12.0))
+                                                                    .text_color(colors.text_muted)
+                                                                    .child("Model selection with explicit refresh and diagnostics.")
+                                                            );
+                                                        if is_selected {
+                                                            card = card.child(
+                                                                div()
+                                                                    .mt(px(8.0))
+                                                                    .text_size(px(11.0))
+                                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                                    .text_color(colors.primary)
+                                                                    .child("Selected")
+                                                            );
+                                                        }
+                                                        card
+                                                    })
+                                                    .child({
+                                                        let is_selected = provider == AIProvider::ClaudeCode;
+                                                        let mut card = div()
+                                                            .id("settings-provider-claudecode")
+                                                            .flex_1()
+                                                            .min_w(px(260.0))
+                                                            .p(px(12.0))
+                                                            .rounded(theme.border_radius_md)
+                                                            .border_1()
+                                                            .cursor_pointer()
+                                                            .bg(if is_selected {
+                                                                colors.primary.opacity(0.12)
+                                                            } else {
+                                                                colors.surface
+                                                            })
+                                                            .border_color(if is_selected {
+                                                                colors.primary
+                                                            } else {
+                                                                colors.border
+                                                            })
+                                                            .hover(|style| style.opacity(0.9))
+                                                            .on_click(cx.listener(|_this, _event, _window, cx| {
+                                                                cx.update_global::<AppState, _>(|state, _| {
+                                                                    state.set_ai_provider(AIProvider::ClaudeCode);
+                                                                });
+                                                            }))
+                                                            .child(
+                                                                div()
+                                                                    .flex()
+                                                                    .items_center()
+                                                                    .gap(px(8.0))
+                                                                    .child(Icon::new(IconName::AI).size(px(14.0)).color(
+                                                                        if is_selected {
+                                                                            colors.primary
+                                                                        } else {
+                                                                            colors.text_secondary
+                                                                        },
+                                                                    ))
+                                                                    .child(
+                                                                        div()
+                                                                            .text_size(px(13.0))
+                                                                            .font_weight(FontWeight::SEMIBOLD)
+                                                                            .text_color(colors.text)
+                                                                            .child("ClaudeCode")
+                                                                    )
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .mt(px(6.0))
+                                                                    .text_size(px(12.0))
+                                                                    .text_color(colors.text_muted)
+                                                                    .child("Uses local CLI auth and default model from environment.")
+                                                            );
+                                                        if is_selected {
+                                                            card = card.child(
+                                                                div()
+                                                                    .mt(px(8.0))
+                                                                    .text_size(px(11.0))
+                                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                                    .text_color(colors.primary)
+                                                                    .child("Selected")
+                                                            );
+                                                        }
+                                                        card
+                                                    })
+                                            )
+                                    )
+                                    .when(provider == AIProvider::OpenCode, |el| {
+                                        let model_label = selected_model
+                                            .clone()
+                                            .unwrap_or_else(|| "Select model".to_string());
+                                        let models_for_menu = opencode_models.clone();
+                                        let selected_for_menu = selected_model.clone();
+
+                                        let model_button = Button::new("settings-opencode-model")
+                                            .icon(IconName::Layers)
+                                            .label(model_label)
+                                            .compact()
+                                            .with_variant(ButtonVariant::Ghost)
+                                            .dropdown_caret(true)
+                                            .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
+                                                let mut m = menu.scrollable(true);
+                                                for model in &models_for_menu {
+                                                    let model_value = model.clone();
+                                                    let is_selected = selected_for_menu.as_ref() == Some(model);
+                                                    m = m.item(
+                                                        PopupMenuItem::new(model.clone())
+                                                            .checked(is_selected)
+                                                            .on_click(move |_, _window, cx| {
+                                                                cx.update_global::<AppState, _>(|state, _| {
+                                                                    state.set_opencode_selected_model(Some(model_value.clone()));
+                                                                });
+                                                            }),
+                                                    );
+                                                }
+                                                m
+                                            });
+
+                                        el.child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .gap(px(8.0))
+                                                .child(
+                                                    div()
+                                                        .text_size(px(12.0))
+                                                        .font_weight(FontWeight::SEMIBOLD)
+                                                        .text_color(colors.text_muted)
+                                                        .child("OpenCode model")
+                                                )
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(12.0))
+                                                        .child(model_button)
+                                                        .child(
+                                                            secondary_btn("settings-opencode-models-refresh", IconName::Refresh, "Refresh models", colors)
+                                                                .when(opencode_models_loading, |btn| btn.opacity(0.5))
+                                                                .on_click(cx.listener(move |_this, _event, _window, cx| {
+                                                                    if !opencode_models_loading {
+                                                                        load_opencode_models(cx);
+                                                                    }
+                                                                }))
+                                                        )
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(px(12.0))
+                                                        .text_color(colors.text_muted)
+                                                        .child(if opencode_models_loading {
+                                                            "Loading OpenCode models...".to_string()
+                                                        } else if opencode_models.is_empty() {
+                                                            "Could not load models. Check auth/network and click refresh.".to_string()
+                                                        } else {
+                                                            format!("{} models available", opencode_models.len())
+                                                        })
+                                                )
+                                        )
+                                    })
+                                    .when(provider == AIProvider::ClaudeCode, |el| {
+                                        el.child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .text_color(colors.text_muted)
+                                                .child("ClaudeCode uses your local CLI authentication and default model unless configured externally.")
+                                        )
+                                    })
+                            )
+                            .child(
+                                div()
+                                    .w_full()
+                                    .p(px(16.0))
+                                    .rounded(theme.border_radius_lg)
+                                    .bg(colors.surface)
+                                    .border_1()
+                                    .border_color(colors.border)
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(12.0))
+                                    .child(
+                                        div()
+                                            .text_size(px(16.0))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(colors.text)
+                                            .child("Actions")
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .text_color(colors.text_muted)
+                                            .child("Validate your configuration, then jump directly into the AI panel.")
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(12.0))
+                                            .child(
+                                                secondary_btn("settings-ai-test-btn", test_button_icon, test_button_label, colors)
+                                                    .when(is_testing, |el| el.opacity(0.5))
+                                                    .on_click(cx.listener(move |_this, _event, _window, cx| {
+                                                        if !is_testing {
+                                                            run_ai_connection_test(cx, provider, selected_model.clone());
+                                                        }
+                                                    }))
+                                            )
+                                            .child(
+                                                secondary_btn("settings-open-ai-panel-btn", IconName::AI, "Open AI panel", colors)
+                                                    .on_click(cx.listener(|_this, _event, _window, cx| {
+                                                        cx.update_global::<AppState, _>(|state, _| {
+                                                            if state.active_panel != ActivePanel::AI {
+                                                                state.active_panel = ActivePanel::AI;
+                                                            }
+                                                            state.close_settings();
+                                                        });
+                                                        cx.notify();
+                                                    }))
+                                            )
+                                    )
+                            )
+                            .child(
+                                div()
+                                    .w_full()
+                                    .p(px(16.0))
+                                    .rounded(theme.border_radius_lg)
+                                    .bg(colors.surface)
+                                    .border_1()
+                                    .border_color(colors.border)
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(10.0))
+                                    .child(
+                                        div()
+                                            .text_size(px(16.0))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(colors.text)
+                                            .child("Diagnostics")
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .text_color(colors.text_muted)
+                                            .child("Latest output from the provider check.")
+                                    )
+                                    .child(
+                                        div()
+                                            .p(px(12.0))
+                                            .rounded(theme.border_radius_md)
+                                            .bg(colors.surface_elevated)
+                                            .border_1()
+                                            .border_color(colors.border)
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.0))
+                                                    .text_color(colors.text)
+                                                    .child(
+                                                        format!("\"{}\"", state.ai_connection_message
+                                                            .clone()
+                                                            .unwrap_or_else(|| "No output yet. Use \"Test connection\" to verify communication.".to_string()))
+                                                    )
                                             )
                                     )
                             )
@@ -1684,26 +2869,24 @@ fn start_port_forward_bg<T: 'static>(
     cx.spawn(async move |_view, cx| {
         for _ in 0..100 {
             if let Ok(result) = rx.try_recv() {
-                let _ = cx.update(|cx: &mut gpui::App| {
-                    match result {
-                        Ok(info) => {
-                            tracing::info!(
-                                "Port forward started: localhost:{} → {}:{}",
-                                info.local_port,
-                                info.pod_name,
-                                info.container_port
-                            );
-                            cx.update_global::<AppState, _>(|state, _cx| {
-                                state.pf_error = None;
-                                state.add_port_forward(info);
-                            });
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to start port forward: {}", e);
-                            cx.update_global::<AppState, _>(|state, _cx| {
-                                state.pf_error = Some(format!("Port forward failed: {}", e));
-                            });
-                        }
+                let _ = cx.update(|cx: &mut gpui::App| match result {
+                    Ok(info) => {
+                        tracing::info!(
+                            "Port forward started: localhost:{} → {}:{}",
+                            info.local_port,
+                            info.pod_name,
+                            info.container_port
+                        );
+                        cx.update_global::<AppState, _>(|state, _cx| {
+                            state.pf_error = None;
+                            state.add_port_forward(info);
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to start port forward: {}", e);
+                        cx.update_global::<AppState, _>(|state, _cx| {
+                            state.pf_error = Some(format!("Port forward failed: {}", e));
+                        });
                     }
                 });
                 return;
@@ -1722,7 +2905,9 @@ fn fetch_related_pods(
     details_entity: Entity<DeploymentDetails>,
 ) {
     // Extract matchLabels from deployment spec.selector.matchLabels
-    let selector: std::collections::BTreeMap<String, String> = deployment.spec.as_ref()
+    let selector: std::collections::BTreeMap<String, String> = deployment
+        .spec
+        .as_ref()
         .and_then(|s| s.get("selector"))
         .and_then(|s| s.get("matchLabels"))
         .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -1737,10 +2922,23 @@ fn fetch_related_pods(
         rt.block_on(async {
             match k8s_client::get_client().await {
                 Ok(client) => {
-                    match k8s_client::list_resources(&client, k8s_client::ResourceType::Pods, namespace.as_deref()).await {
+                    match k8s_client::list_resources(
+                        &client,
+                        k8s_client::ResourceType::Pods,
+                        namespace.as_deref(),
+                    )
+                    .await
+                    {
                         Ok(pod_list) => {
-                            let matched: Vec<k8s_client::Resource> = pod_list.items.into_iter()
-                                .filter(|pod| resources::labels_match_selector(&pod.metadata.labels, &selector))
+                            let matched: Vec<k8s_client::Resource> = pod_list
+                                .items
+                                .into_iter()
+                                .filter(|pod| {
+                                    resources::labels_match_selector(
+                                        &pod.metadata.labels,
+                                        &selector,
+                                    )
+                                })
                                 .collect();
                             let _ = tx.send(matched);
                         }
@@ -1805,7 +3003,11 @@ fn delete_resources_bulk_bg<T: 'static>(
                     if errors.is_empty() {
                         let _ = tx.send(Ok(()));
                     } else {
-                        let _ = tx.send(Err(format!("Bulk delete failed for {} resource(s): {}", errors.len(), errors.join("; "))));
+                        let _ = tx.send(Err(format!(
+                            "Bulk delete failed for {} resource(s): {}",
+                            errors.len(),
+                            errors.join("; ")
+                        )));
                     }
                 }
                 Err(e) => {
@@ -1841,7 +3043,10 @@ fn scale_resources_bulk_bg<T: 'static>(
     resources: Vec<k8s_client::Resource>,
     replicas: i32,
 ) {
-    if !matches!(resource_type, k8s_client::ResourceType::Deployments | k8s_client::ResourceType::StatefulSets) {
+    if !matches!(
+        resource_type,
+        k8s_client::ResourceType::Deployments | k8s_client::ResourceType::StatefulSets
+    ) {
         cx.update_global::<AppState, _>(|state, _| {
             state.set_error(Some(format!(
                 "Bulk scale is only supported for Deployments and StatefulSets (current: {}).",
@@ -1875,7 +3080,11 @@ fn scale_resources_bulk_bg<T: 'static>(
                     if errors.is_empty() {
                         let _ = tx.send(Ok(()));
                     } else {
-                        let _ = tx.send(Err(format!("Bulk scale failed for {} resource(s): {}", errors.len(), errors.join("; "))));
+                        let _ = tx.send(Err(format!(
+                            "Bulk scale failed for {} resource(s): {}",
+                            errors.len(),
+                            errors.join("; ")
+                        )));
                     }
                 }
                 Err(e) => {
@@ -1937,7 +3146,11 @@ fn label_resources_bulk_bg<T: 'static>(
                     if errors.is_empty() {
                         let _ = tx.send(Ok(()));
                     } else {
-                        let _ = tx.send(Err(format!("Bulk label failed for {} resource(s): {}", errors.len(), errors.join("; "))));
+                        let _ = tx.send(Err(format!(
+                            "Bulk label failed for {} resource(s): {}",
+                            errors.len(),
+                            errors.join("; ")
+                        )));
                     }
                 }
                 Err(e) => {
@@ -1967,7 +3180,12 @@ fn label_resources_bulk_bg<T: 'static>(
     .detach();
 }
 
-fn delete_resource_bg<T: 'static>(cx: &mut Context<'_, T>, resource_type: k8s_client::ResourceType, name: String, namespace: String) {
+fn delete_resource_bg<T: 'static>(
+    cx: &mut Context<'_, T>,
+    resource_type: k8s_client::ResourceType,
+    name: String,
+    namespace: String,
+) {
     let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
 
     std::thread::spawn(move || {
@@ -1980,12 +3198,20 @@ fn delete_resource_bg<T: 'static>(cx: &mut Context<'_, T>, resource_type: k8s_cl
                         resource_type,
                         &name,
                         Some(&namespace),
-                    ).await {
-                        Ok(_) => { let _ = tx.send(Ok(())); }
-                        Err(e) => { let _ = tx.send(Err(e.to_string())); }
+                    )
+                    .await
+                    {
+                        Ok(_) => {
+                            let _ = tx.send(Ok(()));
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(e.to_string()));
+                        }
                     }
                 }
-                Err(e) => { let _ = tx.send(Err(e.to_string())); }
+                Err(e) => {
+                    let _ = tx.send(Err(e.to_string()));
+                }
             }
         });
     });
@@ -2008,5 +3234,6 @@ fn delete_resource_bg<T: 'static>(cx: &mut Context<'_, T>, resource_type: k8s_cl
                 .timer(std::time::Duration::from_millis(50))
                 .await;
         }
-    }).detach();
+    })
+    .detach();
 }

@@ -1,16 +1,16 @@
-use gpui::*;
+use chrono::{DateTime, Datelike, Utc};
 use gpui::prelude::FluentBuilder;
+use gpui::*;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
-use chrono::{DateTime, Datelike, Utc};
 use k8s_client::{get_client, get_pod_logs, stream_pod_logs};
 use serde_json::Value;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use ui::{
-    theme, back_btn, secondary_btn, Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon,
-    IconName, PopupMenu, PopupMenuItem, Sizable,
+    Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenu, PopupMenuItem,
+    Sizable, back_btn, secondary_btn, theme,
 };
 
 /// Log level filter for the UI
@@ -198,9 +198,7 @@ impl PodLogsView {
         if self.search_input.is_some() {
             return;
         }
-        let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Filter logs...")
-        });
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Filter logs..."));
         let sub = cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| {
             match ev {
                 InputEvent::Change => {
@@ -237,7 +235,10 @@ impl PodLogsView {
         let (timestamp, message) = if line.len() > 30 && line.chars().nth(4) == Some('-') {
             let space_idx = line.find(' ').unwrap_or(0);
             if space_idx > 20 {
-                (line[..space_idx].to_string(), line[space_idx + 1..].to_string())
+                (
+                    line[..space_idx].to_string(),
+                    line[space_idx + 1..].to_string(),
+                )
             } else {
                 (String::new(), line.to_string())
             }
@@ -254,17 +255,12 @@ impl PodLogsView {
     }
 
     fn parse_logs(logs_text: &str) -> Vec<PodLogEntry> {
-        logs_text
-            .lines()
-            .filter_map(Self::parse_log_line)
-            .collect()
+        logs_text.lines().filter_map(Self::parse_log_line).collect()
     }
 
     fn detect_log_level(message: &str) -> DetectedLevel {
         let msg_lower = message.to_lowercase();
-        if msg_lower.contains("error")
-            || msg_lower.contains("failed")
-            || msg_lower.contains("err]")
+        if msg_lower.contains("error") || msg_lower.contains("failed") || msg_lower.contains("err]")
         {
             DetectedLevel::Error
         } else if msg_lower.contains("warn") || msg_lower.contains("warning") {
@@ -533,7 +529,6 @@ impl PodLogsView {
             })
             .collect()
     }
-
 }
 
 impl Drop for PodLogsView {
@@ -609,15 +604,14 @@ impl PodLogsView {
                     .gap(px(16.0))
                     .min_w(px(0.0))
                     .flex_1()
-                    .child(
-                        back_btn("logs-back-btn", colors)
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                if let Some(on_close) = &this.on_close {
-                                    on_close(cx);
-                                }
-                                cx.notify();
-                            })),
-                    )
+                    .child(back_btn("logs-back-btn", colors).on_click(cx.listener(
+                        |this, _event, _window, cx| {
+                            if let Some(on_close) = &this.on_close {
+                                on_close(cx);
+                            }
+                            cx.notify();
+                        },
+                    )))
                     .child(
                         div()
                             .flex()
@@ -687,24 +681,20 @@ impl PodLogsView {
                             .rounded(theme.border_radius_md)
                             .border_1()
                             .when(self.is_streaming, |el| {
-                                el.bg(colors.primary)
-                                    .border_color(colors.primary)
+                                el.bg(colors.primary).border_color(colors.primary)
                             })
                             .when(!self.is_streaming, |el| {
-                                el.bg(colors.surface)
-                                    .border_color(colors.border)
+                                el.bg(colors.surface).border_color(colors.border)
                             })
                             .cursor_pointer()
                             .hover(|s| s.bg(colors.primary_hover))
-                            .child(
-                                Icon::new(IconName::Play)
-                                    .size(px(14.0))
-                                    .color(if self.is_streaming {
-                                        colors.background
-                                    } else {
-                                        colors.text_secondary
-                                    }),
-                            )
+                            .child(Icon::new(IconName::Play).size(px(14.0)).color(
+                                if self.is_streaming {
+                                    colors.background
+                                } else {
+                                    colors.text_secondary
+                                },
+                            ))
                             .child(
                                 div()
                                     .text_size(px(12.0))
@@ -774,18 +764,16 @@ impl PodLogsView {
                         let is_selected = i == selected;
                         let idx = i;
                         let view = view.clone();
-                        m = m.item(
-                            PopupMenuItem::new(c.clone())
-                                .checked(is_selected)
-                                .on_click(move |_, _window, cx| {
-                                    let _ = view.update(cx, |this, cx| {
-                                        if this.selected_container != idx {
-                                            this.selected_container = idx;
-                                            this.refresh(cx);
-                                        }
-                                    });
-                                }),
-                        );
+                        m = m.item(PopupMenuItem::new(c.clone()).checked(is_selected).on_click(
+                            move |_, _window, cx| {
+                                let _ = view.update(cx, |this, cx| {
+                                    if this.selected_container != idx {
+                                        this.selected_container = idx;
+                                        this.refresh(cx);
+                                    }
+                                });
+                            },
+                        ));
                     }
                     m
                 }),
@@ -1180,9 +1168,7 @@ impl PodLogsView {
             .cursor_pointer()
             .when(is_active, |el| el.bg(colors.primary))
             .when(!is_active, |el| el.bg(colors.surface))
-            .when(!is_first, |el| {
-                el.border_l_1().border_color(colors.border)
-            })
+            .when(!is_first, |el| el.border_l_1().border_color(colors.border))
             .hover(|s| {
                 if is_active {
                     s
@@ -1283,9 +1269,9 @@ impl PodLogsView {
                                     })
                                     .when(!is_loading && self.error.is_none(), |el| {
                                         el.children(
-                                            logs.iter()
-                                                .enumerate()
-                                                .map(|(idx, log)| self.render_log_line(cx, idx, log)),
+                                            logs.iter().enumerate().map(|(idx, log)| {
+                                                self.render_log_line(cx, idx, log)
+                                            }),
                                         )
                                     }),
                             ),
@@ -1293,11 +1279,7 @@ impl PodLogsView {
             )
     }
 
-    fn render_log_modal(
-        &self,
-        cx: &Context<'_, Self>,
-        modal: LogModalState,
-    ) -> impl IntoElement {
+    fn render_log_modal(&self, cx: &Context<'_, Self>, modal: LogModalState) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
@@ -1308,7 +1290,8 @@ impl PodLogsView {
             DetectedLevel::Debug => "DEBUG",
         };
 
-        let message_lines: Vec<String> = modal.content.lines().map(|line| line.to_string()).collect();
+        let message_lines: Vec<String> =
+            modal.content.lines().map(|line| line.to_string()).collect();
         let format_label = modal.format_label.clone();
         let rendered_lines: Vec<AnyElement> = message_lines
             .iter()
@@ -1395,19 +1378,37 @@ impl PodLogsView {
                                     .items_center()
                                     .gap(px(8.0))
                                     .child(
-                                        secondary_btn("log-modal-copy-btn", IconName::Copy, "Copy", colors)
-                                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                        secondary_btn(
+                                            "log-modal-copy-btn",
+                                            IconName::Copy,
+                                            "Copy",
+                                            colors,
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _event, _window, cx| {
                                                 if let Some(modal) = &this.log_modal {
-                                                    cx.write_to_clipboard(ClipboardItem::new_string(modal.content.clone()));
+                                                    cx.write_to_clipboard(
+                                                        ClipboardItem::new_string(
+                                                            modal.content.clone(),
+                                                        ),
+                                                    );
                                                 }
-                                            })),
+                                            }),
+                                        ),
                                     )
                                     .child(
-                                        secondary_btn("log-modal-close-btn", IconName::Close, "Close", colors)
-                                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                        secondary_btn(
+                                            "log-modal-close-btn",
+                                            IconName::Close,
+                                            "Close",
+                                            colors,
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _event, _window, cx| {
                                                 this.log_modal = None;
                                                 cx.notify();
-                                            })),
+                                            }),
+                                        ),
                                     ),
                             ),
                     )
@@ -1505,12 +1506,7 @@ impl PodLogsView {
                         .flex()
                         .items_center()
                         .gap(px(6.0))
-                        .child(
-                            div()
-                                .size(px(8.0))
-                                .rounded_full()
-                                .bg(colors.success),
-                        )
+                        .child(div().size(px(8.0)).rounded_full().bg(colors.success))
                         .child(
                             div()
                                 .text_size(px(10.0))
@@ -1525,7 +1521,12 @@ impl PodLogsView {
 
     // ── Log Line ────────────────────────────────────────────────────────
 
-    fn render_log_line(&self, cx: &Context<'_, Self>, idx: usize, log: &PodLogEntry) -> impl IntoElement {
+    fn render_log_line(
+        &self,
+        cx: &Context<'_, Self>,
+        idx: usize,
+        log: &PodLogEntry,
+    ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
         let timestamp_display = Self::format_log_timestamp(&log.timestamp);
@@ -1586,7 +1587,8 @@ impl PodLogsView {
                     .child(log.message.clone()),
             )
             .on_click(cx.listener(move |this, _event, _window, cx| {
-                let (formatted, format_label) = Self::format_log_message_for_modal(&log_entry.message);
+                let (formatted, format_label) =
+                    Self::format_log_message_for_modal(&log_entry.message);
                 this.log_modal = Some(LogModalState {
                     timestamp: log_entry.timestamp.clone(),
                     level: log_entry.level,
@@ -1603,7 +1605,11 @@ impl PodLogsView {
         div().w(px(1.0)).h(px(20.0)).bg(colors.border)
     }
 
-    fn colorize_modal_line(line: &str, format_label: &str, colors: &ui::ThemeColors) -> Vec<ColorSpan> {
+    fn colorize_modal_line(
+        line: &str,
+        format_label: &str,
+        colors: &ui::ThemeColors,
+    ) -> Vec<ColorSpan> {
         if line.is_empty() {
             return vec![ColorSpan {
                 text: " ".to_string(),
@@ -1762,11 +1768,14 @@ impl PodLogsView {
 
     fn format_log_message_for_modal(message: &str) -> (String, String) {
         if let Ok(json) = serde_json::from_str::<Value>(message) {
-            let pretty = serde_json::to_string_pretty(&json).unwrap_or_else(|_| message.to_string());
+            let pretty =
+                serde_json::to_string_pretty(&json).unwrap_or_else(|_| message.to_string());
             return (pretty, "JSON".to_string());
         }
 
-        if let Some((prefix, json_body, pretty_json)) = Self::extract_and_pretty_print_embedded_json(message) {
+        if let Some((prefix, json_body, pretty_json)) =
+            Self::extract_and_pretty_print_embedded_json(message)
+        {
             let formatted = if prefix.is_empty() {
                 pretty_json
             } else {
@@ -1782,7 +1791,9 @@ impl PodLogsView {
         (message.to_string(), "Raw".to_string())
     }
 
-    fn extract_and_pretty_print_embedded_json(message: &str) -> Option<(String, &'static str, String)> {
+    fn extract_and_pretty_print_embedded_json(
+        message: &str,
+    ) -> Option<(String, &'static str, String)> {
         for (open, close, label) in [('{', '}', "JSON object"), ('[', ']', "JSON array")] {
             let start = message.find(open)?;
             let end = message.rfind(close)?;
@@ -1830,14 +1841,10 @@ impl PodLogsView {
 
         // Fallback for non-RFC3339 formats: keep date + time without timezone/fractions.
         if let Some((date, time_raw)) = ts.split_once('T') {
-            let time = time_raw
-                .split(['.', 'Z', '+'])
-                .next()
-                .unwrap_or(time_raw);
+            let time = time_raw.split(['.', 'Z', '+']).next().unwrap_or(time_raw);
             return format!("{} {}", date, time);
         }
 
         ts.to_string()
     }
-
 }

@@ -1,14 +1,14 @@
 use super::AppView;
-use crate::app_state::{app_state, update_app_state, AIChatRole, AppState};
+use crate::app_state::{AIChatRole, AppState, app_state, update_app_state};
 use crate::settings::AIProvider;
-use gpui::*;
 use gpui::prelude::FluentBuilder;
+use gpui::*;
 use k8s_client::Resource;
 use std::collections::BTreeSet;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use ui::gpui_component::input::{Input, InputEvent, InputState};
-use ui::{secondary_btn, theme, IconName, Sizable};
+use ui::{IconName, Sizable, secondary_btn, theme};
 
 #[derive(Clone)]
 struct PromptContextSnapshot {
@@ -163,7 +163,11 @@ impl AppView {
                                         .p(px(10.0))
                                         .rounded(theme.border_radius_md)
                                         .bg(bubble_bg)
-                                        .child(render_markdown_message(cx, &msg.content, colors.text)),
+                                        .child(render_markdown_message(
+                                            cx,
+                                            &msg.content,
+                                            colors.text,
+                                        )),
                                 )
                             }))
                             .when(!has_messages, |el| {
@@ -176,19 +180,15 @@ impl AppView {
                             })
                             .when(is_sending, |el| {
                                 el.child(
-                                    div()
-                                        .w_full()
-                                        .flex()
-                                        .justify_start()
-                                        .child(
-                                            div()
-                                                .p(px(10.0))
-                                                .rounded(theme.border_radius_md)
-                                                .bg(colors.surface_elevated)
-                                                .text_size(px(12.0))
-                                                .text_color(colors.text_muted)
-                                                .child("Pensando..."),
-                                        ),
+                                    div().w_full().flex().justify_start().child(
+                                        div()
+                                            .p(px(10.0))
+                                            .rounded(theme.border_radius_md)
+                                            .bg(colors.surface_elevated)
+                                            .text_size(px(12.0))
+                                            .text_color(colors.text_muted)
+                                            .child("Pensando..."),
+                                    ),
                                 )
                             }),
                     ),
@@ -227,7 +227,11 @@ impl AppView {
 
 fn summarize_selected_resource(resource: &Resource) -> String {
     let name = &resource.metadata.name;
-    let ns = resource.metadata.namespace.as_deref().unwrap_or("cluster-scope");
+    let ns = resource
+        .metadata
+        .namespace
+        .as_deref()
+        .unwrap_or("cluster-scope");
     match resource.kind.as_str() {
         "Pod" => {
             let phase = resource
@@ -257,7 +261,10 @@ fn summarize_selected_resource(resource: &Resource) -> String {
                 .and_then(|s| s.get("availableReplicas"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            format!("Deployment {}/{} replicas={}/{}", ns, name, available, desired)
+            format!(
+                "Deployment {}/{} replicas={}/{}",
+                ns, name, available, desired
+            )
         }
         "Service" => {
             let service_type = resource
@@ -353,7 +360,12 @@ Required output format:
 
     format!(
         "System role:\n{}\n\nKubernetes context:\n- context: {}\n- namespace: {}\n\n{}{}\nUser question:\n{}",
-        expert_system_prompt, context, namespace, selected_resource_section, diagnostic_section, user_prompt
+        expert_system_prompt,
+        context,
+        namespace,
+        selected_resource_section,
+        diagnostic_section,
+        user_prompt
     )
 }
 
@@ -364,7 +376,8 @@ fn run_ai_user_prompt(
     user_prompt: String,
     prompt_context: PromptContextSnapshot,
 ) {
-    tracing::info!("Preparing AI prompt provider={} model={} user_prompt_len={}",
+    tracing::info!(
+        "Preparing AI prompt provider={} model={} user_prompt_len={}",
         provider.display_name(),
         model.as_deref().unwrap_or("<none>"),
         user_prompt.len(),
@@ -378,15 +391,19 @@ fn run_ai_user_prompt(
     let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
     std::thread::spawn(move || {
         let auto_diagnostic = run_question_based_auto_diagnostic(&prompt_context, &user_prompt);
-        let enriched_prompt =
-            build_ai_prompt_with_k8s_context(&prompt_context, &user_prompt, auto_diagnostic.as_deref());
+        let enriched_prompt = build_ai_prompt_with_k8s_context(
+            &prompt_context,
+            &user_prompt,
+            auto_diagnostic.as_deref(),
+        );
         tracing::info!(
             "Sending AI prompt provider={} model={} enriched_len={}",
             provider.display_name(),
             model.as_deref().unwrap_or("<none>"),
             enriched_prompt.len()
         );
-        let result = run_ai_provider_prompt(provider, model, &enriched_prompt, Duration::from_secs(90));
+        let result =
+            run_ai_provider_prompt(provider, model, &enriched_prompt, Duration::from_secs(90));
         let _ = tx.send(result);
     });
 
@@ -419,8 +436,8 @@ fn run_ai_user_prompt(
             update_app_state(cx, |state, _| {
                 state.set_ai_request_in_flight(false);
                 state.ai_connection_message =
-                    Some("Timeout esperando respuesta del proveedor IA".to_string());
-                state.push_ai_assistant_message("Error: timeout esperando respuesta".to_string());
+                    Some("Timed out waiting for the AI provider response".to_string());
+                state.push_ai_assistant_message("Error: request timed out".to_string());
             });
         });
     })
@@ -436,7 +453,7 @@ fn run_question_based_auto_diagnostic(
         match selected.kind.as_str() {
             "Pod" => return run_pod_question_diagnostic(prompt_context, selected, intent),
             "Deployment" => {
-                return run_deployment_question_diagnostic(prompt_context, selected, intent)
+                return run_deployment_question_diagnostic(prompt_context, selected, intent);
             }
             _ => {}
         }
@@ -583,11 +600,8 @@ fn run_pod_question_diagnostic(
         || waiting_reasons
             .iter()
             .any(|r| matches!(r.as_str(), "CrashLoopBackOff" | "Error"));
-    let should_collect_previous_logs = intent.crash
-        || intent.restart
-        || waiting_reasons
-            .iter()
-            .any(|r| r == "CrashLoopBackOff");
+    let should_collect_previous_logs =
+        intent.crash || intent.restart || waiting_reasons.iter().any(|r| r == "CrashLoopBackOff");
 
     let rt = k8s_client::tokio_runtime();
     rt.block_on(async move {
@@ -597,23 +611,37 @@ fn run_pod_question_diagnostic(
                 return Some(format!(
                     "Could not run automatic pod diagnostic: failed to get k8s client: {}",
                     e
-                ))
+                ));
             }
         };
 
         let events_result = k8s_client::get_pod_events(&client, &pod_name, &namespace).await;
         let logs_result = if should_collect_logs {
             Some(
-                k8s_client::get_pod_logs(&client, &pod_name, None, &namespace, Some(80), Some(2400))
-                    .await,
+                k8s_client::get_pod_logs(
+                    &client,
+                    &pod_name,
+                    None,
+                    &namespace,
+                    Some(80),
+                    Some(2400),
+                )
+                .await,
             )
         } else {
             None
         };
         let previous_logs_result = if should_collect_previous_logs {
             Some(
-                k8s_client::get_pod_logs(&client, &pod_name, None, &namespace, Some(80), Some(3600))
-                    .await,
+                k8s_client::get_pod_logs(
+                    &client,
+                    &pod_name,
+                    None,
+                    &namespace,
+                    Some(80),
+                    Some(3600),
+                )
+                .await,
             )
         } else {
             None
@@ -645,7 +673,10 @@ fn run_pod_question_diagnostic(
                 } else {
                     lines.push("Top pod events:".to_string());
                     for ev in events.into_iter().take(8) {
-                        lines.push(format!("- [{}] {}: {}", ev.event_type, ev.reason, ev.message));
+                        lines.push(format!(
+                            "- [{}] {}: {}",
+                            ev.event_type, ev.reason, ev.message
+                        ));
                     }
                 }
             }
@@ -938,7 +969,10 @@ fn labels_match_selector(
         let Some(expected) = val.as_str() else {
             return false;
         };
-        labels.get(key).map(|actual| actual == expected).unwrap_or(false)
+        labels
+            .get(key)
+            .map(|actual| actual == expected)
+            .unwrap_or(false)
     })
 }
 
@@ -1031,7 +1065,7 @@ pub(super) fn run_ai_connection_test(cx: &mut App, provider: AIProvider, model: 
         let result = run_ai_provider_prompt(
             provider,
             model,
-            "Responde exactamente con 'OK' para validar la conexión.",
+            "Reply with exactly 'OK' to validate the connection.",
             Duration::from_secs(20),
         );
         let _ = tx.send(result);
@@ -1065,7 +1099,7 @@ pub(super) fn run_ai_connection_test(cx: &mut App, provider: AIProvider, model: 
             update_app_state(cx, |state, _| {
                 tracing::error!("AI connection test timed out");
                 state.set_ai_connection_result(Err(
-                    "Timeout esperando respuesta del proveedor IA".to_string(),
+                    "Timed out waiting for the AI provider response".to_string(),
                 ));
             });
         });
@@ -1102,7 +1136,7 @@ pub(super) fn load_opencode_models(cx: &mut App) {
                             Err(error) => {
                                 tracing::error!("Failed to load OpenCode models: {}", error);
                                 state.ai_connection_message =
-                                    Some(format!("Error cargando modelos de OpenCode: {}", error));
+                                    Some(format!("Error loading OpenCode models: {}", error));
                             }
                         }
                     });
@@ -1117,7 +1151,7 @@ pub(super) fn load_opencode_models(cx: &mut App) {
             update_app_state(cx, |state, _| {
                 tracing::error!("Timeout loading OpenCode models");
                 state.set_opencode_models_loading(false);
-                state.ai_connection_message = Some("Timeout cargando modelos de OpenCode".to_string());
+                state.ai_connection_message = Some("Timed out loading OpenCode models".to_string());
             });
         });
     })
@@ -1143,8 +1177,11 @@ fn parse_opencode_models(output: &str) -> Result<Vec<String>, String> {
         }
     }
     if set.is_empty() {
-        tracing::warn!("OpenCode models output could not be parsed. Raw output: {}", output);
-        return Err("No se encontraron modelos en la salida de opencode models".to_string());
+        tracing::warn!(
+            "OpenCode models output could not be parsed. Raw output: {}",
+            output
+        );
+        return Err("No models were found in the `opencode models` output".to_string());
     }
     Ok(set.into_iter().collect())
 }
@@ -1263,13 +1300,19 @@ fn parse_markdown_blocks(input: &str) -> Vec<(MdBlockKind, String)> {
 
         if trimmed.starts_with("> ") {
             flush_paragraph(&mut paragraph_lines, &mut blocks);
-            blocks.push((MdBlockKind::Quote, parse_inline_markdown_to_plain(trimmed[2..].trim())));
+            blocks.push((
+                MdBlockKind::Quote,
+                parse_inline_markdown_to_plain(trimmed[2..].trim()),
+            ));
             continue;
         }
 
         if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
             flush_paragraph(&mut paragraph_lines, &mut blocks);
-            blocks.push((MdBlockKind::ListItem, parse_inline_markdown_to_plain(trimmed[2..].trim())));
+            blocks.push((
+                MdBlockKind::ListItem,
+                parse_inline_markdown_to_plain(trimmed[2..].trim()),
+            ));
             continue;
         }
 
@@ -1277,7 +1320,10 @@ fn parse_markdown_blocks(input: &str) -> Vec<(MdBlockKind, String)> {
             let (left, right) = trimmed.split_at(dot_pos);
             if !left.is_empty() && left.chars().all(|c| c.is_ascii_digit()) {
                 flush_paragraph(&mut paragraph_lines, &mut blocks);
-                blocks.push((MdBlockKind::ListItem, parse_inline_markdown_to_plain(right[2..].trim())));
+                blocks.push((
+                    MdBlockKind::ListItem,
+                    parse_inline_markdown_to_plain(right[2..].trim()),
+                ));
                 continue;
             }
             continue;
@@ -1288,7 +1334,10 @@ fn parse_markdown_blocks(input: &str) -> Vec<(MdBlockKind, String)> {
             let content = trimmed[hashes..].trim();
             if !content.is_empty() && hashes <= 6 {
                 flush_paragraph(&mut paragraph_lines, &mut blocks);
-                blocks.push((MdBlockKind::Heading(hashes), parse_inline_markdown_to_plain(content)));
+                blocks.push((
+                    MdBlockKind::Heading(hashes),
+                    parse_inline_markdown_to_plain(content),
+                ));
                 continue;
             }
         }
@@ -1437,31 +1486,27 @@ fn render_markdown_message(
                             .into_any_element()
                     }
                 }
-                MdBlockKind::Quote => {
-                    div()
-                        .min_w(px(0.0))
-                        .pl(px(8.0))
-                        .border_l_2()
-                        .border_color(colors.border)
-                        .text_size(px(12.0))
-                        .text_color(colors.text_muted)
-                        .child(format!("\"{}\"", wrapped_text))
-                        .into_any_element()
-                }
-                MdBlockKind::CodeFence => {
-                    div()
-                        .min_w(px(0.0))
-                        .px(px(8.0))
-                        .py(px(6.0))
-                        .rounded(theme.border_radius_sm)
-                        .bg(colors.background.opacity(0.45))
-                        .border_1()
-                        .border_color(colors.border)
-                        .text_size(px(12.0))
-                        .text_color(text_color)
-                        .child(wrapped_text)
-                        .into_any_element()
-                }
+                MdBlockKind::Quote => div()
+                    .min_w(px(0.0))
+                    .pl(px(8.0))
+                    .border_l_2()
+                    .border_color(colors.border)
+                    .text_size(px(12.0))
+                    .text_color(colors.text_muted)
+                    .child(format!("\"{}\"", wrapped_text))
+                    .into_any_element(),
+                MdBlockKind::CodeFence => div()
+                    .min_w(px(0.0))
+                    .px(px(8.0))
+                    .py(px(6.0))
+                    .rounded(theme.border_radius_sm)
+                    .bg(colors.background.opacity(0.45))
+                    .border_1()
+                    .border_color(colors.border)
+                    .text_size(px(12.0))
+                    .text_color(text_color)
+                    .child(wrapped_text)
+                    .into_any_element(),
                 MdBlockKind::Paragraph => {
                     if is_section_title {
                         div()
@@ -1485,10 +1530,7 @@ fn render_markdown_message(
 }
 
 fn is_ai_section_title(text: &str) -> bool {
-    let lower = text
-        .trim()
-        .trim_end_matches(':')
-        .to_ascii_lowercase();
+    let lower = text.trim().trim_end_matches(':').to_ascii_lowercase();
 
     let normalized = lower
         .strip_prefix("1) ")
@@ -1529,11 +1571,21 @@ fn run_ai_provider_prompt(
             if let Some(m) = &model {
                 list.push((
                     "opencode",
-                    vec!["-m".to_string(), m.clone(), "run".to_string(), prompt.to_string()],
+                    vec![
+                        "-m".to_string(),
+                        m.clone(),
+                        "run".to_string(),
+                        prompt.to_string(),
+                    ],
                 ));
                 list.push((
                     "opencode",
-                    vec!["-m".to_string(), m.clone(), "--prompt".to_string(), prompt.to_string()],
+                    vec![
+                        "-m".to_string(),
+                        m.clone(),
+                        "--prompt".to_string(),
+                        prompt.to_string(),
+                    ],
                 ));
             }
             list.push(("opencode", vec!["--prompt".to_string(), prompt.to_string()]));
@@ -1541,7 +1593,10 @@ fn run_ai_provider_prompt(
             list
         }
         AIProvider::ClaudeCode => vec![
-            ("claudecode", vec!["--prompt".to_string(), prompt.to_string()]),
+            (
+                "claudecode",
+                vec!["--prompt".to_string(), prompt.to_string()],
+            ),
             ("claudecode", vec!["chat".to_string(), prompt.to_string()]),
             ("claudecode", vec![prompt.to_string()]),
         ],
@@ -1549,7 +1604,11 @@ fn run_ai_provider_prompt(
 
     let mut errors = Vec::new();
     for (command, args) in candidates {
-        tracing::info!("Running AI provider command: {} {}", command, args.join(" "));
+        tracing::info!(
+            "Running AI provider command: {} {}",
+            command,
+            args.join(" ")
+        );
         match run_command_with_timeout(command, &args, timeout) {
             Ok(output) => return Ok(output),
             Err(err) => {
@@ -1565,7 +1624,7 @@ fn run_ai_provider_prompt(
     }
 
     Err(format!(
-        "No se pudo comunicar con {}. Verifica que el binario esté instalado y accesible en PATH.\n{}",
+        "Could not communicate with {}. Verify the binary is installed and available in PATH.\n{}",
         provider.display_name(),
         errors.join("\n")
     ))
@@ -1583,7 +1642,7 @@ fn run_command_with_timeout(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| {
-            let message = format!("No se pudo ejecutar el comando: {}", e);
+            let message = format!("Could not execute command: {}", e);
             tracing::error!("{} {} -> {}", command, args.join(" "), message);
             message
         })?;
@@ -1594,7 +1653,7 @@ fn run_command_with_timeout(
             Ok(Some(status)) => {
                 let output = child
                     .wait_with_output()
-                    .map_err(|e| format!("No se pudo leer la salida: {}", e))?;
+                    .map_err(|e| format!("Could not read command output: {}", e))?;
                 let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
@@ -1605,14 +1664,14 @@ fn run_command_with_timeout(
                             command,
                             args.join(" ")
                         );
-                        return Ok("(sin salida)".to_string());
+                        return Ok("(no output)".to_string());
                     }
                     tracing::info!("Command succeeded: {} {}", command, args.join(" "));
                     return Ok(stdout);
                 }
 
                 let message = if stderr.is_empty() {
-                    format!("Código de salida {:?}", status.code())
+                    format!("Exit code {:?}", status.code())
                 } else {
                     stderr
                 };
@@ -1635,12 +1694,12 @@ fn run_command_with_timeout(
                         command,
                         args.join(" ")
                     );
-                    return Err("Timeout del comando".to_string());
+                    return Err("Command timed out".to_string());
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
             Err(e) => {
-                let message = format!("Error esperando el proceso: {}", e);
+                let message = format!("Error while waiting for process: {}", e);
                 tracing::error!("{} {} -> {}", command, args.join(" "), message);
                 return Err(message);
             }
