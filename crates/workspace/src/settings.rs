@@ -18,12 +18,77 @@ impl AIProvider {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    GruvboxLight,
+    SolarizedLight,
+    EverforestLight,
+    RosePineDawn,
+    GitHubLight,
+    GruvboxDark,
+    SolarizedDark,
+    #[default]
+    EverforestDark,
+    DraculaDark,
+    MonokaiDark,
+}
+
+impl ThemeMode {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            ThemeMode::GruvboxLight => "Gruvbox Light",
+            ThemeMode::SolarizedLight => "Solarized Light",
+            ThemeMode::EverforestLight => "Everforest Light",
+            ThemeMode::RosePineDawn => "Rose Pine Dawn",
+            ThemeMode::GitHubLight => "GitHub Light",
+            ThemeMode::GruvboxDark => "Gruvbox Dark",
+            ThemeMode::SolarizedDark => "Solarized Dark",
+            ThemeMode::EverforestDark => "Everforest Dark",
+            ThemeMode::DraculaDark => "Dracula Dark",
+            ThemeMode::MonokaiDark => "Monokai Dark",
+        }
+    }
+
+    pub fn is_dark(self) -> bool {
+        matches!(
+            self,
+            ThemeMode::GruvboxDark
+                | ThemeMode::SolarizedDark
+                | ThemeMode::EverforestDark
+                | ThemeMode::DraculaDark
+                | ThemeMode::MonokaiDark
+        )
+    }
+
+    pub fn light_presets() -> [ThemeMode; 5] {
+        [
+            ThemeMode::GruvboxLight,
+            ThemeMode::SolarizedLight,
+            ThemeMode::EverforestLight,
+            ThemeMode::RosePineDawn,
+            ThemeMode::GitHubLight,
+        ]
+    }
+
+    pub fn dark_presets() -> [ThemeMode; 5] {
+        [
+            ThemeMode::GruvboxDark,
+            ThemeMode::SolarizedDark,
+            ThemeMode::EverforestDark,
+            ThemeMode::DraculaDark,
+            ThemeMode::MonokaiDark,
+        ]
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UserSettings {
     pub context: Option<String>,
     pub namespace: Option<String>,
     pub ai_provider: Option<AIProvider>,
     pub opencode_model: Option<String>,
+    pub theme_mode: Option<ThemeMode>,
 }
 
 pub fn settings_path() -> Option<PathBuf> {
@@ -83,6 +148,7 @@ mod tests {
             namespace: Some("default".to_string()),
             ai_provider: Some(AIProvider::ClaudeCode),
             opencode_model: Some("gpt-5".to_string()),
+            theme_mode: Some(ThemeMode::GruvboxDark),
         };
 
         let json = serde_json::to_string(&settings).expect("serialize settings");
@@ -92,6 +158,7 @@ mod tests {
         assert_eq!(decoded.namespace.as_deref(), Some("default"));
         assert_eq!(decoded.ai_provider, Some(AIProvider::ClaudeCode));
         assert_eq!(decoded.opencode_model.as_deref(), Some("gpt-5"));
+        assert_eq!(decoded.theme_mode, Some(ThemeMode::GruvboxDark));
     }
 
     #[test]

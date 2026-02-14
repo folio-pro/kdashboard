@@ -2,8 +2,10 @@ mod ai_chat_panel;
 mod command_bar;
 
 use self::ai_chat_panel::{load_opencode_models, run_ai_connection_test};
-use crate::app_state::{ActivePanel, ActiveView, AppState, app_state, update_app_state};
-use crate::settings::AIProvider;
+use crate::app_state::{
+    ActivePanel, ActiveView, AppState, SettingsTab, app_state, update_app_state,
+};
+use crate::settings::{AIProvider, ThemeMode};
 use crate::{Header, Sidebar, TitleBar};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
@@ -18,7 +20,7 @@ use terminal::PodTerminalView;
 use ui::gpui_component::input::InputState;
 use ui::{
     Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenu, PopupMenuItem,
-    Sizable, Size, Spinner, primary_icon_btn, secondary_btn, theme,
+    Sizable, Size, Spinner, ThemeMode as UiThemeMode, primary_icon_btn, secondary_btn, theme,
 };
 
 actions!(
@@ -1779,6 +1781,8 @@ impl AppView {
         let theme = theme(cx);
         let colors = &theme.colors;
         let state = app_state(cx);
+        let settings_tab = state.settings_tab;
+        let theme_mode = state.theme_mode;
         let provider = state.ai_provider;
         let is_testing = state.ai_connection_testing;
         let opencode_models = state.opencode_models.clone();
@@ -1823,6 +1827,62 @@ impl AppView {
             "Test connection"
         };
 
+        let theme_card = |id: &'static str,
+                          label: &'static str,
+                          description: &'static str,
+                          mode: ThemeMode,
+                          ui_mode: UiThemeMode| {
+            let is_selected = theme_mode == mode;
+            div()
+                .id(id)
+                .w(px(184.0))
+                .min_h(px(106.0))
+                .p(px(12.0))
+                .rounded(theme.border_radius_md)
+                .border_1()
+                .cursor_pointer()
+                .bg(if is_selected {
+                    colors.primary.opacity(0.12)
+                } else {
+                    colors.surface_elevated
+                })
+                .border_color(if is_selected { colors.primary } else { colors.border })
+                .hover(|style| style.opacity(0.92))
+                .on_click(cx.listener(move |_this, _event, _window, cx| {
+                    cx.update_global::<AppState, _>(|state, _| {
+                        state.set_theme_mode(mode);
+                    });
+                    ui::set_theme_mode(ui_mode, cx);
+                    cx.notify();
+                }))
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(colors.text)
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .mt(px(6.0))
+                        .text_size(px(12.0))
+                        .text_color(colors.text_muted)
+                        .child(description),
+                )
+                .child(
+                    div()
+                        .mt(px(8.0))
+                        .text_size(px(11.0))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(if is_selected {
+                            colors.primary
+                        } else {
+                            colors.text_muted.opacity(0.0)
+                        })
+                        .child("Selected"),
+                )
+        };
+
         div()
             .size_full()
             .overflow_hidden()
@@ -1865,7 +1925,7 @@ impl AppView {
                                             .font_family(theme.font_family_ui.clone())
                                             .text_size(px(14.0))
                                             .text_color(colors.text_muted)
-                                            .child("Configure your AI provider, model, and quick validation flow for the assistant panel.")
+                                            .child("Separate app configuration by tabs: appearance and AI assistant.")
                                     )
                             )
                             .child(
@@ -1876,7 +1936,59 @@ impl AppView {
                                         });
                                         cx.notify();
                                     }))
-                            )
+                            ),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .max_w(px(960.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(10.0))
+                            .child({
+                                let selected = settings_tab == SettingsTab::Appearance;
+                                div()
+                                    .id("settings-tab-appearance")
+                                    .px(px(12.0))
+                                    .py(px(8.0))
+                                    .rounded(theme.border_radius_md)
+                                    .border_1()
+                                    .cursor_pointer()
+                                    .bg(if selected { colors.primary.opacity(0.14) } else { colors.surface })
+                                    .border_color(if selected { colors.primary } else { colors.border })
+                                    .text_size(px(12.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(if selected { colors.primary } else { colors.text_secondary })
+                                    .child("Appearance")
+                                    .on_click(cx.listener(|_this, _event, _window, cx| {
+                                        cx.update_global::<AppState, _>(|state, _| {
+                                            state.set_settings_tab(SettingsTab::Appearance);
+                                        });
+                                        cx.notify();
+                                    }))
+                            })
+                            .child({
+                                let selected = settings_tab == SettingsTab::AI;
+                                div()
+                                    .id("settings-tab-ai")
+                                    .px(px(12.0))
+                                    .py(px(8.0))
+                                    .rounded(theme.border_radius_md)
+                                    .border_1()
+                                    .cursor_pointer()
+                                    .bg(if selected { colors.primary.opacity(0.14) } else { colors.surface })
+                                    .border_color(if selected { colors.primary } else { colors.border })
+                                    .text_size(px(12.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(if selected { colors.primary } else { colors.text_secondary })
+                                    .child("AI Assistant")
+                                    .on_click(cx.listener(|_this, _event, _window, cx| {
+                                        cx.update_global::<AppState, _>(|state, _| {
+                                            state.set_settings_tab(SettingsTab::AI);
+                                        });
+                                        cx.notify();
+                                    }))
+                            }),
                     )
                     .child(
                         div()
@@ -1889,408 +2001,344 @@ impl AppView {
                             .flex_col()
                             .gap(px(12.0))
                             .pr(px(4.0))
-                            .child(
-                                div()
-                                    .w_full()
-                                    .p(px(14.0))
-                                    .rounded(theme.border_radius_lg)
-                                    .bg(colors.surface_elevated)
-                                    .border_1()
-                                    .border_color(colors.border)
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap(px(12.0))
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .gap(px(4.0))
-                                            .child(
-                                                div()
-                                                    .text_size(px(13.0))
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .text_color(colors.text)
-                                                    .child("AI status")
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(12.0))
-                                                    .text_color(colors.text_muted)
-                                                    .child("Run a quick check after changing provider or model.")
-                                            )
-                                    )
-                                    .child(
-                                        div()
-                                            .px(px(10.0))
-                                            .py(px(6.0))
-                                            .rounded(theme.border_radius_md)
-                                            .bg(colors.surface)
-                                            .border_1()
-                                            .border_color(colors.border)
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(6.0))
-                                            .child(Icon::new(status_icon).size(px(13.0)).color(status_color))
-                                            .text_size(px(12.0))
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(status_color)
-                                            .child(status_text)
-                                    )
-                            )
-                            .child(
-                                div()
-                                    .w_full()
-                                    .p(px(16.0))
-                                    .rounded(theme.border_radius_lg)
-                                    .bg(colors.surface)
-                                    .border_1()
-                                    .border_color(colors.border)
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(14.0))
-                                    .child(
-                                        div()
-                                            .text_size(px(16.0))
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(colors.text)
-                                            .child("AI Connection")
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(12.0))
-                                            .text_color(colors.text_muted)
-                                            .child("Choose which provider is used by connection tests and by the AI panel.")
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .gap(px(8.0))
-                                            .child(
-                                                div()
-                                                    .text_size(px(12.0))
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .text_color(colors.text_muted)
-                                                    .child("Provider")
-                                            )
-                                            .child(
-                                                div()
-                                                    .w_full()
-                                                    .flex()
-                                                    .flex_wrap()
-                                                    .gap(px(10.0))
-                                                    .child({
-                                                        let is_selected = provider == AIProvider::OpenCode;
-                                                        let mut card = div()
-                                                            .id("settings-provider-opencode")
-                                                            .flex_1()
-                                                            .min_w(px(260.0))
-                                                            .p(px(12.0))
-                                                            .rounded(theme.border_radius_md)
-                                                            .border_1()
-                                                            .cursor_pointer()
-                                                            .bg(if is_selected {
-                                                                colors.primary.opacity(0.12)
-                                                            } else {
-                                                                colors.surface
-                                                            })
-                                                            .border_color(if is_selected {
-                                                                colors.primary
-                                                            } else {
-                                                                colors.border
-                                                            })
-                                                            .hover(|style| style.opacity(0.9))
-                                                            .on_click(cx.listener(|_this, _event, _window, cx| {
-                                                                cx.update_global::<AppState, _>(|state, _| {
-                                                                    state.set_ai_provider(AIProvider::OpenCode);
-                                                                });
-                                                                load_opencode_models(cx);
-                                                            }))
-                                                            .child(
-                                                                div()
-                                                                    .flex()
-                                                                    .items_center()
-                                                                    .gap(px(8.0))
-                                                                    .child(Icon::new(IconName::Cloud).size(px(14.0)).color(
-                                                                        if is_selected {
-                                                                            colors.primary
-                                                                        } else {
-                                                                            colors.text_secondary
-                                                                        },
-                                                                    ))
-                                                                    .child(
-                                                                        div()
-                                                                            .text_size(px(13.0))
-                                                                            .font_weight(FontWeight::SEMIBOLD)
-                                                                            .text_color(colors.text)
-                                                                            .child("OpenCode")
-                                                                    )
-                                                            )
-                                                            .child(
-                                                                div()
-                                                                    .mt(px(6.0))
-                                                                    .text_size(px(12.0))
-                                                                    .text_color(colors.text_muted)
-                                                                    .child("Model selection with explicit refresh and diagnostics.")
-                                                            );
-                                                        if is_selected {
-                                                            card = card.child(
-                                                                div()
-                                                                    .mt(px(8.0))
-                                                                    .text_size(px(11.0))
-                                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                                    .text_color(colors.primary)
-                                                                    .child("Selected")
-                                                            );
-                                                        }
-                                                        card
-                                                    })
-                                                    .child({
-                                                        let is_selected = provider == AIProvider::ClaudeCode;
-                                                        let mut card = div()
-                                                            .id("settings-provider-claudecode")
-                                                            .flex_1()
-                                                            .min_w(px(260.0))
-                                                            .p(px(12.0))
-                                                            .rounded(theme.border_radius_md)
-                                                            .border_1()
-                                                            .cursor_pointer()
-                                                            .bg(if is_selected {
-                                                                colors.primary.opacity(0.12)
-                                                            } else {
-                                                                colors.surface
-                                                            })
-                                                            .border_color(if is_selected {
-                                                                colors.primary
-                                                            } else {
-                                                                colors.border
-                                                            })
-                                                            .hover(|style| style.opacity(0.9))
-                                                            .on_click(cx.listener(|_this, _event, _window, cx| {
-                                                                cx.update_global::<AppState, _>(|state, _| {
-                                                                    state.set_ai_provider(AIProvider::ClaudeCode);
-                                                                });
-                                                            }))
-                                                            .child(
-                                                                div()
-                                                                    .flex()
-                                                                    .items_center()
-                                                                    .gap(px(8.0))
-                                                                    .child(Icon::new(IconName::AI).size(px(14.0)).color(
-                                                                        if is_selected {
-                                                                            colors.primary
-                                                                        } else {
-                                                                            colors.text_secondary
-                                                                        },
-                                                                    ))
-                                                                    .child(
-                                                                        div()
-                                                                            .text_size(px(13.0))
-                                                                            .font_weight(FontWeight::SEMIBOLD)
-                                                                            .text_color(colors.text)
-                                                                            .child("ClaudeCode")
-                                                                    )
-                                                            )
-                                                            .child(
-                                                                div()
-                                                                    .mt(px(6.0))
-                                                                    .text_size(px(12.0))
-                                                                    .text_color(colors.text_muted)
-                                                                    .child("Uses local CLI auth and default model from environment.")
-                                                            );
-                                                        if is_selected {
-                                                            card = card.child(
-                                                                div()
-                                                                    .mt(px(8.0))
-                                                                    .text_size(px(11.0))
-                                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                                    .text_color(colors.primary)
-                                                                    .child("Selected")
-                                                            );
-                                                        }
-                                                        card
-                                                    })
-                                            )
-                                    )
-                                    .when(provider == AIProvider::OpenCode, |el| {
-                                        let model_label = selected_model
-                                            .clone()
-                                            .unwrap_or_else(|| "Select model".to_string());
-                                        let models_for_menu = opencode_models.clone();
-                                        let selected_for_menu = selected_model.clone();
-
-                                        let model_button = Button::new("settings-opencode-model")
-                                            .icon(IconName::Layers)
-                                            .label(model_label)
-                                            .compact()
-                                            .with_variant(ButtonVariant::Ghost)
-                                            .dropdown_caret(true)
-                                            .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
-                                                let mut m = menu.scrollable(true);
-                                                for model in &models_for_menu {
-                                                    let model_value = model.clone();
-                                                    let is_selected = selected_for_menu.as_ref() == Some(model);
-                                                    m = m.item(
-                                                        PopupMenuItem::new(model.clone())
-                                                            .checked(is_selected)
-                                                            .on_click(move |_, _window, cx| {
-                                                                cx.update_global::<AppState, _>(|state, _| {
-                                                                    state.set_opencode_selected_model(Some(model_value.clone()));
-                                                                });
-                                                            }),
-                                                    );
-                                                }
-                                                m
-                                            });
-
-                                        el.child(
+                            .when(settings_tab == SettingsTab::Appearance, |el| {
+                                el.child(
+                                    div()
+                                        .w_full()
+                                        .p(px(16.0))
+                                        .rounded(theme.border_radius_lg)
+                                        .bg(colors.surface)
+                                        .border_1()
+                                        .border_color(colors.border)
+                                        .flex()
+                                        .flex_col()
+                                        .gap(px(14.0))
+                                        .child(
+                                            div()
+                                                .text_size(px(16.0))
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .text_color(colors.text)
+                                                .child("Theme")
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .text_color(colors.text_muted)
+                                                .child("Choose how KDashboard looks. This preference is saved.")
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .text_color(colors.text_muted)
+                                                .child("Light themes")
+                                        )
+                                        .child(
+                                            div()
+                                                .w_full()
+                                                .flex()
+                                                .flex_wrap()
+                                                .gap(px(10.0))
+                                                .child(theme_card("settings-theme-gruvbox-light", "Gruvbox Light", "Warm retro with high readability.", ThemeMode::GruvboxLight, UiThemeMode::GruvboxLight))
+                                                .child(theme_card("settings-theme-solarized-light", "Solarized Light", "Low-contrast daytime coding palette.", ThemeMode::SolarizedLight, UiThemeMode::SolarizedLight))
+                                                .child(theme_card("settings-theme-everforest-light", "Everforest Light", "Natural green-tinted paper style.", ThemeMode::EverforestLight, UiThemeMode::EverforestLight))
+                                                .child(theme_card("settings-theme-rose-pine-dawn", "Rose Pine Dawn", "Rosy editorial palette with soft contrast.", ThemeMode::RosePineDawn, UiThemeMode::RosePineDawn))
+                                                .child(theme_card("settings-theme-github-light", "GitHub Light", "Neutral gray palette with clear contrast.", ThemeMode::GitHubLight, UiThemeMode::GitHubLight))
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .text_color(colors.text_muted)
+                                                .child("Dark themes")
+                                        )
+                                        .child(
+                                            div()
+                                                .w_full()
+                                                .flex()
+                                                .flex_wrap()
+                                                .gap(px(10.0))
+                                                .child(theme_card("settings-theme-gruvbox-dark", "Gruvbox Dark", "Warm dark with strong contrast.", ThemeMode::GruvboxDark, UiThemeMode::GruvboxDark))
+                                                .child(theme_card("settings-theme-solarized-dark", "Solarized Dark", "Classic dark with balanced saturation.", ThemeMode::SolarizedDark, UiThemeMode::SolarizedDark))
+                                                .child(theme_card("settings-theme-everforest-dark", "Everforest Dark", "Forest-inspired dark palette for long sessions.", ThemeMode::EverforestDark, UiThemeMode::EverforestDark))
+                                                .child(theme_card("settings-theme-dracula-dark", "Dracula Dark", "Vivid purple-pink contrast for focus.", ThemeMode::DraculaDark, UiThemeMode::DraculaDark))
+                                                .child(theme_card("settings-theme-monokai-dark", "Monokai Dark", "Classic high-contrast coding palette.", ThemeMode::MonokaiDark, UiThemeMode::MonokaiDark))
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .text_color(colors.text_muted)
+                                                .child(format!("Current theme: {}", theme_mode.display_name()))
+                                        ),
+                                )
+                            })
+                            .when(settings_tab == SettingsTab::AI, |el| {
+                                el.child(
+                                    div()
+                                        .w_full()
+                                        .p(px(14.0))
+                                        .rounded(theme.border_radius_lg)
+                                        .bg(colors.surface_elevated)
+                                        .border_1()
+                                        .border_color(colors.border)
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .gap(px(12.0))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .gap(px(4.0))
+                                                .child(div().text_size(px(13.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.text).child("AI status"))
+                                                .child(div().text_size(px(12.0)).text_color(colors.text_muted).child("Run a quick check after changing provider or model."))
+                                        )
+                                        .child(
+                                            div()
+                                                .px(px(10.0))
+                                                .py(px(6.0))
+                                                .rounded(theme.border_radius_md)
+                                                .bg(colors.surface)
+                                                .border_1()
+                                                .border_color(colors.border)
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(6.0))
+                                                .child(Icon::new(status_icon).size(px(13.0)).color(status_color))
+                                                .text_size(px(12.0))
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .text_color(status_color)
+                                                .child(status_text)
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .w_full()
+                                        .p(px(16.0))
+                                        .rounded(theme.border_radius_lg)
+                                        .bg(colors.surface)
+                                        .border_1()
+                                        .border_color(colors.border)
+                                        .flex()
+                                        .flex_col()
+                                        .gap(px(14.0))
+                                        .child(div().text_size(px(16.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.text).child("AI Connection"))
+                                        .child(div().text_size(px(12.0)).text_color(colors.text_muted).child("Choose which provider is used by connection tests and by the AI panel."))
+                                        .child(
                                             div()
                                                 .flex()
                                                 .flex_col()
                                                 .gap(px(8.0))
+                                                .child(div().text_size(px(12.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.text_muted).child("Provider"))
                                                 .child(
                                                     div()
-                                                        .text_size(px(12.0))
-                                                        .font_weight(FontWeight::SEMIBOLD)
-                                                        .text_color(colors.text_muted)
-                                                        .child("OpenCode model")
-                                                )
-                                                .child(
-                                                    div()
+                                                        .w_full()
                                                         .flex()
-                                                        .items_center()
-                                                        .gap(px(12.0))
-                                                        .child(model_button)
-                                                        .child(
-                                                            secondary_btn("settings-opencode-models-refresh", IconName::Refresh, "Refresh models", colors)
-                                                                .when(opencode_models_loading, |btn| btn.opacity(0.5))
-                                                                .on_click(cx.listener(move |_this, _event, _window, cx| {
-                                                                    if !opencode_models_loading {
-                                                                        load_opencode_models(cx);
-                                                                    }
+                                                        .flex_wrap()
+                                                        .gap(px(10.0))
+                                                        .child({
+                                                            let is_selected = provider == AIProvider::OpenCode;
+                                                            let mut card = div()
+                                                                .id("settings-provider-opencode")
+                                                                .flex_1()
+                                                                .min_w(px(260.0))
+                                                                .p(px(12.0))
+                                                                .rounded(theme.border_radius_md)
+                                                                .border_1()
+                                                                .cursor_pointer()
+                                                                .bg(if is_selected { colors.primary.opacity(0.12) } else { colors.surface })
+                                                                .border_color(if is_selected { colors.primary } else { colors.border })
+                                                                .hover(|style| style.opacity(0.9))
+                                                                .on_click(cx.listener(|_this, _event, _window, cx| {
+                                                                    cx.update_global::<AppState, _>(|state, _| {
+                                                                        state.set_ai_provider(AIProvider::OpenCode);
+                                                                    });
+                                                                    load_opencode_models(cx);
                                                                 }))
-                                                        )
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_size(px(12.0))
-                                                        .text_color(colors.text_muted)
-                                                        .child(if opencode_models_loading {
-                                                            "Loading OpenCode models...".to_string()
-                                                        } else if opencode_models.is_empty() {
-                                                            "Could not load models. Check auth/network and click refresh.".to_string()
-                                                        } else {
-                                                            format!("{} models available", opencode_models.len())
-                                                        })
-                                                )
-                                        )
-                                    })
-                                    .when(provider == AIProvider::ClaudeCode, |el| {
-                                        el.child(
-                                            div()
-                                                .text_size(px(12.0))
-                                                .text_color(colors.text_muted)
-                                                .child("ClaudeCode uses your local CLI authentication and default model unless configured externally.")
-                                        )
-                                    })
-                            )
-                            .child(
-                                div()
-                                    .w_full()
-                                    .p(px(16.0))
-                                    .rounded(theme.border_radius_lg)
-                                    .bg(colors.surface)
-                                    .border_1()
-                                    .border_color(colors.border)
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(12.0))
-                                    .child(
-                                        div()
-                                            .text_size(px(16.0))
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(colors.text)
-                                            .child("Actions")
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(12.0))
-                                            .text_color(colors.text_muted)
-                                            .child("Validate your configuration, then jump directly into the AI panel.")
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(12.0))
-                                            .child(
-                                                secondary_btn("settings-ai-test-btn", test_button_icon, test_button_label, colors)
-                                                    .when(is_testing, |el| el.opacity(0.5))
-                                                    .on_click(cx.listener(move |_this, _event, _window, cx| {
-                                                        if !is_testing {
-                                                            run_ai_connection_test(cx, provider, selected_model.clone());
-                                                        }
-                                                    }))
-                                            )
-                                            .child(
-                                                secondary_btn("settings-open-ai-panel-btn", IconName::AI, "Open AI panel", colors)
-                                                    .on_click(cx.listener(|_this, _event, _window, cx| {
-                                                        cx.update_global::<AppState, _>(|state, _| {
-                                                            if state.active_panel != ActivePanel::AI {
-                                                                state.active_panel = ActivePanel::AI;
+                                                                .child(div().text_size(px(13.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.text).child("OpenCode"))
+                                                                .child(div().mt(px(6.0)).text_size(px(12.0)).text_color(colors.text_muted).child("Model selection with explicit refresh and diagnostics."));
+                                                            if is_selected {
+                                                                card = card.child(div().mt(px(8.0)).text_size(px(11.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.primary).child("Selected"));
                                                             }
-                                                            state.close_settings();
-                                                        });
-                                                        cx.notify();
-                                                    }))
+                                                            card
+                                                        })
+                                                        .child({
+                                                            let is_selected = provider == AIProvider::ClaudeCode;
+                                                            let mut card = div()
+                                                                .id("settings-provider-claudecode")
+                                                                .flex_1()
+                                                                .min_w(px(260.0))
+                                                                .p(px(12.0))
+                                                                .rounded(theme.border_radius_md)
+                                                                .border_1()
+                                                                .cursor_pointer()
+                                                                .bg(if is_selected { colors.primary.opacity(0.12) } else { colors.surface })
+                                                                .border_color(if is_selected { colors.primary } else { colors.border })
+                                                                .hover(|style| style.opacity(0.9))
+                                                                .on_click(cx.listener(|_this, _event, _window, cx| {
+                                                                    cx.update_global::<AppState, _>(|state, _| {
+                                                                        state.set_ai_provider(AIProvider::ClaudeCode);
+                                                                    });
+                                                                }))
+                                                                .child(div().text_size(px(13.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.text).child("ClaudeCode"))
+                                                                .child(div().mt(px(6.0)).text_size(px(12.0)).text_color(colors.text_muted).child("Uses local CLI auth and default model from environment."));
+                                                            if is_selected {
+                                                                card = card.child(div().mt(px(8.0)).text_size(px(11.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.primary).child("Selected"));
+                                                            }
+                                                            card
+                                                        }),
+                                                ),
+                                        )
+                                        .when(provider == AIProvider::OpenCode, |el| {
+                                            let model_label = selected_model.clone().unwrap_or_else(|| "Select model".to_string());
+                                            let models_for_menu = opencode_models.clone();
+                                            let selected_for_menu = selected_model.clone();
+
+                                            let model_button = Button::new("settings-opencode-model")
+                                                .icon(IconName::Layers)
+                                                .label(model_label)
+                                                .compact()
+                                                .with_variant(ButtonVariant::Ghost)
+                                                .dropdown_caret(true)
+                                                .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
+                                                    let mut m = menu.scrollable(true);
+                                                    for model in &models_for_menu {
+                                                        let model_value = model.clone();
+                                                        let is_selected = selected_for_menu.as_ref() == Some(model);
+                                                        m = m.item(
+                                                            PopupMenuItem::new(model.clone())
+                                                                .checked(is_selected)
+                                                                .on_click(move |_, _window, cx| {
+                                                                    cx.update_global::<AppState, _>(|state, _| {
+                                                                        state.set_opencode_selected_model(Some(model_value.clone()));
+                                                                    });
+                                                                }),
+                                                        );
+                                                    }
+                                                    m
+                                                });
+
+                                            el.child(
+                                                div()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .gap(px(8.0))
+                                                    .child(div().text_size(px(12.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.text_muted).child("OpenCode model"))
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap(px(12.0))
+                                                            .child(model_button)
+                                                            .child(
+                                                                secondary_btn("settings-opencode-models-refresh", IconName::Refresh, "Refresh models", colors)
+                                                                    .when(opencode_models_loading, |btn| btn.opacity(0.5))
+                                                                    .on_click(cx.listener(move |_this, _event, _window, cx| {
+                                                                        if !opencode_models_loading {
+                                                                            load_opencode_models(cx);
+                                                                        }
+                                                                    })),
+                                                            ),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(12.0))
+                                                            .text_color(colors.text_muted)
+                                                            .child(if opencode_models_loading {
+                                                                "Loading OpenCode models...".to_string()
+                                                            } else if opencode_models.is_empty() {
+                                                                "Could not load models. Check auth/network and click refresh.".to_string()
+                                                            } else {
+                                                                format!("{} models available", opencode_models.len())
+                                                            }),
+                                                    ),
                                             )
-                                    )
-                            )
-                            .child(
-                                div()
-                                    .w_full()
-                                    .p(px(16.0))
-                                    .rounded(theme.border_radius_lg)
-                                    .bg(colors.surface)
-                                    .border_1()
-                                    .border_color(colors.border)
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(10.0))
-                                    .child(
-                                        div()
-                                            .text_size(px(16.0))
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(colors.text)
-                                            .child("Diagnostics")
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(12.0))
-                                            .text_color(colors.text_muted)
-                                            .child("Latest output from the provider check.")
-                                    )
-                                    .child(
-                                        div()
-                                            .p(px(12.0))
-                                            .rounded(theme.border_radius_md)
-                                            .bg(colors.surface_elevated)
-                                            .border_1()
-                                            .border_color(colors.border)
-                                            .child(
+                                        })
+                                        .when(provider == AIProvider::ClaudeCode, |el| {
+                                            el.child(
                                                 div()
                                                     .text_size(px(12.0))
-                                                    .text_color(colors.text)
-                                                    .child(
-                                                        format!("\"{}\"", state.ai_connection_message
-                                                            .clone()
-                                                            .unwrap_or_else(|| "No output yet. Use \"Test connection\" to verify communication.".to_string()))
-                                                    )
+                                                    .text_color(colors.text_muted)
+                                                    .child("ClaudeCode uses your local CLI authentication and default model unless configured externally."),
                                             )
-                                    )
-                            )
-                    )
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .w_full()
+                                        .p(px(16.0))
+                                        .rounded(theme.border_radius_lg)
+                                        .bg(colors.surface)
+                                        .border_1()
+                                        .border_color(colors.border)
+                                        .flex()
+                                        .flex_col()
+                                        .gap(px(12.0))
+                                        .child(div().text_size(px(16.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.text).child("Actions"))
+                                        .child(div().text_size(px(12.0)).text_color(colors.text_muted).child("Validate your configuration, then jump directly into the AI panel."))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(12.0))
+                                                .child(
+                                                    secondary_btn("settings-ai-test-btn", test_button_icon, test_button_label, colors)
+                                                        .when(is_testing, |el| el.opacity(0.5))
+                                                        .on_click(cx.listener(move |_this, _event, _window, cx| {
+                                                            if !is_testing {
+                                                                run_ai_connection_test(cx, provider, selected_model.clone());
+                                                            }
+                                                        })),
+                                                )
+                                                .child(
+                                                    secondary_btn("settings-open-ai-panel-btn", IconName::AI, "Open AI panel", colors)
+                                                        .on_click(cx.listener(|_this, _event, _window, cx| {
+                                                            cx.update_global::<AppState, _>(|state, _| {
+                                                                if state.active_panel != ActivePanel::AI {
+                                                                    state.active_panel = ActivePanel::AI;
+                                                                }
+                                                                state.close_settings();
+                                                            });
+                                                            cx.notify();
+                                                        })),
+                                                ),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .w_full()
+                                        .p(px(16.0))
+                                        .rounded(theme.border_radius_lg)
+                                        .bg(colors.surface)
+                                        .border_1()
+                                        .border_color(colors.border)
+                                        .flex()
+                                        .flex_col()
+                                        .gap(px(10.0))
+                                        .child(div().text_size(px(16.0)).font_weight(FontWeight::SEMIBOLD).text_color(colors.text).child("Diagnostics"))
+                                        .child(div().text_size(px(12.0)).text_color(colors.text_muted).child("Latest output from the provider check."))
+                                        .child(
+                                            div()
+                                                .p(px(12.0))
+                                                .rounded(theme.border_radius_md)
+                                                .bg(colors.surface_elevated)
+                                                .border_1()
+                                                .border_color(colors.border)
+                                                .child(
+                                                    div()
+                                                        .text_size(px(12.0))
+                                                        .text_color(colors.text)
+                                                        .child(format!(
+                                                            "\"{}\"",
+                                                            state.ai_connection_message.clone().unwrap_or_else(|| {
+                                                                "No output yet. Use \"Test connection\" to verify communication.".to_string()
+                                                            })
+                                                        )),
+                                                ),
+                                        ),
+                                )
+                            }),
+                    ),
             )
     }
 }

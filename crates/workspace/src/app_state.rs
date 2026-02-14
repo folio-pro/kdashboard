@@ -1,15 +1,38 @@
-use crate::settings::AIProvider;
+use crate::settings::{AIProvider, ThemeMode};
 use gpui::*;
 use k8s_client::{
     ConnectionStatus, PortForwardInfo, Resource, ResourceList, ResourceType, SortDirection,
 };
 use std::collections::HashMap;
+use ui::ThemeMode as UiThemeMode;
+
+fn to_ui_theme_mode(mode: ThemeMode) -> UiThemeMode {
+    match mode {
+        ThemeMode::GruvboxLight => UiThemeMode::GruvboxLight,
+        ThemeMode::SolarizedLight => UiThemeMode::SolarizedLight,
+        ThemeMode::EverforestLight => UiThemeMode::EverforestLight,
+        ThemeMode::RosePineDawn => UiThemeMode::RosePineDawn,
+        ThemeMode::GitHubLight => UiThemeMode::GitHubLight,
+        ThemeMode::GruvboxDark => UiThemeMode::GruvboxDark,
+        ThemeMode::SolarizedDark => UiThemeMode::SolarizedDark,
+        ThemeMode::EverforestDark => UiThemeMode::EverforestDark,
+        ThemeMode::DraculaDark => UiThemeMode::DraculaDark,
+        ThemeMode::MonokaiDark => UiThemeMode::MonokaiDark,
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActivePanel {
     None,
     Logs,
     Terminal,
+    AI,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SettingsTab {
+    #[default]
+    Appearance,
     AI,
 }
 
@@ -84,7 +107,9 @@ pub struct AppState {
     // Panel state
     pub active_panel: ActivePanel,
     pub settings_open: bool,
+    pub settings_tab: SettingsTab,
     pub sidebar_collapsed: bool,
+    pub theme_mode: ThemeMode,
 
     // Sort state
     pub sort_column: Option<String>,
@@ -129,7 +154,9 @@ impl AppState {
             pod_context: None,
             active_panel: ActivePanel::None,
             settings_open: false,
+            settings_tab: SettingsTab::Appearance,
             sidebar_collapsed: false,
+            theme_mode: ThemeMode::EverforestDark,
             sort_column: None,
             sort_direction: SortDirection::Ascending,
             port_forwards: Vec::new(),
@@ -155,6 +182,7 @@ impl AppState {
             namespace: self.namespace.clone(),
             ai_provider: Some(self.ai_provider),
             opencode_model: self.opencode_selected_model.clone(),
+            theme_mode: Some(self.theme_mode),
         });
     }
 
@@ -275,6 +303,15 @@ impl AppState {
     pub fn set_ai_provider(&mut self, provider: AIProvider) {
         self.ai_provider = provider;
         self.persist_settings();
+    }
+
+    pub fn set_theme_mode(&mut self, mode: ThemeMode) {
+        self.theme_mode = mode;
+        self.persist_settings();
+    }
+
+    pub fn set_settings_tab(&mut self, tab: SettingsTab) {
+        self.settings_tab = tab;
     }
 
     pub fn set_opencode_models_loading(&mut self, loading: bool) {
@@ -448,6 +485,8 @@ pub fn init(cx: &mut App) {
     state.namespace = saved.namespace;
     state.ai_provider = saved.ai_provider.unwrap_or(AIProvider::OpenCode);
     state.opencode_selected_model = saved.opencode_model;
+    state.theme_mode = saved.theme_mode.unwrap_or(ThemeMode::EverforestDark);
+    ui::set_theme_mode(to_ui_theme_mode(state.theme_mode), cx);
     cx.set_global(state);
 }
 
