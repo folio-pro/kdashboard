@@ -1,11 +1,11 @@
 [package]
-name = "kubernetes-dashboard"
+name = "kdashboard"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "kubernetes-dashboard"
+name = "kdashboard"
 path = "src/main.rs"
 
 [dependencies]

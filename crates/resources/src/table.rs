@@ -14,7 +14,7 @@ use ui::{
 };
 
 /// Status type for resources
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StatusType {
     Ready,
     Pending,

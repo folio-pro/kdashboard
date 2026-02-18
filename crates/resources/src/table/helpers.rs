@@ -501,3 +501,745 @@ fn status_order(status: StatusType) -> u8 {
         StatusType::Ready => 3,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    fn make_resource(kind: &str) -> Resource {
+        Resource {
+            api_version: "v1".to_string(),
+            kind: kind.to_string(),
+            metadata: k8s_client::ResourceMetadata {
+                name: "test".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "uid-123".to_string(),
+                resource_version: "1".to_string(),
+                labels: None,
+                annotations: None,
+                creation_timestamp: None,
+                owner_references: None,
+            },
+            spec: None,
+            status: None,
+            data: None,
+            type_: None,
+        }
+    }
+
+    // ── get_json_value ──────────────────────────────────────────────
+
+    #[test]
+    fn get_json_value_returns_nested_value() {
+        let val = Some(json!({"a": {"b": {"c": 42}}}));
+        let result = get_json_value(&val, &["a", "b", "c"]);
+        assert_eq!(result, Some(&json!(42)));
+    }
+
+    #[test]
+    fn get_json_value_returns_none_for_missing_path() {
+        let val = Some(json!({"a": 1}));
+        assert!(get_json_value(&val, &["x", "y"]).is_none());
+    }
+
+    #[test]
+    fn get_json_value_returns_none_for_none_input() {
+        assert!(get_json_value(&None, &["a"]).is_none());
+    }
+
+    #[test]
+    fn get_json_value_returns_root_for_empty_path() {
+        let val = Some(json!({"a": 1}));
+        assert_eq!(get_json_value(&val, &[]), Some(&json!({"a": 1})));
+    }
+
+    // ── format_age ──────────────────────────────────────────────────
+
+    #[test]
+    fn format_age_returns_dash_for_none() {
+        assert_eq!(format_age(&None), "-");
+    }
+
+    #[test]
+    fn format_age_returns_dash_for_invalid_timestamp() {
+        assert_eq!(format_age(&Some("not-a-date".to_string())), "-");
+    }
+
+    #[test]
+    fn format_age_shows_days() {
+        let ts = (chrono::Utc::now() - chrono::Duration::days(3)).to_rfc3339();
+        assert_eq!(format_age(&Some(ts)), "3d");
+    }
+
+    #[test]
+    fn format_age_shows_hours() {
+        let ts = (chrono::Utc::now() - chrono::Duration::hours(5)).to_rfc3339();
+        assert_eq!(format_age(&Some(ts)), "5h");
+    }
+
+    #[test]
+    fn format_age_shows_minutes() {
+        let ts = (chrono::Utc::now() - chrono::Duration::minutes(15)).to_rfc3339();
+        assert_eq!(format_age(&Some(ts)), "15m");
+    }
+
+    #[test]
+    fn format_age_shows_seconds_for_recent() {
+        let ts = (chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339();
+        assert_eq!(format_age(&Some(ts)), "30s");
+    }
+
+    #[test]
+    fn format_age_zero_seconds_for_now() {
+        let ts = chrono::Utc::now().to_rfc3339();
+        assert_eq!(format_age(&Some(ts)), "0s");
+    }
+
+    // ── format_resource_value ───────────────────────────────────────
+
+    #[test]
+    fn format_resource_value_ki_small() {
+        assert_eq!(format_resource_value("512Ki"), "512Ki");
+    }
+
+    #[test]
+    fn format_resource_value_ki_to_mi() {
+        assert_eq!(format_resource_value("2048Ki"), "2Mi");
+    }
+
+    #[test]
+    fn format_resource_value_ki_to_gi() {
+        let ki = (1024 * 1024 * 2) as f64;
+        assert_eq!(format_resource_value(&format!("{}Ki", ki)), "2.0Gi");
+    }
+
+    #[test]
+    fn format_resource_value_mi_small() {
+        assert_eq!(format_resource_value("256Mi"), "256Mi");
+    }
+
+    #[test]
+    fn format_resource_value_mi_to_gi() {
+        assert_eq!(format_resource_value("2048Mi"), "2.0Gi");
+    }
+
+    #[test]
+    fn format_resource_value_gi_passthrough() {
+        assert_eq!(format_resource_value("4Gi"), "4Gi");
+    }
+
+    #[test]
+    fn format_resource_value_millicores_small() {
+        assert_eq!(format_resource_value("250m"), "250m");
+    }
+
+    #[test]
+    fn format_resource_value_millicores_to_cores() {
+        assert_eq!(format_resource_value("2000m"), "2.0");
+    }
+
+    #[test]
+    fn format_resource_value_cores_fractional() {
+        assert_eq!(format_resource_value("0.5"), "500m");
+    }
+
+    #[test]
+    fn format_resource_value_cores_whole() {
+        assert_eq!(format_resource_value("2"), "2.0");
+    }
+
+    #[test]
+    fn format_resource_value_unknown_passthrough() {
+        assert_eq!(format_resource_value("unknown"), "unknown");
+    }
+
+    // ── get_pod_ready_count ─────────────────────────────────────────
+
+    #[test]
+    fn get_pod_ready_count_with_all_ready() {
+        let mut r = make_resource("Pod");
+        r.spec = Some(json!({"containers": [{"name": "a"}, {"name": "b"}]}));
+        r.status = Some(json!({
+            "containerStatuses": [
+                {"name": "a", "ready": true, "restartCount": 0},
+                {"name": "b", "ready": true, "restartCount": 0}
+            ]
+        }));
+        assert_eq!(get_pod_ready_count(&r), (2, 2));
+    }
+
+    #[test]
+    fn get_pod_ready_count_with_partial_ready() {
+        let mut r = make_resource("Pod");
+        r.spec = Some(json!({"containers": [{"name": "a"}, {"name": "b"}]}));
+        r.status = Some(json!({
+            "containerStatuses": [
+                {"name": "a", "ready": true, "restartCount": 0},
+                {"name": "b", "ready": false, "restartCount": 0}
+            ]
+        }));
+        assert_eq!(get_pod_ready_count(&r), (1, 2));
+    }
+
+    #[test]
+    fn get_pod_ready_count_with_no_status() {
+        let mut r = make_resource("Pod");
+        r.spec = Some(json!({"containers": [{"name": "a"}]}));
+        assert_eq!(get_pod_ready_count(&r), (0, 1));
+    }
+
+    // ── get_pod_restarts ────────────────────────────────────────────
+
+    #[test]
+    fn get_pod_restarts_sums_all_containers() {
+        let mut r = make_resource("Pod");
+        r.status = Some(json!({
+            "containerStatuses": [
+                {"restartCount": 3},
+                {"restartCount": 5}
+            ]
+        }));
+        assert_eq!(get_pod_restarts(&r), 8);
+    }
+
+    #[test]
+    fn get_pod_restarts_zero_when_no_status() {
+        let r = make_resource("Pod");
+        assert_eq!(get_pod_restarts(&r), 0);
+    }
+
+    // ── get_deployment_ready_count ──────────────────────────────────
+
+    #[test]
+    fn get_deployment_ready_count_all_ready() {
+        let mut r = make_resource("Deployment");
+        r.spec = Some(json!({"replicas": 3}));
+        r.status = Some(json!({"readyReplicas": 3}));
+        assert_eq!(get_deployment_ready_count(&r), (3, 3));
+    }
+
+    #[test]
+    fn get_deployment_ready_count_partial() {
+        let mut r = make_resource("Deployment");
+        r.spec = Some(json!({"replicas": 3}));
+        r.status = Some(json!({"readyReplicas": 1}));
+        assert_eq!(get_deployment_ready_count(&r), (1, 3));
+    }
+
+    #[test]
+    fn get_deployment_ready_count_no_status() {
+        let mut r = make_resource("Deployment");
+        r.spec = Some(json!({"replicas": 2}));
+        assert_eq!(get_deployment_ready_count(&r), (0, 2));
+    }
+
+    // ── get_service_ports ───────────────────────────────────────────
+
+    #[test]
+    fn get_service_ports_formats_ports() {
+        let mut r = make_resource("Service");
+        r.spec = Some(json!({
+            "ports": [
+                {"port": 80, "protocol": "TCP"},
+                {"port": 443, "protocol": "TCP"}
+            ]
+        }));
+        assert_eq!(get_service_ports(&r), "80/TCP, 443/TCP");
+    }
+
+    #[test]
+    fn get_service_ports_defaults_protocol_to_tcp() {
+        let mut r = make_resource("Service");
+        r.spec = Some(json!({
+            "ports": [{"port": 8080}]
+        }));
+        assert_eq!(get_service_ports(&r), "8080/TCP");
+    }
+
+    #[test]
+    fn get_service_ports_returns_dash_when_no_ports() {
+        let r = make_resource("Service");
+        assert_eq!(get_service_ports(&r), "-");
+    }
+
+    // ── get_node_roles ──────────────────────────────────────────────
+
+    #[test]
+    fn get_node_roles_control_plane() {
+        let mut r = make_resource("Node");
+        let mut labels = BTreeMap::new();
+        labels.insert("node-role.kubernetes.io/control-plane".to_string(), "".to_string());
+        r.metadata.labels = Some(labels);
+        assert_eq!(get_node_roles(&r), "control-plane");
+    }
+
+    #[test]
+    fn get_node_roles_multiple() {
+        let mut r = make_resource("Node");
+        let mut labels = BTreeMap::new();
+        labels.insert("node-role.kubernetes.io/control-plane".to_string(), "".to_string());
+        labels.insert("node-role.kubernetes.io/master".to_string(), "".to_string());
+        r.metadata.labels = Some(labels);
+        assert_eq!(get_node_roles(&r), "control-plane, master");
+    }
+
+    #[test]
+    fn get_node_roles_defaults_to_worker() {
+        let r = make_resource("Node");
+        assert_eq!(get_node_roles(&r), "worker");
+    }
+
+    // ── get_resource_status ─────────────────────────────────────────
+
+    #[test]
+    fn get_resource_status_pod_running() {
+        let mut r = make_resource("Pod");
+        r.status = Some(json!({"phase": "Running"}));
+        assert_eq!(get_resource_status(&r), StatusType::Ready);
+    }
+
+    #[test]
+    fn get_resource_status_pod_pending() {
+        let mut r = make_resource("Pod");
+        r.status = Some(json!({"phase": "Pending"}));
+        assert_eq!(get_resource_status(&r), StatusType::Pending);
+    }
+
+    #[test]
+    fn get_resource_status_pod_failed() {
+        let mut r = make_resource("Pod");
+        r.status = Some(json!({"phase": "Failed"}));
+        assert_eq!(get_resource_status(&r), StatusType::Failed);
+    }
+
+    #[test]
+    fn get_resource_status_pod_succeeded() {
+        let mut r = make_resource("Pod");
+        r.status = Some(json!({"phase": "Succeeded"}));
+        assert_eq!(get_resource_status(&r), StatusType::Ready);
+    }
+
+    #[test]
+    fn get_resource_status_pod_unknown_phase() {
+        let mut r = make_resource("Pod");
+        r.status = Some(json!({"phase": "SomethingElse"}));
+        assert_eq!(get_resource_status(&r), StatusType::Unknown);
+    }
+
+    #[test]
+    fn get_resource_status_deployment_ready() {
+        let mut r = make_resource("Deployment");
+        r.spec = Some(json!({"replicas": 3}));
+        r.status = Some(json!({"availableReplicas": 3}));
+        assert_eq!(get_resource_status(&r), StatusType::Ready);
+    }
+
+    #[test]
+    fn get_resource_status_deployment_pending() {
+        let mut r = make_resource("Deployment");
+        r.spec = Some(json!({"replicas": 3}));
+        r.status = Some(json!({"availableReplicas": 1}));
+        assert_eq!(get_resource_status(&r), StatusType::Pending);
+    }
+
+    #[test]
+    fn get_resource_status_deployment_zero_zero() {
+        let mut r = make_resource("Deployment");
+        r.spec = Some(json!({"replicas": 0}));
+        r.status = Some(json!({"availableReplicas": 0}));
+        assert_eq!(get_resource_status(&r), StatusType::Unknown);
+    }
+
+    #[test]
+    fn get_resource_status_service_always_ready() {
+        let r = make_resource("Service");
+        assert_eq!(get_resource_status(&r), StatusType::Ready);
+    }
+
+    #[test]
+    fn get_resource_status_configmap_always_ready() {
+        let r = make_resource("ConfigMap");
+        assert_eq!(get_resource_status(&r), StatusType::Ready);
+    }
+
+    #[test]
+    fn get_resource_status_secret_always_ready() {
+        let r = make_resource("Secret");
+        assert_eq!(get_resource_status(&r), StatusType::Ready);
+    }
+
+    #[test]
+    fn get_resource_status_unknown_kind() {
+        let r = make_resource("CustomResource");
+        assert_eq!(get_resource_status(&r), StatusType::Unknown);
+    }
+
+    // ── get_node_status ─────────────────────────────────────────────
+
+    #[test]
+    fn get_node_status_ready() {
+        let mut r = make_resource("Node");
+        r.status = Some(json!({
+            "conditions": [{"type": "Ready", "status": "True"}]
+        }));
+        assert_eq!(get_node_status(&r), StatusType::Ready);
+    }
+
+    #[test]
+    fn get_node_status_not_ready() {
+        let mut r = make_resource("Node");
+        r.status = Some(json!({
+            "conditions": [{"type": "Ready", "status": "False"}]
+        }));
+        assert_eq!(get_node_status(&r), StatusType::Failed);
+    }
+
+    #[test]
+    fn get_node_status_unknown() {
+        let mut r = make_resource("Node");
+        r.status = Some(json!({
+            "conditions": [{"type": "Ready", "status": "Unknown"}]
+        }));
+        assert_eq!(get_node_status(&r), StatusType::Unknown);
+    }
+
+    #[test]
+    fn get_node_status_no_conditions() {
+        let r = make_resource("Node");
+        assert_eq!(get_node_status(&r), StatusType::Unknown);
+    }
+
+    // ── get_resource_issue_status ───────────────────────────────────
+
+    #[test]
+    fn get_resource_issue_status_returns_none_for_ready() {
+        let mut r = make_resource("Pod");
+        r.status = Some(json!({"phase": "Running"}));
+        assert!(get_resource_issue_status(&r).is_none());
+    }
+
+    #[test]
+    fn get_resource_issue_status_returns_some_for_pending() {
+        let mut r = make_resource("Pod");
+        r.status = Some(json!({"phase": "Pending"}));
+        assert_eq!(get_resource_issue_status(&r), Some(StatusType::Pending));
+    }
+
+    #[test]
+    fn get_resource_issue_status_returns_some_for_failed() {
+        let mut r = make_resource("Pod");
+        r.status = Some(json!({"phase": "Failed"}));
+        assert_eq!(get_resource_issue_status(&r), Some(StatusType::Failed));
+    }
+
+    #[test]
+    fn get_resource_issue_status_namespace_terminating() {
+        let mut r = make_resource("Namespace");
+        r.status = Some(json!({"phase": "Terminating"}));
+        assert_eq!(get_resource_issue_status(&r), Some(StatusType::Pending));
+    }
+
+    #[test]
+    fn get_resource_issue_status_namespace_active_is_none() {
+        let mut r = make_resource("Namespace");
+        r.status = Some(json!({"phase": "Active"}));
+        assert!(get_resource_issue_status(&r).is_none());
+    }
+
+    // ── get_hpa_status ──────────────────────────────────────────────
+
+    #[test]
+    fn get_hpa_status_stable() {
+        let mut r = make_resource("HorizontalPodAutoscaler");
+        r.status = Some(json!({"currentReplicas": 3, "desiredReplicas": 3}));
+        let (status, label) = get_hpa_status(&r);
+        assert_eq!(status, StatusType::Ready);
+        assert_eq!(label, "Stable");
+    }
+
+    #[test]
+    fn get_hpa_status_scaling_up() {
+        let mut r = make_resource("HorizontalPodAutoscaler");
+        r.status = Some(json!({"currentReplicas": 1, "desiredReplicas": 3}));
+        let (status, label) = get_hpa_status(&r);
+        assert_eq!(status, StatusType::Pending);
+        assert_eq!(label, "Scaling Up");
+    }
+
+    #[test]
+    fn get_hpa_status_scaling_down() {
+        let mut r = make_resource("HorizontalPodAutoscaler");
+        r.status = Some(json!({"currentReplicas": 5, "desiredReplicas": 2}));
+        let (status, label) = get_hpa_status(&r);
+        assert_eq!(status, StatusType::Pending);
+        assert_eq!(label, "Scaling Down");
+    }
+
+    #[test]
+    fn get_hpa_status_idle() {
+        let mut r = make_resource("HorizontalPodAutoscaler");
+        r.status = Some(json!({"currentReplicas": 0, "desiredReplicas": 0}));
+        let (status, label) = get_hpa_status(&r);
+        assert_eq!(status, StatusType::Unknown);
+        assert_eq!(label, "Idle");
+    }
+
+    #[test]
+    fn get_hpa_status_scaling_limited() {
+        let mut r = make_resource("HorizontalPodAutoscaler");
+        r.status = Some(json!({
+            "currentReplicas": 3, "desiredReplicas": 3,
+            "conditions": [{"type": "ScalingLimited", "status": "True"}]
+        }));
+        let (status, label) = get_hpa_status(&r);
+        assert_eq!(status, StatusType::Pending);
+        assert_eq!(label, "Limited");
+    }
+
+    #[test]
+    fn get_hpa_status_unable_to_scale() {
+        let mut r = make_resource("HorizontalPodAutoscaler");
+        r.status = Some(json!({
+            "currentReplicas": 1, "desiredReplicas": 3,
+            "conditions": [{"type": "AbleToScale", "status": "False"}]
+        }));
+        let (status, label) = get_hpa_status(&r);
+        assert_eq!(status, StatusType::Failed);
+        assert_eq!(label, "Unable");
+    }
+
+    // ── get_vpa_status ──────────────────────────────────────────────
+
+    #[test]
+    fn get_vpa_status_ready_with_condition() {
+        let mut r = make_resource("VerticalPodAutoscaler");
+        r.status = Some(json!({
+            "conditions": [{"type": "RecommendationProvided", "status": "True"}]
+        }));
+        let (status, label) = get_vpa_status(&r);
+        assert_eq!(status, StatusType::Ready);
+        assert_eq!(label, "Ready");
+    }
+
+    #[test]
+    fn get_vpa_status_low_confidence() {
+        let mut r = make_resource("VerticalPodAutoscaler");
+        r.status = Some(json!({
+            "conditions": [{"type": "LowConfidence", "status": "True"}]
+        }));
+        let (status, label) = get_vpa_status(&r);
+        assert_eq!(status, StatusType::Pending);
+        assert_eq!(label, "Low Conf.");
+    }
+
+    #[test]
+    fn get_vpa_status_no_pods() {
+        let mut r = make_resource("VerticalPodAutoscaler");
+        r.status = Some(json!({
+            "conditions": [{"type": "NoPodsMatched", "status": "True"}]
+        }));
+        let (status, label) = get_vpa_status(&r);
+        assert_eq!(status, StatusType::Pending);
+        assert_eq!(label, "No Pods");
+    }
+
+    #[test]
+    fn get_vpa_status_invalid() {
+        let mut r = make_resource("VerticalPodAutoscaler");
+        r.status = Some(json!({
+            "conditions": [{"type": "ConfigUnsupported", "status": "True"}]
+        }));
+        let (status, label) = get_vpa_status(&r);
+        assert_eq!(status, StatusType::Failed);
+        assert_eq!(label, "Invalid");
+    }
+
+    #[test]
+    fn get_vpa_status_active_with_recommendation() {
+        let mut r = make_resource("VerticalPodAutoscaler");
+        r.status = Some(json!({
+            "recommendation": {"containerRecommendations": [{"target": {"cpu": "100m"}}]}
+        }));
+        let (status, label) = get_vpa_status(&r);
+        assert_eq!(status, StatusType::Ready);
+        assert_eq!(label, "Active");
+    }
+
+    #[test]
+    fn get_vpa_status_pending_no_recommendation() {
+        let mut r = make_resource("VerticalPodAutoscaler");
+        r.status = Some(json!({}));
+        let (status, label) = get_vpa_status(&r);
+        assert_eq!(status, StatusType::Pending);
+        assert_eq!(label, "Pending");
+    }
+
+    // ── get_vpa_recommendation ──────────────────────────────────────
+
+    #[test]
+    fn get_vpa_recommendation_formats_with_bounds() {
+        let mut r = make_resource("VerticalPodAutoscaler");
+        r.status = Some(json!({
+            "recommendation": {
+                "containerRecommendations": [{
+                    "target": {"memory": "262144Ki"},
+                    "lowerBound": {"memory": "131072Ki"},
+                    "upperBound": {"memory": "524288Ki"}
+                }]
+            }
+        }));
+        assert_eq!(get_vpa_recommendation(&r, "memory"), "256Mi (128Mi-512Mi)");
+    }
+
+    #[test]
+    fn get_vpa_recommendation_target_only() {
+        let mut r = make_resource("VerticalPodAutoscaler");
+        r.status = Some(json!({
+            "recommendation": {
+                "containerRecommendations": [{
+                    "target": {"cpu": "250m"}
+                }]
+            }
+        }));
+        assert_eq!(get_vpa_recommendation(&r, "cpu"), "250m");
+    }
+
+    #[test]
+    fn get_vpa_recommendation_returns_dash_when_missing() {
+        let r = make_resource("VerticalPodAutoscaler");
+        assert_eq!(get_vpa_recommendation(&r, "memory"), "-");
+    }
+
+    // ── status_order ────────────────────────────────────────────────
+
+    #[test]
+    fn status_order_failed_is_lowest() {
+        assert!(status_order(StatusType::Failed) < status_order(StatusType::Pending));
+        assert!(status_order(StatusType::Pending) < status_order(StatusType::Unknown));
+        assert!(status_order(StatusType::Unknown) < status_order(StatusType::Ready));
+    }
+
+    // ── get_age_seconds ─────────────────────────────────────────────
+
+    #[test]
+    fn get_age_seconds_returns_max_for_none() {
+        assert_eq!(get_age_seconds(&None), i64::MAX);
+    }
+
+    #[test]
+    fn get_age_seconds_returns_max_for_invalid() {
+        assert_eq!(get_age_seconds(&Some("bad".to_string())), i64::MAX);
+    }
+
+    #[test]
+    fn get_age_seconds_returns_positive_for_past() {
+        let ts = (chrono::Utc::now() - chrono::Duration::seconds(60)).to_rfc3339();
+        let secs = get_age_seconds(&Some(ts));
+        assert!(secs >= 59 && secs <= 61);
+    }
+
+    // ── compare_resources_by_column ─────────────────────────────────
+
+    #[test]
+    fn compare_by_name() {
+        let mut a = make_resource("Pod");
+        a.metadata.name = "alpha".to_string();
+        let mut b = make_resource("Pod");
+        b.metadata.name = "beta".to_string();
+        assert_eq!(
+            compare_resources_by_column(&a, &b, "Name", ResourceType::Pods),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn compare_by_namespace() {
+        let mut a = make_resource("Pod");
+        a.metadata.namespace = Some("aaa".to_string());
+        let mut b = make_resource("Pod");
+        b.metadata.namespace = Some("zzz".to_string());
+        assert_eq!(
+            compare_resources_by_column(&a, &b, "Namespace", ResourceType::Pods),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn compare_by_status() {
+        let mut a = make_resource("Pod");
+        a.status = Some(json!({"phase": "Failed"}));
+        let mut b = make_resource("Pod");
+        b.status = Some(json!({"phase": "Running"}));
+        assert_eq!(
+            compare_resources_by_column(&a, &b, "Status", ResourceType::Pods),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn compare_by_restarts() {
+        let mut a = make_resource("Pod");
+        a.status = Some(json!({"containerStatuses": [{"restartCount": 10}]}));
+        let mut b = make_resource("Pod");
+        b.status = Some(json!({"containerStatuses": [{"restartCount": 2}]}));
+        assert_eq!(
+            compare_resources_by_column(&a, &b, "Restarts", ResourceType::Pods),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn compare_unknown_column_is_equal() {
+        let a = make_resource("Pod");
+        let b = make_resource("Pod");
+        assert_eq!(
+            compare_resources_by_column(&a, &b, "NonExistent", ResourceType::Pods),
+            Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn compare_by_age() {
+        let mut a = make_resource("Pod");
+        a.metadata.creation_timestamp =
+            Some((chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339());
+        let mut b = make_resource("Pod");
+        b.metadata.creation_timestamp =
+            Some((chrono::Utc::now() - chrono::Duration::hours(5)).to_rfc3339());
+        // a is newer (2h old, fewer seconds) vs b (5h old, more seconds)
+        assert_eq!(
+            compare_resources_by_column(&a, &b, "Age", ResourceType::Pods),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn compare_by_ready_pods() {
+        let mut a = make_resource("Pod");
+        a.spec = Some(json!({"containers": [{"name": "a"}]}));
+        a.status = Some(json!({"containerStatuses": [{"ready": true, "restartCount": 0}]}));
+
+        let mut b = make_resource("Pod");
+        b.spec = Some(json!({"containers": [{"name": "a"}]}));
+        b.status = Some(json!({"containerStatuses": [{"ready": false, "restartCount": 0}]}));
+
+        assert_eq!(
+            compare_resources_by_column(&a, &b, "Ready", ResourceType::Pods),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn compare_by_type() {
+        let mut a = make_resource("Service");
+        a.spec = Some(json!({"type": "ClusterIP"}));
+        let mut b = make_resource("Service");
+        b.spec = Some(json!({"type": "NodePort"}));
+        assert_eq!(
+            compare_resources_by_column(&a, &b, "Type", ResourceType::Services),
+            Ordering::Less
+        );
+    }
+}

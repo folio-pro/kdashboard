@@ -6,6 +6,27 @@ use std::sync::mpsc::TryRecvError;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use workspace::AppView;
 
+// Actions for the native macOS menu bar
+actions!(
+    app,
+    [
+        Quit,
+        Hide,
+        HideOthers,
+        ShowAll,
+        CloseWindow,
+        Minimize,
+        Zoom,
+        ToggleFullScreen,
+        Copy,
+        Paste,
+        Cut,
+        SelectAll,
+        Undo,
+        Redo,
+    ]
+);
+
 /// Asset source for loading icons and other static files
 struct Assets {
     base: PathBuf,
@@ -38,35 +59,115 @@ impl AssetSource for Assets {
     }
 }
 
+/// Ensure the PATH includes common tool locations on macOS.
+/// When launched from a .app bundle, macOS provides a minimal PATH that
+/// excludes directories where kubectl auth plugins (gcloud, aws-iam-authenticator,
+/// kubelogin, etc.) are typically installed.
+fn ensure_path() {
+    let extra_dirs = [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+    ];
+    let current = std::env::var("PATH").unwrap_or_default();
+    let mut dirs: Vec<&str> = current.split(':').collect();
+    for dir in &extra_dirs {
+        if !dirs.contains(dir) && std::path::Path::new(dir).is_dir() {
+            dirs.push(dir);
+        }
+    }
+    // Also try to source the user's shell PATH for any custom locations
+    if let Ok(home) = std::env::var("HOME") {
+        let shell_path = std::process::Command::new("/bin/zsh")
+            .args(["-l", "-c", "echo $PATH"])
+            .output();
+        if let Ok(output) = shell_path {
+            if let Ok(shell_dirs) = String::from_utf8(output.stdout) {
+                for dir in shell_dirs.trim().split(':') {
+                    if !dir.is_empty() && !dirs.contains(&dir) {
+                        dirs.push(Box::leak(dir.to_string().into_boxed_str()));
+                    }
+                }
+            }
+        }
+        let _ = home; // suppress unused warning
+    }
+    // SAFETY: called once at the very start of main, before any threads are spawned.
+    unsafe { std::env::set_var("PATH", dirs.join(":")) };
+}
+
 fn main() -> Result<()> {
+    // Fix PATH before anything else so auth exec plugins are discoverable
+    ensure_path();
+
     // Initialize logging
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Starting Kubernetes Dashboard");
+    tracing::info!("Starting kdashboard");
 
     // Initialize Tokio runtime before GPUI
     let _ = k8s_client::tokio_runtime();
 
-    // Get the assets path - in development it's relative to the ui crate
-    let assets_path = std::env::var("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .parent()
-        .map(|p| p.join("ui/assets"))
-        .unwrap_or_else(|| PathBuf::from("crates/ui/assets"));
+    // Get the assets path:
+    // 1. In development (cargo run): use CARGO_MANIFEST_DIR relative path
+    // 2. In .app bundle: use Contents/Resources next to the executable
+    // 3. Fallback: relative path from working directory
+    let assets_path = if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        PathBuf::from(manifest_dir)
+            .parent()
+            .map(|p| p.join("ui/assets"))
+            .unwrap_or_else(|| PathBuf::from("crates/ui/assets"))
+    } else if let Ok(exe_path) = std::env::current_exe() {
+        // exe is at .app/Contents/MacOS/binary → Resources is at .app/Contents/Resources
+        let resources = exe_path
+            .parent() // MacOS/
+            .and_then(|p| p.parent()) // Contents/
+            .map(|p| p.join("Resources"));
+        match resources {
+            Some(ref p) if p.exists() => p.clone(),
+            _ => PathBuf::from("crates/ui/assets"),
+        }
+    } else {
+        PathBuf::from("crates/ui/assets")
+    };
 
     tracing::info!("Loading assets from: {:?}", assets_path);
 
     Application::new()
         .with_assets(Assets { base: assets_path })
         .run(|cx: &mut App| {
+            // Register bundled fonts so the app works even if they're
+            // not installed on the user's system (e.g. JetBrains Mono).
+            let font_bytes: Vec<Cow<'static, [u8]>> = [
+                // JetBrains Mono (regular — with ligatures for code editor)
+                include_bytes!("../../ui/assets/fonts/JetBrainsMono-Regular.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/JetBrainsMono-Bold.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/JetBrainsMono-Italic.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/JetBrainsMono-BoldItalic.ttf").as_slice(),
+                // JetBrains Mono NL (No Ligatures — for terminal)
+                include_bytes!("../../ui/assets/fonts/JetBrainsMonoNL-Regular.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/JetBrainsMonoNL-Bold.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/JetBrainsMonoNL-Italic.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/JetBrainsMonoNL-BoldItalic.ttf").as_slice(),
+            ]
+            .into_iter()
+            .map(Cow::Borrowed)
+            .collect();
+            if let Err(e) = cx.text_system().add_fonts(font_bytes) {
+                tracing::warn!("Failed to register bundled fonts: {}", e);
+            }
+
             // Initialize global state
             ui::init(cx);
             workspace::init(cx);
             editor::init(cx);
+
+            // Set up native macOS menu bar
+            setup_menus(cx);
 
             // Open main window
             cx.open_window(
@@ -77,7 +178,7 @@ fn main() -> Result<()> {
                         cx,
                     ))),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Kubernetes Dashboard".into()),
+                        title: Some("kdashboard".into()),
                         appears_transparent: true,
                         traffic_light_position: Some(point(px(14.0), px(10.0))),
                     }),
@@ -106,6 +207,100 @@ fn main() -> Result<()> {
         });
 
     Ok(())
+}
+
+fn setup_menus(cx: &mut App) {
+    // Register action handlers
+    cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.on_action(|_: &Hide, cx| cx.hide());
+    cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
+    cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
+    cx.on_action(|_: &CloseWindow, cx| {
+        if let Some(window) = cx.active_window() {
+            let _ = window.update(cx, |_, window, _cx| {
+                window.remove_window();
+            });
+        }
+    });
+    cx.on_action(|_: &Minimize, cx| {
+        if let Some(window) = cx.active_window() {
+            let _ = window.update(cx, |_, window, _cx| {
+                window.minimize_window();
+            });
+        }
+    });
+    cx.on_action(|_: &Zoom, cx| {
+        if let Some(window) = cx.active_window() {
+            let _ = window.update(cx, |_, window, _cx| {
+                window.zoom_window();
+            });
+        }
+    });
+    cx.on_action(|_: &ToggleFullScreen, cx| {
+        if let Some(window) = cx.active_window() {
+            let _ = window.update(cx, |_, window, _cx| {
+                window.toggle_fullscreen();
+            });
+        }
+    });
+
+    cx.set_menus(vec![
+        // Application menu
+        Menu {
+            name: "kdashboard".into(),
+            items: vec![
+                MenuItem::action("About kdashboard", Quit),
+                MenuItem::separator(),
+                MenuItem::os_submenu("Services", SystemMenuType::Services),
+                MenuItem::separator(),
+                MenuItem::action("Hide kdashboard", Hide),
+                MenuItem::action("Hide Others", HideOthers),
+                MenuItem::action("Show All", ShowAll),
+                MenuItem::separator(),
+                MenuItem::action("Quit kdashboard", Quit),
+            ],
+        },
+        // Edit menu
+        Menu {
+            name: "Edit".into(),
+            items: vec![
+                MenuItem::os_action("Undo", Undo, OsAction::Undo),
+                MenuItem::os_action("Redo", Redo, OsAction::Redo),
+                MenuItem::separator(),
+                MenuItem::os_action("Cut", Cut, OsAction::Cut),
+                MenuItem::os_action("Copy", Copy, OsAction::Copy),
+                MenuItem::os_action("Paste", Paste, OsAction::Paste),
+                MenuItem::separator(),
+                MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
+            ],
+        },
+        // Window menu
+        Menu {
+            name: "Window".into(),
+            items: vec![
+                MenuItem::action("Minimize", Minimize),
+                MenuItem::action("Zoom", Zoom),
+                MenuItem::separator(),
+                MenuItem::action("Enter Full Screen", ToggleFullScreen),
+            ],
+        },
+    ]);
+
+    // Bind keyboard shortcuts for menu actions
+    cx.bind_keys([
+        KeyBinding::new("secondary-q", Quit, None),
+        KeyBinding::new("secondary-h", Hide, None),
+        KeyBinding::new("secondary-alt-h", HideOthers, None),
+        KeyBinding::new("secondary-w", CloseWindow, None),
+        KeyBinding::new("secondary-m", Minimize, None),
+        KeyBinding::new("ctrl-secondary-f", ToggleFullScreen, None),
+        KeyBinding::new("secondary-z", Undo, None),
+        KeyBinding::new("secondary-shift-z", Redo, None),
+        KeyBinding::new("secondary-x", Cut, None),
+        KeyBinding::new("secondary-c", Copy, None),
+        KeyBinding::new("secondary-v", Paste, None),
+        KeyBinding::new("secondary-a", SelectAll, None),
+    ]);
 }
 
 /// Message from the k8s background thread to GPUI

@@ -3239,6 +3239,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdashboard"
+version = "0.1.0"
+dependencies = [
+ "ai_assistant",
+ "anyhow",
+ "dirs 6.0.0",
+ "editor",
+ "gpui",
+ "k8s_client",
+ "logs",
+ "resources",
+ "terminal",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "ui",
+ "workspace",
+]
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3359,26 +3379,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
-]
-
-[[package]]
-name = "kubernetes-dashboard"
-version = "0.1.0"
-dependencies = [
- "ai_assistant",
- "anyhow",
- "dirs 6.0.0",
- "editor",
- "gpui",
- "k8s_client",
- "logs",
- "resources",
- "terminal",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "ui",
- "workspace",
 ]
 
 [[package]]

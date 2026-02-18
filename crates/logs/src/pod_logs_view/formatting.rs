@@ -249,3 +249,203 @@ impl PodLogsView {
         ts.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── format_log_message_for_modal ────────────────────────────────
+
+    #[test]
+    fn format_modal_detects_json() {
+        let msg = r#"{"level":"info","message":"hello"}"#;
+        let (formatted, label) = PodLogsView::format_log_message_for_modal(msg);
+        assert_eq!(label, "JSON");
+        assert!(formatted.contains("\"level\""));
+        assert!(formatted.contains("\"info\""));
+    }
+
+    #[test]
+    fn format_modal_detects_embedded_json_object() {
+        let msg = r#"INFO some prefix {"key":"value"}"#;
+        let (formatted, label) = PodLogsView::format_log_message_for_modal(msg);
+        assert!(label.contains("Embedded"));
+        assert!(formatted.contains("INFO some prefix"));
+        assert!(formatted.contains("\"key\""));
+    }
+
+    #[test]
+    fn format_modal_detects_embedded_json_array() {
+        // Array embedded inside a message that also has an object marker
+        // Note: the extract function tries { first, then [, using ? operator
+        let msg = r#"result: {"items": [1, 2, 3]}"#;
+        let (formatted, label) = PodLogsView::format_log_message_for_modal(msg);
+        assert!(label.contains("Embedded") || label == "JSON");
+        assert!(formatted.contains("1"));
+    }
+
+    #[test]
+    fn format_modal_detects_logfmt() {
+        let msg = r#"level=info msg="request completed" status=200 duration=45ms"#;
+        let (formatted, label) = PodLogsView::format_log_message_for_modal(msg);
+        assert_eq!(label, "Key/Value");
+        assert!(formatted.contains("level: info"));
+        assert!(formatted.contains("status: 200"));
+        assert!(formatted.contains("duration: 45ms"));
+    }
+
+    #[test]
+    fn format_modal_raw_fallback() {
+        let msg = "just a plain log line";
+        let (formatted, label) = PodLogsView::format_log_message_for_modal(msg);
+        assert_eq!(label, "Raw");
+        assert_eq!(formatted, msg);
+    }
+
+    // ── format_logfmt ───────────────────────────────────────────────
+
+    #[test]
+    fn format_logfmt_parses_key_value_pairs() {
+        let msg = r#"level=info msg="hello world" code=200"#;
+        let result = PodLogsView::format_logfmt(msg);
+        assert!(result.is_some());
+        let lines = result.unwrap();
+        assert!(lines.contains("level: info"));
+        assert!(lines.contains("msg: hello world"));
+        assert!(lines.contains("code: 200"));
+    }
+
+    #[test]
+    fn format_logfmt_returns_none_for_single_pair() {
+        let msg = "level=info";
+        assert!(PodLogsView::format_logfmt(msg).is_none());
+    }
+
+    #[test]
+    fn format_logfmt_returns_none_for_plain_text() {
+        let msg = "just some text without key value pairs";
+        assert!(PodLogsView::format_logfmt(msg).is_none());
+    }
+
+    #[test]
+    fn format_logfmt_handles_quoted_values() {
+        let msg = r#"key1="value with spaces" key2=simple"#;
+        let result = PodLogsView::format_logfmt(msg).unwrap();
+        assert!(result.contains("key1: value with spaces"));
+        assert!(result.contains("key2: simple"));
+    }
+
+    // ── extract_and_pretty_print_embedded_json ──────────────────────
+
+    #[test]
+    fn extract_embedded_json_with_prefix() {
+        let msg = r#"prefix text {"a":1}"#;
+        let result = PodLogsView::extract_and_pretty_print_embedded_json(msg);
+        assert!(result.is_some());
+        let (prefix, label, pretty) = result.unwrap();
+        assert_eq!(prefix, "prefix text");
+        assert_eq!(label, "JSON object");
+        assert!(pretty.contains("\"a\""));
+    }
+
+    #[test]
+    fn extract_embedded_json_without_prefix() {
+        let msg = r#"{"a":1}"#;
+        let result = PodLogsView::extract_and_pretty_print_embedded_json(msg);
+        assert!(result.is_some());
+        let (prefix, _, _) = result.unwrap();
+        assert!(prefix.is_empty());
+    }
+
+    #[test]
+    fn extract_embedded_json_returns_none_for_array_only() {
+        // The function uses ? with find('{'), so if no { exists it returns None
+        // before trying [ — arrays only work when there's also a { in the message
+        let msg = r#"items: [1, 2, 3]"#;
+        assert!(PodLogsView::extract_and_pretty_print_embedded_json(msg).is_none());
+    }
+
+    #[test]
+    fn extract_embedded_json_object_and_array() {
+        // When message has both { and [, the object path is tried first
+        let msg = r#"prefix {"key": [1, 2]}"#;
+        let result = PodLogsView::extract_and_pretty_print_embedded_json(msg);
+        assert!(result.is_some());
+        let (_, label, _) = result.unwrap();
+        assert_eq!(label, "JSON object");
+    }
+
+    #[test]
+    fn extract_embedded_json_returns_none_for_invalid() {
+        let msg = "no json here at all";
+        assert!(PodLogsView::extract_and_pretty_print_embedded_json(msg).is_none());
+    }
+
+    // ── find_json_key_end ───────────────────────────────────────────
+
+    #[test]
+    fn find_json_key_end_simple() {
+        let s = r#""key": value"#;
+        assert_eq!(PodLogsView::find_json_key_end(s), Some(4));
+    }
+
+    #[test]
+    fn find_json_key_end_with_escape() {
+        let s = r#""ke\"y": value"#;
+        assert_eq!(PodLogsView::find_json_key_end(s), Some(6));
+    }
+
+    #[test]
+    fn find_json_key_end_no_closing_quote() {
+        let s = r#""key"#;
+        assert!(PodLogsView::find_json_key_end(s).is_none());
+    }
+
+    #[test]
+    fn find_json_key_end_empty_key() {
+        let s = r#""": value"#;
+        assert_eq!(PodLogsView::find_json_key_end(s), Some(1));
+    }
+
+    // ── format_log_timestamp ────────────────────────────────────────
+
+    #[test]
+    fn format_log_timestamp_today_shows_time_only() {
+        let now = Utc::now();
+        let ts = now.to_rfc3339();
+        let result = PodLogsView::format_log_timestamp(&ts);
+        // Should be HH:MM:SS format
+        assert_eq!(result.len(), 8);
+        assert!(result.contains(':'));
+    }
+
+    #[test]
+    fn format_log_timestamp_old_year_shows_full_date() {
+        let ts = "2020-06-15T10:30:00Z";
+        let result = PodLogsView::format_log_timestamp(ts);
+        assert!(result.contains("2020"));
+    }
+
+    #[test]
+    fn format_log_timestamp_non_rfc3339_with_t_separator() {
+        let ts = "2024-01-15T10:30:00.123456Z";
+        // This is valid RFC3339, should parse. But if called with year != current,
+        // it will show with the date.
+        let result = PodLogsView::format_log_timestamp(ts);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn format_log_timestamp_plain_text_passthrough() {
+        let ts = "not-a-timestamp";
+        assert_eq!(PodLogsView::format_log_timestamp(ts), "not-a-timestamp");
+    }
+
+    #[test]
+    fn format_log_timestamp_non_rfc3339_with_t() {
+        let ts = "2024-01-15T10:30:00+broken";
+        let result = PodLogsView::format_log_timestamp(ts);
+        // Fallback: split on T, strip after . / Z / +
+        assert_eq!(result, "2024-01-15 10:30:00");
+    }
+}

@@ -167,4 +167,126 @@ mod tests {
             assert!(path.ends_with("kdashboard/settings.json"));
         }
     }
+
+    #[test]
+    fn theme_mode_is_dark_for_dark_themes() {
+        assert!(ThemeMode::GruvboxDark.is_dark());
+        assert!(ThemeMode::SolarizedDark.is_dark());
+        assert!(ThemeMode::EverforestDark.is_dark());
+        assert!(ThemeMode::DraculaDark.is_dark());
+        assert!(ThemeMode::MonokaiDark.is_dark());
+    }
+
+    #[test]
+    fn theme_mode_is_not_dark_for_light_themes() {
+        assert!(!ThemeMode::GruvboxLight.is_dark());
+        assert!(!ThemeMode::SolarizedLight.is_dark());
+        assert!(!ThemeMode::EverforestLight.is_dark());
+        assert!(!ThemeMode::RosePineDawn.is_dark());
+        assert!(!ThemeMode::GitHubLight.is_dark());
+    }
+
+    #[test]
+    fn theme_mode_display_names_are_non_empty() {
+        let all = [
+            ThemeMode::GruvboxLight,
+            ThemeMode::SolarizedLight,
+            ThemeMode::EverforestLight,
+            ThemeMode::RosePineDawn,
+            ThemeMode::GitHubLight,
+            ThemeMode::GruvboxDark,
+            ThemeMode::SolarizedDark,
+            ThemeMode::EverforestDark,
+            ThemeMode::DraculaDark,
+            ThemeMode::MonokaiDark,
+        ];
+        for mode in all {
+            assert!(!mode.display_name().is_empty(), "{:?} has empty display name", mode);
+        }
+    }
+
+    #[test]
+    fn light_presets_are_all_light() {
+        for mode in ThemeMode::light_presets() {
+            assert!(!mode.is_dark(), "{:?} should be light", mode);
+        }
+    }
+
+    #[test]
+    fn dark_presets_are_all_dark() {
+        for mode in ThemeMode::dark_presets() {
+            assert!(mode.is_dark(), "{:?} should be dark", mode);
+        }
+    }
+
+    #[test]
+    fn presets_cover_all_modes() {
+        let light = ThemeMode::light_presets();
+        let dark = ThemeMode::dark_presets();
+        assert_eq!(light.len() + dark.len(), 10);
+    }
+
+    #[test]
+    fn default_theme_mode_is_everforest_dark() {
+        assert_eq!(ThemeMode::default(), ThemeMode::EverforestDark);
+    }
+
+    #[test]
+    fn default_ai_provider_is_opencode() {
+        assert_eq!(AIProvider::default(), AIProvider::OpenCode);
+    }
+
+    #[test]
+    fn user_settings_default_has_all_none() {
+        let settings = UserSettings::default();
+        assert!(settings.context.is_none());
+        assert!(settings.namespace.is_none());
+        assert!(settings.ai_provider.is_none());
+        assert!(settings.opencode_model.is_none());
+        assert!(settings.theme_mode.is_none());
+    }
+
+    #[test]
+    fn user_settings_deserialize_from_empty_json() {
+        let settings: UserSettings = serde_json::from_str("{}").unwrap();
+        assert!(settings.context.is_none());
+        assert!(settings.ai_provider.is_none());
+    }
+
+    #[test]
+    fn user_settings_deserialize_ignores_unknown_fields() {
+        let json = r#"{"context":"prod","unknown_field":"value"}"#;
+        let settings: UserSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.context.as_deref(), Some("prod"));
+    }
+
+    #[test]
+    fn theme_mode_serde_roundtrip_all_variants() {
+        let modes = [
+            ThemeMode::GruvboxLight,
+            ThemeMode::SolarizedLight,
+            ThemeMode::EverforestLight,
+            ThemeMode::RosePineDawn,
+            ThemeMode::GitHubLight,
+            ThemeMode::GruvboxDark,
+            ThemeMode::SolarizedDark,
+            ThemeMode::EverforestDark,
+            ThemeMode::DraculaDark,
+            ThemeMode::MonokaiDark,
+        ];
+        for mode in modes {
+            let json = serde_json::to_string(&mode).unwrap();
+            let decoded: ThemeMode = serde_json::from_str(&json).unwrap();
+            assert_eq!(decoded, mode, "roundtrip failed for {:?}", mode);
+        }
+    }
+
+    #[test]
+    fn ai_provider_serde_roundtrip() {
+        for provider in [AIProvider::OpenCode, AIProvider::ClaudeCode] {
+            let json = serde_json::to_string(&provider).unwrap();
+            let decoded: AIProvider = serde_json::from_str(&json).unwrap();
+            assert_eq!(decoded, provider);
+        }
+    }
 }

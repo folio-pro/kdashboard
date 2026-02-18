@@ -621,9 +621,10 @@ impl Render for AppView {
         div()
             .id("workspace-root")
             .track_focus(&self.focus_handle)
-            .on_click(cx.listener(|this, _event, window, _cx| {
-                window.focus(&this.focus_handle);
-            }))
+            // Focus is handled automatically by GPUI's track_focus mechanism:
+            // on mouse-down, the innermost focusable element receives focus and
+            // calls prevent_default() so that parent focusable elements (like
+            // this workspace root) don't steal it.
             .key_context(if self.command_bar_open {
                 "CommandBar"
             } else {
@@ -649,6 +650,12 @@ impl Render for AppView {
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.command_bar_open {
                     this.handle_command_bar_keydown(event, window, cx);
+                    return;
+                }
+
+                // Don't intercept keys when a child element has focus
+                // (terminal, yaml editor, etc.)
+                if !this.focus_handle.is_focused(window) {
                     return;
                 }
 

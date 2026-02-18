@@ -85,11 +85,14 @@ impl PodDetails {
     }
 
     pub fn set_resource(&mut self, resource: Resource) {
+        // Only reset editor state when the resource actually changed
+        if resource.metadata.resource_version != self.resource.metadata.resource_version {
+            self.yaml_editor = None;
+            self.original_yaml.clear();
+            self.yaml_valid = None;
+            self.editor_sub_tab = EditorSubTab::Editor;
+        }
         self.resource = resource;
-        self.yaml_editor = None;
-        self.original_yaml.clear();
-        self.yaml_valid = None;
-        self.editor_sub_tab = EditorSubTab::Editor;
     }
 
     pub fn set_pf_error(&mut self, error: Option<String>) {

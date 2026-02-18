@@ -249,4 +249,170 @@ mod tests {
         assert_eq!(SortDirection::default(), SortDirection::Ascending);
         assert_eq!(ResourceType::default(), ResourceType::Pods);
     }
+
+    #[test]
+    fn resource_type_is_namespaced_for_workloads() {
+        assert!(ResourceType::Pods.is_namespaced());
+        assert!(ResourceType::Deployments.is_namespaced());
+        assert!(ResourceType::StatefulSets.is_namespaced());
+        assert!(ResourceType::DaemonSets.is_namespaced());
+        assert!(ResourceType::Jobs.is_namespaced());
+        assert!(ResourceType::CronJobs.is_namespaced());
+        assert!(ResourceType::ReplicaSets.is_namespaced());
+    }
+
+    #[test]
+    fn resource_type_is_not_namespaced_for_cluster_resources() {
+        assert!(!ResourceType::Nodes.is_namespaced());
+        assert!(!ResourceType::Namespaces.is_namespaced());
+    }
+
+    #[test]
+    fn resource_type_api_kind_starts_uppercase() {
+        for rt in ResourceType::all() {
+            let kind = rt.api_kind();
+            assert!(
+                kind.chars().next().unwrap().is_uppercase(),
+                "{:?} api_kind '{}' should start uppercase",
+                rt,
+                kind
+            );
+        }
+    }
+
+    #[test]
+    fn resource_type_api_name_is_lowercase() {
+        for rt in ResourceType::all() {
+            let name = rt.api_name();
+            assert_eq!(
+                name,
+                name.to_lowercase(),
+                "{:?} api_name '{}' should be lowercase",
+                rt,
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn resource_type_display_name_is_non_empty() {
+        for rt in ResourceType::all() {
+            assert!(
+                !rt.display_name().is_empty(),
+                "{:?} has empty display name",
+                rt
+            );
+        }
+    }
+
+    #[test]
+    fn resource_type_serde_roundtrip() {
+        for rt in ResourceType::all() {
+            let json = serde_json::to_string(rt).unwrap();
+            let decoded: ResourceType = serde_json::from_str(&json).unwrap();
+            assert_eq!(&decoded, rt, "roundtrip failed for {:?}", rt);
+        }
+    }
+
+    #[test]
+    fn resource_metadata_serde_roundtrip() {
+        let meta = ResourceMetadata {
+            name: "my-pod".to_string(),
+            namespace: Some("default".to_string()),
+            uid: "abc-123".to_string(),
+            resource_version: "42".to_string(),
+            labels: Some(std::collections::BTreeMap::from([
+                ("app".to_string(), "web".to_string()),
+            ])),
+            annotations: None,
+            creation_timestamp: Some("2024-01-15T10:30:00Z".to_string()),
+            owner_references: None,
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let decoded: ResourceMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.name, "my-pod");
+        assert_eq!(decoded.namespace.as_deref(), Some("default"));
+        assert_eq!(decoded.uid, "abc-123");
+        assert_eq!(
+            decoded.labels.as_ref().unwrap().get("app").map(|s| s.as_str()),
+            Some("web")
+        );
+    }
+
+    #[test]
+    fn resource_serde_roundtrip() {
+        let resource = Resource {
+            api_version: "v1".to_string(),
+            kind: "Pod".to_string(),
+            metadata: ResourceMetadata {
+                name: "test-pod".to_string(),
+                namespace: Some("default".to_string()),
+                uid: "uid-1".to_string(),
+                resource_version: "1".to_string(),
+                labels: None,
+                annotations: None,
+                creation_timestamp: None,
+                owner_references: None,
+            },
+            spec: Some(serde_json::json!({"containers": []})),
+            status: Some(serde_json::json!({"phase": "Running"})),
+            data: None,
+            type_: None,
+        };
+        let json = serde_json::to_string(&resource).unwrap();
+        let decoded: Resource = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.kind, "Pod");
+        assert_eq!(decoded.metadata.name, "test-pod");
+    }
+
+    #[test]
+    fn resource_list_serde_roundtrip() {
+        let list = ResourceList {
+            resource_type: "pods".to_string(),
+            namespace: Some("default".to_string()),
+            items: vec![],
+        };
+        let json = serde_json::to_string(&list).unwrap();
+        let decoded: ResourceList = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.resource_type, "pods");
+        assert!(decoded.items.is_empty());
+    }
+
+    #[test]
+    fn sort_direction_toggle_is_involution() {
+        let dir = SortDirection::Ascending;
+        assert_eq!(dir.toggle().toggle(), dir);
+    }
+
+    #[test]
+    fn pod_log_entry_serde_roundtrip() {
+        let entry = PodLogEntry {
+            timestamp: Some("2024-01-15T10:30:00Z".to_string()),
+            message: "hello world".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let decoded: PodLogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.message, "hello world");
+        assert_eq!(decoded.timestamp.as_deref(), Some("2024-01-15T10:30:00Z"));
+    }
+
+    #[test]
+    fn event_serde_roundtrip() {
+        let event = Event {
+            name: "my-event".to_string(),
+            namespace: "default".to_string(),
+            reason: "Scheduled".to_string(),
+            message: "Successfully assigned".to_string(),
+            event_type: "Normal".to_string(),
+            count: 1,
+            first_timestamp: None,
+            last_timestamp: None,
+            source: "scheduler".to_string(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let decoded: Event = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.name, "my-event");
+        assert_eq!(decoded.reason, "Scheduled");
+        assert_eq!(decoded.count, 1);
+    }
 }

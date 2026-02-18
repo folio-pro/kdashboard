@@ -24,11 +24,17 @@ impl Render for TitleBar {
         {
             // macOS: transparent title bar with traffic lights
             div()
+                .id("title-bar")
                 .h(px(28.0))
                 .w_full()
                 .bg(colors.surface)
                 // Leave space for traffic lights on the left
                 .pl(px(70.0))
+                .on_mouse_down(MouseButton::Left, |event, window, _cx| {
+                    if event.click_count == 2 {
+                        window.titlebar_double_click();
+                    }
+                })
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -46,7 +52,7 @@ impl Render for TitleBar {
                     div()
                         .text_size(theme.font_size_small)
                         .text_color(colors.text_muted)
-                        .child("Kubernetes Dashboard"),
+                        .child("kdashboard"),
                 )
                 .child(self.render_window_controls(cx))
         }

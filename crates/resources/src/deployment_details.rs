@@ -51,11 +51,13 @@ impl DeploymentDetails {
     }
 
     pub fn set_resource(&mut self, resource: Resource) {
+        if resource.metadata.resource_version != self.resource.metadata.resource_version {
+            self.yaml_editor = None;
+            self.original_yaml.clear();
+            self.yaml_valid = None;
+            self.editor_sub_tab = EditorSubTab::Editor;
+        }
         self.resource = resource;
-        self.yaml_editor = None;
-        self.original_yaml.clear();
-        self.yaml_valid = None;
-        self.editor_sub_tab = EditorSubTab::Editor;
     }
 
     pub fn on_close(mut self, handler: impl Fn(&mut Context<'_, Self>) + 'static) -> Self {

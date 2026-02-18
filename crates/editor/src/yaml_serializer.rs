@@ -195,4 +195,115 @@ mod tests {
         assert!(!map.contains_key(serde_yaml::Value::String("status".to_string())));
         assert!(!map.contains_key(serde_yaml::Value::String("data".to_string())));
     }
+
+    #[test]
+    fn resource_to_yaml_includes_data_when_present() {
+        let resource = sample_resource(
+            None,
+            None,
+            Some(json!({"key1": "value1", "key2": "value2"})),
+        );
+        let yaml = resource_to_yaml(&resource).expect("yaml should serialize");
+        assert!(yaml.contains("data:"));
+        assert!(yaml.contains("key1: value1"));
+    }
+
+    #[test]
+    fn resource_to_yaml_includes_status_when_present() {
+        let resource = sample_resource(None, Some(json!({"phase": "Running"})), None);
+        let yaml = resource_to_yaml(&resource).expect("yaml should serialize");
+        assert!(yaml.contains("status:"));
+        assert!(yaml.contains("phase: Running"));
+    }
+
+    #[test]
+    fn validate_yaml_accepts_empty_document() {
+        assert!(validate_yaml("---"));
+    }
+
+    #[test]
+    fn validate_yaml_accepts_scalar() {
+        assert!(validate_yaml("hello"));
+    }
+
+    #[test]
+    fn validate_yaml_accepts_list() {
+        assert!(validate_yaml("- item1\n- item2\n- item3"));
+    }
+
+    #[test]
+    fn strip_nulls_preserves_arrays_with_mixed_content() {
+        let input = json!([1, null, "hello", {"a": null, "b": 2}]);
+        let cleaned = strip_nulls(input);
+        assert_eq!(cleaned, json!([1, null, "hello", {"b": 2}]));
+    }
+
+    #[test]
+    fn strip_nulls_returns_null_for_all_null_object() {
+        let input = json!({"a": null, "b": null});
+        assert_eq!(strip_nulls(input), Value::Null);
+    }
+
+    #[test]
+    fn strip_nulls_preserves_non_null_scalars() {
+        assert_eq!(strip_nulls(json!(42)), json!(42));
+        assert_eq!(strip_nulls(json!("hello")), json!("hello"));
+        assert_eq!(strip_nulls(json!(true)), json!(true));
+        assert_eq!(strip_nulls(json!(null)), Value::Null);
+    }
+
+    #[test]
+    fn reorder_fields_handles_non_object_input() {
+        let input = json!("just a string");
+        let result = reorder_fields(input.clone());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn reorder_fields_strips_null_sections() {
+        let input = json!({
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "spec": null,
+            "status": null
+        });
+        let reordered = reorder_fields(input);
+        let keys: Vec<String> = reordered.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(keys, vec!["apiVersion", "kind"]);
+    }
+
+    #[test]
+    fn resource_to_yaml_field_order_matches_kubectl() {
+        let resource = sample_resource(
+            Some(json!({"replicas": 1})),
+            Some(json!({"phase": "Running"})),
+            Some(json!({"config": "value"})),
+        );
+        let yaml = resource_to_yaml(&resource).expect("yaml should serialize");
+
+        // Verify the JSON reorder_fields output has correct key order
+        let json = serde_json::to_value(&resource).unwrap();
+        let ordered = reorder_fields(json);
+        let keys: Vec<String> = ordered.as_object().unwrap().keys().cloned().collect();
+
+        // apiVersion, kind, metadata should come first; spec before data before status
+        let api_idx = keys.iter().position(|k| k == "apiVersion").unwrap();
+        let kind_idx = keys.iter().position(|k| k == "kind").unwrap();
+        let metadata_idx = keys.iter().position(|k| k == "metadata").unwrap();
+        let spec_idx = keys.iter().position(|k| k == "spec").unwrap();
+        let data_idx = keys.iter().position(|k| k == "data").unwrap();
+        let status_idx = keys.iter().position(|k| k == "status").unwrap();
+
+        assert!(api_idx < kind_idx);
+        assert!(kind_idx < metadata_idx);
+        assert!(metadata_idx < spec_idx);
+        assert!(spec_idx < data_idx);
+        assert!(data_idx < status_idx);
+
+        // Also verify the yaml contains all expected sections
+        assert!(yaml.contains("apiVersion"));
+        assert!(yaml.contains("spec"));
+        assert!(yaml.contains("data"));
+        assert!(yaml.contains("status"));
+    }
 }
