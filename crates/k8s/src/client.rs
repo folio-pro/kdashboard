@@ -141,3 +141,91 @@ pub async fn get_pod_containers(pod_name: &str, namespace: &str) -> Result<Vec<S
 
     Ok(containers)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kubeconfig_deserializes_with_contexts_and_current_context() {
+        let yaml = r#"
+current-context: prod-cluster
+contexts:
+  - name: prod-cluster
+    context:
+      cluster: prod
+      user: admin
+  - name: dev-cluster
+    context:
+      cluster: dev
+      user: developer
+"#;
+        let config: KubeConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.current_context.as_deref(), Some("prod-cluster"));
+        assert_eq!(config.contexts.len(), 2);
+        assert_eq!(config.contexts[0].name, "prod-cluster");
+        assert_eq!(config.contexts[1].name, "dev-cluster");
+    }
+
+    #[test]
+    fn kubeconfig_deserializes_without_current_context() {
+        let yaml = r#"
+contexts:
+  - name: my-cluster
+"#;
+        let config: KubeConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.current_context.is_none());
+        assert_eq!(config.contexts.len(), 1);
+        assert_eq!(config.contexts[0].name, "my-cluster");
+    }
+
+    #[test]
+    fn kubeconfig_deserializes_empty_contexts() {
+        let yaml = r#"
+current-context: none
+contexts: []
+"#;
+        let config: KubeConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.current_context.as_deref(), Some("none"));
+        assert!(config.contexts.is_empty());
+    }
+
+    #[test]
+    fn kubeconfig_context_names_extracted_correctly() {
+        let yaml = r#"
+current-context: ctx-a
+contexts:
+  - name: ctx-a
+  - name: ctx-b
+  - name: ctx-c
+"#;
+        let config: KubeConfig = serde_yaml::from_str(yaml).unwrap();
+        let names: Vec<String> = config.contexts.into_iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["ctx-a", "ctx-b", "ctx-c"]);
+    }
+
+    #[test]
+    fn kubeconfig_context_without_context_field_parses() {
+        let yaml = r#"
+contexts:
+  - name: minimal-ctx
+"#;
+        let config: KubeConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.contexts[0].name, "minimal-ctx");
+        assert!(config.contexts[0].context.is_none());
+    }
+
+    #[test]
+    fn kubeconfig_path_ends_with_kube_config() {
+        if let Ok(path) = kubeconfig_path() {
+            assert!(path.ends_with(".kube/config"));
+        }
+    }
+
+    #[test]
+    fn kubeconfig_malformed_yaml_returns_error() {
+        let yaml = "not: [valid: yaml: {{";
+        let result: Result<KubeConfig, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err());
+    }
+}

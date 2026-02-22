@@ -2,9 +2,9 @@ use gpui::*;
 use k8s_client::Resource;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use ui::gpui_component::notification::Notification;
 use ui::gpui_component::WindowExt;
-use ui::{theme, Icon, IconName};
+use ui::gpui_component::notification::Notification;
+use ui::{Icon, IconName, theme};
 
 // ── Helper functions ────────────────────────────────────────────────────
 
@@ -556,7 +556,6 @@ macro_rules! impl_yaml_editor_methods {
             let colors = &theme.colors;
             ui::secondary_btn("edit-yaml-btn", ui::IconName::Edit, "Edit", colors).on_click(
                 cx.listener(|this, _event, _window, cx| {
-
                     this.active_tab = DetailTab::Yaml;
                     cx.notify();
                 }),
@@ -609,7 +608,6 @@ macro_rules! impl_yaml_editor_methods {
                                 .gap(px(16.0))
                                 .child(ui::back_btn("yaml-back-btn", colors).on_click(cx.listener(
                                     |this, _event, _window, cx| {
-                
                                         this.active_tab = DetailTab::Overview;
                                         this.editor_sub_tab = EditorSubTab::Editor;
                                         cx.notify();
@@ -752,7 +750,6 @@ macro_rules! impl_yaml_editor_methods {
                         colors.text_muted,
                     )
                     .on_click(cx.listener(move |this, _e, _w, cx| {
-
                         this.editor_sub_tab = tab_val;
                         cx.notify();
                     }))

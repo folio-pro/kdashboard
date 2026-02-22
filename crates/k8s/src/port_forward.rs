@@ -166,3 +166,83 @@ pub fn list_port_forwards() -> Vec<PortForwardInfo> {
         .map(|r| r.value().info.clone())
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn port_forward_info_serde_roundtrip() {
+        let info = PortForwardInfo {
+            session_id: "pf-abc-123".to_string(),
+            pod_name: "my-pod".to_string(),
+            namespace: "production".to_string(),
+            container_port: 8080,
+            local_port: 9090,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        let decoded: PortForwardInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.session_id, "pf-abc-123");
+        assert_eq!(decoded.pod_name, "my-pod");
+        assert_eq!(decoded.namespace, "production");
+        assert_eq!(decoded.container_port, 8080);
+        assert_eq!(decoded.local_port, 9090);
+    }
+
+    #[test]
+    fn port_forward_info_clone_produces_equal_fields() {
+        let info = PortForwardInfo {
+            session_id: "s1".to_string(),
+            pod_name: "pod-a".to_string(),
+            namespace: "default".to_string(),
+            container_port: 3000,
+            local_port: 3001,
+        };
+        let cloned = info.clone();
+        assert_eq!(info.session_id, cloned.session_id);
+        assert_eq!(info.pod_name, cloned.pod_name);
+        assert_eq!(info.namespace, cloned.namespace);
+        assert_eq!(info.container_port, cloned.container_port);
+        assert_eq!(info.local_port, cloned.local_port);
+    }
+
+    #[test]
+    fn port_forward_info_debug_includes_fields() {
+        let info = PortForwardInfo {
+            session_id: "debug-test".to_string(),
+            pod_name: "pod-x".to_string(),
+            namespace: "ns-y".to_string(),
+            container_port: 443,
+            local_port: 8443,
+        };
+        let debug_str = format!("{:?}", info);
+        assert!(debug_str.contains("debug-test"));
+        assert!(debug_str.contains("pod-x"));
+        assert!(debug_str.contains("443"));
+    }
+
+    #[test]
+    fn port_forward_info_serializes_all_ports_as_numbers() {
+        let info = PortForwardInfo {
+            session_id: "s".to_string(),
+            pod_name: "p".to_string(),
+            namespace: "n".to_string(),
+            container_port: 80,
+            local_port: 8080,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["container_port"].is_number());
+        assert!(value["local_port"].is_number());
+        assert_eq!(value["container_port"].as_u64(), Some(80));
+        assert_eq!(value["local_port"].as_u64(), Some(8080));
+    }
+
+    #[test]
+    fn stop_port_forward_returns_error_for_unknown_session() {
+        let result = stop_port_forward("nonexistent-session-id");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("nonexistent-session-id"));
+    }
+}

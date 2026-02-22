@@ -1,6 +1,6 @@
 use gpui::*;
 use k8s_client::PortForwardInfo;
-use ui::{gpui_component::scroll::ScrollableElement, theme, Icon, IconName};
+use ui::{Icon, IconName, gpui_component::scroll::ScrollableElement, theme};
 
 /// Actions emitted by the PortForwardView
 #[derive(Clone, Debug)]

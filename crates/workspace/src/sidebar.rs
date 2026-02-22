@@ -1,10 +1,10 @@
-use crate::app_state::{app_state, ActiveView};
+use crate::app_state::{ActiveView, app_state};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use k8s_client::ResourceType;
 use std::collections::HashSet;
 use ui::gpui_component::tooltip::Tooltip;
-use ui::{theme, Icon, IconName, ThemeColors};
+use ui::{Icon, IconName, ThemeColors, theme};
 
 // Actions for sidebar clicks
 actions!(sidebar, [ToggleCollapse]);

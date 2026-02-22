@@ -546,27 +546,27 @@ impl PodLogsView {
         self.filtered_indices.reserve(self.logs.len());
 
         for (idx, log) in self.logs.iter().enumerate() {
-                // Level filter
-                let level_match = match self.level_filter {
-                    LogLevelFilter::All => true,
-                    LogLevelFilter::Info => log.level == DetectedLevel::Info,
-                    LogLevelFilter::Warn => log.level == DetectedLevel::Warn,
-                    LogLevelFilter::Error => log.level == DetectedLevel::Error,
-                };
+            // Level filter
+            let level_match = match self.level_filter {
+                LogLevelFilter::All => true,
+                LogLevelFilter::Info => log.level == DetectedLevel::Info,
+                LogLevelFilter::Warn => log.level == DetectedLevel::Warn,
+                LogLevelFilter::Error => log.level == DetectedLevel::Error,
+            };
 
-                // Search filter
-                let search_match = if search_lower.is_none() {
-                    true
-                } else if let Some(ref re) = compiled_regex {
-                    re.is_match(&log.message)
-                } else {
-                    let message_lower = log.message.to_lowercase();
-                    message_lower.contains(search_lower.as_ref().unwrap())
-                };
+            // Search filter
+            let search_match = if search_lower.is_none() {
+                true
+            } else if let Some(ref re) = compiled_regex {
+                re.is_match(&log.message)
+            } else {
+                let message_lower = log.message.to_lowercase();
+                message_lower.contains(search_lower.as_ref().unwrap())
+            };
 
-                if level_match && search_match {
-                    self.filtered_indices.push(idx);
-                }
+            if level_match && search_match {
+                self.filtered_indices.push(idx);
+            }
         }
 
         self.filter_dirty = false;
@@ -1523,15 +1523,15 @@ impl PodLogsView {
                                     "Copy",
                                     colors,
                                 )
-                                .on_click(
-                                    cx.listener(|this, _event, _window, cx| {
+                                .on_click(cx.listener(
+                                    |this, _event, _window, cx| {
                                         if let Some(modal) = &this.log_modal {
                                             cx.write_to_clipboard(ClipboardItem::new_string(
                                                 modal.content.clone(),
                                             ));
                                         }
-                                    }),
-                                ),
+                                    },
+                                )),
                             )
                             .child(
                                 secondary_btn(
@@ -1540,12 +1540,14 @@ impl PodLogsView {
                                     "Close",
                                     colors,
                                 )
-                                .on_click(cx.listener(|this, _event, _window, cx| {
-                                    cx.stop_propagation();
-                                    this.log_modal = None;
-                                    this.selected_log_index = None;
-                                    cx.notify();
-                                })),
+                                .on_click(cx.listener(
+                                    |this, _event, _window, cx| {
+                                        cx.stop_propagation();
+                                        this.log_modal = None;
+                                        this.selected_log_index = None;
+                                        cx.notify();
+                                    },
+                                )),
                             ),
                     ),
             )

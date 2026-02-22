@@ -147,9 +147,8 @@ impl AppView {
         let resource_type = state.selected_type;
 
         // Create resource table
-        let resource_table = cx.new(|cx| {
-            ResourceTable::new(resources, resource_type, cx.focus_handle())
-        });
+        let resource_table =
+            cx.new(|cx| ResourceTable::new(resources, resource_type, cx.focus_handle()));
 
         Self {
             sidebar: cx.new(|_| Sidebar::new(sidebar_collapsed)),
@@ -885,7 +884,12 @@ impl AppView {
                     .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(div().flex_1().overflow_hidden().child(terminal_view.clone()));
+                    .child(
+                        div()
+                            .flex_1()
+                            .overflow_hidden()
+                            .child(terminal_view.clone()),
+                    );
                 if showing_settings {
                     content = content.child(
                         div()
@@ -2221,7 +2225,11 @@ impl AppView {
                 } else {
                     colors.surface_elevated
                 })
-                .border_color(if is_selected { colors.primary } else { colors.border })
+                .border_color(if is_selected {
+                    colors.primary
+                } else {
+                    colors.border
+                })
                 .hover(|style| style.opacity(0.92))
                 .on_click(cx.listener(move |_this, _event, _window, cx| {
                     cx.update_global::<AppState, _>(|state, _| {

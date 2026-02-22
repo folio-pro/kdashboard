@@ -770,7 +770,10 @@ mod tests {
     fn get_node_roles_control_plane() {
         let mut r = make_resource("Node");
         let mut labels = BTreeMap::new();
-        labels.insert("node-role.kubernetes.io/control-plane".to_string(), "".to_string());
+        labels.insert(
+            "node-role.kubernetes.io/control-plane".to_string(),
+            "".to_string(),
+        );
         r.metadata.labels = Some(labels);
         assert_eq!(get_node_roles(&r), "control-plane");
     }
@@ -779,7 +782,10 @@ mod tests {
     fn get_node_roles_multiple() {
         let mut r = make_resource("Node");
         let mut labels = BTreeMap::new();
-        labels.insert("node-role.kubernetes.io/control-plane".to_string(), "".to_string());
+        labels.insert(
+            "node-role.kubernetes.io/control-plane".to_string(),
+            "".to_string(),
+        );
         labels.insert("node-role.kubernetes.io/master".to_string(), "".to_string());
         r.metadata.labels = Some(labels);
         assert_eq!(get_node_roles(&r), "control-plane, master");

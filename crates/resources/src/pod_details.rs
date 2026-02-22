@@ -7,7 +7,7 @@ use k8s_client::{PortForwardInfo, Resource};
 use std::collections::HashMap;
 use ui::gpui_component::input::{Input as TextInput, InputState};
 use ui::gpui_component::tooltip::Tooltip;
-use ui::{back_btn, danger_btn, theme, Icon, IconName, Sizable, Size};
+use ui::{Icon, IconName, Sizable, Size, back_btn, danger_btn, theme};
 
 /// Actions that can be triggered from PodDetails
 #[derive(Clone, Debug)]

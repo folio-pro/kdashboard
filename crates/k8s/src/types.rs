@@ -321,9 +321,10 @@ mod tests {
             namespace: Some("default".to_string()),
             uid: "abc-123".to_string(),
             resource_version: "42".to_string(),
-            labels: Some(std::collections::BTreeMap::from([
-                ("app".to_string(), "web".to_string()),
-            ])),
+            labels: Some(std::collections::BTreeMap::from([(
+                "app".to_string(),
+                "web".to_string(),
+            )])),
             annotations: None,
             creation_timestamp: Some("2024-01-15T10:30:00Z".to_string()),
             owner_references: None,
@@ -334,7 +335,12 @@ mod tests {
         assert_eq!(decoded.namespace.as_deref(), Some("default"));
         assert_eq!(decoded.uid, "abc-123");
         assert_eq!(
-            decoded.labels.as_ref().unwrap().get("app").map(|s| s.as_str()),
+            decoded
+                .labels
+                .as_ref()
+                .unwrap()
+                .get("app")
+                .map(|s| s.as_str()),
             Some("web")
         );
     }

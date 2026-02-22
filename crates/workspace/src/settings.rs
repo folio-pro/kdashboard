@@ -201,7 +201,11 @@ mod tests {
             ThemeMode::MonokaiDark,
         ];
         for mode in all {
-            assert!(!mode.display_name().is_empty(), "{:?} has empty display name", mode);
+            assert!(
+                !mode.display_name().is_empty(),
+                "{:?} has empty display name",
+                mode
+            );
         }
     }
 

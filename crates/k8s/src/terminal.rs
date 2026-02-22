@@ -267,3 +267,106 @@ pub fn close_terminal_session(session_id: &str) -> Result<()> {
 pub fn list_terminal_sessions() -> Vec<String> {
     SESSIONS.iter().map(|r| r.key().clone()).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_session_serde_roundtrip() {
+        let session = TerminalSession {
+            session_id: "sess-123".to_string(),
+            pod_name: "my-pod".to_string(),
+            container: "app".to_string(),
+            namespace: "default".to_string(),
+        };
+        let json = serde_json::to_string(&session).unwrap();
+        let decoded: TerminalSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.session_id, "sess-123");
+        assert_eq!(decoded.pod_name, "my-pod");
+        assert_eq!(decoded.container, "app");
+        assert_eq!(decoded.namespace, "default");
+    }
+
+    #[test]
+    fn terminal_output_serializes_with_data() {
+        let output = TerminalOutput {
+            session_id: "sess-1".to_string(),
+            data: vec![72, 101, 108, 108, 111], // "Hello"
+        };
+        let json = serde_json::to_string(&output).unwrap();
+        assert!(json.contains("sess-1"));
+        assert!(json.contains("data"));
+    }
+
+    #[test]
+    fn terminal_closed_serializes_with_reason() {
+        let closed = TerminalClosed {
+            session_id: "sess-2".to_string(),
+            reason: "Connection closed".to_string(),
+        };
+        let json = serde_json::to_string(&closed).unwrap();
+        assert!(json.contains("sess-2"));
+        assert!(json.contains("Connection closed"));
+    }
+
+    #[test]
+    fn resize_command_format_matches_ansi_escape() {
+        let cols: u16 = 120;
+        let rows: u16 = 40;
+        let resize_cmd = format!("\x1b[8;{};{}t", rows, cols);
+        assert_eq!(resize_cmd, "\x1b[8;40;120t");
+    }
+
+    #[test]
+    fn resize_command_with_small_dimensions() {
+        let resize_cmd = format!("\x1b[8;{};{}t", 24, 80);
+        assert_eq!(resize_cmd, "\x1b[8;24;80t");
+        assert!(resize_cmd.starts_with("\x1b[8;"));
+        assert!(resize_cmd.ends_with("t"));
+    }
+
+    #[test]
+    fn shell_command_with_dimensions_includes_stty() {
+        let cols: u16 = 100;
+        let rows: u16 = 50;
+        let shell_cmd = format!(
+            "export TERM=xterm-256color; stty cols {} rows {} 2>/dev/null; exec /bin/sh -i",
+            cols, rows
+        );
+        assert!(shell_cmd.contains("stty cols 100 rows 50"));
+        assert!(shell_cmd.contains("TERM=xterm-256color"));
+        assert!(shell_cmd.contains("exec /bin/sh -i"));
+    }
+
+    #[test]
+    fn shell_command_without_dimensions_has_no_stty() {
+        let shell_cmd = "export TERM=xterm-256color; exec /bin/sh -i".to_string();
+        assert!(!shell_cmd.contains("stty"));
+        assert!(shell_cmd.contains("TERM=xterm-256color"));
+    }
+
+    #[test]
+    fn terminal_session_clone_is_independent() {
+        let session = TerminalSession {
+            session_id: "s1".to_string(),
+            pod_name: "pod".to_string(),
+            container: "main".to_string(),
+            namespace: "ns".to_string(),
+        };
+        let cloned = session.clone();
+        assert_eq!(session.session_id, cloned.session_id);
+        assert_eq!(session.pod_name, cloned.pod_name);
+    }
+
+    #[test]
+    fn terminal_output_data_preserves_bytes() {
+        let raw: Vec<u8> = (0..=255).collect();
+        let output = TerminalOutput {
+            session_id: "s".to_string(),
+            data: raw.clone(),
+        };
+        assert_eq!(output.data.len(), 256);
+        assert_eq!(output.data, raw);
+    }
+}
