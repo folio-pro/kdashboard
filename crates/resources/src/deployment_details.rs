@@ -5,7 +5,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 use k8s_client::Resource;
 use ui::gpui_component::tooltip::Tooltip;
-use ui::{back_btn, danger_btn, theme, Icon, IconName, Sizable};
+use ui::{back_btn, danger_btn, secondary_btn, theme, Icon, IconName, Sizable};
 
 /// Actions that can be triggered from DeploymentDetails
 #[derive(Clone, Debug)]
@@ -26,6 +26,7 @@ pub struct DeploymentDetails {
     yaml_valid: Option<bool>,
     related_pods: Vec<Resource>,
     loading_pods: bool,
+    confirm_delete: bool,
 }
 
 impl DeploymentDetails {
@@ -42,6 +43,7 @@ impl DeploymentDetails {
             yaml_valid: None,
             related_pods: Vec::new(),
             loading_pods: true,
+            confirm_delete: false,
         }
     }
 
@@ -312,25 +314,57 @@ impl DeploymentDetails {
                     .items_center()
                     .gap(px(12.0))
                     .child(self.render_edit_button(cx))
-                    .child(
-                        danger_btn("delete-btn", IconName::Trash, "Delete", colors).on_click(
-                            cx.listener(|this, _event, _window, cx| {
-                                if let Some(on_action) = &this.on_action {
-                                    let action = DeploymentAction::Delete {
-                                        name: this.resource.metadata.name.clone(),
-                                        namespace: this
-                                            .resource
-                                            .metadata
-                                            .namespace
-                                            .clone()
-                                            .unwrap_or_else(|| "default".to_string()),
-                                    };
-                                    on_action(action, cx);
-                                }
-                                cx.notify();
-                            }),
-                        ),
-                    ),
+                    .when(!self.confirm_delete, |el| {
+                        el.child(
+                            danger_btn("delete-btn", IconName::Trash, "Delete", colors).on_click(
+                                cx.listener(|this, _event, _window, cx| {
+                                    this.confirm_delete = true;
+                                    cx.notify();
+                                }),
+                            ),
+                        )
+                    })
+                    .when(self.confirm_delete, |el| {
+                        el.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .child(
+                                    div()
+                                        .text_size(px(12.0))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(colors.error)
+                                        .child("Delete this deployment?"),
+                                )
+                                .child(
+                                    danger_btn("confirm-delete-btn", IconName::Trash, "Confirm", colors)
+                                        .on_click(cx.listener(|this, _event, _window, cx| {
+                                            this.confirm_delete = false;
+                                            if let Some(on_action) = &this.on_action {
+                                                let action = DeploymentAction::Delete {
+                                                    name: this.resource.metadata.name.clone(),
+                                                    namespace: this
+                                                        .resource
+                                                        .metadata
+                                                        .namespace
+                                                        .clone()
+                                                        .unwrap_or_else(|| "default".to_string()),
+                                                };
+                                                on_action(action, cx);
+                                            }
+                                            cx.notify();
+                                        })),
+                                )
+                                .child(
+                                    secondary_btn("cancel-delete-btn", IconName::Close, "Cancel", colors)
+                                        .on_click(cx.listener(|this, _event, _window, cx| {
+                                            this.confirm_delete = false;
+                                            cx.notify();
+                                        })),
+                                ),
+                        )
+                    }),
             )
     }
 

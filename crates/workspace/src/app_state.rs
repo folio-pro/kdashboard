@@ -4,6 +4,7 @@ use k8s_client::{
     ConnectionStatus, PortForwardInfo, Resource, ResourceList, ResourceType, SortDirection,
 };
 use std::collections::HashMap;
+use std::time::Instant;
 use ui::ThemeMode as UiThemeMode;
 
 fn to_ui_theme_mode(mode: ThemeMode) -> UiThemeMode {
@@ -99,6 +100,7 @@ pub struct AppState {
     pub error: Option<String>,
     pub connection_status: ConnectionStatus,
     pub connection_error: Option<String>,
+    pub last_updated: Option<Instant>,
 
     // View state
     pub active_view: ActiveView,
@@ -150,6 +152,7 @@ impl AppState {
             error: None,
             connection_status: ConnectionStatus::Connecting,
             connection_error: None,
+            last_updated: None,
             active_view: ActiveView::ResourceTable,
             pod_context: None,
             active_panel: ActivePanel::None,
@@ -238,6 +241,9 @@ impl AppState {
             {
                 self.selected_resource = Some(updated.clone());
             }
+        }
+        if resources.is_some() {
+            self.last_updated = Some(Instant::now());
         }
         self.resources = resources;
     }

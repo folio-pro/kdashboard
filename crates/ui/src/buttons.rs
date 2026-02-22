@@ -4,12 +4,12 @@ use crate::{Icon, IconName, ThemeColors};
 
 /// Shared button sizing constants
 const BTN_PX: f32 = 12.0;
-const BTN_PY: f32 = 6.0;
+const BTN_PY: f32 = 7.0;
 const BTN_RADIUS: f32 = 6.0;
 const BTN_GAP: f32 = 6.0;
 const BTN_ICON_SIZE: f32 = 14.0;
-const BTN_TEXT_SIZE: f32 = 12.0;
-const BACK_BTN_SIZE: f32 = 30.0;
+const BTN_TEXT_SIZE: f32 = 13.0;
+const BACK_BTN_SIZE: f32 = 32.0;
 const BACK_BTN_ICON: f32 = 15.0;
 
 /// Base button layout (shared across all variants).
@@ -47,7 +47,7 @@ pub fn secondary_btn(
         .bg(colors.surface)
         .border_1()
         .border_color(colors.border)
-        .hover(|s| s.opacity(0.8))
+        .hover(|s| s.bg(colors.selection_hover))
         .child(
             Icon::new(icon)
                 .size(px(BTN_ICON_SIZE))
@@ -63,9 +63,13 @@ pub fn primary_btn(
     bg: Hsla,
     text_color: Hsla,
 ) -> Stateful<Div> {
+    let hover_bg = Hsla {
+        l: (bg.l - 0.06).max(0.0),
+        ..bg
+    };
     btn_base(id)
         .bg(bg)
-        .hover(|s| s.opacity(0.9))
+        .hover(|s| s.bg(hover_bg))
         .child(btn_label(label, text_color))
 }
 
@@ -77,9 +81,13 @@ pub fn primary_icon_btn(
     bg: Hsla,
     text_color: Hsla,
 ) -> Stateful<Div> {
+    let hover_bg = Hsla {
+        l: (bg.l - 0.06).max(0.0),
+        ..bg
+    };
     btn_base(id)
         .bg(bg)
-        .hover(|s| s.opacity(0.9))
+        .hover(|s| s.bg(hover_bg))
         .child(Icon::new(icon).size(px(BTN_ICON_SIZE)).color(text_color))
         .child(btn_label(label, text_color))
 }
@@ -91,9 +99,13 @@ pub fn danger_btn(
     label: impl Into<SharedString>,
     colors: &ThemeColors,
 ) -> Stateful<Div> {
+    let hover_bg = Hsla {
+        l: (colors.error.l - 0.06).max(0.0),
+        ..colors.error
+    };
     btn_base(id)
         .bg(colors.error)
-        .hover(|s| s.opacity(0.9))
+        .hover(|s| s.bg(hover_bg))
         .child(Icon::new(icon).size(px(BTN_ICON_SIZE)).color(colors.text))
         .child(btn_label(label, colors.text))
 }
@@ -109,7 +121,7 @@ pub fn back_btn(id: impl Into<ElementId>, colors: &ThemeColors) -> Stateful<Div>
         .border_1()
         .border_color(colors.border)
         .cursor_pointer()
-        .hover(|s| s.opacity(0.8))
+        .hover(|s| s.bg(colors.selection_hover))
         .flex()
         .items_center()
         .justify_center()
@@ -150,7 +162,7 @@ pub fn editor_tab(
                 .child(label),
         )
     } else {
-        el.hover(|s| s.opacity(0.8)).child(
+        el.hover(|s| s.text_color(text_active)).child(
             div()
                 .text_size(px(BTN_TEXT_SIZE))
                 .text_color(text_inactive)

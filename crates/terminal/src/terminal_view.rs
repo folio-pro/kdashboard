@@ -96,6 +96,7 @@ impl PodTerminalView {
         let pod_name = view.read(cx).pod_name.clone();
         let namespace = view.read(cx).namespace.clone();
         let container = view.read(cx).selected_container.clone();
+        let shell = view.read(cx).selected_shell.clone();
 
         let (tx, rx) = mpsc::channel::<TerminalMessage>();
 
@@ -135,6 +136,7 @@ impl PodTerminalView {
                     &namespace,
                     Some(120),
                     Some(30),
+                    Some(&shell),
                     on_output,
                     on_close,
                 )

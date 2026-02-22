@@ -59,6 +59,8 @@ impl Render for Header {
         let state = cx.global::<AppState>();
         let namespace = state.namespace.clone();
         let namespaces = state.namespaces.clone();
+        let last_updated = state.last_updated;
+        let is_loading = state.is_loading;
 
         let namespace_label: SharedString = namespace
             .clone()
@@ -155,12 +157,68 @@ impl Render for Header {
                             .when_some(search_input, |el, input| el.child(input)),
                     ),
             )
-            // Right: settings entry (replaces static user info)
+            // Right: refresh + last updated + namespace + settings
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(16.0))
+                    // Refresh button + last updated
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(
+                                div()
+                                    .id("header-refresh-btn")
+                                    .w(px(32.0))
+                                    .h(px(32.0))
+                                    .rounded(theme.border_radius_md)
+                                    .bg(colors.surface)
+                                    .border_1()
+                                    .border_color(colors.border)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(colors.selection_hover))
+                                    .when(is_loading, |el| el.opacity(0.5))
+                                    .child(
+                                        Icon::new(IconName::Refresh)
+                                            .size(px(14.0))
+                                            .color(colors.text_muted),
+                                    )
+                                    .on_click(cx.listener(move |_this, _event, _window, cx| {
+                                        let state = cx.global::<AppState>();
+                                        if state.is_loading {
+                                            return;
+                                        }
+                                        let resource_type = state.selected_type;
+                                        let namespace = state.namespace.clone();
+                                        crate::load_resources(cx, resource_type, namespace);
+                                        cx.notify();
+                                    })),
+                            )
+                            .when_some(last_updated, |el, updated| {
+                                let elapsed = updated.elapsed().as_secs();
+                                let label = if elapsed < 5 {
+                                    "Just now".to_string()
+                                } else if elapsed < 60 {
+                                    format!("{}s ago", elapsed)
+                                } else if elapsed < 3600 {
+                                    format!("{}m ago", elapsed / 60)
+                                } else {
+                                    format!("{}h ago", elapsed / 3600)
+                                };
+                                el.child(
+                                    div()
+                                        .text_size(px(11.0))
+                                        .text_color(colors.text_muted)
+                                        .child(label),
+                                )
+                            }),
+                    )
                     .child(namespace_button)
                     .child(
                         div()

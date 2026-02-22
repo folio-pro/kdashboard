@@ -5,7 +5,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 use k8s_client::Resource;
 use serde_json::Value;
-use ui::{back_btn, danger_btn, theme, Icon, IconName};
+use ui::{back_btn, danger_btn, secondary_btn, theme, Icon, IconName};
 
 #[derive(Clone, Debug)]
 pub enum GenericAction {
@@ -24,6 +24,7 @@ pub struct GenericResourceDetails {
     yaml_editor: Option<Entity<YamlEditor>>,
     original_yaml: String,
     yaml_valid: Option<bool>,
+    confirm_delete: bool,
 }
 
 impl GenericResourceDetails {
@@ -40,6 +41,7 @@ impl GenericResourceDetails {
             yaml_editor: None,
             original_yaml: String::new(),
             yaml_valid: None,
+            confirm_delete: false,
         }
     }
 
@@ -284,27 +286,64 @@ impl GenericResourceDetails {
                     .items_center()
                     .gap(px(12.0))
                     .child(self.render_edit_button(cx))
-                    .child(
-                        danger_btn("delete-btn", IconName::Trash, "Delete", colors).on_click(
-                            cx.listener(|this, _event, _window, cx| {
-                                if let Some(on_action) = &this.on_action {
-                                    on_action(
-                                        GenericAction::Delete {
-                                            name: this.resource.metadata.name.clone(),
-                                            namespace: this
-                                                .resource
-                                                .metadata
-                                                .namespace
-                                                .clone()
-                                                .unwrap_or_else(|| "default".to_string()),
-                                        },
-                                        cx,
-                                    );
-                                }
-                                cx.notify();
-                            }),
-                        ),
-                    ),
+                    .when(!self.confirm_delete, |el| {
+                        el.child(
+                            danger_btn("delete-btn", IconName::Trash, "Delete", colors).on_click(
+                                cx.listener(|this, _event, _window, cx| {
+                                    this.confirm_delete = true;
+                                    cx.notify();
+                                }),
+                            ),
+                        )
+                    })
+                    .when(self.confirm_delete, |el| {
+                        el.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .child(
+                                    div()
+                                        .text_size(px(12.0))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(colors.error)
+                                        .child("Delete this resource?"),
+                                )
+                                .child(
+                                    danger_btn("confirm-delete-btn", IconName::Trash, "Confirm", colors)
+                                        .on_click(cx.listener(|this, _event, _window, cx| {
+                                            this.confirm_delete = false;
+                                            if let Some(on_action) = &this.on_action {
+                                                on_action(
+                                                    GenericAction::Delete {
+                                                        name: this.resource.metadata.name.clone(),
+                                                        namespace: this
+                                                            .resource
+                                                            .metadata
+                                                            .namespace
+                                                            .clone()
+                                                            .unwrap_or_else(|| "default".to_string()),
+                                                    },
+                                                    cx,
+                                                );
+                                            }
+                                            cx.notify();
+                                        })),
+                                )
+                                .child(
+                                    secondary_btn(
+                                        "cancel-delete-btn",
+                                        IconName::Close,
+                                        "Cancel",
+                                        colors,
+                                    )
+                                    .on_click(cx.listener(|this, _event, _window, cx| {
+                                        this.confirm_delete = false;
+                                        cx.notify();
+                                    })),
+                                ),
+                        )
+                    }),
             )
     }
 
