@@ -159,6 +159,8 @@ fn main() -> Result<()> {
                 include_bytes!("../../ui/assets/fonts/JetBrainsMonoNL-Bold.ttf").as_slice(),
                 include_bytes!("../../ui/assets/fonts/JetBrainsMonoNL-Italic.ttf").as_slice(),
                 include_bytes!("../../ui/assets/fonts/JetBrainsMonoNL-BoldItalic.ttf").as_slice(),
+                // Devicon (technology brand icons for container display)
+                include_bytes!("../../ui/assets/fonts/devicon.ttf").as_slice(),
             ]
             .into_iter()
             .map(Cow::Borrowed)

@@ -1024,26 +1024,14 @@ impl PodDetails {
                                     .items_center()
                                     .gap(px(12.0))
                                     .child(
-                                        div()
-                                            .flex_shrink_0()
-                                            .size(px(36.0))
-                                            .rounded(theme.border_radius_md)
-                                            .bg(colors.primary)
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .child(
-                                                Icon::new(IconName::Box)
-                                                    .size(px(18.0))
-                                                    .color(colors.background),
-                                            ),
+                                        ui::container_icon::container_icon(&image, theme),
                                     )
                                     .child(
                                         div()
                                             .min_w(px(0.0))
                                             .flex()
                                             .flex_col()
-                                            .gap(px(2.0))
+                                            .gap(px(0.0))
                                             .child(with_double_click_copy(
                                                 div()
                                                     .id(ElementId::Name(
@@ -1053,6 +1041,7 @@ impl PodDetails {
                                                     .whitespace_nowrap()
                                                     .text_ellipsis()
                                                     .text_size(px(14.0))
+                                                    .line_height(px(18.0))
                                                     .text_color(colors.text)
                                                     .font_weight(FontWeight::SEMIBOLD)
                                                     .child(name.clone()),
@@ -1067,6 +1056,7 @@ impl PodDetails {
                                                     .whitespace_nowrap()
                                                     .text_ellipsis()
                                                     .text_size(px(12.0))
+                                                    .line_height(px(16.0))
                                                     .text_color(colors.text_secondary)
                                                     .child(image_short)
                                                     .tooltip({

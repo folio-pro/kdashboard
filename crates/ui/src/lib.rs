@@ -1,3 +1,4 @@
+pub mod container_icon;
 mod buttons;
 mod icon;
 mod theme;

@@ -311,6 +311,10 @@ impl ResourceTable {
                 let restarts = get_pod_restarts(resource);
                 (restarts.to_string().len() as f32 * char_width).max(30.0)
             }
+            "Containers" => {
+                let count = get_pod_container_images(resource).len();
+                (count as f32 * 26.0).max(26.0) // 22px icon + 4px gap each
+            }
             "Age" => 50.0, // ages are short like "5d", "12h"
             "Type" => get_json_value(&resource.spec, &["type"])
                 .and_then(|v| v.as_str())
@@ -370,6 +374,7 @@ impl ResourceTable {
             ResourceType::Pods => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
                 ColumnDef::new("Name", 240.0).with_icon(),
+                ColumnDef::new("Containers", 120.0),
                 ColumnDef::new("Namespace", 120.0),
                 ColumnDef::new("Status", 120.0).status_dot(),
                 ColumnDef::new("Restarts", 90.0),
@@ -1216,6 +1221,7 @@ impl ResourceTable {
             .items_center()
             .gap(px(0.0))
             .bg(colors.surface_elevated)
+            .rounded_t(theme.border_radius_lg)
             .border_b_1()
             .border_color(colors.border)
             .children(columns.iter().enumerate().flat_map(|(i, col)| {
@@ -1551,7 +1557,7 @@ impl ResourceTable {
 
                 // Get value based on column and resource type
                 match resource_type {
-                    ResourceType::Pods => self.get_pod_cell_value(cell, col.name, resource, colors),
+                    ResourceType::Pods => self.get_pod_cell_value(cx, cell, col.name, resource, colors),
                     ResourceType::Deployments => {
                         self.get_deployment_cell_value(cell, col.name, resource, colors)
                     }
@@ -1600,6 +1606,7 @@ impl ResourceTable {
 
     fn get_pod_cell_value(
         &self,
+        cx: &Context<'_, Self>,
         cell: Div,
         column: &str,
         resource: &Resource,
@@ -1614,6 +1621,34 @@ impl ResourceTable {
                     .text_color(colors.text)
                     .child(resource.metadata.name.clone()),
             ),
+            "Containers" => {
+                let images = get_pod_container_images(resource);
+                let theme = theme(cx);
+                cell.flex().items_center().gap(px(4.0)).children(
+                    images.into_iter().enumerate().map(|(i, image)| {
+                        let tooltip_image = image.clone();
+                        div()
+                            .id(ElementId::Name(
+                                format!(
+                                    "ctr-{}-{}",
+                                    resource.metadata.name, i
+                                )
+                                .into(),
+                            ))
+                            .child(
+                                ui::container_icon::container_icon_small(
+                                    &image,
+                                    &theme,
+                                ),
+                            )
+                            .tooltip(move |_, cx| {
+                                let img = tooltip_image.clone();
+                                cx.new(|_| ui::gpui_component::tooltip::Tooltip::new(img))
+                                    .into()
+                            })
+                    }),
+                )
+            }
             "Namespace" => cell.text_color(colors.text_secondary).child(
                 resource
                     .metadata

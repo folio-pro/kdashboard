@@ -196,6 +196,19 @@ pub(crate) fn get_pod_restarts(resource: &Resource) -> u64 {
         .unwrap_or(0)
 }
 
+/// Extract container images from a pod resource's spec.containers[].image
+pub(crate) fn get_pod_container_images(resource: &Resource) -> Vec<String> {
+    get_json_value(&resource.spec, &["containers"])
+        .and_then(|v| v.as_array())
+        .map(|containers| {
+            containers
+                .iter()
+                .filter_map(|c| c.get("image").and_then(|v| v.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(crate) fn get_deployment_ready_count(resource: &Resource) -> (u64, u64) {
     let ready = get_json_value(&resource.status, &["readyReplicas"])
         .and_then(|v| v.as_u64())
