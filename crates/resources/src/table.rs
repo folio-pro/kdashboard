@@ -9,6 +9,7 @@ use ui::{
     gpui_component::{
         input::{Input, InputState},
         scroll::ScrollableElement,
+        v_virtual_list, VirtualListScrollHandle,
     },
     secondary_btn, theme, Icon, IconName, Sizable, ThemeColors,
 };
@@ -80,12 +81,15 @@ enum BulkDialog {
     Label,
 }
 
+/// Fixed row height for virtual scrolling (14px top + 14px bottom padding + ~20px text + 1px border)
+const ROW_HEIGHT: f32 = 49.0;
+
 pub struct ResourceTable {
     resources: Vec<Resource>,
     resource_type: ResourceType,
     selected_index: Option<usize>,
     selected_indices: HashSet<usize>,
-    scroll_handle: ScrollHandle,
+    scroll_handle: VirtualListScrollHandle,
     on_select: Option<Box<dyn Fn(usize, &Resource, &mut Context<'_, Self>) + 'static>>,
     on_open: Option<Box<dyn Fn(&Resource, &mut Context<'_, Self>) + 'static>>,
     on_ai_assist: Option<Box<dyn Fn(&Resource, &mut Context<'_, Self>) + 'static>>,
@@ -95,6 +99,10 @@ pub struct ResourceTable {
     column_widths: HashMap<String, f32>,
     /// Current sort state
     sort_state: SortState,
+    /// Cached sorted indices — maps virtual position to original resource index
+    sorted_indices: Vec<usize>,
+    /// Whether the sort cache needs rebuilding
+    sort_dirty: bool,
     /// Column being resized
     resizing_column: Option<String>,
     /// Starting X position for resize drag
@@ -116,18 +124,21 @@ impl ResourceTable {
         resource_type: ResourceType,
         focus_handle: FocusHandle,
     ) -> Self {
+        let sorted_indices: Vec<usize> = (0..resources.len()).collect();
         Self {
             resources,
             resource_type,
             selected_index: None,
             selected_indices: HashSet::new(),
-            scroll_handle: ScrollHandle::new(),
+            scroll_handle: VirtualListScrollHandle::new(),
             on_select: None,
             on_open: None,
             on_ai_assist: None,
             on_bulk_action: None,
             column_widths: HashMap::new(),
             sort_state: SortState::default(),
+            sorted_indices,
+            sort_dirty: true,
             resizing_column: None,
             resize_start_x: 0.0,
             resize_start_width: 0.0,
@@ -143,6 +154,7 @@ impl ResourceTable {
 
     pub fn set_resources(&mut self, resources: Vec<Resource>) {
         self.resources = resources;
+        self.sort_dirty = true;
         self.selected_indices.retain(|i| *i < self.resources.len());
         if self
             .selected_index
@@ -216,6 +228,7 @@ impl ResourceTable {
             self.sort_state.column = Some(column.to_string());
             self.sort_state.direction = SortDirection::Ascending;
         }
+        self.sort_dirty = true;
         cx.notify();
     }
 
@@ -327,29 +340,29 @@ impl ResourceTable {
         text
     }
 
-    /// Sort resources based on current sort state
-    fn get_sorted_resources(&self) -> Vec<(usize, Resource)> {
-        let mut indexed: Vec<(usize, Resource)> = self
-            .resources
-            .iter()
-            .enumerate()
-            .map(|(i, r)| (i, r.clone()))
-            .collect();
+    /// Rebuild sorted indices cache if dirty
+    fn ensure_sorted(&mut self) {
+        if !self.sort_dirty {
+            return;
+        }
+        self.sort_dirty = false;
+
+        self.sorted_indices = (0..self.resources.len()).collect();
 
         if let Some(ref col) = self.sort_state.column {
             let direction = self.sort_state.direction;
             let resource_type = self.resource_type;
+            let resources = &self.resources;
 
-            indexed.sort_by(|(_, a), (_, b)| {
-                let cmp = compare_resources_by_column(a, b, col, resource_type);
+            self.sorted_indices.sort_by(|&a, &b| {
+                let cmp =
+                    compare_resources_by_column(&resources[a], &resources[b], col, resource_type);
                 match direction {
                     SortDirection::Ascending => cmp,
                     SortDirection::Descending => cmp.reverse(),
                 }
             });
         }
-
-        indexed
     }
 
     fn get_columns(&self) -> Vec<ColumnDef> {
@@ -751,29 +764,17 @@ impl ColumnDef {
 
 impl Render for ResourceTable {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        // Rebuild sorted indices if needed (only when resources or sort state change)
+        self.ensure_sorted();
+
         let theme = theme(cx);
         let colors = &theme.colors;
         let columns = self.get_columns();
-        let selected_indices = self.selected_indices.clone();
-        let selected_index = self.selected_index;
         let resource_type = self.resource_type;
         let sort_state = self.sort_state.clone();
 
-        // Get sorted resources with original indices
-        let sorted_resources = self.get_sorted_resources();
-        let resources: Vec<_> = sorted_resources
-            .iter()
-            .map(|(original_idx, r)| {
-                (
-                    *original_idx,
-                    r.clone(),
-                    selected_indices.contains(original_idx)
-                        || selected_index == Some(*original_idx),
-                )
-            })
-            .collect();
-
-        let is_empty = resources.is_empty();
+        let is_empty = self.resources.is_empty();
+        let item_count = self.sorted_indices.len();
 
         let mut container = div()
             .id("resource-table-root")
@@ -791,7 +792,7 @@ impl Render for ResourceTable {
                 window.focus(&this.focus_handle);
             }));
 
-        let visible_indices: Vec<usize> = sorted_resources.iter().map(|(idx, _)| *idx).collect();
+        let visible_indices: Vec<usize> = self.sorted_indices.clone();
         let selected_visible_count = visible_indices
             .iter()
             .filter(|idx| self.selected_indices.contains(idx))
@@ -814,7 +815,7 @@ impl Render for ResourceTable {
             some_visible_selected,
         ));
 
-        // Table body - scrollable
+        // Table body
         if is_empty {
             container = container.child(
                 div()
@@ -839,21 +840,50 @@ impl Render for ResourceTable {
                     ),
             );
         } else {
-            // Scrollable body container
-            let rows: Vec<_> = resources
-                .into_iter()
-                .map(|(idx, resource, selected)| {
-                    self.render_row(cx, &columns, idx, resource, selected, resource_type)
-                })
-                .collect();
+            // Virtual scrolling — only renders rows in the visible viewport
+            let item_sizes = std::rc::Rc::new(
+                vec![size(px(0.0), px(ROW_HEIGHT)); item_count],
+            );
+            let scroll_handle = self.scroll_handle.clone();
 
             container = container.child(
                 div()
-                    .id("table-body")
+                    .id("table-body-scroll")
                     .flex_1()
-                    .track_scroll(&self.scroll_handle)
-                    .overflow_y_scrollbar()
-                    .child(div().flex().flex_col().children(rows)),
+                    .relative()
+                    .vertical_scrollbar(&scroll_handle)
+                    .child(
+                        v_virtual_list(
+                            cx.entity(),
+                            "table-body",
+                            item_sizes,
+                            move |this, visible_range, _window, cx| {
+                                visible_range
+                                    .filter_map(|virtual_idx| {
+                                        let original_idx =
+                                            *this.sorted_indices.get(virtual_idx)?;
+                                        let resource = this.resources.get(original_idx)?;
+                                        let selected =
+                                            this.selected_indices.contains(&original_idx)
+                                                || this.selected_index == Some(original_idx);
+                                        let columns = this.get_columns();
+                                        Some(
+                                            this.render_row(
+                                                cx,
+                                                &columns,
+                                                original_idx,
+                                                resource,
+                                                selected,
+                                                resource_type,
+                                            )
+                                            .into_any_element(),
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                            },
+                        )
+                        .track_scroll(&scroll_handle),
+                    ),
             );
         }
 
@@ -1375,7 +1405,7 @@ impl ResourceTable {
         cx: &Context<'_, Self>,
         columns: &[ColumnDef],
         index: usize,
-        resource: Resource,
+        resource: &Resource,
         selected: bool,
         resource_type: ResourceType,
     ) -> impl IntoElement {
@@ -1398,7 +1428,7 @@ impl ResourceTable {
             index,
             selected,
             row_group.clone(),
-            &resource,
+            resource,
             resource_type,
         );
 
@@ -1420,8 +1450,8 @@ impl ResourceTable {
             .id(ElementId::NamedInteger("row".into(), index as u64))
             .group(row_group)
             .w_full()
+            .h(px(ROW_HEIGHT))
             .px(px(20.0))
-            .py(px(14.0))
             .flex()
             .items_center()
             .gap(px(0.0))

@@ -93,6 +93,8 @@ pub struct AppState {
     pub contexts: Vec<String>,
     resource_cache: HashMap<ResourceCacheKey, ResourceList>,
     pub filter: String,
+    /// Cached filtered resource indices — invalidated when resources or filter change
+    filtered_cache: Option<Vec<usize>>,
 
     // UI state
     pub is_loading: bool,
@@ -146,6 +148,7 @@ impl AppState {
             contexts: Vec::new(),
             resource_cache: HashMap::new(),
             filter: String::new(),
+            filtered_cache: None,
             is_loading: false,
             error: None,
             connection_status: ConnectionStatus::Connecting,
@@ -240,6 +243,7 @@ impl AppState {
             }
         }
         self.resources = resources;
+        self.rebuild_filtered_cache();
     }
 
     fn cache_key(
@@ -404,6 +408,7 @@ impl AppState {
 
     pub fn set_filter(&mut self, filter: String) {
         self.filter = filter;
+        self.rebuild_filtered_cache();
     }
 
     pub fn set_loading(&mut self, loading: bool) {
@@ -452,21 +457,52 @@ impl AppState {
         self.port_forwards.clear();
     }
 
+    /// Rebuild the filtered indices cache
+    fn rebuild_filtered_cache(&mut self) {
+        let Some(resources) = &self.resources else {
+            self.filtered_cache = Some(Vec::new());
+            return;
+        };
+
+        if self.filter.is_empty() {
+            self.filtered_cache = Some((0..resources.items.len()).collect());
+        } else {
+            let filter_lower = self.filter.to_lowercase();
+            self.filtered_cache = Some(
+                resources
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| r.metadata.name.to_lowercase().contains(&filter_lower))
+                    .map(|(i, _)| i)
+                    .collect(),
+            );
+        }
+    }
+
     pub fn filtered_resources(&self) -> Vec<&Resource> {
         let Some(resources) = &self.resources else {
             return Vec::new();
         };
-
-        if self.filter.is_empty() {
-            return resources.items.iter().collect();
+        match &self.filtered_cache {
+            Some(indices) => indices
+                .iter()
+                .filter_map(|&i| resources.items.get(i))
+                .collect(),
+            None => {
+                // Fallback: no cache yet, compute inline
+                if self.filter.is_empty() {
+                    resources.items.iter().collect()
+                } else {
+                    let filter_lower = self.filter.to_lowercase();
+                    resources
+                        .items
+                        .iter()
+                        .filter(|r| r.metadata.name.to_lowercase().contains(&filter_lower))
+                        .collect()
+                }
+            }
         }
-
-        let filter_lower = self.filter.to_lowercase();
-        resources
-            .items
-            .iter()
-            .filter(|r| r.metadata.name.to_lowercase().contains(&filter_lower))
-            .collect()
     }
 }
 

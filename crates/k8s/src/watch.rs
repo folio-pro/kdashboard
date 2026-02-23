@@ -9,6 +9,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
+
+/// Minimum interval between sending updates to avoid flooding the UI
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(200);
 
 /// Start a watch stream for the given resource type and namespace.
 /// Sends a full `ResourceList` through `tx` whenever the data changes.
@@ -181,41 +185,83 @@ where
 {
     let ns_owned = namespace.map(|s| s.to_string());
     let mut store: HashMap<String, Resource> = HashMap::new();
+    let mut last_send = Instant::now() - WATCH_DEBOUNCE;
+    let mut dirty = false;
 
     let stream = watcher::watcher(api, watcher::Config::default());
     futures::pin_mut!(stream);
 
-    while let Some(event) = stream.try_next().await? {
+    loop {
         if cancelled.load(Ordering::SeqCst) {
             return Ok(());
         }
 
-        match event {
-            Event::Applied(obj) => {
-                let resource = obj_to_resource(&obj, api_version, kind);
-                store.insert(resource.metadata.uid.clone(), resource);
+        // If there are pending changes, wait at most until the debounce window expires
+        let next = if dirty {
+            let remaining = WATCH_DEBOUNCE.saturating_sub(last_send.elapsed());
+            match tokio::time::timeout(remaining, stream.try_next()).await {
+                Ok(result) => result?,
+                Err(_) => None, // timeout — flush pending changes
             }
-            Event::Deleted(obj) => {
-                if let Some(uid) = obj.meta().uid.as_ref() {
-                    store.remove(uid);
-                }
-            }
-            Event::Restarted(objects) => {
-                store.clear();
-                for obj in &objects {
-                    let resource = obj_to_resource(obj, api_version, kind);
-                    store.insert(resource.metadata.uid.clone(), resource);
-                }
-            }
-        }
-
-        let list = ResourceList {
-            resource_type: type_name.to_string(),
-            namespace: ns_owned.clone(),
-            items: store.values().cloned().collect(),
+        } else {
+            stream.try_next().await?
         };
-        if tx.send(list).is_err() {
-            return Ok(()); // Receiver dropped
+
+        match next {
+            Some(event) => {
+                match event {
+                    Event::Applied(obj) => {
+                        let resource = obj_to_resource(&obj, api_version, kind);
+                        store.insert(resource.metadata.uid.clone(), resource);
+                    }
+                    Event::Deleted(obj) => {
+                        if let Some(uid) = obj.meta().uid.as_ref() {
+                            store.remove(uid);
+                        }
+                    }
+                    Event::Restarted(objects) => {
+                        store.clear();
+                        for obj in &objects {
+                            let resource = obj_to_resource(obj, api_version, kind);
+                            store.insert(resource.metadata.uid.clone(), resource);
+                        }
+                    }
+                }
+                dirty = true;
+
+                // Send immediately if debounce window has passed
+                if last_send.elapsed() >= WATCH_DEBOUNCE {
+                    let list = ResourceList {
+                        resource_type: type_name.to_string(),
+                        namespace: ns_owned.clone(),
+                        items: store.values().cloned().collect(),
+                    };
+                    if tx.send(list).is_err() {
+                        return Ok(());
+                    }
+                    last_send = Instant::now();
+                    dirty = false;
+                }
+            }
+            None => {
+                // Stream ended or timeout — flush pending changes
+                if dirty {
+                    let list = ResourceList {
+                        resource_type: type_name.to_string(),
+                        namespace: ns_owned.clone(),
+                        items: store.values().cloned().collect(),
+                    };
+                    if tx.send(list).is_err() {
+                        return Ok(());
+                    }
+                    last_send = Instant::now();
+                    dirty = false;
+                }
+                // If it was a stream end (not a timeout), break
+                if !dirty && last_send.elapsed() >= WATCH_DEBOUNCE {
+                    break;
+                }
+            }
         }
     }
 
@@ -268,41 +314,79 @@ async fn watch_vpa(
 
     let ns_owned = namespace.map(|s| s.to_string());
     let mut store: HashMap<String, Resource> = HashMap::new();
+    let mut last_send = Instant::now() - WATCH_DEBOUNCE;
+    let mut dirty = false;
 
     let stream = watcher::watcher(api, watcher::Config::default());
     futures::pin_mut!(stream);
 
-    while let Some(event) = stream.try_next().await? {
+    loop {
         if cancelled.load(Ordering::SeqCst) {
             return Ok(());
         }
 
-        match event {
-            Event::Applied(obj) => {
-                let resource = dynamic_to_resource(&obj);
-                store.insert(resource.metadata.uid.clone(), resource);
+        let next = if dirty {
+            let remaining = WATCH_DEBOUNCE.saturating_sub(last_send.elapsed());
+            match tokio::time::timeout(remaining, stream.try_next()).await {
+                Ok(result) => result?,
+                Err(_) => None,
             }
-            Event::Deleted(obj) => {
-                if let Some(uid) = obj.metadata.uid.as_ref() {
-                    store.remove(uid);
-                }
-            }
-            Event::Restarted(objects) => {
-                store.clear();
-                for obj in &objects {
-                    let resource = dynamic_to_resource(obj);
-                    store.insert(resource.metadata.uid.clone(), resource);
-                }
-            }
-        }
-
-        let list = ResourceList {
-            resource_type: "verticalpodautoscalers".to_string(),
-            namespace: ns_owned.clone(),
-            items: store.values().cloned().collect(),
+        } else {
+            stream.try_next().await?
         };
-        if tx.send(list).is_err() {
-            return Ok(());
+
+        match next {
+            Some(event) => {
+                match event {
+                    Event::Applied(obj) => {
+                        let resource = dynamic_to_resource(&obj);
+                        store.insert(resource.metadata.uid.clone(), resource);
+                    }
+                    Event::Deleted(obj) => {
+                        if let Some(uid) = obj.metadata.uid.as_ref() {
+                            store.remove(uid);
+                        }
+                    }
+                    Event::Restarted(objects) => {
+                        store.clear();
+                        for obj in &objects {
+                            let resource = dynamic_to_resource(obj);
+                            store.insert(resource.metadata.uid.clone(), resource);
+                        }
+                    }
+                }
+                dirty = true;
+
+                if last_send.elapsed() >= WATCH_DEBOUNCE {
+                    let list = ResourceList {
+                        resource_type: "verticalpodautoscalers".to_string(),
+                        namespace: ns_owned.clone(),
+                        items: store.values().cloned().collect(),
+                    };
+                    if tx.send(list).is_err() {
+                        return Ok(());
+                    }
+                    last_send = Instant::now();
+                    dirty = false;
+                }
+            }
+            None => {
+                if dirty {
+                    let list = ResourceList {
+                        resource_type: "verticalpodautoscalers".to_string(),
+                        namespace: ns_owned.clone(),
+                        items: store.values().cloned().collect(),
+                    };
+                    if tx.send(list).is_err() {
+                        return Ok(());
+                    }
+                    last_send = Instant::now();
+                    dirty = false;
+                }
+                if !dirty && last_send.elapsed() >= WATCH_DEBOUNCE {
+                    break;
+                }
+            }
         }
     }
 
