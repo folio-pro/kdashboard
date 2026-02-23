@@ -1504,6 +1504,42 @@ pub async fn get_pod_events(
         .collect())
 }
 
+/// List pods matching a label selector and return (pod_name, container_names) tuples.
+pub async fn list_pods_by_labels(
+    client: &Client,
+    namespace: &str,
+    selector: &std::collections::BTreeMap<String, String>,
+) -> Result<Vec<(String, Vec<String>)>> {
+    use k8s_openapi::api::core::v1::Pod;
+
+    let label_selector = selector
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let api: Api<Pod> = Api::namespaced(client.clone(), namespace);
+    let lp = ListParams::default().labels(&label_selector);
+    let list = api
+        .list(&lp)
+        .await
+        .context("Failed to list pods by labels")?;
+
+    Ok(list
+        .items
+        .into_iter()
+        .map(|pod| {
+            let name = pod.metadata.name.unwrap_or_default();
+            let containers = pod
+                .spec
+                .as_ref()
+                .map(|s| s.containers.iter().map(|c| c.name.clone()).collect())
+                .unwrap_or_default();
+            (name, containers)
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,18 +6,18 @@ use crate::app_state::{
     ActivePanel, ActiveView, AppState, SettingsTab, app_state, update_app_state,
 };
 use crate::settings::{AIProvider, ThemeMode};
-use crate::{Header, Sidebar, TitleBar};
+use crate::{Sidebar, TitleBar};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use k8s_client::{ConnectionStatus, Resource};
-use logs::PodLogsView;
+use logs::{DeploymentLogsView, PodLogsView};
 use resources::{
     BulkTableAction, DeploymentAction, DeploymentDetails, GenericAction, GenericResourceDetails,
     HpaAction, HpaDetails, PodAction, PodDetails, PortForwardView, PortForwardViewAction,
     ReplicaSetAction, ReplicaSetDetails, ResourceTable, VpaAction, VpaDetails,
 };
 use terminal::PodTerminalView;
-use ui::gpui_component::input::InputState;
+use ui::gpui_component::input::{Input, InputEvent, InputState};
 use ui::{
     Button, ButtonVariant, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenu, PopupMenuItem,
     Sizable, Size, Spinner, ThemeMode as UiThemeMode, primary_icon_btn, secondary_btn, theme,
@@ -42,10 +42,75 @@ enum MetricStatus {
     Other,
 }
 
+/// Parse a Kubernetes CPU string (e.g. "100m", "0.5", "2") to millicores.
+fn parse_cpu_to_millicores(s: &str) -> f64 {
+    let s = s.trim();
+    if let Some(m) = s.strip_suffix('m') {
+        m.parse::<f64>().unwrap_or(0.0)
+    } else if let Some(n) = s.strip_suffix('n') {
+        n.parse::<f64>().unwrap_or(0.0) / 1_000_000.0
+    } else {
+        // Whole cores
+        s.parse::<f64>().unwrap_or(0.0) * 1000.0
+    }
+}
+
+/// Parse a Kubernetes memory string (e.g. "128Mi", "1Gi", "512000Ki") to bytes.
+fn parse_memory_to_bytes(s: &str) -> f64 {
+    let s = s.trim();
+    if let Some(v) = s.strip_suffix("Gi") {
+        v.parse::<f64>().unwrap_or(0.0) * 1024.0 * 1024.0 * 1024.0
+    } else if let Some(v) = s.strip_suffix("Mi") {
+        v.parse::<f64>().unwrap_or(0.0) * 1024.0 * 1024.0
+    } else if let Some(v) = s.strip_suffix("Ki") {
+        v.parse::<f64>().unwrap_or(0.0) * 1024.0
+    } else if let Some(v) = s.strip_suffix('G') {
+        v.parse::<f64>().unwrap_or(0.0) * 1_000_000_000.0
+    } else if let Some(v) = s.strip_suffix('M') {
+        v.parse::<f64>().unwrap_or(0.0) * 1_000_000.0
+    } else if let Some(v) = s.strip_suffix('K') {
+        v.parse::<f64>().unwrap_or(0.0) * 1_000.0
+    } else {
+        s.parse::<f64>().unwrap_or(0.0)
+    }
+}
+
+/// Format millicores to a human-readable CPU string.
+fn format_cpu(millicores: f64) -> String {
+    if millicores == 0.0 {
+        "N/A".to_string()
+    } else if millicores >= 1000.0 {
+        let cores = millicores / 1000.0;
+        if cores.fract() == 0.0 {
+            format!("{:.0}", cores)
+        } else {
+            format!("{:.1}", cores)
+        }
+    } else {
+        format!("{:.0}m", millicores)
+    }
+}
+
+/// Format bytes to a human-readable memory string.
+fn format_bytes(bytes: f64) -> String {
+    if bytes == 0.0 {
+        "N/A".to_string()
+    } else if bytes >= 1024.0 * 1024.0 * 1024.0 {
+        format!("{:.1} GB", bytes / (1024.0 * 1024.0 * 1024.0))
+    } else if bytes >= 1024.0 * 1024.0 {
+        format!("{:.0} MB", bytes / (1024.0 * 1024.0))
+    } else if bytes >= 1024.0 {
+        format!("{:.0} KB", bytes / 1024.0)
+    } else {
+        format!("{:.0} B", bytes)
+    }
+}
+
 pub struct AppView {
     sidebar: Entity<Sidebar>,
-    header: Entity<Header>,
     title_bar: Entity<TitleBar>,
+    search_input: Option<Entity<InputState>>,
+    _search_subscription: Option<Subscription>,
     resource_table: Entity<ResourceTable>,
     pod_details: Option<Entity<PodDetails>>,
     deployment_details: Option<Entity<DeploymentDetails>>,
@@ -54,6 +119,7 @@ pub struct AppView {
     vpa_details: Option<Entity<VpaDetails>>,
     generic_details: Option<Entity<GenericResourceDetails>>,
     pod_logs: Option<Entity<PodLogsView>>,
+    deployment_logs: Option<Entity<DeploymentLogsView>>,
     pod_terminal: Option<Entity<PodTerminalView>>,
     port_forward_view: Option<Entity<PortForwardView>>,
     ai_prompt_input: Option<Entity<InputState>>,
@@ -87,8 +153,9 @@ impl AppView {
 
         Self {
             sidebar: cx.new(|_| Sidebar::new(sidebar_collapsed)),
-            header: cx.new(|_| Header::new()),
             title_bar: cx.new(|_| TitleBar::new()),
+            search_input: None,
+            _search_subscription: None,
             resource_table,
             pod_details: None,
             deployment_details: None,
@@ -97,6 +164,7 @@ impl AppView {
             vpa_details: None,
             generic_details: None,
             pod_logs: None,
+            deployment_logs: None,
             pod_terminal: None,
             port_forward_view: None,
             ai_prompt_input: None,
@@ -337,6 +405,15 @@ impl Render for AppView {
                                             state.set_selected_resource(Some(pod));
                                         });
                                     }
+                                    DeploymentAction::ViewLogs {
+                                        name,
+                                        namespace,
+                                        selector,
+                                    } => {
+                                        cx.update_global::<AppState, _>(|state, _cx| {
+                                            state.open_deployment_logs(name, namespace, selector);
+                                        });
+                                    }
                                 })
                         });
                         // Fetch related pods in background
@@ -469,6 +546,33 @@ impl Render for AppView {
                 }
             } else if state.active_view != ActiveView::PodLogs && self.pod_logs.is_some() {
                 self.pod_logs = None;
+            }
+        }
+
+        // Check if we need to create/destroy DeploymentLogsView
+        {
+            let state = app_state(cx);
+            if state.active_view == ActiveView::DeploymentLogs
+                && self.deployment_logs.is_none()
+            {
+                if let Some(ctx) = &state.deployment_logs_context {
+                    let name = ctx.name.clone();
+                    let namespace = ctx.namespace.clone();
+                    let selector = ctx.selector.clone();
+                    let logs_view = cx.new(|_| {
+                        DeploymentLogsView::new(name, namespace, selector).on_close(|cx| {
+                            cx.update_global::<AppState, _>(|state, _cx| {
+                                state.close_pod_view();
+                            });
+                        })
+                    });
+                    DeploymentLogsView::init(logs_view.clone(), cx);
+                    self.deployment_logs = Some(logs_view);
+                }
+            } else if state.active_view != ActiveView::DeploymentLogs
+                && self.deployment_logs.is_some()
+            {
+                self.deployment_logs = None;
             }
         }
 
@@ -611,12 +715,11 @@ impl Render for AppView {
             || self.hpa_details.is_some()
             || self.vpa_details.is_some()
             || self.generic_details.is_some();
-        let showing_logs = self.pod_logs.is_some();
+        let showing_logs = self.pod_logs.is_some() || self.deployment_logs.is_some();
         let showing_terminal = self.pod_terminal.is_some();
         let showing_port_forwards = self.port_forward_view.is_some();
         let showing_settings = state.settings_open || active_view == ActiveView::Settings;
-        let show_top_bar =
-            !showing_details && !showing_logs && !showing_terminal && !showing_port_forwards;
+
 
         div()
             .id("workspace-root")
@@ -706,8 +809,6 @@ impl Render for AppView {
                             .flex()
                             .flex_col()
                             .overflow_hidden()
-                            // Header (only show in table mode)
-                            .when(show_top_bar, |el: Div| el.child(self.header.clone()))
                             // Content
                             .child(self.render_content(
                                 window,
@@ -801,16 +902,24 @@ impl AppView {
             }
         }
 
-        // Show logs view (full screen)
+        // Show logs view (full screen) — pod logs or deployment logs
         if showing_logs {
-            if let Some(logs_view) = &self.pod_logs {
+            let logs_child: Option<AnyElement> =
+                if let Some(logs_view) = &self.pod_logs {
+                    Some(div().flex_1().overflow_hidden().child(logs_view.clone()).into_any_element())
+                } else if let Some(logs_view) = &self.deployment_logs {
+                    Some(div().flex_1().overflow_hidden().child(logs_view.clone()).into_any_element())
+                } else {
+                    None
+                };
+            if let Some(child) = logs_child {
                 let mut content = div()
                     .flex_1()
                     .flex()
                     .flex_col()
                     .relative()
                     .overflow_hidden()
-                    .child(div().flex_1().overflow_hidden().child(logs_view.clone()));
+                    .child(child);
                 if showing_settings {
                     content = content.child(
                         div()
@@ -964,7 +1073,7 @@ impl AppView {
         }
 
         // Table view
-        let state = app_state(cx);
+        let resource_area = self.render_resource_area(window, cx);
         let base_content = div()
             .size_full()
             .flex()
@@ -978,7 +1087,7 @@ impl AppView {
                     .overflow_hidden()
                     .p(px(24.0))
                     .gap(px(24.0))
-                    .child(self.render_resource_area(cx, state)),
+                    .child(resource_area),
             );
 
         let mut content = div()
@@ -1016,11 +1125,18 @@ impl AppView {
     }
 
     fn render_resource_area(
-        &self,
-        cx: &Context<'_, Self>,
-        state: &crate::app_state::AppState,
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
     ) -> impl IntoElement {
-        if state.connection_status == ConnectionStatus::Connecting {
+        // Read state values we need upfront
+        let state = app_state(cx);
+        let connection_status = state.connection_status;
+        let resource_type = state.selected_type;
+        let is_loading = state.is_loading;
+        let error = state.error.clone();
+
+        if connection_status == ConnectionStatus::Connecting {
             let theme = theme(cx);
             let colors = &theme.colors;
 
@@ -1068,7 +1184,8 @@ impl AppView {
                 );
         }
 
-        if state.connection_status == ConnectionStatus::Error {
+        if connection_status == ConnectionStatus::Error {
+            let state = app_state(cx);
             if let Some(connection_feedback) = self.render_connection_feedback(cx, state) {
                 return div()
                     .size_full()
@@ -1079,20 +1196,25 @@ impl AppView {
             }
         }
 
+        // 1. Page header (title + namespace + search + action buttons)
+        let page_header = self.render_page_header(window, cx, resource_type);
+
+        // Re-borrow state for metric cards
+        let state = app_state(cx);
+        let metric_cards = self.render_metric_cards(cx, state);
+
         let theme = theme(cx);
         let colors = &theme.colors;
-        let resource_type = state.selected_type;
 
         let mut container = div().size_full().flex().flex_col().gap(px(14.0));
 
-        // 1. Page header (title + subtitle + action buttons)
-        container = container.child(self.render_page_header(cx, resource_type));
+        container = container.child(page_header);
 
         // 2. Metric cards
-        container = container.child(self.render_metric_cards(cx, state));
+        container = container.child(metric_cards);
 
         // Error message
-        if let Some(error) = &state.error {
+        if let Some(error) = &error {
             container = container.child(
                 div()
                     .px(px(12.0))
@@ -1108,7 +1230,7 @@ impl AppView {
         }
 
         // 3. Resource table or loading state
-        if state.is_loading {
+        if is_loading {
             container = container.child(
                 div()
                     .flex_1()
@@ -1305,51 +1427,153 @@ impl AppView {
         )
     }
 
-    /// Render the page header with title, subtitle, and action buttons
+    fn ensure_search_input(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        if self.search_input.is_some() {
+            return;
+        }
+        let input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search resources..."));
+        let sub = cx.subscribe(&input, |_this, _input, ev: &InputEvent, cx| {
+            if let InputEvent::Change = ev {
+                let text = _this
+                    .search_input
+                    .as_ref()
+                    .map(|i| i.read(cx).text().to_string())
+                    .unwrap_or_default();
+                cx.update_global::<AppState, _>(|state, _| {
+                    state.set_filter(text);
+                });
+                cx.notify();
+            }
+        });
+        self.search_input = Some(input);
+        self._search_subscription = Some(sub);
+    }
+
+    /// Render the consolidated page header: Title + Namespace (left), Search + actions (right)
     fn render_page_header(
-        &self,
-        cx: &Context<'_, Self>,
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
         resource_type: k8s_client::ResourceType,
-    ) -> impl IntoElement {
+    ) -> AnyElement {
+        self.ensure_search_input(window, cx);
+
         let theme = theme(cx);
         let colors = &theme.colors;
+        let state = cx.global::<AppState>();
+        let namespace = state.namespace.clone();
+        let namespaces = state.namespaces.clone();
+
+        let ns_display: SharedString = namespace
+            .clone()
+            .unwrap_or_else(|| "all".to_string())
+            .into();
+
+        let current_ns = namespace.clone();
+        let pill_style = ui::gpui_component::button::ButtonCustomVariant::new(cx)
+            .color(colors.primary.opacity(0.1))
+            .foreground(colors.primary)
+            .border(colors.primary.opacity(0.25))
+            .hover(colors.primary.opacity(0.18));
+
+        let namespace_pill = Button::new("header-namespace")
+            .label(ns_display)
+            .custom(pill_style)
+            .rounded(px(99.0))
+            .with_size(ui::Size::Small)
+            .dropdown_caret(true)
+            .dropdown_menu(move |menu: PopupMenu, _window, _cx| {
+                let mut m = menu.scrollable(true);
+                let is_all = current_ns.is_none();
+                m = m.item(
+                    PopupMenuItem::new("All Namespaces")
+                        .checked(is_all)
+                        .on_click(|_, _window, cx| {
+                            cx.update_global::<AppState, _>(|state, _| {
+                                state.set_namespace(None);
+                            });
+                            let resource_type = cx.global::<AppState>().selected_type;
+                            crate::load_resources(cx, resource_type, None);
+                        }),
+                );
+
+                for ns in &namespaces {
+                    let ns_for_state = ns.clone();
+                    let ns_for_reload = ns.clone();
+                    let is_selected = current_ns.as_ref() == Some(ns);
+                    m = m.item(
+                        PopupMenuItem::new(ns.clone())
+                            .checked(is_selected)
+                            .on_click(move |_, _window, cx| {
+                                let ns = ns_for_state.clone();
+                                let ns2 = ns_for_reload.clone();
+                                cx.update_global::<AppState, _>(|state, _| {
+                                    state.set_namespace(Some(ns));
+                                });
+                                let resource_type = cx.global::<AppState>().selected_type;
+                                crate::load_resources(cx, resource_type, Some(ns2));
+                            }),
+                    );
+                }
+
+                m
+            });
+
+        let search_input = self.search_input.as_ref().map(|input| {
+            Input::new(input)
+                .appearance(false)
+                .cleanable(true)
+                .with_size(ui::Size::Small)
+        });
 
         div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            // Left: title + subtitle
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.0))
-                    .child(
-                        div()
-                            .font_family(theme.font_family_ui.clone())
-                            .text_size(px(28.0))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(colors.text)
-                            .child(resource_type.display_name()),
-                    )
-                    .child(
-                        div()
-                            .font_family(theme.font_family_ui.clone())
-                            .text_size(px(14.0))
-                            .text_color(colors.text_muted)
-                            .child(format!(
-                                "Manage and monitor your {} resources",
-                                resource_type.display_name().to_lowercase()
-                            )),
-                    ),
-            )
-            // Right: action buttons
+            .font_family(theme.font_family_ui.clone())
+            // Left: title + namespace selector
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(12.0))
+                    .child(
+                        div()
+                            .text_size(px(22.0))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(colors.text)
+                            .child(resource_type.display_name()),
+                    )
+                    .child(namespace_pill),
+            )
+            // Right: search + action buttons
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(10.0))
+                    // Search box
+                    .child(
+                        div()
+                            .w(px(220.0))
+                            .px(px(10.0))
+                            .py(px(4.0))
+                            .rounded(theme.border_radius_md)
+                            .bg(colors.surface)
+                            .border_1()
+                            .border_color(colors.border)
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(
+                                Icon::new(IconName::Search)
+                                    .size(px(14.0))
+                                    .color(colors.text_muted),
+                            )
+                            .when_some(search_input, |el, input| el.child(input)),
+                    )
                     // Refresh button
                     .child(
                         secondary_btn("page-refresh-btn", IconName::Refresh, "Refresh", colors)
@@ -1370,7 +1594,6 @@ impl AppView {
                                 cx.notify();
                             })),
                     )
-                    // Create button - disabled (not yet implemented)
                     .child(
                         primary_icon_btn(
                             "page-create-btn",
@@ -1382,9 +1605,10 @@ impl AppView {
                         .opacity(0.5),
                     ),
             )
+            .into_any_element()
     }
 
-    /// Render the 4 metric cards (Total, Running, Pending, Failed)
+    /// Render the 4 metric cards: CPU Usage, Memory, Total Pods, Health Score
     fn render_metric_cards(
         &self,
         cx: &Context<'_, Self>,
@@ -1402,7 +1626,13 @@ impl AppView {
         let mut pending = 0usize;
         let mut failed = 0usize;
 
-        for resource in resources {
+        // Aggregate CPU and memory requests/limits from pod specs
+        let mut cpu_request_millicores: f64 = 0.0;
+        let mut cpu_limit_millicores: f64 = 0.0;
+        let mut mem_request_bytes: f64 = 0.0;
+        let mut mem_limit_bytes: f64 = 0.0;
+
+        for resource in &resources {
             let status = Self::get_status_for_metric(resource);
             match status {
                 MetricStatus::Running => running += 1,
@@ -1410,109 +1640,303 @@ impl AppView {
                 MetricStatus::Failed => failed += 1,
                 MetricStatus::Other => {}
             }
+
+            // Extract resource requests/limits from pod containers
+            if resource.kind == "Pod" {
+                if let Some(spec) = &resource.spec {
+                    if let Some(containers) = spec.get("containers").and_then(|c| c.as_array()) {
+                        for container in containers {
+                            if let Some(res) = container.get("resources") {
+                                // Requests
+                                if let Some(requests) = res.get("requests") {
+                                    if let Some(cpu) =
+                                        requests.get("cpu").and_then(|v| v.as_str())
+                                    {
+                                        cpu_request_millicores += parse_cpu_to_millicores(cpu);
+                                    }
+                                    if let Some(mem) =
+                                        requests.get("memory").and_then(|v| v.as_str())
+                                    {
+                                        mem_request_bytes += parse_memory_to_bytes(mem);
+                                    }
+                                }
+                                // Limits
+                                if let Some(limits) = res.get("limits") {
+                                    if let Some(cpu) =
+                                        limits.get("cpu").and_then(|v| v.as_str())
+                                    {
+                                        cpu_limit_millicores += parse_cpu_to_millicores(cpu);
+                                    }
+                                    if let Some(mem) =
+                                        limits.get("memory").and_then(|v| v.as_str())
+                                    {
+                                        mem_limit_bytes += parse_memory_to_bytes(mem);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        let type_name = resource_type.display_name().to_uppercase();
+        let running_pct = if total > 0 {
+            running as f64 / total as f64
+        } else {
+            0.0
+        };
+        let pending_pct = if total > 0 {
+            pending as f64 / total as f64
+        } else {
+            0.0
+        };
+        let failed_pct = if total > 0 {
+            failed as f64 / total as f64
+        } else {
+            0.0
+        };
+        let health_pct = if total > 0 {
+            running as f64 / total as f64
+        } else {
+            1.0
+        };
+
+        // CPU: show requests vs limits
+        let cpu_pct = if cpu_limit_millicores > 0.0 {
+            (cpu_request_millicores / cpu_limit_millicores).min(1.0)
+        } else {
+            0.0
+        };
+        let cpu_value = format_cpu(cpu_request_millicores);
+        let cpu_total = if cpu_limit_millicores > 0.0 {
+            Some(format!("of {}", format_cpu(cpu_limit_millicores)))
+        } else {
+            None
+        };
+
+        // Memory: show requests vs limits
+        let mem_pct = if mem_limit_bytes > 0.0 {
+            (mem_request_bytes / mem_limit_bytes).min(1.0)
+        } else {
+            0.0
+        };
+        let mem_value = format_bytes(mem_request_bytes);
+        let mem_total = if mem_limit_bytes > 0.0 {
+            Some(format!("of {}", format_bytes(mem_limit_bytes)))
+        } else {
+            None
+        };
+
+        let type_name = resource_type.display_name();
 
         div()
             .w_full()
             .flex()
-            .gap(px(10.0))
-            .child(self.render_single_metric(
+            .gap(px(20.0))
+            // Card 1: CPU Usage — orange bar
+            .child(self.render_metric_card_bar(
                 cx,
-                &format!("TOTAL {}", type_name),
-                &total.to_string(),
-                None,
-                colors.text_accent,
-            ))
-            .child(self.render_single_metric(
-                cx,
-                "RUNNING",
-                &running.to_string(),
-                if total > 0 {
-                    Some(format!("{:.0}%", running as f64 / total as f64 * 100.0))
-                } else {
-                    None
-                },
-                colors.text_accent,
-            ))
-            .child(self.render_single_metric(
-                cx,
-                "PENDING",
-                &pending.to_string(),
-                if pending > 0 {
-                    Some("waiting".to_string())
-                } else {
-                    None
-                },
+                "CPU Usage",
+                &cpu_value,
+                cpu_total,
+                cpu_pct,
                 colors.warning,
             ))
-            .child(self.render_single_metric(
+            // Card 2: Memory — blue/primary bar
+            .child(self.render_metric_card_bar(
                 cx,
-                "FAILED",
-                &failed.to_string(),
-                if failed > 0 {
-                    Some("attention".to_string())
-                } else {
-                    None
-                },
-                colors.error,
+                "Memory",
+                &mem_value,
+                mem_total,
+                mem_pct,
+                colors.primary,
+            ))
+            // Card 3: Total Pods — segmented bar
+            .child(self.render_metric_card_segmented(
+                cx,
+                &format!("Total {}", type_name),
+                &total.to_string(),
+                "running now",
+                &[
+                    (running_pct, colors.success),
+                    (pending_pct, colors.warning),
+                    (failed_pct, colors.error),
+                ],
+            ))
+            // Card 4: Health Score — green bar
+            .child(self.render_metric_card_bar(
+                cx,
+                "Health Score",
+                &format!("{:.0}%", health_pct * 100.0),
+                None,
+                health_pct,
+                colors.success,
             ))
     }
 
-    /// Render a single metric card
-    fn render_single_metric(
+    /// Render a metric card with a single-color progress bar
+    fn render_metric_card_bar(
         &self,
         cx: &Context<'_, Self>,
         label: &str,
         value: &str,
         subtitle: Option<String>,
-        subtitle_color: Hsla,
+        fill_pct: f64,
+        bar_color: Hsla,
     ) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
 
-        let card = div()
+        div()
             .flex_1()
-            .px(px(14.0))
-            .py(px(10.0))
-            .rounded(theme.border_radius_md)
+            .p(px(20.0))
+            .rounded(px(16.0))
             .bg(colors.surface)
             .border_1()
-            .border_color(colors.border)
+            .border_color(colors.border.opacity(0.36))
+            .shadow(vec![gpui::BoxShadow {
+                color: hsla(0.0, 0.0, 0.0, 0.05),
+                offset: point(px(0.0), px(1.0)),
+                blur_radius: px(3.5),
+                spread_radius: px(0.0),
+            }])
             .flex()
             .flex_col()
-            .gap(px(2.0))
-            // Label
+            .gap(px(12.0))
+            .font_family(theme.font_family_ui.clone())
+            // Header: label
             .child(
                 div()
-                    .font_family(theme.font_family_ui.clone())
-                    .text_size(px(10.0))
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(11.0))
+                    .font_weight(FontWeight::BOLD)
                     .text_color(colors.text_muted)
                     .child(label.to_string()),
             )
-            // Value row: number + optional subtitle
+            // Value row
             .child({
-                let mut row = div().flex().items_center().gap(px(6.0)).child(
-                    div()
-                        .text_size(px(22.0))
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(colors.text)
-                        .child(value.to_string()),
-                );
+                let mut row = div()
+                    .flex()
+                    .items_end()
+                    .gap(px(8.0))
+                    .pb(px(4.0))
+                    .child(
+                        div()
+                            .text_size(px(24.0))
+                            .font_weight(FontWeight::BOLD)
+                            .line_height(px(32.0))
+                            .text_color(colors.text)
+                            .child(value.to_string()),
+                    );
                 if let Some(sub) = subtitle {
                     row = row.child(
                         div()
-                            .text_size(px(11.0))
-                            .text_color(subtitle_color)
+                            .text_size(px(12.0))
+                            .text_color(colors.text_muted)
+                            .pb(px(2.0))
                             .child(sub),
                     );
                 }
                 row
-            });
+            })
+            // Progress bar
+            .child(
+                div()
+                    .w_full()
+                    .h(px(6.0))
+                    .rounded(px(9999.0))
+                    .bg(colors.border.opacity(0.3))
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .h_full()
+                            .rounded(px(9999.0))
+                            .bg(bar_color)
+                            .when(fill_pct > 0.0, |el| {
+                                el.w(relative((fill_pct as f32).max(0.02)))
+                            }),
+                    ),
+            )
+    }
 
-        card
+    /// Render a metric card with a segmented progress bar (multiple colors)
+    fn render_metric_card_segmented(
+        &self,
+        cx: &Context<'_, Self>,
+        label: &str,
+        value: &str,
+        subtitle: &str,
+        segments: &[(f64, Hsla)],
+    ) -> impl IntoElement {
+        let theme = theme(cx);
+        let colors = &theme.colors;
+
+        let mut bar = div()
+            .w_full()
+            .flex()
+            .gap(px(4.0))
+            .pt(px(4.0));
+
+        for &(pct, color) in segments {
+            if pct > 0.0 {
+                bar = bar.child(
+                    div()
+                        .h(px(6.0))
+                        .rounded(px(9999.0))
+                        .bg(color)
+                        .w(relative((pct as f32).max(0.02))),
+                );
+            }
+        }
+
+        div()
+            .flex_1()
+            .p(px(20.0))
+            .rounded(px(16.0))
+            .bg(colors.surface)
+            .border_1()
+            .border_color(colors.border.opacity(0.36))
+            .shadow(vec![gpui::BoxShadow {
+                color: hsla(0.0, 0.0, 0.0, 0.05),
+                offset: point(px(0.0), px(1.0)),
+                blur_radius: px(3.5),
+                spread_radius: px(0.0),
+            }])
+            .flex()
+            .flex_col()
+            .gap(px(12.0))
+            .font_family(theme.font_family_ui.clone())
+            // Header: label
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(colors.text_muted)
+                    .child(label.to_string()),
+            )
+            // Value row
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .text_size(px(24.0))
+                            .font_weight(FontWeight::BOLD)
+                            .line_height(px(32.0))
+                            .text_color(colors.text)
+                            .child(value.to_string()),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(colors.text_muted)
+                            .pb(px(2.0))
+                            .child(subtitle.to_string()),
+                    ),
+            )
+            // Segmented progress bar
+            .child(bar)
     }
 
     /// Determine the metric status for a resource
@@ -1837,7 +2261,6 @@ impl AppView {
         div()
             .size_full()
             .overflow_hidden()
-            .p(px(24.0))
             .flex()
             .flex_col()
             .child(
@@ -1848,10 +2271,7 @@ impl AppView {
                     .flex_col()
                     .gap(px(16.0))
                     .p(px(20.0))
-                    .rounded(theme.border_radius_lg)
                     .bg(colors.background)
-                    .border_1()
-                    .border_color(colors.border)
                     .child(
                         div()
                             .flex()
@@ -1946,6 +2366,7 @@ impl AppView {
                             .id("settings-scroll")
                             .w_full()
                             .max_w(px(960.0))
+                            .flex_1()
                             .min_h(px(0.0))
                             .overflow_y_scroll()
                             .flex()

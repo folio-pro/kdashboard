@@ -4,7 +4,7 @@ use gpui::Hsla;
 use serde_json::Value;
 
 impl PodLogsView {
-    pub(super) fn colorize_modal_line(
+    pub fn colorize_modal_line(
         line: &str,
         format_label: &str,
         colors: &ui::ThemeColors,
@@ -165,7 +165,7 @@ impl PodLogsView {
         colors.text_secondary
     }
 
-    pub(super) fn format_log_message_for_modal(message: &str) -> (String, String) {
+    pub fn format_log_message_for_modal(message: &str) -> (String, String) {
         if let Ok(json) = serde_json::from_str::<Value>(message) {
             let pretty =
                 serde_json::to_string_pretty(&json).unwrap_or_else(|_| message.to_string());
@@ -228,7 +228,7 @@ impl PodLogsView {
         }
     }
 
-    pub(super) fn format_log_timestamp(ts: &str) -> String {
+    pub fn format_log_timestamp(ts: &str) -> String {
         if let Ok(parsed) = DateTime::parse_from_rfc3339(ts) {
             let dt_utc = parsed.with_timezone(&Utc);
             let now = Utc::now();

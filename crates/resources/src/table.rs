@@ -375,7 +375,6 @@ impl ResourceTable {
                 ColumnDef::new("Restarts", 90.0),
                 ColumnDef::new("Age", 70.0).right(),
                 ColumnDef::new("Node", 0.0), // fills remaining space
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::Deployments => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -385,7 +384,6 @@ impl ResourceTable {
                 ColumnDef::new("Up-to-date", 90.0).right(),
                 ColumnDef::new("Available", 80.0).right(),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::ReplicaSets => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -395,7 +393,6 @@ impl ResourceTable {
                 ColumnDef::new("Current", 70.0).right(),
                 ColumnDef::new("Ready", 70.0).right(),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::StatefulSets => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -403,7 +400,6 @@ impl ResourceTable {
                 ColumnDef::new("Namespace", 100.0),
                 ColumnDef::new("Ready", 80.0).center(),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::DaemonSets => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -414,7 +410,6 @@ impl ResourceTable {
                 ColumnDef::new("Ready", 70.0).right(),
                 ColumnDef::new("Up-to-date", 90.0).right(),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::Jobs => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -423,7 +418,6 @@ impl ResourceTable {
                 ColumnDef::new("Completions", 100.0).center(),
                 ColumnDef::new("Duration", 80.0).right(),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::CronJobs => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -434,7 +428,6 @@ impl ResourceTable {
                 ColumnDef::new("Active", 60.0).right(),
                 ColumnDef::new("Last Schedule", 110.0).right(),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::Services => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -444,7 +437,6 @@ impl ResourceTable {
                 ColumnDef::new("Cluster-IP", 120.0),
                 ColumnDef::new("Ports", 140.0),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::Ingresses => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -454,7 +446,6 @@ impl ResourceTable {
                 ColumnDef::new("Hosts", 200.0),
                 ColumnDef::new("Address", 120.0),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::ConfigMaps => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -462,7 +453,6 @@ impl ResourceTable {
                 ColumnDef::new("Namespace", 100.0),
                 ColumnDef::new("Data", 60.0).right(),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::Secrets => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -471,7 +461,6 @@ impl ResourceTable {
                 ColumnDef::new("Type", 180.0),
                 ColumnDef::new("Data", 60.0).right(),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::Nodes => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -480,14 +469,12 @@ impl ResourceTable {
                 ColumnDef::new("Roles", 120.0),
                 ColumnDef::new("Version", 120.0),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::Namespaces => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
                 ColumnDef::new("Name", 280.0).with_icon(),
                 ColumnDef::new("Status", 100.0).status_dot(),
                 ColumnDef::new("Age", 70.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::HorizontalPodAutoscalers => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -499,7 +486,6 @@ impl ResourceTable {
                 ColumnDef::new("Min/Max", 80.0).center(),
                 ColumnDef::new("Status", 100.0).status_dot(),
                 ColumnDef::new("Age", 60.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
             ResourceType::VerticalPodAutoscalers => vec![
                 ColumnDef::new("Checkbox", 32.0).checkbox(),
@@ -511,7 +497,6 @@ impl ResourceTable {
                 ColumnDef::new("Mem Rec.", 120.0).center(),
                 ColumnDef::new("Status", 100.0).status_dot(),
                 ColumnDef::new("Age", 60.0).right(),
-                ColumnDef::new("Actions", 40.0).center().actions(),
             ],
         }
     }
@@ -1337,10 +1322,13 @@ impl ResourceTable {
 
         // Create the cell wrapper
         let theme = theme(cx);
-        let mut cell = div()
-            .id(ElementId::Name(format!("header-{}", col_name).into()))
-            .w(px(width))
-            .h_full()
+        let mut cell = if width > 0.0 {
+            div().w(px(width))
+        } else {
+            div().flex_1()
+        }
+        .id(ElementId::Name(format!("header-{}", col_name).into()))
+        .h_full()
             .flex()
             .items_center()
             .font_family(theme.font_family_ui.clone())
@@ -1536,12 +1524,15 @@ impl ResourceTable {
                         .into_any_element();
                 }
 
-                let mut cell = div()
-                    .w(px(width))
-                    .text_size(px(13.0))
-                    .text_color(colors.text)
-                    .overflow_hidden()
-                    .text_ellipsis();
+                let mut cell = if width > 0.0 {
+                    div().w(px(width))
+                } else {
+                    div().flex_1()
+                }
+                .text_size(px(13.0))
+                .text_color(colors.text)
+                .overflow_hidden()
+                .text_ellipsis();
 
                 cell = match col.align {
                     Align::Left => cell,

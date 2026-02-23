@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use alacritty_terminal::grid::Dimensions as _;
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
@@ -53,8 +51,6 @@ pub struct PodTerminalView {
     // Terminal emulator
     emulator: Option<TerminalEmulator>,
     focus_handle: FocusHandle,
-    /// Measured grid height from the last paint; used to resize the emulator.
-    measured_grid_height: Option<Pixels>,
 
     // Callbacks
     on_close: Option<Box<dyn Fn(&mut Context<'_, Self>) + 'static>>,
@@ -81,7 +77,6 @@ impl PodTerminalView {
             input_sender: None,
             emulator: None,
             focus_handle: cx.focus_handle(),
-            measured_grid_height: None,
             on_close: None,
         }
     }
@@ -261,28 +256,9 @@ impl PodTerminalView {
 // ─── Render ──────────────────────────────────────────────────────────────────
 
 impl Render for PodTerminalView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let theme = theme(cx);
         let colors = &theme.colors;
-
-        // Resize emulator to fit the available space.
-        // Use measured grid height if available (from previous frame's
-        // on_children_prepainted), otherwise estimate from viewport.
-        let row_h = px((self.font_size * 1.45).round());
-        let grid_h = self.measured_grid_height.unwrap_or_else(|| {
-            // Fallback: estimate from viewport minus chrome.
-            // title_bar(28) + top_bar(~54) + toolbar(~40) + padding(48+32)
-            // + terminal_header(~40) + borders(~4) = ~246
-            window.viewport_size().height - px(246.0)
-        });
-        // Subtract grid padding (16 top + 16 bottom)
-        let usable = grid_h - px(32.0);
-        let target_rows = ((usable / row_h).floor() as usize).max(5);
-        if let Some(emulator) = &mut self.emulator {
-            if emulator.screen_lines() != target_rows {
-                emulator.resize(emulator.columns(), target_rows);
-            }
-        }
 
         div()
             .size_full()
@@ -708,7 +684,6 @@ impl PodTerminalView {
                     .border_1()
                     .border_color(colors.border)
                     .overflow_hidden()
-                    // Inner layout wrapper (non-stateful) for measurement
                     .child(
                         div()
                             .size_full()
@@ -716,15 +691,42 @@ impl PodTerminalView {
                             .flex_col()
                             .on_children_prepainted({
                                 let view = cx.entity().downgrade();
-                                move |children_bounds: Vec<Bounds<Pixels>>, _window, cx| {
-                                    // children[0] = header (fixed), children[1] = body (flex_1)
-                                    // body bounds = the actual available space for the grid
+                                move |children_bounds: Vec<Bounds<Pixels>>, window, cx| {
                                     if children_bounds.len() >= 2 {
                                         let body_h = children_bounds[1].size.height;
+                                        let body_w = children_bounds[1].size.width;
                                         let _ = view.update(cx, |this, cx| {
-                                            if this.measured_grid_height != Some(body_h) {
-                                                this.measured_grid_height = Some(body_h);
-                                                cx.notify();
+                                            let row_h = px((this.font_size * 1.45).round());
+                                            let char_w = {
+                                                let font = gpui::font("JetBrains Mono NL");
+                                                let font_id = window.text_system().resolve_font(&font);
+                                                window.text_system()
+                                                    .ch_advance(font_id, px(this.font_size))
+                                                    .unwrap_or(px((this.font_size * 0.6).round()))
+                                            };
+                                            let usable_h = body_h - px(32.0);
+                                            let usable_w = body_w - px(32.0);
+                                            let target_rows = ((usable_h / row_h).floor() as usize).max(5);
+                                            let target_cols = ((usable_w / char_w).floor() as usize).clamp(20, 500);
+
+                                            if let Some(emulator) = &mut this.emulator {
+                                                let changed = emulator.screen_lines() != target_rows
+                                                    || emulator.columns() != target_cols;
+                                                if changed {
+                                                    emulator.resize(target_cols, target_rows);
+                                                    if let Some(session_id) = &this.session_id {
+                                                        let sid = session_id.clone();
+                                                        let cols = target_cols as u16;
+                                                        let rows = target_rows as u16;
+                                                        std::thread::spawn(move || {
+                                                            let rt = k8s_client::tokio_runtime();
+                                                            let _ = rt.block_on(
+                                                                k8s_client::resize_terminal(&sid, cols, rows),
+                                                            );
+                                                        });
+                                                    }
+                                                    cx.notify();
+                                                }
                                             }
                                         });
                                     }
@@ -792,7 +794,6 @@ impl PodTerminalView {
         let emulator = match &self.emulator {
             Some(e) => e,
             None => {
-                // No emulator yet — show empty terminal area
                 return div()
                     .id("terminal-grid")
                     .flex_1()
@@ -813,26 +814,40 @@ impl PodTerminalView {
         let num_rows = emulator.screen_lines();
 
         let default_fg_hsla = colors::rgb_to_hsla(colors::DEFAULT_FG);
-        let font_family = &theme.font_family;
+        let font_family: SharedString = "JetBrains Mono NL".into();
+        let font_size = self.font_size;
+        let row_height = (font_size * 1.45).round();
 
-        let mut row_elements: Vec<AnyElement> = Vec::with_capacity(num_rows);
+        // Build ALL rows as absolutely-positioned children inside a relative container.
+        // This avoids any flex layout reflow issues.
+        let grid_total_h = num_rows as f32 * row_height;
+        let mut row_children: Vec<AnyElement> = Vec::with_capacity(num_rows);
+
         for row_idx in 0..num_rows {
-            // Convert viewport row to grid line, accounting for scroll offset.
-            // viewport_to_point: Line(row as i32) - display_offset
             let line = Line(row_idx as i32) - display_offset;
-            row_elements.push(self.render_grid_row(
-                row_idx,
-                line,
-                grid,
-                num_cols,
-                &cursor,
-                term_colors,
-                default_fg_hsla,
-                font_family,
-            ));
+            let y = row_idx as f32 * row_height;
+
+            let (text, highlights) =
+                self.build_row_text(line, grid, num_cols, &cursor, term_colors);
+
+            row_children.push(
+                div()
+                    .absolute()
+                    .left(px(0.0))
+                    .top(px(y))
+                    .w_full()
+                    .h(px(row_height))
+                    .text_size(px(font_size))
+                    .font_family(font_family.clone())
+                    .text_color(default_fg_hsla)
+                    .child(
+                        StyledText::new(SharedString::from(text)).with_highlights(highlights),
+                    )
+                    .into_any_element(),
+            );
         }
 
-        // Calculate scrollbar metrics
+        // Scrollbar metrics
         let total_lines = grid.total_lines();
         let history_size = total_lines.saturating_sub(num_rows);
         let has_scrollbar = history_size > 0;
@@ -856,20 +871,18 @@ impl PodTerminalView {
                     }
                 }
             }))
-            // Terminal rows
+            // Terminal rows in a relative container with absolute positioning
             .child(
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .flex()
-                    .flex_col()
-                    .p(px(16.0))
-                    .children(row_elements),
+                    .relative()
+                    .h(px(grid_total_h))
+                    .children(row_children),
             )
             // Scrollbar
             .when(has_scrollbar, |el: Stateful<Div>| {
-                let row_h_val = (self.font_size * 1.45).round();
-                let track_h = num_rows as f32 * row_h_val;
+                let track_h = num_rows as f32 * row_height;
                 let thumb_frac = (num_rows as f32 / total_lines as f32).clamp(0.05, 1.0);
                 let thumb_h = (track_h * thumb_frac).max(20.0);
                 let scroll_frac = if history_size > 0 {
@@ -877,7 +890,6 @@ impl PodTerminalView {
                 } else {
                     0.0
                 };
-                // scroll_frac=0 → bottom (thumb at end), scroll_frac=1 → top (thumb at start)
                 let thumb_top = (1.0 - scroll_frac) * (track_h - thumb_h);
 
                 el.child(
@@ -909,30 +921,25 @@ impl PodTerminalView {
             .into_any_element()
     }
 
-    fn render_grid_row(
+    /// Build text + highlights for a single terminal row (no layout, pure data).
+    fn build_row_text(
         &self,
-        _row_idx: usize,
         line: Line,
         grid: &alacritty_terminal::Grid<alacritty_terminal::term::cell::Cell>,
         num_cols: usize,
         cursor: &alacritty_terminal::term::RenderableCursor,
         term_colors: &Colors,
-        default_fg: Hsla,
-        font_family: &SharedString,
-    ) -> AnyElement {
+    ) -> (String, Vec<(std::ops::Range<usize>, HighlightStyle)>) {
         let mut text = String::with_capacity(num_cols);
-        let mut highlights: Vec<(Range<usize>, HighlightStyle)> = Vec::new();
+        let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
         let mut run_start: usize = 0;
         let mut current_hs: Option<HighlightStyle> = None;
 
-        // Track cursor position for this row
         let cursor_on_this_row = cursor.shape != CursorShape::Hidden && cursor.point.line == line;
-        let mut cursor_byte_range: Option<Range<usize>> = None;
+        let mut cursor_byte_range: Option<std::ops::Range<usize>> = None;
 
         for col in 0..num_cols {
             let cell = &grid[line][Column(col)];
-
-            // Skip spacer cells for wide characters
             if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
                 continue;
             }
@@ -946,7 +953,6 @@ impl PodTerminalView {
             text.push(ch);
             let byte_end = text.len();
 
-            // Track cursor byte range
             if cursor_on_this_row && cursor.point.column == Column(col) {
                 cursor_byte_range = Some(byte_start..byte_end);
             }
@@ -954,11 +960,8 @@ impl PodTerminalView {
             let hs = cell_to_highlight(cell, term_colors);
 
             match &current_hs {
-                Some(prev) if *prev == hs => {
-                    // Same style, extend the run
-                }
+                Some(prev) if *prev == hs => {}
                 _ => {
-                    // Flush previous run
                     if let Some(prev) = current_hs.take() {
                         if run_start < byte_start {
                             highlights.push((run_start..byte_start, prev));
@@ -970,7 +973,6 @@ impl PodTerminalView {
             }
         }
 
-        // Flush last run
         if let Some(hs) = current_hs {
             if run_start < text.len() {
                 highlights.push((run_start..text.len(), hs));
@@ -979,34 +981,21 @@ impl PodTerminalView {
 
         // Cursor overlay
         if let Some(range) = cursor_byte_range {
-            let cursor_hsla = colors::rgb_to_hsla(colors::CURSOR_COLOR);
-            let bg_hsla = colors::rgb_to_hsla(colors::DEFAULT_BG);
             highlights.push((
                 range,
                 HighlightStyle {
-                    color: Some(bg_hsla),
-                    background_color: Some(cursor_hsla),
+                    color: Some(colors::rgb_to_hsla(colors::DEFAULT_BG)),
+                    background_color: Some(colors::rgb_to_hsla(colors::CURSOR_COLOR)),
                     ..Default::default()
                 },
             ));
         }
 
-        // Ensure text is non-empty for StyledText
         if text.is_empty() {
             text.push(' ');
         }
 
-        let font_size = self.font_size;
-        let row_height = (font_size * 1.45).round();
-
-        div()
-            .w_full()
-            .h(px(row_height))
-            .text_size(px(font_size))
-            .font_family(font_family.clone())
-            .text_color(default_fg)
-            .child(StyledText::new(SharedString::from(text)).with_highlights(highlights))
-            .into_any_element()
+        (text, highlights)
     }
 
     fn handle_key_down(&mut self, event: &KeyDownEvent, _cx: &mut Context<'_, Self>) {

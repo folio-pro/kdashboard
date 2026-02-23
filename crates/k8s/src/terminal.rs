@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use dashmap::DashMap;
 use kube::Client;
-use kube::api::{Api, AttachParams};
+use kube::api::{Api, AttachParams, TerminalSize};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
@@ -31,6 +31,7 @@ pub struct TerminalClosed {
 
 struct SessionHandle {
     input_tx: mpsc::Sender<Vec<u8>>,
+    resize_tx: Option<futures::channel::mpsc::Sender<TerminalSize>>,
     abort_handle: tokio::task::AbortHandle,
 }
 
@@ -104,6 +105,9 @@ pub async fn start_terminal_session(
         .context(format!("Failed to exec into pod '{}'", pod_name))?;
 
     info!("Exec successful, setting up streams...");
+
+    // Get the native resize channel (sends via WebSocket RESIZE_CHANNEL, no echo)
+    let resize_tx = attached.terminal_size();
 
     let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(256);
 
@@ -206,6 +210,7 @@ pub async fn start_terminal_session(
 
     let handle = SessionHandle {
         input_tx,
+        resize_tx,
         abort_handle: task.abort_handle(),
     };
 
@@ -233,13 +238,17 @@ pub async fn send_terminal_input(session_id: &str, data: &str) -> Result<()> {
 }
 
 pub async fn resize_terminal(session_id: &str, cols: u16, rows: u16) -> Result<()> {
-    if let Some(session) = SESSIONS.get(session_id) {
-        let resize_cmd = format!("\x1b[8;{};{}t", rows, cols);
-        session
-            .input_tx
-            .send(resize_cmd.into_bytes())
-            .await
-            .context("Failed to resize")?;
+    if let Some(mut session) = SESSIONS.get_mut(session_id) {
+        if let Some(resize_tx) = &mut session.resize_tx {
+            use futures::SinkExt;
+            resize_tx
+                .send(TerminalSize {
+                    width: cols,
+                    height: rows,
+                })
+                .await
+                .context("Failed to send resize")?;
+        }
         Ok(())
     } else {
         anyhow::bail!("Session not found")

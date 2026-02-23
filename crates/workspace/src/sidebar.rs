@@ -77,7 +77,13 @@ impl Sidebar {
         Self {
             collapsed,
             resource_count: None,
-            expanded_sections: HashSet::from([SidebarSection::Workloads]),
+            expanded_sections: HashSet::from([
+                SidebarSection::Workloads,
+                SidebarSection::Network,
+                SidebarSection::Configuration,
+                SidebarSection::Scaling,
+                SidebarSection::Cluster,
+            ]),
         }
     }
 
@@ -110,9 +116,10 @@ impl Render for Sidebar {
                 .border_color(colors.border)
                 .flex()
                 .flex_col()
-                .child(self.render_header(cx))
+                .child(self.render_header(cx, None))
                 .child(self.render_nav_section(cx, selected_type, &active_view, pf_count))
         } else {
+            let header_context = current_context.clone();
             div()
                 .h_full()
                 .w(width)
@@ -128,7 +135,7 @@ impl Render for Sidebar {
                         .flex_1()
                         .flex()
                         .flex_col()
-                        .child(self.render_header(cx))
+                        .child(self.render_header(cx, header_context))
                         .child(self.render_nav_section(cx, selected_type, &active_view, pf_count)),
                 )
         }
@@ -178,22 +185,15 @@ impl Sidebar {
 
         let mut rail = div()
             .h_full()
-            .w(px(36.0))
-            .pt(px(12.0))
-            .pb(px(12.0))
-            .px(px(4.0))
+            .w(px(52.0))
+            .pt(px(14.0))
+            .pb(px(14.0))
             .border_r_1()
             .border_color(colors.border)
             .flex()
             .flex_col()
             .items_center()
-            .gap(px(6.0));
-
-        rail = rail.child(
-            Icon::new(IconName::Cloud)
-                .size(px(12.0))
-                .color(colors.text_muted),
-        );
+            .gap(px(10.0));
 
         for context_name in contexts {
             let cluster_color = Self::color_for_context(&context_name, colors, is_dark_theme);
@@ -230,9 +230,9 @@ impl Sidebar {
                 div()
                     .id(ElementId::Name(format!("cluster-{}", context_name).into()))
                     .relative()
-                    .w(px(28.0))
-                    .h(px(28.0))
-                    .rounded(theme.border_radius_md)
+                    .w(px(32.0))
+                    .h(px(32.0))
+                    .rounded(px(10.0))
                     .bg(bg)
                     .border_1()
                     .border_color(if selected {
@@ -249,7 +249,7 @@ impl Sidebar {
                     .child(
                         div()
                             .font_family(theme.font_family_ui.clone())
-                            .text_size(px(11.0))
+                            .text_size(px(12.0))
                             .font_weight(FontWeight::BOLD)
                             .text_color(icon_color)
                             .child(label),
@@ -258,10 +258,10 @@ impl Sidebar {
                         el.child(
                             div()
                                 .absolute()
-                                .top(px(-2.0))
-                                .right(px(-2.0))
-                                .w(px(8.0))
-                                .h(px(8.0))
+                                .top(px(-3.0))
+                                .right(px(-3.0))
+                                .w(px(10.0))
+                                .h(px(10.0))
                                 .rounded_full()
                                 .bg(colors.text)
                                 .border_1()
@@ -274,79 +274,159 @@ impl Sidebar {
             );
         }
 
-        rail
-    }
+        // Spacer to push settings to bottom
+        rail = rail.child(div().flex_1());
 
-    /// Render the sidebar header with logo
-    fn render_header(&self, cx: &Context<'_, Self>) -> impl IntoElement {
-        let theme = theme(cx);
-        let colors = &theme.colors;
-
-        let mut header = div()
-            .w_full()
-            .px(px(16.0))
-            .py(px(12.0))
-            .flex()
-            .items_center()
-            .gap(px(8.0));
-
-        // Logo icon - cyan accent
-        header = header.child(
-            Icon::new(IconName::Hexagon)
-                .size(px(22.0))
-                .color(colors.primary),
-        );
-
-        // Title text (only when not collapsed)
-        if !self.collapsed {
-            header = header.child(
-                div()
-                    .flex_1()
-                    .font_family(theme.font_family_ui.clone())
-                    .text_size(px(14.0))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(colors.text)
-                    .child("KDASHBOARD"),
-            );
-        }
-
-        let collapse_icon = if self.collapsed {
-            IconName::ChevronRight
-        } else {
-            IconName::ChevronLeft
-        };
-
-        header = header.child(
+        // Settings icon at the bottom
+        rail = rail.child(
             div()
-                .id("sidebar-toggle")
-                .ml_auto()
-                .w(px(22.0))
-                .h(px(22.0))
-                .rounded(theme.border_radius_md)
+                .id("rail-settings")
+                .w(px(28.0))
+                .h(px(28.0))
+                .rounded_full()
+                .bg(colors.surface)
+                .border_1()
+                .border_color(colors.border)
                 .cursor_pointer()
                 .hover(|style| style.bg(colors.selection_hover))
+                .tooltip(move |_, cx| cx.new(|_| Tooltip::new("Settings")).into())
                 .flex()
                 .items_center()
                 .justify_center()
                 .child(
-                    Icon::new(collapse_icon)
+                    Icon::new(IconName::Settings)
                         .size(px(14.0))
                         .color(colors.text_muted),
                 )
-                .on_click(cx.listener(|this, _event, _window, cx| {
-                    this.collapsed = !this.collapsed;
+                .on_click(cx.listener(|_this, _event, _window, cx| {
                     cx.update_global::<crate::app_state::AppState, _>(|state, _| {
-                        state.toggle_sidebar();
+                        state.open_settings();
                     });
                     cx.notify();
                 })),
         );
 
+        rail
+    }
+
+    /// Render the sidebar header with cluster name and connection status
+    fn render_header(
+        &self,
+        cx: &Context<'_, Self>,
+        current_context: Option<String>,
+    ) -> impl IntoElement {
+        let theme = theme(cx);
+        let colors = &theme.colors;
+
         if self.collapsed {
-            header = header.justify_center();
+            // Collapsed: just the collapse toggle centered
+            return div()
+                .w_full()
+                .h(px(64.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .border_b_1()
+                .border_color(colors.border)
+                .child(
+                    div()
+                        .id("sidebar-toggle")
+                        .w(px(22.0))
+                        .h(px(22.0))
+                        .rounded(theme.border_radius_md)
+                        .cursor_pointer()
+                        .hover(|style| style.bg(colors.selection_hover))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            Icon::new(IconName::ChevronRight)
+                                .size(px(14.0))
+                                .color(colors.text_muted),
+                        )
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.collapsed = !this.collapsed;
+                            cx.update_global::<crate::app_state::AppState, _>(|state, _| {
+                                state.toggle_sidebar();
+                            });
+                            cx.notify();
+                        })),
+                );
         }
 
-        header
+        let cluster_name = current_context
+            .unwrap_or_else(|| "No cluster".to_string());
+
+        div()
+            .w_full()
+            .h(px(64.0))
+            .px(px(16.0))
+            .flex()
+            .items_center()
+            .border_b_1()
+            .border_color(colors.border)
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    // Cluster name
+                    .child(
+                        div()
+                            .font_family(theme.font_family_ui.clone())
+                            .text_size(px(12.0))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(colors.text)
+                            .child(cluster_name),
+                    )
+                    // Connected status
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(4.0))
+                            .child(
+                                div()
+                                    .w(px(6.0))
+                                    .h(px(6.0))
+                                    .rounded_full()
+                                    .bg(colors.success),
+                            )
+                            .child(
+                                div()
+                                    .font_family(theme.font_family_ui.clone())
+                                    .text_size(px(11.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(colors.success)
+                                    .child("Connected"),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .id("sidebar-toggle")
+                    .w(px(22.0))
+                    .h(px(22.0))
+                    .rounded(theme.border_radius_md)
+                    .cursor_pointer()
+                    .hover(|style| style.bg(colors.selection_hover))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        Icon::new(IconName::ChevronLeft)
+                            .size(px(14.0))
+                            .color(colors.text_muted),
+                    )
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.collapsed = !this.collapsed;
+                        cx.update_global::<crate::app_state::AppState, _>(|state, _| {
+                            state.toggle_sidebar();
+                        });
+                        cx.notify();
+                    })),
+            )
     }
 
     /// Render the navigation section with resource types grouped by category
@@ -374,12 +454,12 @@ impl Sidebar {
             .id("sidebar-nav")
             .flex_1()
             .overflow_y_scroll()
-            .pt(px(8.0))
+            .pt(px(24.0))
             .px(px(12.0))
             .pb(px(8.0))
             .flex()
             .flex_col()
-            .gap(px(4.0));
+            .gap(px(16.0));
 
         if self.collapsed {
             for section in sections {
@@ -398,19 +478,35 @@ impl Sidebar {
 
         for section in sections {
             let section_expanded = self.is_section_expanded(section, selected_type, is_pf_view);
-            nav = nav.child(self.render_section_header(cx, section, section_expanded, colors));
+
+            let mut section_group = div()
+                .flex()
+                .flex_col()
+                .gap(px(4.0));
+
+            section_group = section_group
+                .child(self.render_section_header(cx, section, section_expanded, colors));
 
             if section_expanded {
+                let mut items = div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0));
+
                 for rt in section.resource_types() {
                     let selected = *rt == selected_type && !is_pf_view;
-                    nav = nav.child(self.render_resource_item(cx, *rt, selected, colors));
+                    items = items.child(self.render_resource_item(cx, *rt, selected, colors));
                 }
 
                 if section == SidebarSection::Network {
-                    nav =
-                        nav.child(self.render_port_forward_item(cx, is_pf_view, pf_count, colors));
+                    items =
+                        items.child(self.render_port_forward_item(cx, is_pf_view, pf_count, colors));
                 }
+
+                section_group = section_group.child(items);
             }
+
+            nav = nav.child(section_group);
         }
 
         nav
@@ -447,23 +543,21 @@ impl Sidebar {
             ))
             .w_full()
             .px(px(12.0))
-            .py(px(6.0))
-            .rounded(theme.border_radius_md)
+            .py(px(2.0))
             .cursor_pointer()
-            .hover(|style| style.bg(colors.selection_hover))
             .flex()
             .items_center()
-            .gap(px(8.0))
-            .child(Icon::new(indicator).size(px(13.0)).color(colors.text_muted))
+            .gap(px(6.0))
             .child(
                 div()
                     .flex_1()
                     .font_family(theme.font_family_ui.clone())
-                    .text_size(px(12.0))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(colors.text)
-                    .child(section.label()),
+                    .text_size(px(11.0))
+                    .font_weight(FontWeight::EXTRA_BOLD)
+                    .text_color(colors.text_muted)
+                    .child(section.label().to_uppercase()),
             )
+            .child(Icon::new(indicator).size(px(10.0)).color(colors.text_muted))
             .on_click(cx.listener(move |this, _event, _window, cx| {
                 this.on_section_toggled(section, cx);
             }))
@@ -564,11 +658,7 @@ impl Sidebar {
                         .flex_1()
                         .font_family(theme.font_family_ui.clone())
                         .text_size(px(13.0))
-                        .font_weight(if selected {
-                            FontWeight::SEMIBOLD
-                        } else {
-                            FontWeight::MEDIUM
-                        })
+                        .font_weight(FontWeight::MEDIUM)
                         .text_color(text_color)
                         .child(label),
                 )
@@ -718,11 +808,7 @@ impl Sidebar {
                         .flex_1()
                         .font_family(theme.font_family_ui.clone())
                         .text_size(px(13.0))
-                        .font_weight(if selected {
-                            FontWeight::SEMIBOLD
-                        } else {
-                            FontWeight::MEDIUM
-                        })
+                        .font_weight(FontWeight::MEDIUM)
                         .text_color(text_color)
                         .child(resource_type.display_name()),
                 );

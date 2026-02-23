@@ -70,7 +70,7 @@ impl LogSince {
         }
     }
 
-    fn all() -> &'static [LogSince] {
+    pub fn all() -> &'static [LogSince] {
         &[
             LogSince::AllTime,
             LogSince::OneHour,
@@ -120,12 +120,12 @@ struct LogModalState {
 }
 
 #[derive(Clone, Debug)]
-struct ColorSpan {
-    text: String,
-    color: Hsla,
+pub struct ColorSpan {
+    pub text: String,
+    pub color: Hsla,
 }
 
-const MODAL_WRAP_CHUNK_CHARS: usize = 80;
+pub const MODAL_WRAP_CHUNK_CHARS: usize = 80;
 
 pub struct PodLogsView {
     pod_name: String,
@@ -1310,31 +1310,57 @@ impl PodLogsView {
                                         )
                                     })
                                     .when(!is_loading && self.error.is_none() && self.word_wrap, |el| {
-                                        el.child(
-                                            div()
-                                                .w_full()
-                                                .h_full()
-                                                .overflow_y_scrollbar()
-                                                .p(px(16.0))
-                                                .flex()
-                                                .flex_col()
-                                                .gap(px(2.0))
-                                                .children(self.filtered_indices.iter().filter_map(|&idx| {
-                                                    self.logs
-                                                        .get(idx)
-                                                        .cloned()
-                                                        .map(|log| {
-                                                            Self::render_log_line(
-                                                                cx,
-                                                                idx,
-                                                                log,
-                                                                self.show_timestamps,
-                                                                self.word_wrap,
-                                                                self.selected_log_index == Some(idx),
-                                                            )
-                                                        })
-                                                })),
-                                        )
+                                        if item_count == 0 {
+                                            el.child(
+                                                div()
+                                                    .p(px(16.0))
+                                                    .text_size(px(12.0))
+                                                    .text_color(colors.text_muted)
+                                                    .font_family(theme.font_family.clone())
+                                                    .child("No log lines match the current filters."),
+                                            )
+                                        } else {
+                                            let wrap_scroll_handle = self.logs_scroll_handle.clone();
+                                            let wrap_item_sizes = std::rc::Rc::new(vec![size(px(0.0), px(22.0)); item_count]);
+                                            el.child(
+                                                div()
+                                                    .id("logs-wrap-scrollbar")
+                                                    .w_full()
+                                                    .h_full()
+                                                    .relative()
+                                                    .vertical_scrollbar(&wrap_scroll_handle)
+                                                    .child(
+                                                        v_virtual_list(
+                                                            cx.entity(),
+                                                            "logs-virtual-list-wrap",
+                                                            wrap_item_sizes,
+                                                            move |this, visible_range, _window, cx| {
+                                                                visible_range
+                                                                    .filter_map(|visible_idx| {
+                                                                        let log_idx = this
+                                                                            .filtered_indices
+                                                                            .get(visible_idx)
+                                                                            .copied()?;
+                                                                        let log =
+                                                                            this.logs.get(log_idx)?.clone();
+                                                                        Some(Self::render_log_line(
+                                                                            cx,
+                                                                            log_idx,
+                                                                            log,
+                                                                            this.show_timestamps,
+                                                                            this.word_wrap,
+                                                                            this.selected_log_index == Some(log_idx),
+                                                                        ))
+                                                                    })
+                                                                    .collect::<Vec<_>>()
+                                                            },
+                                                        )
+                                                        .track_scroll(&wrap_scroll_handle)
+                                                        .p(px(16.0))
+                                                        .gap(px(2.0)),
+                                                    ),
+                                            )
+                                        }
                                     })
                                     .when(!is_loading && self.error.is_none() && !self.word_wrap, |el| {
                                         if item_count == 0 {
@@ -1348,22 +1374,29 @@ impl PodLogsView {
                                             )
                                         } else {
                                             el.child(
-                                                v_virtual_list(
-                                                    cx.entity(),
-                                                    "logs-virtual-list",
-                                                    item_sizes,
-                                                    move |this, visible_range, _window, cx| {
-                                                        visible_range
-                                                            .filter_map(|visible_idx| {
-                                                                let log_idx = this
-                                                                    .filtered_indices
-                                                                    .get(visible_idx)
-                                                                    .copied()?;
-                                                                let log =
-                                                                    this.logs.get(log_idx)?.clone();
-                                                                Some(Self::render_log_line(
-                                                                    cx,
-                                                                    log_idx,
+                                                div()
+                                                    .id("logs-nowrap-scrollbar")
+                                                    .w_full()
+                                                    .h_full()
+                                                    .relative()
+                                                    .vertical_scrollbar(&list_scroll_handle)
+                                                    .child(
+                                                        v_virtual_list(
+                                                            cx.entity(),
+                                                            "logs-virtual-list",
+                                                            item_sizes,
+                                                            move |this, visible_range, _window, cx| {
+                                                                visible_range
+                                                                    .filter_map(|visible_idx| {
+                                                                        let log_idx = this
+                                                                            .filtered_indices
+                                                                            .get(visible_idx)
+                                                                            .copied()?;
+                                                                        let log =
+                                                                            this.logs.get(log_idx)?.clone();
+                                                                        Some(Self::render_log_line(
+                                                                            cx,
+                                                                            log_idx,
                                                                     log,
                                                                     this.show_timestamps,
                                                                     this.word_wrap,
@@ -1373,9 +1406,10 @@ impl PodLogsView {
                                                             .collect::<Vec<_>>()
                                                     },
                                                 )
-                                                .track_scroll(&list_scroll_handle)
-                                                .p(px(16.0))
-                                                .gap(px(2.0)),
+                                                        .track_scroll(&list_scroll_handle)
+                                                        .p(px(16.0))
+                                                        .gap(px(2.0)),
+                                                    ),
                                             )
                                         }
                                     }),
@@ -1564,7 +1598,7 @@ impl PodLogsView {
             }))
     }
 
-    fn chunk_text_for_wrap(text: &str, max_chars: usize) -> Vec<String> {
+    pub fn chunk_text_for_wrap(text: &str, max_chars: usize) -> Vec<String> {
         if text.is_empty() || max_chars == 0 {
             return vec![text.to_string()];
         }

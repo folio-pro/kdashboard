@@ -4,6 +4,7 @@ use editor::YamlEditor;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use k8s_client::Resource;
+use std::collections::BTreeMap;
 use ui::gpui_component::tooltip::Tooltip;
 use ui::{back_btn, danger_btn, secondary_btn, theme, Icon, IconName, Sizable};
 
@@ -12,6 +13,11 @@ use ui::{back_btn, danger_btn, secondary_btn, theme, Icon, IconName, Sizable};
 pub enum DeploymentAction {
     Delete { name: String, namespace: String },
     SelectPod { resource: Resource },
+    ViewLogs {
+        name: String,
+        namespace: String,
+        selector: BTreeMap<String, String>,
+    },
 }
 
 pub struct DeploymentDetails {
@@ -314,6 +320,33 @@ impl DeploymentDetails {
                     .items_center()
                     .gap(px(12.0))
                     .child(self.render_edit_button(cx))
+                    .child(
+                        secondary_btn("view-logs-btn", IconName::Terminal, "View Logs", colors)
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                if let Some(on_action) = &this.on_action {
+                                    let selector: BTreeMap<String, String> = this
+                                        .resource
+                                        .spec
+                                        .as_ref()
+                                        .and_then(|s| s.get("selector"))
+                                        .and_then(|s| s.get("matchLabels"))
+                                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                                        .unwrap_or_default();
+                                    let action = DeploymentAction::ViewLogs {
+                                        name: this.resource.metadata.name.clone(),
+                                        namespace: this
+                                            .resource
+                                            .metadata
+                                            .namespace
+                                            .clone()
+                                            .unwrap_or_else(|| "default".to_string()),
+                                        selector,
+                                    };
+                                    on_action(action, cx);
+                                }
+                                cx.notify();
+                            })),
+                    )
                     .when(!self.confirm_delete, |el| {
                         el.child(
                             danger_btn("delete-btn", IconName::Trash, "Delete", colors).on_click(

@@ -3,7 +3,7 @@ use gpui::*;
 use k8s_client::{
     ConnectionStatus, PortForwardInfo, Resource, ResourceList, ResourceType, SortDirection,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 use ui::ThemeMode as UiThemeMode;
 
@@ -50,6 +50,7 @@ pub enum ActiveView {
     ResourceTable,
     PodDetails,
     PodLogs,
+    DeploymentLogs,
     PodTerminal,
     PortForwards,
     Settings,
@@ -62,6 +63,14 @@ pub struct PodContext {
     pub namespace: String,
     pub containers: Vec<String>,
     pub selected_container: Option<String>,
+}
+
+/// Deployment logs context for aggregated log views
+#[derive(Clone, Debug)]
+pub struct DeploymentLogsContext {
+    pub name: String,
+    pub namespace: String,
+    pub selector: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,6 +116,7 @@ pub struct AppState {
     // View state
     pub active_view: ActiveView,
     pub pod_context: Option<PodContext>,
+    pub deployment_logs_context: Option<DeploymentLogsContext>,
 
     // Panel state
     pub active_panel: ActivePanel,
@@ -158,6 +168,7 @@ impl AppState {
             last_updated: None,
             active_view: ActiveView::ResourceTable,
             pod_context: None,
+            deployment_logs_context: None,
             active_panel: ActivePanel::None,
             settings_open: false,
             settings_tab: SettingsTab::Appearance,
@@ -224,7 +235,30 @@ impl AppState {
         self.active_view = ActiveView::PodTerminal;
     }
 
+    pub fn open_deployment_logs(
+        &mut self,
+        name: String,
+        namespace: String,
+        selector: BTreeMap<String, String>,
+    ) {
+        self.deployment_logs_context = Some(DeploymentLogsContext {
+            name,
+            namespace,
+            selector,
+        });
+        self.active_view = ActiveView::DeploymentLogs;
+    }
+
     pub fn close_pod_view(&mut self) {
+        if self.deployment_logs_context.is_some() {
+            self.deployment_logs_context = None;
+            self.active_view = if self.selected_resource.is_some() {
+                ActiveView::PodDetails
+            } else {
+                ActiveView::ResourceTable
+            };
+            return;
+        }
         self.active_view = if self.selected_resource.is_some() {
             ActiveView::PodDetails
         } else {

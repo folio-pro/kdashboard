@@ -1,6 +1,5 @@
 mod app_state;
 mod app_view;
-mod header;
 mod resource_loader;
 pub mod settings;
 mod sidebar;
@@ -8,7 +7,6 @@ mod title_bar;
 
 pub use app_state::*;
 pub use app_view::*;
-pub use header::*;
 pub use resource_loader::*;
 pub use settings::{UserSettings, load_settings, save_settings};
 pub use sidebar::*;

@@ -143,6 +143,12 @@ fn main() -> Result<()> {
             // Register bundled fonts so the app works even if they're
             // not installed on the user's system (e.g. JetBrains Mono).
             let font_bytes: Vec<Cow<'static, [u8]>> = [
+                // Inter (static weights for UI)
+                include_bytes!("../../ui/assets/fonts/Inter-Regular.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/Inter-Medium.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/Inter-SemiBold.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/Inter-Bold.ttf").as_slice(),
+                include_bytes!("../../ui/assets/fonts/Inter-ExtraBold.ttf").as_slice(),
                 // JetBrains Mono (regular — with ligatures for code editor)
                 include_bytes!("../../ui/assets/fonts/JetBrainsMono-Regular.ttf").as_slice(),
                 include_bytes!("../../ui/assets/fonts/JetBrainsMono-Bold.ttf").as_slice(),
