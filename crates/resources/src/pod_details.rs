@@ -64,6 +64,8 @@ pub struct PodDetails {
     port_forwards: Vec<PortForwardInfo>,
     /// Error message to show in the port forward panel
     pf_error: Option<String>,
+    /// When true, show a confirm/cancel pair instead of the delete button
+    confirm_delete: bool,
 }
 
 impl PodDetails {
@@ -81,6 +83,7 @@ impl PodDetails {
             pf_inputs: HashMap::new(),
             port_forwards: Vec::new(),
             pf_error: None,
+            confirm_delete: false,
         }
     }
 
@@ -364,25 +367,62 @@ impl PodDetails {
                         IconName::Terminal,
                         "Terminal",
                     ))
-                    .child(
-                        danger_btn("delete-btn", IconName::Trash, "Delete", colors).on_click(
-                            cx.listener(|this, _event, _window, cx| {
-                                if let Some(on_action) = &this.on_action {
-                                    let action = PodAction::Delete {
-                                        pod_name: this.resource.metadata.name.clone(),
-                                        namespace: this
-                                            .resource
-                                            .metadata
-                                            .namespace
-                                            .clone()
-                                            .unwrap_or_else(|| "default".to_string()),
-                                    };
-                                    on_action(action, cx);
-                                }
-                                cx.notify();
-                            }),
-                        ),
-                    ),
+                    .when(!self.confirm_delete, |el| {
+                        el.child(
+                            danger_btn("delete-btn", IconName::Trash, "Delete", colors).on_click(
+                                cx.listener(|this, _event, _window, cx| {
+                                    this.confirm_delete = true;
+                                    cx.notify();
+                                }),
+                            ),
+                        )
+                    })
+                    .when(self.confirm_delete, |el| {
+                        el.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .child(
+                                    div()
+                                        .text_size(px(12.0))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(colors.error)
+                                        .child("Delete this pod?"),
+                                )
+                                .child(
+                                    danger_btn("confirm-delete-btn", IconName::Trash, "Confirm", colors)
+                                        .on_click(cx.listener(|this, _event, _window, cx| {
+                                            this.confirm_delete = false;
+                                            if let Some(on_action) = &this.on_action {
+                                                let action = PodAction::Delete {
+                                                    pod_name: this.resource.metadata.name.clone(),
+                                                    namespace: this
+                                                        .resource
+                                                        .metadata
+                                                        .namespace
+                                                        .clone()
+                                                        .unwrap_or_else(|| "default".to_string()),
+                                                };
+                                                on_action(action, cx);
+                                            }
+                                            cx.notify();
+                                        })),
+                                )
+                                .child(
+                                    ui::secondary_btn(
+                                        "cancel-delete-btn",
+                                        IconName::Close,
+                                        "Cancel",
+                                        colors,
+                                    )
+                                    .on_click(cx.listener(|this, _event, _window, cx| {
+                                        this.confirm_delete = false;
+                                        cx.notify();
+                                    })),
+                                ),
+                        )
+                    }),
             )
     }
 

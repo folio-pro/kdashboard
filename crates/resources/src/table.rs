@@ -817,6 +817,19 @@ impl Render for ResourceTable {
 
         // Table body
         if is_empty {
+            let type_name = resource_type.display_name();
+            let has_all_resources = !self.resources.is_empty();
+            let (title, subtitle) = if has_all_resources {
+                (
+                    format!("No matching {} found", type_name.to_lowercase()),
+                    "All resources are filtered out. Try adjusting your search filter.".to_string(),
+                )
+            } else {
+                (
+                    format!("No {} in this namespace", type_name.to_lowercase()),
+                    "Try selecting a different namespace or check cluster connectivity.".to_string(),
+                )
+            };
             container = container.child(
                 div()
                     .flex_1()
@@ -824,19 +837,27 @@ impl Render for ResourceTable {
                     .flex_col()
                     .items_center()
                     .justify_center()
-                    .py(px(40.0))
+                    .py(px(48.0))
+                    .gap(px(8.0))
+                    .child(
+                        Icon::new(IconName::Search)
+                            .size(px(32.0))
+                            .color(colors.text_muted.opacity(0.5)),
+                    )
                     .child(
                         div()
                             .text_size(theme.font_size)
-                            .text_color(colors.text_muted)
+                            .text_color(colors.text_secondary)
                             .font_weight(FontWeight::MEDIUM)
-                            .child("No resources found"),
+                            .font_family(theme.font_family_ui.clone())
+                            .child(title),
                     )
                     .child(
                         div()
                             .text_size(theme.font_size_small)
                             .text_color(colors.text_muted)
-                            .child("Try adjusting namespace/filter or refresh cluster data"),
+                            .font_family(theme.font_family_ui.clone())
+                            .child(subtitle),
                     ),
             );
         } else {
@@ -1306,7 +1327,7 @@ impl ResourceTable {
                     content = content.child(
                         Icon::new(IconName::ChevronsUpDown)
                             .size(px(12.0))
-                            .color(colors.text_muted.opacity(0.5)),
+                            .color(colors.text_muted),
                     );
                 }
 

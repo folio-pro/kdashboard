@@ -215,7 +215,7 @@ impl ThemeColors {
                 surface_elevated: hsla(0.0, 0.0, 1.0, 1.0),
                 text: hsla(193.0 / 360.0, 1.0, 0.15, 1.0),
                 text_secondary: hsla(192.0 / 360.0, 0.45, 0.28, 1.0),
-                text_muted: hsla(190.0 / 360.0, 0.28, 0.40, 1.0),
+                text_muted: hsla(190.0 / 360.0, 0.30, 0.36, 1.0),
                 text_accent: hsla(205.0 / 360.0, 0.69, 0.44, 1.0),
                 border: hsla(45.0 / 360.0, 0.35, 0.78, 1.0),
                 border_focused: hsla(205.0 / 360.0, 0.69, 0.44, 1.0),
@@ -236,16 +236,16 @@ impl ThemeColors {
                 surface_elevated: hsla(0.0, 0.0, 1.0, 1.0),
                 text: hsla(100.0 / 360.0, 0.11, 0.24, 1.0),
                 text_secondary: hsla(100.0 / 360.0, 0.10, 0.36, 1.0),
-                text_muted: hsla(100.0 / 360.0, 0.08, 0.48, 1.0),
-                text_accent: hsla(34.0 / 360.0, 0.56, 0.47, 1.0),
+                text_muted: hsla(100.0 / 360.0, 0.10, 0.44, 1.0),
+                text_accent: hsla(34.0 / 360.0, 0.56, 0.42, 1.0),
                 border: hsla(90.0 / 360.0, 0.18, 0.78, 1.0),
-                border_focused: hsla(84.0 / 360.0, 0.34, 0.45, 1.0),
-                success: hsla(122.0 / 360.0, 0.39, 0.40, 1.0),
-                warning: hsla(34.0 / 360.0, 0.56, 0.47, 1.0),
-                error: hsla(8.0 / 360.0, 0.62, 0.49, 1.0),
-                info: hsla(84.0 / 360.0, 0.34, 0.45, 1.0),
-                primary: hsla(84.0 / 360.0, 0.34, 0.45, 1.0),
-                primary_hover: hsla(84.0 / 360.0, 0.34, 0.39, 1.0),
+                border_focused: hsla(84.0 / 360.0, 0.40, 0.38, 1.0),
+                success: hsla(122.0 / 360.0, 0.45, 0.35, 1.0),
+                warning: hsla(34.0 / 360.0, 0.60, 0.42, 1.0),
+                error: hsla(8.0 / 360.0, 0.62, 0.45, 1.0),
+                info: hsla(84.0 / 360.0, 0.40, 0.38, 1.0),
+                primary: hsla(84.0 / 360.0, 0.40, 0.38, 1.0),
+                primary_hover: hsla(84.0 / 360.0, 0.40, 0.32, 1.0),
                 secondary: hsla(90.0 / 360.0, 0.30, 0.92, 1.0),
                 secondary_hover: hsla(90.0 / 360.0, 0.18, 0.78, 1.0),
                 selection: hsla(84.0 / 360.0, 0.34, 0.45, 0.14),
@@ -278,16 +278,16 @@ impl ThemeColors {
                 surface_elevated: hsla(0.0, 0.0, 1.0, 1.0),
                 text: hsla(220.0 / 360.0, 0.13, 0.18, 1.0),
                 text_secondary: hsla(220.0 / 360.0, 0.10, 0.34, 1.0),
-                text_muted: hsla(220.0 / 360.0, 0.08, 0.47, 1.0),
-                text_accent: hsla(212.0 / 360.0, 0.92, 0.40, 1.0),
+                text_muted: hsla(220.0 / 360.0, 0.10, 0.43, 1.0),
+                text_accent: hsla(212.0 / 360.0, 0.92, 0.35, 1.0),
                 border: hsla(220.0 / 360.0, 0.16, 0.84, 1.0),
-                border_focused: hsla(212.0 / 360.0, 0.92, 0.40, 1.0),
-                success: hsla(137.0 / 360.0, 0.53, 0.36, 1.0),
-                warning: hsla(39.0 / 360.0, 0.84, 0.43, 1.0),
-                error: hsla(0.0, 0.67, 0.45, 1.0),
-                info: hsla(212.0 / 360.0, 0.92, 0.40, 1.0),
-                primary: hsla(212.0 / 360.0, 0.92, 0.40, 1.0),
-                primary_hover: hsla(212.0 / 360.0, 0.92, 0.34, 1.0),
+                border_focused: hsla(212.0 / 360.0, 0.92, 0.35, 1.0),
+                success: hsla(137.0 / 360.0, 0.60, 0.32, 1.0),
+                warning: hsla(39.0 / 360.0, 0.84, 0.40, 1.0),
+                error: hsla(0.0, 0.67, 0.42, 1.0),
+                info: hsla(212.0 / 360.0, 0.92, 0.35, 1.0),
+                primary: hsla(212.0 / 360.0, 0.92, 0.35, 1.0),
+                primary_hover: hsla(212.0 / 360.0, 0.92, 0.29, 1.0),
                 secondary: hsla(220.0 / 360.0, 0.29, 0.97, 1.0),
                 secondary_hover: hsla(220.0 / 360.0, 0.16, 0.84, 1.0),
                 selection: hsla(212.0 / 360.0, 0.92, 0.40, 0.14),
@@ -498,7 +498,11 @@ fn apply_k8s_theme(mode: ThemeMode, cx: &mut App) {
 
         tc.warning = colors.warning;
         tc.warning_hover = colors.warning;
-        tc.warning_foreground = hsla(0.0, 0.0, 0.0, 1.0);
+        tc.warning_foreground = if mode.is_dark() {
+            hsla(0.0, 0.0, 0.10, 1.0) // dark text on warning bg (dark themes)
+        } else {
+            hsla(0.0, 0.0, 1.0, 1.0) // white text on warning bg (light themes)
+        };
 
         tc.danger = colors.error;
         tc.danger_hover = colors.error;

@@ -46,6 +46,7 @@ pub async fn start_terminal_session(
     namespace: &str,
     cols: Option<u16>,
     rows: Option<u16>,
+    shell: Option<&str>,
     on_output: OutputCallback,
     on_close: CloseCallback,
 ) -> Result<TerminalSession> {
@@ -73,13 +74,14 @@ pub async fn start_terminal_session(
 
     let session_id = Uuid::new_v4().to_string();
 
+    let shell_path = shell.unwrap_or("/bin/sh");
     let shell_cmd = if let (Some(cols), Some(rows)) = (cols, rows) {
         format!(
-            "export TERM=xterm-256color; stty cols {} rows {} 2>/dev/null; exec /bin/sh -i",
-            cols, rows
+            "export TERM=xterm-256color; stty cols {} rows {} 2>/dev/null; exec {} -i",
+            cols, rows, shell_path
         )
     } else {
-        "export TERM=xterm-256color; exec /bin/sh -i".to_string()
+        format!("export TERM=xterm-256color; exec {} -i", shell_path)
     };
 
     info!("Shell command: {}", shell_cmd);
