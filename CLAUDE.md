@@ -20,6 +20,8 @@ cargo test               # Run tests
 
 Requires **Rust nightly** toolchain (configured in `rust-toolchain.toml`).
 
+**Important**: Always run `cargo test` after making any code change to verify nothing is broken.
+
 ## Architecture
 
 ### Workspace Structure (8 crates)
