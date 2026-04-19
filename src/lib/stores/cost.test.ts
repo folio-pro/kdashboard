@@ -25,7 +25,7 @@ describe("CostStore", () => {
   test("overview getter aliases data", () => {
     const mockData = { total_cost_hourly: 1, total_cost_monthly: 720, source: "opencost", namespaces: [] };
     store.data = mockData as any;
-    expect(store.overview).toBe(mockData);
+    expect(store.overview as unknown).toBe(mockData);
   });
 
   // --- getNodeCost ---
@@ -37,12 +37,12 @@ describe("CostStore", () => {
         instance_type: "m5.xlarge",
         provider: "aws",
         region: "us-east-1",
-        hourly_cost: 0.192,
-        monthly_cost: 138.24,
+        price_per_hour: 0.192,
+        price_per_month: 138.24,
       } as any,
     };
     expect(store.getNodeCost("node-1")).toBeDefined();
-    expect(store.getNodeCost("node-1")!.hourly_cost).toBe(0.192);
+    expect(store.getNodeCost("node-1")!.price_per_hour).toBe(0.192);
   });
 
   test("getNodeCost returns undefined for unknown node", () => {

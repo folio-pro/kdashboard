@@ -75,7 +75,7 @@ async fn fetch_sorted_revisions(
         })
         .collect();
 
-    owned.sort_by(|a, b| rs_revision(b).cmp(&rs_revision(a)));
+    owned.sort_by_key(|rs| std::cmp::Reverse(rs_revision(rs)));
     Ok(owned)
 }
 
@@ -286,7 +286,10 @@ mod tests {
     fn rs_with_revision(rev: Option<&str>) -> ReplicaSet {
         let annotations = rev.map(|v| {
             let mut m = BTreeMap::new();
-            m.insert("deployment.kubernetes.io/revision".to_string(), v.to_string());
+            m.insert(
+                "deployment.kubernetes.io/revision".to_string(),
+                v.to_string(),
+            );
             m
         });
         ReplicaSet {

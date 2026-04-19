@@ -18,7 +18,7 @@ describe("SecurityStore", () => {
   test("overview getter aliases data", () => {
     const mockData = { total_pods: 10, scanned_pods: 5, pods: [] };
     store.data = mockData as any;
-    expect(store.overview).toBe(mockData);
+    expect(store.overview as unknown).toBe(mockData);
   });
 
   test("reset clears all state and increments loadId", () => {

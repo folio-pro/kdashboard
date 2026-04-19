@@ -1,5 +1,18 @@
-import type { Component } from "svelte";
 import type { Resource } from "$lib/types";
+
+/**
+ * A Svelte component used as an icon. lucide-svelte exports class-based
+ * (legacy) components and this type must accept both those and native Svelte 5
+ * function components without forcing generic ceremony at each call site.
+ *
+ * Tried (and discarded): Component<Record<string, unknown>> from "svelte" —
+ * re-introduces 36 svelte-check errors because lucide-svelte's typeof FooIcon
+ * is a class (SvelteComponentTyped) and Svelte 5's Component<P> is a function
+ * signature. The two are not assignable. Keep `any` with the eslint override
+ * until lucide-svelte ships Svelte 5 function components.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type IconComponent = any;
 
 export type ActionTier = "green" | "yellow" | "red";
 
@@ -13,8 +26,7 @@ export type ActionGroup =
 export interface ActionDef {
   id: string;
   label: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  icon?: Component<any>;
+  icon?: IconComponent;
   shortcut?: string;
   tier: ActionTier;
   group: ActionGroup;
@@ -33,8 +45,7 @@ export interface ActionDef {
 export interface BulkActionDef {
   id: string;
   label: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  icon?: Component<any>;
+  icon?: IconComponent;
   tier: ActionTier;
   group: ActionGroup;
   priority: number;
@@ -45,8 +56,7 @@ export interface BulkActionDef {
 export interface TableAction {
   id: string;
   label: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  icon?: Component<any>;
+  icon?: IconComponent;
   execute: () => void;
 }
 

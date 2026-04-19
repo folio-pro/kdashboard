@@ -60,7 +60,10 @@
     return () => window.removeEventListener("click", handler);
   });
 
-  let ctxIdx = $derived(ctxMenu ? uiStore.tabs.findIndex((t) => t.id === ctxMenu.tabId) : -1);
+  let ctxIdx = $derived.by(() => {
+    const menu = ctxMenu;
+    return menu ? uiStore.tabs.findIndex((t) => t.id === menu.tabId) : -1;
+  });
   let ctxTabObj = $derived(ctxIdx >= 0 ? uiStore.tabs[ctxIdx] : undefined);
 </script>
 

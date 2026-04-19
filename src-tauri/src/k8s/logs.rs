@@ -192,14 +192,14 @@ mod tests {
 
     #[test]
     fn batch_size_constant_is_reasonable() {
-        assert!(LOG_BATCH_SIZE > 0);
-        assert!(LOG_BATCH_SIZE <= 100);
+        const { assert!(LOG_BATCH_SIZE > 0) };
+        const { assert!(LOG_BATCH_SIZE <= 100) };
     }
 
     #[test]
     fn flush_interval_constant_is_reasonable() {
-        assert!(LOG_FLUSH_INTERVAL_MS > 0);
-        assert!(LOG_FLUSH_INTERVAL_MS <= 1000);
+        const { assert!(LOG_FLUSH_INTERVAL_MS > 0) };
+        const { assert!(LOG_FLUSH_INTERVAL_MS <= 1000) };
     }
 
     // -----------------------------------------------------------------------
@@ -309,15 +309,15 @@ mod tests {
     fn batch_size_and_flush_interval_are_compatible() {
         // The batch size should be small enough that flushing is responsive,
         // and the flush interval should be short enough for real-time streaming.
-        assert!(
-            LOG_BATCH_SIZE <= 50,
-            "Batch size {} too large for responsive log streaming",
-            LOG_BATCH_SIZE
-        );
-        assert!(
-            LOG_FLUSH_INTERVAL_MS <= 200,
-            "Flush interval {}ms too long for real-time streaming",
-            LOG_FLUSH_INTERVAL_MS
-        );
+        const {
+            assert!(
+                LOG_BATCH_SIZE <= 50,
+                "Batch size too large for responsive log streaming",
+            );
+            assert!(
+                LOG_FLUSH_INTERVAL_MS <= 200,
+                "Flush interval too long for real-time streaming",
+            );
+        }
     }
 }

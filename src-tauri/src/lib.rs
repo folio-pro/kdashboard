@@ -126,50 +126,6 @@ fn build_env_filter() -> tracing_subscriber::EnvFilter {
 }
 
 // ===========================================================================
-// Tests for infrastructure code
-// ===========================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::{clear_k8s_version_cache, get_hostname, get_os_version, k8s_version_cache};
-
-    #[test]
-    fn app_metadata_static_fields() {
-        assert!(!env!("CARGO_PKG_VERSION").is_empty());
-        assert!(!std::env::consts::OS.is_empty());
-        assert!(!std::env::consts::ARCH.is_empty());
-    }
-
-    #[test]
-    fn os_version_returns_nonempty_string() {
-        let version = get_os_version();
-        assert!(!version.is_empty());
-    }
-
-    #[tokio::test]
-    async fn k8s_version_cache_clear_works() {
-        {
-            let mut guard = k8s_version_cache().lock().await;
-            *guard = Some("1.28".to_string());
-        }
-        {
-            let guard = k8s_version_cache().lock().await;
-            assert_eq!(guard.as_deref(), Some("1.28"));
-        }
-        clear_k8s_version_cache().await;
-        {
-            let guard = k8s_version_cache().lock().await;
-            assert!(guard.is_none());
-        }
-    }
-
-    #[test]
-    fn hostname_resolves() {
-        assert!(!get_hostname().is_empty());
-    }
-}
-
-// ===========================================================================
 // App entry point
 // ===========================================================================
 
@@ -312,3 +268,46 @@ pub fn run() {
         .expect("error while running Tauri application");
 }
 
+// ===========================================================================
+// Tests for infrastructure code
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::{clear_k8s_version_cache, get_hostname, get_os_version, k8s_version_cache};
+
+    #[test]
+    fn app_metadata_static_fields() {
+        assert!(!env!("CARGO_PKG_VERSION").is_empty());
+        assert!(!std::env::consts::OS.is_empty());
+        assert!(!std::env::consts::ARCH.is_empty());
+    }
+
+    #[test]
+    fn os_version_returns_nonempty_string() {
+        let version = get_os_version();
+        assert!(!version.is_empty());
+    }
+
+    #[tokio::test]
+    async fn k8s_version_cache_clear_works() {
+        {
+            let mut guard = k8s_version_cache().lock().await;
+            *guard = Some("1.28".to_string());
+        }
+        {
+            let guard = k8s_version_cache().lock().await;
+            assert_eq!(guard.as_deref(), Some("1.28"));
+        }
+        clear_k8s_version_cache().await;
+        {
+            let guard = k8s_version_cache().lock().await;
+            assert!(guard.is_none());
+        }
+    }
+
+    #[test]
+    fn hostname_resolves() {
+        assert!(!get_hostname().is_empty());
+    }
+}

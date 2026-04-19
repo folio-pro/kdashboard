@@ -1,7 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::ObjectMeta;
-use serde_json;
 use std::collections::BTreeMap;
 
 /// Build a realistic Pod with N containers for benchmarking.

@@ -2,7 +2,15 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import type { Resource, ResourceList, ConnectionStatus, PortForwardInfo } from "../types/index.js";
 import { K8sStoreLogic, type WatchEvent } from "./k8s.logic.js";
 
-function makeResource(overrides: Partial<Resource> & { metadata: Partial<Resource["metadata"]> }): Resource {
+interface ResourceOverrides {
+  kind?: string;
+  api_version?: string;
+  metadata: Partial<Resource["metadata"]>;
+  spec?: Record<string, unknown>;
+  status?: Record<string, unknown>;
+}
+
+function makeResource(overrides: ResourceOverrides): Resource {
   return {
     kind: overrides.kind ?? "Pod",
     api_version: overrides.api_version ?? "v1",
@@ -34,7 +42,7 @@ describe("K8sStore", () => {
       expect(store.currentContext).toBe("");
       expect(store.currentNamespace).toBe("default");
       expect(store.selectedResourceType).toBe("pods");
-      expect(store.connectionStatus).toBe("disconnected");
+      expect(store.connectionStatus as ConnectionStatus).toBe("disconnected");
       expect(store.isSwitchingContext).toBe(false);
       expect(store.isLoading).toBe(false);
       expect(store.error).toBeNull();
@@ -146,7 +154,7 @@ describe("K8sStore", () => {
 
       expect(store.contexts).toEqual([]);
       expect(store.currentContext).toBe("");
-      expect(store.connectionStatus).toBe("disconnected");
+      expect(store.connectionStatus as ConnectionStatus).toBe("disconnected");
     });
 
     test("clearNamespaces empties namespaces list", () => {
@@ -407,7 +415,7 @@ describe("K8sStore", () => {
       expect(store.currentContext).toBe("");
       expect(store.namespaces).toEqual([]);
       expect(store.currentNamespace).toBe("default");
-      expect(store.connectionStatus).toBe("disconnected");
+      expect(store.connectionStatus as ConnectionStatus).toBe("disconnected");
       expect(store.error).toBeNull();
       expect(store.resourceCounts).toEqual({});
     });

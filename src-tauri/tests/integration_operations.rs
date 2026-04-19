@@ -169,12 +169,7 @@ async fn cleanup_configmap(client: &Client, ns: &str, name: &str) {
 }
 
 /// Create a Deployment and wait until its current generation is observed and all replicas report available.
-async fn create_and_wait_deployment(
-    client: &Client,
-    ns: &str,
-    deploy: Deployment,
-    timeout_s: u64,
-) {
+async fn create_and_wait_deployment(client: &Client, ns: &str, deploy: Deployment, timeout_s: u64) {
     let api: Api<Deployment> = Api::namespaced(client.clone(), ns);
     let created = api
         .create(&PostParams::default(), &deploy)
@@ -214,7 +209,10 @@ async fn wait_for_rollout(client: &Client, ns: &str, name: &str, timeout_s: u64)
             }
         }
         if std::time::Instant::now() >= deadline {
-            panic!("rollout for {} did not complete within {}s", name, timeout_s);
+            panic!(
+                "rollout for {} did not complete within {}s",
+                name, timeout_s
+            );
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
@@ -753,4 +751,115 @@ async fn integration_delete_resource_with_uid_precondition_mismatch_errors() {
 
     // Ensure the apiserver actually observes the object as gone.
     wait_for_deleted(&api, name, 10).await;
+}
+
+#[tokio::test]
+async fn integration_delete_resource_with_resource_version_mismatch_errors() {
+    fresh_client();
+    let ns = test_namespace();
+    let name = "op-delete-rv-precond";
+
+    let client = kube_client().await;
+    cleanup_configmap(&client, &ns, name).await;
+
+    // Create a ConfigMap to target.
+    let api: Api<ConfigMap> = Api::namespaced(client.clone(), &ns);
+    let mut data = BTreeMap::new();
+    data.insert("k".to_string(), "v".to_string());
+    let cm = ConfigMap {
+        metadata: ObjectMeta {
+            name: Some(name.to_string()),
+            namespace: Some(ns.clone()),
+            ..Default::default()
+        },
+        data: Some(data),
+        ..Default::default()
+    };
+    api.create(&PostParams::default(), &cm).await.unwrap();
+
+    // Issue delete with an intentionally-wrong resourceVersion precondition.
+    // "0" is reserved by the apiserver for resource-version-unset semantics and
+    // will never match a real revision, so the delete must be rejected.
+    let res = delete_resource("configmap", name, &ns, None, Some("0")).await;
+
+    assert!(
+        res.is_err(),
+        "delete_resource with a mismatched resourceVersion precondition should fail"
+    );
+
+    // The target must still exist — a rejected precondition means no-op.
+    assert!(
+        api.get(name).await.is_ok(),
+        "configmap should still exist after a rejected delete"
+    );
+
+    // Happy-path delete with the real resourceVersion.
+    let real = api.get(name).await.unwrap();
+    let real_rv = real
+        .metadata
+        .resource_version
+        .clone()
+        .expect("created configmap should expose a resourceVersion");
+    delete_resource("configmap", name, &ns, None, Some(&real_rv))
+        .await
+        .expect("delete with correct resourceVersion should succeed");
+
+    wait_for_deleted(&api, name, 10).await;
+}
+
+// ---------------------------------------------------------------------------
+// rollback_deployment — only one revision path
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn integration_rollback_deployment_only_one_revision_errors() {
+    fresh_client();
+    let ns = test_namespace();
+    let name = "op-rollback-single";
+
+    let client = kube_client().await;
+    // Fresh deployment = exactly one ReplicaSet, so there is no "previous".
+    setup_basic_deployment(&client, &ns, name).await;
+
+    let result = rollback_deployment(name, &ns, None).await;
+    let err = result.expect_err("rollback without a previous revision should fail");
+    let msg = err.to_string();
+    assert!(
+        msg.to_lowercase().contains("no previous revision"),
+        "error should mention the missing previous revision, got: {}",
+        msg
+    );
+
+    cleanup_deployment(&client, &ns, name).await;
+}
+
+// ---------------------------------------------------------------------------
+// apply_resource_yaml — unknown kind path
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn integration_apply_resource_yaml_invalid_kind_errors() {
+    fresh_client();
+
+    // Use an obviously-invalid kind. No namespace or resources are created.
+    let yaml = r#"apiVersion: nonsense.kdashboard.test/v1
+kind: FooBarBaz
+metadata:
+  name: should-not-apply
+  namespace: default
+spec:
+  irrelevant: true
+"#;
+
+    let result = apply_resource_yaml(yaml).await;
+    let err = result.expect_err("apply_resource_yaml with unknown kind should fail");
+    let msg = err.to_string();
+    assert!(
+        msg.to_lowercase().contains("foobarbaz")
+            || msg.to_lowercase().contains("unsupported")
+            || msg.to_lowercase().contains("unknown")
+            || msg.to_lowercase().contains("not found"),
+        "error should mention the unknown kind, got: {}",
+        msg
+    );
 }

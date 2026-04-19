@@ -8,7 +8,7 @@
   import IstioGroup from "./annotation-tools/IstioGroup.svelte";
   import AnnotationsCard from "./AnnotationsCard.svelte";
   import { toggleSetItem } from "$lib/utils/k8s-helpers";
-  import type { Component } from "svelte";
+  import type { IconComponent } from "$lib/actions/types";
 
   interface Props {
     annotations: Record<string, string>;
@@ -19,13 +19,13 @@
   let groups = $derived(classifyAnnotations(annotations));
 
   // Registry-driven component map (keeps registry.ts pure for testing)
-  const RENDERER_MAP: Record<string, Component<any>> = {
+  const RENDERER_MAP: Record<string, IconComponent> = {
     ambassador: AmbassadorGroup,
     istio: IstioGroup,
   };
 
   // Icon component map
-  const ICON_MAP: Record<string, Component<any>> = {
+  const ICON_MAP: Record<string, IconComponent> = {
     Globe, Network, ShieldCheck, GitBranch, Link, Ship, Box, BarChart3, Tag,
   };
 
