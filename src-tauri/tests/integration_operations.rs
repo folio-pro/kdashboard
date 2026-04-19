@@ -124,7 +124,17 @@ where
     K: kube::Resource + Clone + serde::de::DeserializeOwned + std::fmt::Debug,
 {
     let deadline = std::time::Instant::now() + Duration::from_secs(timeout_s);
-    while api.get(name).await.is_ok() {
+    loop {
+        match api.get(name).await {
+            Ok(_) => {}
+            Err(kube::Error::Api(resp)) if resp.code == 404 => return,
+            Err(e) => panic!(
+                "unexpected error polling {} {} for deletion: {}",
+                std::any::type_name::<K>(),
+                name,
+                e
+            ),
+        }
         if std::time::Instant::now() >= deadline {
             panic!(
                 "{} {} was not deleted within {}s",
@@ -741,14 +751,6 @@ async fn integration_delete_resource_with_uid_precondition_mismatch_errors() {
         .await
         .expect("delete with correct UID should succeed");
 
-    // Ensure it is actually gone (may take a moment for kube to finalize).
-    let mut gone = false;
-    for _ in 0..10 {
-        if api.get(name).await.is_err() {
-            gone = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
-    assert!(gone, "configmap should be deleted after matching-UID delete");
+    // Ensure the apiserver actually observes the object as gone.
+    wait_for_deleted(&api, name, 10).await;
 }
