@@ -60,16 +60,25 @@
         }
         k8sStore.restoreResources(toTab.resourceType, toTab.cachedItems);
       } else {
-        // No cache: do full namespace switch + fetch
-        if (toTab.namespace !== undefined && toTab.namespace !== k8sStore.currentNamespace) {
-          k8sStore.switchNamespace(toTab.namespace);
-        }
-        k8sStore.isLoading = true;
+        // No cache: fetch. Set the type first so switchNamespace's internal
+        // load picks up the new resourceType and we don't fire two concurrent
+        // list_resources calls.
         k8sStore.setResourceType(toTab.resourceType);
-        k8sStore.resources = { items: [], resource_type: toTab.resourceType };
         toTab.cacheReady = false;
         const expectedType = toTab.resourceType;
-        k8sStore.loadResources(toTab.resourceType).then(() => {
+        const needsNamespaceSwitch =
+          toTab.namespace !== undefined && toTab.namespace !== k8sStore.currentNamespace;
+
+        let loadPromise: Promise<void>;
+        if (needsNamespaceSwitch) {
+          loadPromise = k8sStore.switchNamespace(toTab.namespace!);
+        } else {
+          k8sStore.isLoading = true;
+          k8sStore.resources = { items: [], resource_type: toTab.resourceType };
+          loadPromise = k8sStore.loadResources(toTab.resourceType);
+        }
+
+        loadPromise.then(() => {
           if (k8sStore.selectedResourceType === expectedType && !k8sStore.error) {
             toTab.cachedItems = k8sStore.resources.items;
             toTab.count = k8sStore.resources.items.length;
