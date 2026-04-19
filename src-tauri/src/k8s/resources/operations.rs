@@ -1,5 +1,5 @@
 use anyhow::Result;
-use k8s_openapi::api::apps::v1::ReplicaSet;
+use k8s_openapi::api::apps::v1::{Deployment, ReplicaSet};
 use kube::api::{DynamicObject, ListParams};
 use kube::{Api, Client};
 use serde::{Deserialize, Serialize};
@@ -45,11 +45,22 @@ fn rs_images(rs: &ReplicaSet) -> Vec<String> {
 }
 
 /// Fetch ReplicaSets owned by the given Deployment, sorted by revision descending (newest first).
+///
+/// Matches ReplicaSets by the Deployment's UID (not name) so orphaned RSes left behind by a
+/// previously deleted Deployment of the same name are never mistaken for revisions of the
+/// current one.
 async fn fetch_sorted_revisions(
     client: &Client,
     name: &str,
     namespace: &str,
 ) -> Result<Vec<ReplicaSet>> {
+    let deploy_api: Api<Deployment> = Api::namespaced(client.clone(), namespace);
+    let deployment = deploy_api.get(name).await?;
+    let deployment_uid = deployment
+        .metadata
+        .uid
+        .ok_or_else(|| anyhow::anyhow!("Deployment {} has no UID", name))?;
+
     let rs_api: Api<ReplicaSet> = Api::namespaced(client.clone(), namespace);
     let rs_list = rs_api.list(&ListParams::default()).await?;
 
@@ -59,7 +70,7 @@ async fn fetch_sorted_revisions(
         .filter(|rs| {
             rs.metadata.owner_references.as_ref().is_some_and(|refs| {
                 refs.iter()
-                    .any(|r| r.kind == "Deployment" && r.name == name)
+                    .any(|r| r.controller == Some(true) && r.uid == deployment_uid)
             })
         })
         .collect();

@@ -44,6 +44,10 @@
     const key = resourceKey;
     let cancelled = false;
 
+    // Dismiss any pending rollback so confirmRollback can't target a deployment
+    // different from the one the user originally opened the dialog on.
+    pendingRevision = null;
+
     loading = true;
     error = null;
     fetchRevisions()
