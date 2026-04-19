@@ -56,9 +56,17 @@ describe("resolveSchemaAtPath — null paths", () => {
 
   test("returns null for an array field of non-object items", () => {
     // hostAliases.ip-like arrays or string arrays should not descend into children.
-    // Service.spec.externalIPs is string[]; walking past it returns null.
+    // Service.spec.externalIPs is string[]; both the direct path and any
+    // descent into it must return null so a refactor that drops the guard
+    // on items.type !== "object" cannot silently let traversal continue.
     const direct = resolveSchemaAtPath("Service", ["spec", "externalIPs"]);
     expect(direct).toBeNull();
+
+    // Numeric descendant: simulates the UI asking about externalIPs[0].
+    expect(resolveSchemaAtPath("Service", ["spec", "externalIPs", "0"])).toBeNull();
+
+    // Named descendant: simulates a bogus path that assumes object items.
+    expect(resolveSchemaAtPath("Service", ["spec", "externalIPs", "foo"])).toBeNull();
   });
 });
 
