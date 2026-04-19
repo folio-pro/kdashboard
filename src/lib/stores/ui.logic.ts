@@ -17,6 +17,9 @@ export interface Tab {
   count?: number;
   /** Cached resource data — avoids reload on tab switch */
   cachedItems?: Resource[];
+  /** True once a load has completed for this tab; distinguishes a legitimately
+   *  empty result from an in-flight/uninitialized load. */
+  cacheReady?: boolean;
   /** Cached selected resource — restores detail/logs/yaml/terminal views on tab switch */
   cachedResource?: Resource;
 }

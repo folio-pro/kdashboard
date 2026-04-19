@@ -88,26 +88,29 @@
 
   // Virtual scrolling
   const ROW_HEIGHT: Record<string, number> = { compact: 32, comfortable: 40 };
+  const estimateSizeFor: Record<string, () => number> = {
+    compact: () => ROW_HEIGHT.compact,
+    comfortable: () => ROW_HEIGHT.comfortable,
+  };
   let scrollRef: HTMLDivElement | undefined = $state();
 
   const virtualizer = createVirtualizer<HTMLDivElement, Element>({
     count: 0,
     getScrollElement: () => scrollRef ?? null,
-    estimateSize: () => ROW_HEIGHT[settingsStore.settings.table_density] ?? 40,
+    estimateSize: estimateSizeFor.comfortable,
     overscan: 10,
   });
 
-  // Sync virtualizer count and row height before DOM renders.
-  // setOptions mutates the virtualizer's internal Svelte store, which would
-  // retrigger this effect (reading $virtualizer auto-subscribes). Wrap the
-  // write in untrack so the loop breaks.
-  $effect.pre(() => {
+  // Gate on scrollRef so the virtualizer acquires its scroll element on remount.
+  // setOptions notifies the virtualizer store; untrack breaks the self-retrigger.
+  $effect(() => {
+    if (!scrollRef) return;
     const count = filteredResources.length;
     const density = settingsStore.settings.table_density;
     untrack(() => {
       $virtualizer.setOptions({
         count,
-        estimateSize: () => ROW_HEIGHT[density] ?? 40,
+        estimateSize: estimateSizeFor[density] ?? estimateSizeFor.comfortable,
       });
     });
   });
