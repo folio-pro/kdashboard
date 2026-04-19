@@ -437,7 +437,7 @@ fn diagnose_deployment_all_replicas_ready_no_warning() {
 
 #[test]
 fn health_unhealthy_when_critical_issue() {
-    let issues = vec![DiagnosticIssue {
+    let issues = [DiagnosticIssue {
         severity: "critical".into(),
         category: "crash".into(),
         title: "test".into(),
@@ -456,7 +456,7 @@ fn health_unhealthy_when_critical_issue() {
 
 #[test]
 fn health_degraded_when_warning_only() {
-    let issues = vec![DiagnosticIssue {
+    let issues = [DiagnosticIssue {
         severity: "warning".into(),
         category: "crash".into(),
         title: "test".into(),
@@ -475,7 +475,7 @@ fn health_degraded_when_warning_only() {
 
 #[test]
 fn health_healthy_when_only_info() {
-    let issues = vec![DiagnosticIssue {
+    let issues = [DiagnosticIssue {
         severity: "info".into(),
         category: "resources".into(),
         title: "test".into(),
