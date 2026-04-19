@@ -12,9 +12,7 @@
   import PortForwardView from "$lib/components/port-forwards/PortForwardView.svelte";
   import YamlEditor from "$lib/components/details/YamlEditor.svelte";
   import TabBar from "$lib/components/tabs/TabBar.svelte";
-  // Lazy-loaded views (secondary, not always needed)
-  // SettingsView, TopologyView, CostView, SecurityView are loaded via
-  // dynamic import below.
+  import LazyView from "$lib/components/common/LazyView.svelte";
   import { ToastContainer } from "$lib/components/ui/toast";
   import ContextMenu from "$lib/components/context-menu/ContextMenu.svelte";
   import UpdateBanner from "$lib/components/common/UpdateBanner.svelte";
@@ -23,70 +21,18 @@
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
+  import { uiStore, viewShowsTitleBar } from "$lib/stores/ui.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
-  import { toastStore } from "$lib/stores/toast.svelte";
+  import { deleteResource } from "$lib/actions/registry";
   import { initKeyboardShortcuts } from "$lib/utils/keyboard";
+  import { handleTabSwitch } from "$lib/utils/tabLifecycle";
 
-  // Synchronous hook: restore cached data BEFORE the view changes (prevents empty state flash)
+  // Synchronous hook: restore cached data BEFORE the view changes
+  // (prevents empty state flash). Implementation lives in tabLifecycle
+  // util so the race-guard + namespace sync logic is unit-testable.
   uiStore.onBeforeTabSwitch = (fromTab, toTab) => {
-    // Save outgoing tab's selected resource
-    if (fromTab && RESOURCE_TAB_TYPES.has(fromTab.type) && k8sStore.selectedResource) {
-      fromTab.cachedResource = k8sStore.selectedResource;
-    }
-    // Skip save when store holds a different resource_type (in-flight load).
-    if (fromTab && (fromTab.type === "table" || fromTab.type === "crd-table")) {
-      if (
-        fromTab.resourceType &&
-        k8sStore.resources.resource_type === fromTab.resourceType
-      ) {
-        fromTab.cachedItems = k8sStore.resources.items;
-        fromTab.count = k8sStore.resources.items.length;
-        fromTab.cacheReady = true;
-      }
-    }
-
-    // Restore incoming tab's selected resource
-    if (RESOURCE_TAB_TYPES.has(toTab.type) && toTab.cachedResource) {
-      k8sStore.selectedResource = toTab.cachedResource;
-    }
-
-    if ((toTab.type === "table" || toTab.type === "crd-table") && toTab.resourceType) {
-      if (toTab.cacheReady && toTab.cachedItems) {
-        // Cached: set namespace synchronously (no async switchNamespace to avoid race)
-        if (toTab.namespace !== undefined && toTab.namespace !== k8sStore.currentNamespace) {
-          k8sStore.currentNamespace = toTab.namespace;
-        }
-        k8sStore.restoreResources(toTab.resourceType, toTab.cachedItems);
-      } else {
-        // No cache: fetch. Set the type first so switchNamespace's internal
-        // load picks up the new resourceType and we don't fire two concurrent
-        // list_resources calls.
-        k8sStore.setResourceType(toTab.resourceType);
-        toTab.cacheReady = false;
-        const expectedType = toTab.resourceType;
-        const needsNamespaceSwitch =
-          toTab.namespace !== undefined && toTab.namespace !== k8sStore.currentNamespace;
-
-        let loadPromise: Promise<void>;
-        if (needsNamespaceSwitch) {
-          loadPromise = k8sStore.switchNamespace(toTab.namespace!);
-        } else {
-          k8sStore.isLoading = true;
-          k8sStore.resources = { items: [], resource_type: toTab.resourceType };
-          loadPromise = k8sStore.loadResources(toTab.resourceType);
-        }
-
-        loadPromise.then(() => {
-          if (k8sStore.selectedResourceType === expectedType && !k8sStore.error) {
-            toTab.cachedItems = k8sStore.resources.items;
-            toTab.count = k8sStore.resources.items.length;
-            toTab.cacheReady = true;
-          }
-        });
-      }
-    }
+    handleTabSwitch(fromTab, toTab, k8sStore);
   };
 
   // When namespace changes, save it to the active tab and invalidate cache.
@@ -111,20 +57,7 @@
     const resource = dialogStore.deleteResource;
     if (!resource) return;
     dialogStore.closeDelete();
-    try {
-      await invoke("delete_resource", {
-        kind: resource.kind,
-        name: resource.metadata.name,
-        namespace: resource.metadata.namespace ?? "",
-        uid: resource.metadata.uid,
-        resource_version: resource.metadata.resource_version,
-      });
-      toastStore.success("Resource deleted", `${resource.kind} "${resource.metadata.name}" deleted`);
-      k8sStore.selectResource(null);
-      await k8sStore.refreshResources();
-    } catch (err) {
-      toastStore.error("Delete failed", String(err));
-    }
+    await deleteResource(resource);
   }
 
   let cleanupKeyboard: (() => void) | undefined;
@@ -138,41 +71,68 @@
   });
 
   async function initApp() {
-    // Phase 1: Settings (fast, reads from Rust state)
     try {
       await settingsStore.loadSettings();
-    } catch {
-      // Defaults already applied
+    } catch (err) {
+      // Defaults already applied — log so debugging isn't blind.
+      console.error("[initApp] settings load failed (using defaults)", err);
     }
 
-    // Phase 3: Close splash now — app is visible with theme
+    // Close splash before the (possibly slow) cluster connection so the
+    // themed UI is visible while k8s calls hang.
     invoke("close_splashscreen").catch(() => {});
 
-    // Phase 3: K8s connection (can hang — app is already visible)
+    // Per-step try/catch so a late failure doesn't mask an earlier one and
+    // the user message reflects the real cause.
     try {
       await k8sStore.loadContexts();
+    } catch (err) {
+      console.error("[initApp] loadContexts failed", err);
+      k8sStore.connectionStatus = "error";
+      k8sStore.error = "Failed to load kubeconfig contexts. Check your kubeconfig file.";
+      return;
+    }
+
+    try {
       await k8sStore.restoreConnection(
         settingsStore.settings.context,
         settingsStore.settings.namespace,
       );
-      await k8sStore.loadNamespaces();
-      k8sStore.loadAllResourceCounts();
-    } catch {
+    } catch (err) {
+      console.error("[initApp] restoreConnection failed", err);
       k8sStore.connectionStatus = "error";
-      k8sStore.error = "Failed to connect to cluster. Check your kubeconfig.";
+      k8sStore.error = "Failed to connect to cluster. Check your kubeconfig credentials.";
+      return;
     }
+
+    try {
+      await k8sStore.loadNamespaces();
+    } catch (err) {
+      console.error("[initApp] loadNamespaces failed", err);
+      k8sStore.connectionStatus = "error";
+      k8sStore.error = "Connected, but failed to list namespaces. Check RBAC permissions.";
+      return;
+    }
+
+    // Fire-and-forget: sidebar counts are nice-to-have, never block init.
+    k8sStore.loadAllResourceCounts();
   }
 </script>
 
+<!--
+  Global contextmenu handler prevents the native browser menu everywhere.
+  Individual components (table rows, editors) stop propagation to show
+  their own menus. The a11y_no_static_element_interactions warning is
+  suppressed because this div is a chrome container, not an interactive
+  control.
+-->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="sidebar-grid h-screen w-screen select-none overflow-hidden bg-[var(--bg-primary)]"
-  style="grid-template-columns: {uiStore.sidebarCollapsed ? 44 : 260}px 1fr"
-  oncontextmenu={(e) => {
-    // Prevent default browser context menu app-wide
-    // Individual components (table rows) handle their own contextmenu
-    e.preventDefault();
-  }}
+  style="grid-template-columns: {uiStore.sidebarCollapsed
+    ? 'var(--sidebar-width-collapsed)'
+    : 'var(--sidebar-width-expanded)'} 1fr"
+  oncontextmenu={(e) => e.preventDefault()}
 >
   <!-- Sidebar -->
   <Sidebar />
@@ -184,19 +144,18 @@
       <!-- Tab Bar -->
       <TabBar />
 
-      <!-- Title Bar / Header (hidden in detail view which has its own header) -->
-      {#if uiStore.activeView === "table" || uiStore.activeView === "crd-table" || uiStore.activeView === "portforwards" || uiStore.activeView === "topology" || uiStore.activeView === "cost" || uiStore.activeView === "security"}
+      <!-- Title Bar (hidden in views that render their own header) -->
+      {#if viewShowsTitleBar(uiStore.activeView)}
         <TitleBar />
       {/if}
 
       <!-- Content Area: one view at a time -->
       <div class="min-h-0 flex-1">
         {#if uiStore.activeView === "overview"}
-          {#await import("$lib/components/overview/OverviewDashboard.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load overview.</p>
-          {/await}
+          <LazyView
+            loader={() => import("$lib/components/overview/OverviewDashboard.svelte")}
+            name="overview"
+          />
         {:else if uiStore.activeView === "table"}
           <ResourceTable />
         {:else if uiStore.activeView === "details"}
@@ -210,35 +169,30 @@
         {:else if uiStore.activeView === "yaml"}
           <YamlEditor />
         {:else if uiStore.activeView === "settings"}
-          {#await import("$lib/components/settings/SettingsView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load settings view.</p>
-          {/await}
+          <LazyView
+            loader={() => import("$lib/components/settings/SettingsView.svelte")}
+            name="settings"
+          />
         {:else if uiStore.activeView === "topology"}
-          {#await import("$lib/components/topology/TopologyView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load topology view.</p>
-          {/await}
+          <LazyView
+            loader={() => import("$lib/components/topology/TopologyView.svelte")}
+            name="topology"
+          />
         {:else if uiStore.activeView === "cost"}
-          {#await import("$lib/components/cost/CostView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load cost view.</p>
-          {/await}
+          <LazyView
+            loader={() => import("$lib/components/cost/CostView.svelte")}
+            name="cost"
+          />
         {:else if uiStore.activeView === "security"}
-          {#await import("$lib/components/security/SecurityView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load security view.</p>
-          {/await}
+          <LazyView
+            loader={() => import("$lib/components/security/SecurityView.svelte")}
+            name="security"
+          />
         {:else if uiStore.activeView === "crd-table"}
-          {#await import("$lib/components/crd/CrdTableView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load CRD view.</p>
-          {/await}
+          <LazyView
+            loader={() => import("$lib/components/crd/CrdTableView.svelte")}
+            name="CRDs"
+          />
         {/if}
       </div>
 

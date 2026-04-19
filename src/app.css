@@ -13,6 +13,12 @@ html, body {
   color: var(--text-primary, #E5E5E5);
 }
 
+/* Layout tokens (theme-agnostic) */
+:root {
+  --sidebar-width-collapsed: 44px;
+  --sidebar-width-expanded: 260px;
+}
+
 /* ========================================
    kdashboard v2 - Theme System
    11 Theme Presets with CSS Variables

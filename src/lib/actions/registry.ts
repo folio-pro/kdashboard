@@ -47,6 +47,29 @@ export async function rollbackDeployment(
   await k8sStore.refreshResources();
 }
 
+/** Callers that opened a confirmation dialog should close it BEFORE calling. */
+export async function deleteResource(resource: Resource): Promise<void> {
+  try {
+    await invoke("delete_resource", {
+      kind: resource.kind,
+      name: resource.metadata.name,
+      namespace: resource.metadata.namespace ?? "",
+      uid: resource.metadata.uid,
+      resource_version: resource.metadata.resource_version,
+    });
+    toastStore.success(
+      "Resource deleted",
+      `${resource.kind} "${resource.metadata.name}" deleted`,
+    );
+    if (k8sStore.selectedResource?.metadata.uid === resource.metadata.uid) {
+      k8sStore.selectResource(null);
+    }
+    await k8sStore.refreshResources();
+  } catch (err) {
+    toastStore.error("Delete failed", String(err));
+  }
+}
+
 /** Wrapper that passes live port-forwards from the k8s store */
 function getResourceUrlWithPf(resource: Resource): string | null {
   return getResourceUrlPure(resource, k8sStore.portForwards as any);

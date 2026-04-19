@@ -1,5 +1,10 @@
 import { describe, expect, test, beforeEach } from "bun:test";
-import { UiStoreLogic, resetTabCounter } from "./ui.logic.js";
+import {
+  UiStoreLogic,
+  resetTabCounter,
+  viewShowsTitleBar,
+  type ActiveView,
+} from "./ui.logic.js";
 
 describe("UiStore", () => {
   let store: UiStoreLogic;
@@ -319,6 +324,36 @@ describe("UiStore", () => {
       expect(store.selectedRowIndex).toBe(-1);
       expect(store.selectedCount).toBe(0);
       expect(store.statFilter).toBeNull();
+    });
+  });
+
+  describe("viewShowsTitleBar", () => {
+    test("hides TitleBar for views that render their own header", () => {
+      const hidden: ActiveView[] = [
+        "overview",
+        "details",
+        "logs",
+        "terminal",
+        "yaml",
+        "settings",
+      ];
+      for (const v of hidden) {
+        expect(viewShowsTitleBar(v)).toBe(false);
+      }
+    });
+
+    test("shows TitleBar for resource/list/dashboard views", () => {
+      const shown: ActiveView[] = [
+        "table",
+        "crd-table",
+        "portforwards",
+        "topology",
+        "cost",
+        "security",
+      ];
+      for (const v of shown) {
+        expect(viewShowsTitleBar(v)).toBe(true);
+      }
     });
   });
 });

@@ -6,10 +6,11 @@ import {
   type Tab,
   RESOURCE_TAB_TYPES,
   VIEW_LABELS,
+  viewShowsTitleBar,
 } from "./ui.logic.js";
 
 export type { ActiveView, Tab };
-export { RESOURCE_TAB_TYPES, VIEW_LABELS };
+export { RESOURCE_TAB_TYPES, VIEW_LABELS, viewShowsTitleBar };
 
 class UiStore extends UiStoreLogic {
   override sidebarCollapsed = $state<boolean>(false);
