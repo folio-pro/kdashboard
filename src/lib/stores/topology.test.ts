@@ -74,7 +74,7 @@ describe("TopologyStore", () => {
   test("graph getter aliases data", () => {
     const mockGraph = { nodes: [{ uid: "1", kind: "Pod", name: "p" }], edges: [] };
     store.data = mockGraph as any;
-    expect(store.graph).toBe(mockGraph);
+    expect(store.graph as unknown).toBe(mockGraph);
   });
 
   // --- reset ---

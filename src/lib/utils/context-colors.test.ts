@@ -31,7 +31,7 @@ describe("hashString", () => {
 describe("getContextColor", () => {
   test("returns a valid CONTEXT_COLORS entry", () => {
     const color = getContextColor("my-context");
-    expect(CONTEXT_COLORS).toContain(color);
+    expect(CONTEXT_COLORS as readonly string[]).toContain(color);
   });
 
   test("is deterministic (same name = same color)", () => {
@@ -42,6 +42,6 @@ describe("getContextColor", () => {
 
   test("works with empty string", () => {
     const color = getContextColor("");
-    expect(CONTEXT_COLORS).toContain(color);
+    expect(CONTEXT_COLORS as readonly string[]).toContain(color);
   });
 });

@@ -313,7 +313,7 @@ describe("UiStore", () => {
       expect(store.commandPaletteOpen).toBe(false);
       expect(store.filter).toBe("");
       expect(store.sortColumn).toBe("name");
-      expect(store.sortDirection).toBe("asc");
+      expect(store.sortDirection as "asc" | "desc").toBe("asc");
       expect(store.activeView).toBe("overview");
       expect(store.previousView).toBeNull();
       expect(store.selectedRowIndex).toBe(-1);

@@ -2,11 +2,12 @@
   import { Button } from "$lib/components/ui/button";
   import { Skeleton } from "$lib/components/ui/skeleton";
   import { ArrowLeft, RefreshCw, AlertTriangle } from "lucide-svelte";
-  import type { Snippet, Component } from "svelte";
+  import type { Snippet } from "svelte";
+  import type { IconComponent } from "$lib/actions/types";
 
   interface Props {
     title: string;
-    icon: Component<{ class?: string }>;
+    icon: IconComponent;
     namespace: string;
     isLoading: boolean;
     error: string | null;

@@ -16,7 +16,10 @@ export interface MinimalResource {
   kind?: string;
   spec?: Record<string, unknown>;
   status?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+  // Intentionally loose: the real Resource.metadata has a fixed shape, and the
+  // derived helpers only read optional string fields. Using a plain object with
+  // optional fields accepts both a full ResourceMetadata and ad-hoc test shapes.
+  metadata?: { name?: string; namespace?: string };
 }
 
 // ---------------------------------------------------------------------------
