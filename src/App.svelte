@@ -43,6 +43,7 @@
       ) {
         fromTab.cachedItems = k8sStore.resources.items;
         fromTab.count = k8sStore.resources.items.length;
+        fromTab.cacheReady = true;
       }
     }
 
@@ -52,14 +53,12 @@
     }
 
     if ((toTab.type === "table" || toTab.type === "crd-table") && toTab.resourceType) {
-      // Empty cache means the prior load hadn't completed — refetch instead of
-      // restoring a blank table.
-      if (toTab.cachedItems && toTab.cachedItems.length > 0) {
+      if (toTab.cacheReady && toTab.cachedItems) {
         // Cached: set namespace synchronously (no async switchNamespace to avoid race)
         if (toTab.namespace !== undefined && toTab.namespace !== k8sStore.currentNamespace) {
           k8sStore.currentNamespace = toTab.namespace;
         }
-        k8sStore.restoreResources(toTab.resourceType, toTab.cachedItems!);
+        k8sStore.restoreResources(toTab.resourceType, toTab.cachedItems);
       } else {
         // No cache: do full namespace switch + fetch
         if (toTab.namespace !== undefined && toTab.namespace !== k8sStore.currentNamespace) {
@@ -68,11 +67,13 @@
         k8sStore.isLoading = true;
         k8sStore.setResourceType(toTab.resourceType);
         k8sStore.resources = { items: [], resource_type: toTab.resourceType };
+        toTab.cacheReady = false;
         const expectedType = toTab.resourceType;
         k8sStore.loadResources(toTab.resourceType).then(() => {
-          if (k8sStore.selectedResourceType === expectedType) {
+          if (k8sStore.selectedResourceType === expectedType && !k8sStore.error) {
             toTab.cachedItems = k8sStore.resources.items;
             toTab.count = k8sStore.resources.items.length;
+            toTab.cacheReady = true;
           }
         });
       }
@@ -91,6 +92,7 @@
           tab.namespace = ns;
           tab.cachedItems = undefined;
           tab.count = undefined;
+          tab.cacheReady = false;
         }
       }
     });
