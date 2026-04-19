@@ -113,22 +113,49 @@ fn build_deployment(name: &str, ns: &str, image: &str, replicas: i32) -> Deploym
     }
 }
 
-/// Best-effort deletion of a Deployment — ignore errors.
+/// Poll the API until `get(name)` fails — the object is fully removed. Panics on timeout.
+///
+/// `DeleteParams::background()` returns as soon as the tombstone is set, so a
+/// follow-up create in the same test can race with the lingering object and
+/// fail with 409. Waiting for the delete to finalize keeps setups hermetic
+/// when the same cluster is reused (e.g. integration-test.sh --keep).
+async fn wait_for_deleted<K>(api: &Api<K>, name: &str, timeout_s: u64)
+where
+    K: kube::Resource + Clone + serde::de::DeserializeOwned + std::fmt::Debug,
+{
+    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_s);
+    while api.get(name).await.is_ok() {
+        if std::time::Instant::now() >= deadline {
+            panic!(
+                "{} {} was not deleted within {}s",
+                std::any::type_name::<K>(),
+                name,
+                timeout_s
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+/// Delete a Deployment and wait until the apiserver reports it gone.
 async fn cleanup_deployment(client: &Client, ns: &str, name: &str) {
     let api: Api<Deployment> = Api::namespaced(client.clone(), ns);
     let _ = api.delete(name, &DeleteParams::background()).await;
+    wait_for_deleted(&api, name, 60).await;
 }
 
-/// Best-effort deletion of a ReplicaSet — ignore errors.
+/// Delete a ReplicaSet and wait until the apiserver reports it gone.
 async fn cleanup_replicaset(client: &Client, ns: &str, name: &str) {
     let api: Api<ReplicaSet> = Api::namespaced(client.clone(), ns);
     let _ = api.delete(name, &DeleteParams::background()).await;
+    wait_for_deleted(&api, name, 60).await;
 }
 
-/// Best-effort deletion of a ConfigMap — ignore errors.
+/// Delete a ConfigMap and wait until the apiserver reports it gone.
 async fn cleanup_configmap(client: &Client, ns: &str, name: &str) {
     let api: Api<ConfigMap> = Api::namespaced(client.clone(), ns);
     let _ = api.delete(name, &DeleteParams::background()).await;
+    wait_for_deleted(&api, name, 30).await;
 }
 
 /// Create a Deployment and wait until its current generation is observed and all replicas report available.
