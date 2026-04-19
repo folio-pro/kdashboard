@@ -35,10 +35,15 @@
     if (fromTab && RESOURCE_TAB_TYPES.has(fromTab.type) && k8sStore.selectedResource) {
       fromTab.cachedResource = k8sStore.selectedResource;
     }
-    // Save outgoing tab's table data
+    // Skip save when store holds a different resource_type (in-flight load).
     if (fromTab && (fromTab.type === "table" || fromTab.type === "crd-table")) {
-      fromTab.cachedItems = k8sStore.resources.items;
-      fromTab.count = k8sStore.resources.items.length;
+      if (
+        fromTab.resourceType &&
+        k8sStore.resources.resource_type === fromTab.resourceType
+      ) {
+        fromTab.cachedItems = k8sStore.resources.items;
+        fromTab.count = k8sStore.resources.items.length;
+      }
     }
 
     // Restore incoming tab's selected resource
@@ -47,7 +52,9 @@
     }
 
     if ((toTab.type === "table" || toTab.type === "crd-table") && toTab.resourceType) {
-      if (toTab.cachedItems) {
+      // Empty cache means the prior load hadn't completed — refetch instead of
+      // restoring a blank table.
+      if (toTab.cachedItems && toTab.cachedItems.length > 0) {
         // Cached: set namespace synchronously (no async switchNamespace to avoid race)
         if (toTab.namespace !== undefined && toTab.namespace !== k8sStore.currentNamespace) {
           k8sStore.currentNamespace = toTab.namespace;
