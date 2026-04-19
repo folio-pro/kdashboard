@@ -264,6 +264,7 @@ pub fn run() {
             scale_workload,
             restart_workload,
             rollback_deployment,
+            list_deployment_revisions,
             // Port Forwarding
             start_port_forward,
             stop_port_forward,

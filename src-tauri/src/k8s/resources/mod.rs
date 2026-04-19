@@ -22,7 +22,8 @@ pub use listing::{get_resource_yaml, list_pods_by_selector, list_resources};
 #[allow(unused_imports)]
 pub use namespace::get_namespace_info;
 pub use operations::{
-    apply_resource_yaml, delete_resource, restart_workload, rollback_deployment, scale_workload,
+    apply_resource_yaml, delete_resource, list_deployment_revisions, restart_workload,
+    rollback_deployment, scale_workload, RevisionInfo,
 };
 #[allow(unused_imports)]
 pub use types::{EventItem, NamespaceInfo, Resource, ResourceList, ResourceMetadata};

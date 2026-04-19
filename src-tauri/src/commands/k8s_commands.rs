@@ -5,7 +5,7 @@ use k8s::cost::{CostOverview, NodeCostInfo, NodeMetricsInfo};
 use k8s::crd::{CrdGroup, CrdInfo, CrdResourceList, StatusCondition};
 use k8s::diagnostics::DiagnosticResult;
 use k8s::portforward::PortForwardResult;
-use k8s::resources::{EventItem, ResourceList};
+use k8s::resources::{EventItem, ResourceList, RevisionInfo};
 use k8s::security::{ImageScanResult, SecurityOverview};
 use k8s::topology::TopologyGraph;
 
@@ -177,6 +177,16 @@ pub async fn rollback_deployment(
     revision: Option<u64>,
 ) -> Result<String, String> {
     k8s::resources::rollback_deployment(&name, &namespace, revision)
+        .await
+        .str_err()
+}
+
+#[tauri::command]
+pub async fn list_deployment_revisions(
+    name: String,
+    namespace: String,
+) -> Result<Vec<RevisionInfo>, String> {
+    k8s::resources::list_deployment_revisions(&name, &namespace)
         .await
         .str_err()
 }
