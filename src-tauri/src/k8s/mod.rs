@@ -1,0 +1,12 @@
+pub mod client;
+pub mod context;
+pub mod cost;
+pub mod crd;
+pub mod diagnostics;
+pub mod exec;
+pub mod logs;
+pub mod portforward;
+pub mod resources;
+pub mod security;
+pub mod topology;
+pub mod watch;

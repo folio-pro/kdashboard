@@ -1,0 +1,788 @@
+@import "./assets/fonts/fonts.css";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Prevent white flash while app loads */
+html, body {
+  margin: 0;
+  background: var(--bg-primary, #0C0C0C);
+  color: var(--text-primary, #E5E5E5);
+}
+
+/* ========================================
+   kdashboard v2 - Theme System
+   11 Theme Presets with CSS Variables
+   ======================================== */
+
+:root,
+[data-theme="kdashboard"] {
+  --bg-primary: #0C0C0C;
+  --bg-secondary: #171717;
+  --bg-tertiary: #242424;
+  --text-primary: #E5E5E5;
+  --text-secondary: #A3A3A3;
+  --text-muted: #8B8B8B;
+  --text-dimmed: #757575;
+  --border-color: #333333;
+  --border-hover: #404040;
+  --accent: #21C45D;
+  --accent-hover: #1CA64F;
+  --status-running: #21C45D;
+  --status-pending: #F59F0A;
+  --status-failed: #EF4343;
+  --status-succeeded: #3C83F6;
+  --status-warning: #F59F0A;
+  --status-terminating: #F97316;
+  --sidebar-bg: #171717;
+  --sidebar-hover: #242424;
+  --sidebar-active: #333333;
+  --table-header-bg: #242424;
+  --table-row-hover: #1A1A1A;
+  --log-bg: #171717;
+  --log-row-hover: rgba(255, 255, 255, 0.02);
+  --log-row-selected: rgba(255, 255, 255, 0.06);
+  --log-timestamp: #757575;
+  --log-error: #EF4343;
+  --log-warn: #F59F0A;
+  --log-info: #3C83F6;
+  --log-debug: #8B8B8B;
+  --log-json: #A78BFA;
+}
+
+[data-theme="gruvbox-light"] {
+  --bg-primary: #F9F5EB;
+  --bg-secondary: #F4EEE2;
+  --bg-tertiary: #FBF9F4;
+  --text-primary: #483B32;
+  --text-secondary: #6E5E53;
+  --text-muted: #7D6E64;
+  --text-dimmed: #8E7D71;
+  --border-color: #CFC2AF;
+  --border-hover: #BFB29D;
+  --accent: #C37D22;
+  --accent-hover: #A96D1E;
+  --status-running: #5F8E3E;
+  --status-pending: #C37D22;
+  --status-failed: #CF3030;
+  --status-succeeded: #4A7096;
+  --status-warning: #C37D22;
+  --status-terminating: #af3a03;
+  --sidebar-bg: #F4EEE2;
+  --sidebar-hover: #FBF9F4;
+  --sidebar-active: #CFC2AF;
+  --table-header-bg: #FBF9F4;
+  --table-row-hover: #F4EEE2;
+  --log-bg: #F4EEE2;
+  --log-row-hover: rgba(0, 0, 0, 0.03);
+  --log-row-selected: rgba(0, 0, 0, 0.07);
+  --log-timestamp: #8E7D71;
+  --log-error: #CF3030;
+  --log-warn: #C37D22;
+  --log-info: #4A7096;
+  --log-debug: #7D6E64;
+  --log-json: #8f3f71;
+}
+
+[data-theme="gruvbox-dark"] {
+  --bg-primary: #2C2521;
+  --bg-secondary: #3C312A;
+  --bg-tertiary: #483B32;
+  --text-primary: #E9E0CE;
+  --text-secondary: #C3B5A2;
+  --text-muted: #AB9A87;
+  --text-dimmed: #9F8A75;
+  --border-color: #5E4F45;
+  --border-hover: #6E5F55;
+  --accent: #E7A650;
+  --accent-hover: #E39631;
+  --status-running: #7DB159;
+  --status-pending: #E7A650;
+  --status-failed: #DA6262;
+  --status-succeeded: #7F9EBD;
+  --status-warning: #E7A650;
+  --status-terminating: #fe8019;
+  --sidebar-bg: #3C312A;
+  --sidebar-hover: #483B32;
+  --sidebar-active: #5E4F45;
+  --table-header-bg: #483B32;
+  --table-row-hover: #3C312A;
+  --log-bg: #3C312A;
+  --log-row-hover: rgba(255, 255, 255, 0.02);
+  --log-row-selected: rgba(255, 255, 255, 0.06);
+  --log-timestamp: #9F8A75;
+  --log-error: #DA6262;
+  --log-warn: #E7A650;
+  --log-info: #7F9EBD;
+  --log-debug: #AB9A87;
+  --log-json: #d3869b;
+}
+
+[data-theme="solarized-light"] {
+  --bg-primary: #FDF6E2;
+  --bg-secondary: #F5F0E0;
+  --bg-tertiary: #FBF9F4;
+  --text-primary: #003C4D;
+  --text-secondary: #275B68;
+  --text-muted: #39626A;
+  --text-dimmed: #406E77;
+  --border-color: #DBD1B3;
+  --border-hover: #CBC1A3;
+  --accent: #237DBE;
+  --accent-hover: #1D699F;
+  --status-running: #91A31F;
+  --status-pending: #CE9E0D;
+  --status-failed: #C42421;
+  --status-succeeded: #237DBE;
+  --status-warning: #CE9E0D;
+  --status-terminating: #cb4b16;
+  --sidebar-bg: #F5F0E0;
+  --sidebar-hover: #FBF9F4;
+  --sidebar-active: #DBD1B3;
+  --table-header-bg: #FBF9F4;
+  --table-row-hover: #F5F0E0;
+  --log-bg: #F5F0E0;
+  --log-row-hover: rgba(0, 0, 0, 0.03);
+  --log-row-selected: rgba(0, 0, 0, 0.07);
+  --log-timestamp: #406E77;
+  --log-error: #C42421;
+  --log-warn: #CE9E0D;
+  --log-info: #237DBE;
+  --log-debug: #39626A;
+  --log-json: #6c71c4;
+}
+
+[data-theme="solarized-dark"] {
+  --bg-primary: #003C4D;
+  --bg-secondary: #0F4857;
+  --bg-tertiary: #1B535F;
+  --text-primary: #FDF6E2;
+  --text-secondary: #D7CDAC;
+  --text-muted: #C1B79A;
+  --text-dimmed: #B7AC8A;
+  --border-color: #386B75;
+  --border-hover: #487B85;
+  --accent: #EA723E;
+  --accent-hover: #E65719;
+  --status-running: #ACC125;
+  --status-pending: #F1BF27;
+  --status-failed: #DE423F;
+  --status-succeeded: #419CDC;
+  --status-warning: #F1BF27;
+  --status-terminating: #cb4b16;
+  --sidebar-bg: #0F4857;
+  --sidebar-hover: #1B535F;
+  --sidebar-active: #386B75;
+  --table-header-bg: #1B535F;
+  --table-row-hover: #0F4857;
+  --log-bg: #0F4857;
+  --log-row-hover: rgba(255, 255, 255, 0.02);
+  --log-row-selected: rgba(255, 255, 255, 0.06);
+  --log-timestamp: #B7AC8A;
+  --log-error: #DE423F;
+  --log-warn: #F1BF27;
+  --log-info: #419CDC;
+  --log-debug: #C1B79A;
+  --log-json: #6c71c4;
+}
+
+[data-theme="everforest-light"] {
+  --bg-primary: #F2F7EE;
+  --bg-secondary: #EBF1E4;
+  --bg-tertiary: #F7F9F5;
+  --text-primary: #3B4436;
+  --text-secondary: #596553;
+  --text-muted: #63705C;
+  --text-dimmed: #6C7B65;
+  --border-color: #C7D1BD;
+  --border-hover: #B7C1AD;
+  --accent: #69883A;
+  --accent-hover: #587231;
+  --status-running: #318134;
+  --status-pending: #AB742B;
+  --status-failed: #BA3F2C;
+  --status-succeeded: #69883A;
+  --status-warning: #AB742B;
+  --status-terminating: #e66868;
+  --sidebar-bg: #EBF1E4;
+  --sidebar-hover: #F7F9F5;
+  --sidebar-active: #C7D1BD;
+  --table-header-bg: #F7F9F5;
+  --table-row-hover: #EBF1E4;
+  --log-bg: #EBF1E4;
+  --log-row-hover: rgba(0, 0, 0, 0.03);
+  --log-row-selected: rgba(0, 0, 0, 0.07);
+  --log-timestamp: #6C7B65;
+  --log-error: #BA3F2C;
+  --log-warn: #AB742B;
+  --log-info: #69883A;
+  --log-debug: #63705C;
+  --log-json: #df69ba;
+}
+
+[data-theme="everforest-dark"] {
+  --bg-primary: #262C28;
+  --bg-secondary: #313A34;
+  --bg-tertiary: #3C4940;
+  --text-primary: #DDE3D3;
+  --text-secondary: #BAC3AC;
+  --text-muted: #A5AE98;
+  --text-dimmed: #96A187;
+  --border-color: #4F6356;
+  --border-hover: #5F7366;
+  --accent: #8DAE5B;
+  --accent-hover: #7B9A4C;
+  --status-running: #71C174;
+  --status-pending: #DBA661;
+  --status-failed: #D96E5E;
+  --status-succeeded: #8DAE5B;
+  --status-warning: #DBA661;
+  --status-terminating: #e69875;
+  --sidebar-bg: #313A34;
+  --sidebar-hover: #3C4940;
+  --sidebar-active: #4F6356;
+  --table-header-bg: #3C4940;
+  --table-row-hover: #313A34;
+  --log-bg: #313A34;
+  --log-row-hover: rgba(255, 255, 255, 0.02);
+  --log-row-selected: rgba(255, 255, 255, 0.06);
+  --log-timestamp: #96A187;
+  --log-error: #D96E5E;
+  --log-warn: #DBA661;
+  --log-info: #8DAE5B;
+  --log-debug: #A5AE98;
+  --log-json: #d699b6;
+}
+
+[data-theme="rosepine-dawn"] {
+  --bg-primary: #F8F3ED;
+  --bg-secondary: #F2ECE4;
+  --bg-tertiary: #FAF8F4;
+  --text-primary: #484365;
+  --text-secondary: #676284;
+  --text-muted: #76718E;
+  --text-dimmed: #86829B;
+  --border-color: #D6CAC2;
+  --border-hover: #C6BAB2;
+  --accent: #CE5955;
+  --accent-hover: #C63E39;
+  --status-running: #4A9673;
+  --status-pending: #D28A32;
+  --status-failed: #D02F4A;
+  --status-succeeded: #4E95B1;
+  --status-warning: #D28A32;
+  --status-terminating: #d7827e;
+  --sidebar-bg: #F2ECE4;
+  --sidebar-hover: #FAF8F4;
+  --sidebar-active: #D6CAC2;
+  --table-header-bg: #FAF8F4;
+  --table-row-hover: #F2ECE4;
+  --log-bg: #F2ECE4;
+  --log-row-hover: rgba(0, 0, 0, 0.03);
+  --log-row-selected: rgba(0, 0, 0, 0.07);
+  --log-timestamp: #86829B;
+  --log-error: #D02F4A;
+  --log-warn: #D28A32;
+  --log-info: #4E95B1;
+  --log-debug: #76718E;
+  --log-json: #CE5955;
+}
+
+[data-theme="github-light"] {
+  --bg-primary: #F5F7FA;
+  --bg-secondary: #FAFBFC;
+  --bg-tertiary: #FAFBFC;
+  --text-primary: #282C34;
+  --text-secondary: #4E545F;
+  --text-muted: #575E6B;
+  --text-dimmed: #636A79;
+  --border-color: #D0D4DD;
+  --border-hover: #C0C4CD;
+  --accent: #0754AB;
+  --accent-hover: #06458E;
+  --status-running: #21833C;
+  --status-pending: #BC8010;
+  --status-failed: #B32323;
+  --status-succeeded: #0754AB;
+  --status-warning: #BC8010;
+  --status-terminating: #bc4c00;
+  --sidebar-bg: #FAFBFC;
+  --sidebar-hover: #F5F7FA;
+  --sidebar-active: #D0D4DD;
+  --table-header-bg: #FAFBFC;
+  --table-row-hover: #F0F2F5;
+  --log-bg: #FAFBFC;
+  --log-row-hover: rgba(0, 0, 0, 0.03);
+  --log-row-selected: rgba(0, 0, 0, 0.07);
+  --log-timestamp: #636A79;
+  --log-error: #B32323;
+  --log-warn: #BC8010;
+  --log-info: #0754AB;
+  --log-debug: #575E6B;
+  --log-json: #8250df;
+}
+
+[data-theme="dracula-dark"] {
+  --bg-primary: #272935;
+  --bg-secondary: #313444;
+  --bg-tertiary: #3D4157;
+  --text-primary: #F8F8F2;
+  --text-secondary: #BBBFD3;
+  --text-muted: #A7ABBE;
+  --text-dimmed: #959AB1;
+  --border-color: #585C74;
+  --border-hover: #686C84;
+  --accent: #BF95F9;
+  --accent-hover: #A76EF7;
+  --status-running: #52FA7C;
+  --status-pending: #FFB86B;
+  --status-failed: #FF5757;
+  --status-succeeded: #8BE8FD;
+  --status-warning: #FFB86B;
+  --status-terminating: #ffb86c;
+  --sidebar-bg: #313444;
+  --sidebar-hover: #3D4157;
+  --sidebar-active: #585C74;
+  --table-header-bg: #3D4157;
+  --table-row-hover: #313444;
+  --log-bg: #313444;
+  --log-row-hover: rgba(255, 255, 255, 0.02);
+  --log-row-selected: rgba(255, 255, 255, 0.06);
+  --log-timestamp: #959AB1;
+  --log-error: #FF5757;
+  --log-warn: #FFB86B;
+  --log-info: #8BE8FD;
+  --log-debug: #A7ABBE;
+  --log-json: #BF95F9;
+}
+
+[data-theme="monokai-dark"] {
+  --bg-primary: #1D1D1B;
+  --bg-secondary: #2A2A28;
+  --bg-tertiary: #3A3A36;
+  --text-primary: #EDEDDE;
+  --text-secondary: #C6CAAF;
+  --text-muted: #ACB096;
+  --text-dimmed: #9EA385;
+  --border-color: #4F4F4A;
+  --border-hover: #5F5F5A;
+  --accent: #94EC55;
+  --accent-hover: #7AE82C;
+  --status-running: #94EC55;
+  --status-pending: #F4D143;
+  --status-failed: #EF5D92;
+  --status-succeeded: #63D7EE;
+  --status-warning: #F4D143;
+  --status-terminating: #fd971f;
+  --sidebar-bg: #2A2A28;
+  --sidebar-hover: #3A3A36;
+  --sidebar-active: #4F4F4A;
+  --table-header-bg: #3A3A36;
+  --table-row-hover: #2A2A28;
+  --log-bg: #2A2A28;
+  --log-row-hover: rgba(255, 255, 255, 0.02);
+  --log-row-selected: rgba(255, 255, 255, 0.06);
+  --log-timestamp: #9EA385;
+  --log-error: #EF5D92;
+  --log-warn: #F4D143;
+  --log-info: #63D7EE;
+  --log-debug: #ACB096;
+  --log-json: #ae81ff;
+}
+
+/* Tone down border contrast across all themes for a calmer, cleaner UI. */
+:root,
+[data-theme] {
+  --border-color: color-mix(in srgb, var(--text-primary) 14%, var(--bg-primary));
+  --border-hover: color-mix(in srgb, var(--text-primary) 22%, var(--bg-primary));
+}
+
+/* ========================================
+   Base Styles
+   ======================================== */
+
+html,
+body,
+#app {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ========================================
+   Custom Scrollbars (macOS-style, hover-only)
+   ======================================== */
+
+.overflow-auto,
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.overflow-auto:hover,
+.overflow-y-auto:hover,
+.overflow-x-auto:hover,
+.overflow-scroll:hover {
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 40%, transparent) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 40%, transparent);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-muted) 60%, transparent);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--text-muted) 75%, transparent);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ========================================
+   Selection
+   ======================================== */
+
+::selection {
+  background-color: var(--accent);
+  color: var(--bg-primary);
+}
+
+/* ========================================
+   Tauri Window Controls
+   ======================================== */
+
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+button,
+a,
+input,
+select {
+  -webkit-app-region: no-drag;
+}
+
+/* Focus rings for keyboard navigation (buttons/links only) */
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* ========================================
+   Layout Transitions
+   ======================================== */
+
+.sidebar-grid {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-columns 150ms ease-in-out;
+  backface-visibility: hidden;
+}
+
+.sidebar-grid > aside {
+  overflow: hidden;
+  min-width: 0;
+}
+
+.sidebar-grid > .main-content {
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ========================================
+   GPU Acceleration Hints
+   ======================================== */
+
+.virtual-scroll-container {
+  will-change: transform;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ========================================
+   YAML Syntax Highlighting
+   ======================================== */
+
+.yaml-key {
+  color: var(--accent);
+}
+
+.yaml-string {
+  color: var(--status-running);
+}
+
+.yaml-number {
+  color: var(--status-succeeded);
+}
+
+.yaml-bool {
+  color: var(--status-pending);
+}
+
+.yaml-comment {
+  color: var(--text-muted);
+}
+
+.yaml-punctuation {
+  color: var(--text-muted);
+}
+
+/* ========================================
+   CodeMirror Overrides
+   ======================================== */
+
+.cm-editor {
+  height: 100%;
+}
+
+.cm-editor .cm-scroller {
+  overflow: auto;
+}
+
+.cm-mergeView {
+  height: 100%;
+}
+
+.cm-mergeView .cm-editor {
+  height: 100%;
+}
+
+.cm-mergeViewEditors {
+  height: 100%;
+}
+
+.cm-mergeView .cm-changedLine {
+  background-color: rgba(var(--accent-rgb, 99, 102, 241), 0.06) !important;
+}
+
+.cm-mergeView .cm-deletedChunk {
+  background-color: rgba(239, 68, 68, 0.08) !important;
+}
+
+.cm-merge-spacer {
+  background-color: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+}
+
+/* Autocomplete tooltip */
+.cm-tooltip-autocomplete {
+  background-color: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  font-size: 12px !important;
+  overflow: hidden;
+}
+
+.cm-tooltip-autocomplete > ul {
+  font-family: var(--font-mono) !important;
+  max-height: 260px !important;
+}
+
+.cm-tooltip-autocomplete > ul > li {
+  padding: 3px 8px !important;
+  color: var(--text-primary) !important;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background-color: var(--accent) !important;
+  color: white !important;
+}
+
+.cm-tooltip-autocomplete .cm-completionLabel {
+  flex: 1;
+}
+
+.cm-tooltip-autocomplete .cm-completionDetail {
+  color: var(--text-muted) !important;
+  font-size: 10px !important;
+  font-style: normal !important;
+  opacity: 0.8;
+}
+
+.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.cm-completionIcon {
+  width: 14px !important;
+  padding: 0 !important;
+  margin-right: 2px !important;
+  opacity: 0.6;
+}
+
+/* Autocomplete info tooltip */
+.cm-completionInfo {
+  background-color: var(--bg-tertiary) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 4px !important;
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+  padding: 6px 10px !important;
+  max-width: 300px !important;
+  line-height: 1.4;
+}
+
+/* Lint gutter */
+.cm-lint-marker {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50%;
+}
+
+.cm-lint-marker-error {
+  content: none !important;
+  background-color: var(--status-failed) !important;
+}
+
+.cm-lint-marker-warning {
+  content: none !important;
+  background-color: var(--status-warning) !important;
+}
+
+.cm-lint-marker-info {
+  content: none !important;
+  background-color: var(--accent) !important;
+  opacity: 0.5;
+}
+
+/* Lint tooltip */
+.cm-tooltip-lint {
+  background-color: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
+  font-size: 11px !important;
+  color: var(--text-primary) !important;
+  overflow: hidden;
+}
+
+.cm-diagnostic {
+  padding: 4px 10px !important;
+  border-left: 3px solid transparent !important;
+}
+
+.cm-diagnostic-error {
+  border-left-color: var(--status-failed) !important;
+}
+
+.cm-diagnostic-warning {
+  border-left-color: var(--status-warning) !important;
+}
+
+.cm-diagnostic-info {
+  border-left-color: var(--accent) !important;
+}
+
+/* Lint gutter column */
+.cm-gutter-lint {
+  width: 14px !important;
+}
+
+.cm-gutter-lint .cm-gutterElement {
+  padding: 0 3px !important;
+}
+
+/* ========================================
+   Transition & Animation Utilities
+   ======================================== */
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideInUp {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 200ms ease-out;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 150ms ease-out;
+}
+
+.animate-fade-in {
+  animation: fadeIn 150ms ease-out;
+}
+
+/* ========================================
+   Spin Animation
+   ======================================== */
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* ========================================
+   JSON Syntax Highlighting (Log Viewer)
+   ======================================== */
+
+.log-json-key {
+  color: var(--log-json);
+}
+
+.log-json-string {
+  color: var(--status-running);
+}
+
+.log-json-number {
+  color: var(--log-warn);
+}
+
+.log-json-bool {
+  color: var(--log-info);
+}
+
+.log-json-null {
+  color: var(--log-debug);
+  font-style: italic;
+}

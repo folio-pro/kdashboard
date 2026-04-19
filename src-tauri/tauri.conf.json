@@ -1,0 +1,65 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicokosi/tauri-apps.github.io/refs/heads/dev/docs/_schema/config.schema.json",
+  "productName": "kdashboard",
+  "version": "0.1.4",
+  "identifier": "com.kdashboard.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": true,
+        "transparent": false,
+        "visible": false
+      },
+      {
+        "label": "splashscreen",
+        "url": "/splashscreen.html",
+        "title": "",
+        "width": 400,
+        "height": 300,
+        "decorations": false,
+        "transparent": false,
+        "center": true,
+        "resizable": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://cdn.jsdelivr.net; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://cdn.jsdelivr.net; worker-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEzOTdEMTRFMkUzM0MwNzgKUldSNHdETXVUdEdYRTlZOGFCdy9SUVM5OGlRNjFETm54ZkUzdXFFQnpNYmw0eTdIZ2c2eUNWY2QK",
+      "endpoints": [
+        "https://github.com/folio-pro/kdashboard/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

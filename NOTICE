@@ -1,0 +1,15 @@
+kdashboard
+Copyright 2026 Folio Innova S.L.
+
+This product is made available under the Functional Source License, Version
+1.1, Apache 2.0 Future License (FSL-1.1-Apache-2.0). See LICENSE.md for the
+full terms. On the second anniversary of each release, that release becomes
+additionally available under the Apache License, Version 2.0.
+
+"kdashboard" is a trademark of Folio Innova S.L. Use of the name and logo is
+governed by TRADEMARK.md.
+
+This product includes software developed by third parties under their own
+licenses. See the dependency manifests (Cargo.toml, package.json) and the
+accompanying lockfiles for the complete list of third-party components and
+their respective licenses.
