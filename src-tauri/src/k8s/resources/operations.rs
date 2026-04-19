@@ -267,7 +267,9 @@ pub async fn rollback_deployment(
     let patch = serde_json::json!({
         "spec": { "template": target_template }
     });
-    let pp = kube::api::PatchParams::apply("kdashboard").force();
+    // PatchParams::force only works with Patch::Apply; rollback uses Merge to
+    // only touch spec.template, so force-on-apply is not applicable here.
+    let pp = kube::api::PatchParams::default();
     deploy_api
         .patch(name, &pp, &kube::api::Patch::Merge(&patch))
         .await?;
