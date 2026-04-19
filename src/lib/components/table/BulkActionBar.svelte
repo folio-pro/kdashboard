@@ -1,5 +1,9 @@
 <script lang="ts">
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
+  import {
+    confirmDelete as commitDelete,
+    handleBulkDelete as computeShowConfirm,
+  } from "./bulk-action-bar.logic";
 
   let {
     selectedCount,
@@ -14,13 +18,11 @@
   let showDeleteConfirm = $state(false);
 
   function handleBulkDelete() {
-    if (selectedCount === 0) return;
-    showDeleteConfirm = true;
+    showDeleteConfirm = computeShowConfirm(selectedCount).showConfirm;
   }
 
   function confirmDelete() {
-    showDeleteConfirm = false;
-    ondelete();
+    showDeleteConfirm = commitDelete({ ondelete }).showConfirm;
   }
 </script>
 

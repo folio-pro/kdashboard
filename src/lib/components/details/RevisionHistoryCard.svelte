@@ -7,15 +7,11 @@
   import { toastStore } from "$lib/stores/toast.svelte";
   import { formatAge, formatTimestamp } from "$lib/utils/age";
   import type { Resource } from "$lib/types";
-
-  interface RevisionInfo {
-    revision: number;
-    name: string;
-    created_at: string | null;
-    images: string[];
-    replicas: number;
-    is_current: boolean;
-  }
+  import {
+    performRollback,
+    resourceKey as deriveResourceKey,
+    type RevisionInfo,
+  } from "./revision-history-card.logic";
 
   interface Props {
     resource: Resource;
@@ -29,9 +25,7 @@
   let pendingRevision = $state<RevisionInfo | null>(null);
   let rollbackInFlight = $state(false);
 
-  let resourceKey = $derived(
-    `${resource.metadata.namespace ?? ""}:${resource.metadata.name}`,
-  );
+  let resourceKey = $derived(deriveResourceKey(resource));
 
   function fetchRevisions(): Promise<RevisionInfo[]> {
     return invoke<RevisionInfo[]>("list_deployment_revisions", {
@@ -74,15 +68,16 @@
     if (!pendingRevision) return;
     const target = pendingRevision;
     rollbackInFlight = true;
-    try {
-      await rollbackDeployment(resource, target.revision);
-      revisions = await fetchRevisions();
-    } catch (err) {
-      toastStore.error("Rollback failed", String(err));
-    } finally {
-      rollbackInFlight = false;
-      pendingRevision = null;
+    const outcome = await performRollback(resource, target, {
+      rollback: rollbackDeployment,
+      fetchRevisions,
+      notifyError: (title, detail) => toastStore.error(title, detail),
+    });
+    if (outcome.ok && outcome.revisions) {
+      revisions = outcome.revisions;
     }
+    rollbackInFlight = false;
+    pendingRevision = null;
   }
 </script>
 
