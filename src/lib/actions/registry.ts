@@ -34,11 +34,14 @@ export async function restartWorkload(resource: Resource): Promise<void> {
   await k8sStore.refreshResources();
 }
 
-export async function rollbackDeployment(resource: Resource): Promise<void> {
+export async function rollbackDeployment(
+  resource: Resource,
+  revision?: number,
+): Promise<void> {
   const msg = await invoke<string>("rollback_deployment", {
     name: resource.metadata.name,
     namespace: resource.metadata.namespace ?? "",
-    revision: null,
+    revision: revision ?? null,
   });
   toastStore.success("Rollback successful", msg);
   await k8sStore.refreshResources();

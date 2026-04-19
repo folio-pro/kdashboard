@@ -10,6 +10,7 @@
   import SmartAnnotationsCard from "./SmartAnnotationsCard.svelte";
   import RelatedResourcesCard from "./RelatedResourcesCard.svelte";
   import StrategyCard from "./StrategyCard.svelte";
+  import RevisionHistoryCard from "./RevisionHistoryCard.svelte";
   import { formatAge } from "$lib/utils/age";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { openResourceDetail } from "$lib/actions/navigation";
@@ -188,6 +189,9 @@
 
   <!-- Strategy & Rollout -->
   <StrategyCard {spec} kind="Deployment" />
+
+  <!-- Revision History -->
+  <RevisionHistoryCard {resource} />
 
   <!-- Activity Timeline -->
   <IncidentTimeline {resource} />
