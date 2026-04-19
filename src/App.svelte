@@ -115,7 +115,9 @@
     }
 
     // Fire-and-forget: sidebar counts are nice-to-have, never block init.
-    k8sStore.loadAllResourceCounts();
+    void k8sStore.loadAllResourceCounts().catch((err) => {
+      console.error("[initApp] loadAllResourceCounts failed", err);
+    });
   }
 </script>
 
