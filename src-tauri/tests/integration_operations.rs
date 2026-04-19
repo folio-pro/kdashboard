@@ -24,9 +24,7 @@ use k8s_openapi::api::core::v1::{
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, OwnerReference};
-use kube::api::{
-    Api, DeleteParams, ObjectMeta, Patch, PatchParams, PostParams, Preconditions,
-};
+use kube::api::{Api, DeleteParams, ObjectMeta, Patch, PatchParams, PostParams};
 use kube::Client;
 
 use kdashboard_lib::k8s::{
@@ -139,7 +137,7 @@ async fn create_and_wait_deployment(
     ns: &str,
     deploy: Deployment,
     timeout_s: u64,
-) -> Deployment {
+) {
     let api: Api<Deployment> = Api::namespaced(client.clone(), ns);
     let created = api
         .create(&PostParams::default(), &deploy)
@@ -147,7 +145,18 @@ async fn create_and_wait_deployment(
         .expect("create deployment should succeed");
     let name = created.metadata.name.clone().unwrap();
     wait_for_rollout(client, ns, &name, timeout_s).await;
-    api.get(&name).await.expect("get deployment should succeed")
+}
+
+/// Clean slate + create a single-replica nginx:1.27 Deployment and wait for rollout.
+async fn setup_basic_deployment(client: &Client, ns: &str, name: &str) {
+    cleanup_deployment(client, ns, name).await;
+    create_and_wait_deployment(
+        client,
+        ns,
+        build_deployment(name, ns, "nginx:1.27-alpine", 1),
+        90,
+    )
+    .await;
 }
 
 /// Poll a Deployment until rollout is complete or we time out.
@@ -391,15 +400,7 @@ async fn integration_rollback_deployment_to_specific_revision() {
     let name = "op-rollback-rev";
 
     let client = kube_client().await;
-    cleanup_deployment(&client, &ns, name).await;
-
-    create_and_wait_deployment(
-        &client,
-        &ns,
-        build_deployment(name, &ns, "nginx:1.27-alpine", 1),
-        90,
-    )
-    .await;
+    setup_basic_deployment(&client, &ns, name).await;
     bump_image_and_wait(&client, &ns, name, "nginx:1.25-alpine").await;
 
     let revisions = list_deployment_revisions(name, &ns).await.unwrap();
@@ -446,15 +447,7 @@ async fn integration_rollback_deployment_without_revision_uses_previous() {
     let name = "op-rollback-prev";
 
     let client = kube_client().await;
-    cleanup_deployment(&client, &ns, name).await;
-
-    create_and_wait_deployment(
-        &client,
-        &ns,
-        build_deployment(name, &ns, "nginx:1.27-alpine", 1),
-        90,
-    )
-    .await;
+    setup_basic_deployment(&client, &ns, name).await;
     bump_image_and_wait(&client, &ns, name, "nginx:1.25-alpine").await;
 
     let msg = rollback_deployment(name, &ns, None)
@@ -489,15 +482,7 @@ async fn integration_rollback_deployment_to_nonexistent_revision_errors() {
     let name = "op-rollback-nope";
 
     let client = kube_client().await;
-    cleanup_deployment(&client, &ns, name).await;
-
-    create_and_wait_deployment(
-        &client,
-        &ns,
-        build_deployment(name, &ns, "nginx:1.27-alpine", 1),
-        90,
-    )
-    .await;
+    setup_basic_deployment(&client, &ns, name).await;
 
     let result = rollback_deployment(name, &ns, Some(9999)).await;
     let err = result.expect_err("rollback to a nonexistent revision should fail");
@@ -522,14 +507,7 @@ async fn integration_scale_workload_changes_replicas() {
     let name = "op-scale";
 
     let client = kube_client().await;
-    cleanup_deployment(&client, &ns, name).await;
-    create_and_wait_deployment(
-        &client,
-        &ns,
-        build_deployment(name, &ns, "nginx:1.27-alpine", 1),
-        90,
-    )
-    .await;
+    setup_basic_deployment(&client, &ns, name).await;
 
     scale_workload("deployment", name, &ns, 3)
         .await
@@ -550,14 +528,7 @@ async fn integration_scale_workload_to_zero() {
     let name = "op-scale-zero";
 
     let client = kube_client().await;
-    cleanup_deployment(&client, &ns, name).await;
-    create_and_wait_deployment(
-        &client,
-        &ns,
-        build_deployment(name, &ns, "nginx:1.27-alpine", 1),
-        90,
-    )
-    .await;
+    setup_basic_deployment(&client, &ns, name).await;
 
     scale_workload("deployment", name, &ns, 0)
         .await
@@ -585,14 +556,7 @@ async fn integration_restart_workload_sets_annotation() {
     let name = "op-restart";
 
     let client = kube_client().await;
-    cleanup_deployment(&client, &ns, name).await;
-    create_and_wait_deployment(
-        &client,
-        &ns,
-        build_deployment(name, &ns, "nginx:1.27-alpine", 1),
-        90,
-    )
-    .await;
+    setup_basic_deployment(&client, &ns, name).await;
 
     restart_workload("deployment", name, &ns)
         .await
@@ -760,10 +724,4 @@ async fn integration_delete_resource_with_uid_precondition_mismatch_errors() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     assert!(gone, "configmap should be deleted after matching-UID delete");
-
-    // Silence unused-import warning when this file is the only consumer.
-    let _ = Preconditions {
-        uid: None,
-        resource_version: None,
-    };
 }
