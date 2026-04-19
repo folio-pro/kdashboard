@@ -85,9 +85,9 @@ describe("performRollback", () => {
     const resource = makeResource("nginx");
     const target = makeRevision(7);
 
-    let observedRevision: number | null = null;
+    const observedRevisions: number[] = [];
     const rollback = mock((_r: Resource, rev: number) => {
-      observedRevision = rev;
+      observedRevisions.push(rev);
       return Promise.resolve();
     });
     const fetchRevisions = mock(() => Promise.resolve([]));
@@ -95,7 +95,7 @@ describe("performRollback", () => {
 
     await performRollback(resource, target, { rollback, fetchRevisions, notifyError });
 
-    expect(observedRevision).toBe(7);
+    expect(observedRevisions).toEqual([7]);
   });
 
   test("notifies and returns ok=false when rollback throws", async () => {
