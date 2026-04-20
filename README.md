@@ -51,7 +51,9 @@ inspect, debug, and act on workloads.
 
 ## Screenshots
 
-> Screenshots will be added in the next release cycle.
+<p align="center">
+  <img src="docs/screenshots/pods.png" alt="Pods view" width="100%" />
+</p>
 
 ## Installation
 
