@@ -40,6 +40,24 @@ const SINGLETON_VIEWS = new Set<ActiveView>(["overview", "settings", "topology",
 /** View types tied to a specific resource (cache selectedResource on tab switch) */
 export const RESOURCE_TAB_TYPES = new Set<ActiveView>(["details", "logs", "yaml", "terminal"]);
 
+/**
+ * View types that render their own header and should suppress the global
+ * `<TitleBar />`. Kept as the allowlist's *complement* because new views
+ * default to having a title bar (fail safe — surface > hide).
+ */
+const VIEWS_WITHOUT_TITLE_BAR = new Set<ActiveView>([
+  "overview",
+  "details",
+  "logs",
+  "terminal",
+  "yaml",
+  "settings",
+]);
+
+export function viewShowsTitleBar(view: ActiveView): boolean {
+  return !VIEWS_WITHOUT_TITLE_BAR.has(view);
+}
+
 /** Canonical display labels for each view type */
 export const VIEW_LABELS: Record<ActiveView, string> = {
   overview: "Overview", table: "Resources", details: "Detail",
