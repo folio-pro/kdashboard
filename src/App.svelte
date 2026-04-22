@@ -7,14 +7,12 @@
   import DetailPanel from "$lib/components/details/DetailPanel.svelte";
   import StatusBar from "$lib/components/common/StatusBar.svelte";
   import CommandPalette from "$lib/components/command-palette/CommandPalette.svelte";
-  import LogViewer from "$lib/components/logs/LogViewer.svelte";
-  import TerminalView from "$lib/components/terminal/TerminalView.svelte";
   import PortForwardView from "$lib/components/port-forwards/PortForwardView.svelte";
-  import YamlEditor from "$lib/components/details/YamlEditor.svelte";
   import TabBar from "$lib/components/tabs/TabBar.svelte";
-  // Lazy-loaded views (secondary, not always needed)
-  // SettingsView, TopologyView, CostView, SecurityView are loaded via
-  // dynamic import below.
+  import LazyView from "$lib/components/common/LazyView.svelte";
+  // Secondary views are loaded via LazyView to keep them out of the initial
+  // bundle — terminal/YAML in particular drag in xterm (~337 kB) and
+  // CodeMirror (~493 kB).
   import { ToastContainer } from "$lib/components/ui/toast";
   import ContextMenu from "$lib/components/context-menu/ContextMenu.svelte";
   import UpdateBanner from "$lib/components/common/UpdateBanner.svelte";
@@ -192,53 +190,29 @@
       <!-- Content Area: one view at a time -->
       <div class="min-h-0 flex-1">
         {#if uiStore.activeView === "overview"}
-          {#await import("$lib/components/overview/OverviewDashboard.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load overview.</p>
-          {/await}
+          <LazyView loader={() => import("$lib/components/overview/OverviewDashboard.svelte")} label="overview" />
         {:else if uiStore.activeView === "table"}
           <ResourceTable />
         {:else if uiStore.activeView === "details"}
           <DetailPanel />
         {:else if uiStore.activeView === "logs"}
-          <LogViewer />
+          <LazyView loader={() => import("$lib/components/logs/LogViewer.svelte")} label="logs view" />
         {:else if uiStore.activeView === "terminal"}
-          <TerminalView />
+          <LazyView loader={() => import("$lib/components/terminal/TerminalView.svelte")} label="terminal view" />
         {:else if uiStore.activeView === "portforwards"}
           <PortForwardView />
         {:else if uiStore.activeView === "yaml"}
-          <YamlEditor />
+          <LazyView loader={() => import("$lib/components/details/YamlEditor.svelte")} label="YAML editor" />
         {:else if uiStore.activeView === "settings"}
-          {#await import("$lib/components/settings/SettingsView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load settings view.</p>
-          {/await}
+          <LazyView loader={() => import("$lib/components/settings/SettingsView.svelte")} label="settings view" />
         {:else if uiStore.activeView === "topology"}
-          {#await import("$lib/components/topology/TopologyView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load topology view.</p>
-          {/await}
+          <LazyView loader={() => import("$lib/components/topology/TopologyView.svelte")} label="topology view" />
         {:else if uiStore.activeView === "cost"}
-          {#await import("$lib/components/cost/CostView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load cost view.</p>
-          {/await}
+          <LazyView loader={() => import("$lib/components/cost/CostView.svelte")} label="cost view" />
         {:else if uiStore.activeView === "security"}
-          {#await import("$lib/components/security/SecurityView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load security view.</p>
-          {/await}
+          <LazyView loader={() => import("$lib/components/security/SecurityView.svelte")} label="security view" />
         {:else if uiStore.activeView === "crd-table"}
-          {#await import("$lib/components/crd/CrdTableView.svelte") then mod}
-            <mod.default />
-          {:catch}
-            <p class="p-4 text-xs text-[var(--status-failed)]">Failed to load CRD view.</p>
-          {/await}
+          <LazyView loader={() => import("$lib/components/crd/CrdTableView.svelte")} label="CRD view" />
         {/if}
       </div>
 
