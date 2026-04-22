@@ -7,12 +7,12 @@
   import DetailPanel from "$lib/components/details/DetailPanel.svelte";
   import StatusBar from "$lib/components/common/StatusBar.svelte";
   import CommandPalette from "$lib/components/command-palette/CommandPalette.svelte";
-  import LogViewer from "$lib/components/logs/LogViewer.svelte";
-  import TerminalView from "$lib/components/terminal/TerminalView.svelte";
   import PortForwardView from "$lib/components/port-forwards/PortForwardView.svelte";
-  import YamlEditor from "$lib/components/details/YamlEditor.svelte";
   import TabBar from "$lib/components/tabs/TabBar.svelte";
   import LazyView from "$lib/components/common/LazyView.svelte";
+  // LogViewer, TerminalView and YamlEditor pull in large vendor chunks
+  // (xterm ~337 kB, CodeMirror ~493 kB) so they're loaded via LazyView
+  // to keep the initial bundle small.
   import { ToastContainer } from "$lib/components/ui/toast";
   import ContextMenu from "$lib/components/context-menu/ContextMenu.svelte";
   import UpdateBanner from "$lib/components/common/UpdateBanner.svelte";
@@ -163,13 +163,22 @@
         {:else if uiStore.activeView === "details"}
           <DetailPanel />
         {:else if uiStore.activeView === "logs"}
-          <LogViewer />
+          <LazyView
+            loader={() => import("$lib/components/logs/LogViewer.svelte")}
+            name="logs"
+          />
         {:else if uiStore.activeView === "terminal"}
-          <TerminalView />
+          <LazyView
+            loader={() => import("$lib/components/terminal/TerminalView.svelte")}
+            name="terminal"
+          />
         {:else if uiStore.activeView === "portforwards"}
           <PortForwardView />
         {:else if uiStore.activeView === "yaml"}
-          <YamlEditor />
+          <LazyView
+            loader={() => import("$lib/components/details/YamlEditor.svelte")}
+            name="YAML editor"
+          />
         {:else if uiStore.activeView === "settings"}
           <LazyView
             loader={() => import("$lib/components/settings/SettingsView.svelte")}
