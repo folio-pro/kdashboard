@@ -3,7 +3,13 @@ import {
   UiStoreLogic,
   resetTabCounter,
   viewShowsTitleBar,
+  serializeTabs,
+  deserializeTabs,
+  restoreTab,
+  maxTabIdSuffix,
+  TABS_STORAGE_VERSION,
   type ActiveView,
+  type Tab,
 } from "./ui.logic.js";
 
 describe("UiStore", () => {
@@ -123,9 +129,10 @@ describe("UiStore", () => {
       expect(store.previousView).toBe("overview");
     });
 
-    test("_switchView clears filter on tab activation", () => {
+    test("new tab starts with empty filter (per-tab state)", () => {
       store.setFilter("some-filter");
       expect(store.filter).toBe("some-filter");
+      // Opening a new tab switches activeTab; the new tab has its own empty filter
       store.showDetails();
       expect(store.filter).toBe("");
     });
@@ -146,10 +153,12 @@ describe("UiStore", () => {
       expect(store.activeView).toBe("overview");
     });
 
-    test("backToPrevious clears filter", () => {
+    test("backToPrevious goes to nearest tab (filter is per-tab)", () => {
       store.showDetails();
       store.setFilter("test");
+      expect(store.filter).toBe("test");
       store.backToPrevious();
+      // details tab closed; activeTab is now the overview tab, which never had a filter set
       expect(store.filter).toBe("");
     });
 
@@ -316,6 +325,9 @@ describe("UiStore", () => {
       store.resetForContextChange();
 
       expect(store.commandPaletteOpen).toBe(false);
+      // Per-tab state is implicitly reset: resetForContextChange() recreates
+      // the tabs array with a fresh overview tab, so all per-tab fields
+      // fall back to their getter defaults.
       expect(store.filter).toBe("");
       expect(store.sortColumn).toBe("name");
       expect(store.sortDirection as "asc" | "desc").toBe("asc");
@@ -324,6 +336,307 @@ describe("UiStore", () => {
       expect(store.selectedRowIndex).toBe(-1);
       expect(store.selectedCount).toBe(0);
       expect(store.statFilter).toBeNull();
+    });
+  });
+
+  describe("per-tab state", () => {
+    test("filter persists across tab switches", () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      const podsId = store.activeTabId;
+      store.setFilter("nginx");
+      expect(store.filter).toBe("nginx");
+
+      store.openTab("table", { label: "Services", resourceType: "services" });
+      const servicesId = store.activeTabId;
+      expect(store.filter).toBe("");
+
+      store.setFilter("api");
+      expect(store.filter).toBe("api");
+
+      store.activateTab(podsId);
+      expect(store.filter).toBe("nginx");
+
+      store.activateTab(servicesId);
+      expect(store.filter).toBe("api");
+    });
+
+    test("sortColumn and sortDirection persist per-tab", () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      const podsId = store.activeTabId;
+      store.setSort("cpu");
+      expect(store.sortColumn).toBe("cpu");
+      expect(store.sortDirection).toBe("asc");
+
+      store.openTab("table", { label: "Services", resourceType: "services" });
+      // new tab: defaults
+      expect(store.sortColumn).toBe("name");
+      expect(store.sortDirection).toBe("asc");
+
+      store.activateTab(podsId);
+      expect(store.sortColumn).toBe("cpu");
+    });
+
+    test("statFilter persists per-tab", () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      const podsId = store.activeTabId;
+      store.toggleStatFilter("running");
+      expect(store.statFilter).toBe("running");
+
+      store.openTab("table", { label: "Services", resourceType: "services" });
+      expect(store.statFilter).toBeNull();
+
+      store.activateTab(podsId);
+      expect(store.statFilter).toBe("running");
+    });
+
+    test("selectedRows do not leak across tabs", () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      const podsId = store.activeTabId;
+      store.selectAllRows(["pod-uid-1", "pod-uid-2"]);
+      expect(store.selectedCount).toBe(2);
+
+      store.openTab("table", { label: "Services", resourceType: "services" });
+      expect(store.selectedCount).toBe(0);
+      expect(store.selectedRows.has("pod-uid-1")).toBe(false);
+
+      store.toggleRowSelection("svc-uid-1");
+      expect(store.selectedCount).toBe(1);
+
+      store.activateTab(podsId);
+      expect(store.selectedCount).toBe(2);
+      expect(store.selectedRows.has("pod-uid-1")).toBe(true);
+      expect(store.selectedRows.has("svc-uid-1")).toBe(false);
+    });
+
+    test("selectedRowIndex is per-tab", () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      const podsId = store.activeTabId;
+      store.selectedRowIndex = 5;
+      expect(store.selectedRowIndex).toBe(5);
+
+      store.openTab("table", { label: "Services", resourceType: "services" });
+      expect(store.selectedRowIndex).toBe(-1);
+
+      store.activateTab(podsId);
+      expect(store.selectedRowIndex).toBe(5);
+    });
+
+    test("filter round-trips through detail view", () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      const podsId = store.activeTabId;
+      store.setFilter("nginx");
+
+      // open detail (new tab, inherits nothing)
+      store.showDetails("nginx-abc123", "pods");
+      expect(store.filter).toBe("");
+
+      // back to pods — filter must still be there
+      store.activateTab(podsId);
+      expect(store.filter).toBe("nginx");
+    });
+
+    test("closing a tab discards its filter (no leak to remaining tabs)", () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      store.setFilter("nginx");
+      const podsId = store.activeTabId;
+
+      store.closeTab(podsId);
+      // now on overview, which has no filter
+      expect(store.filter).toBe("");
+    });
+
+    test("debounced filter writes to the correct tab after switch", async () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      const podsId = store.activeTabId;
+      store.setFilter("nginx");
+      expect(store.filter).toBe("nginx");
+      // debounced not yet fired
+      expect(store.debouncedFilterLower).toBe("");
+
+      // Switch before debounce fires — _flushDebounce commits the value
+      // to the outgoing (pods) tab synchronously.
+      store.openTab("table", { label: "Services", resourceType: "services" });
+      expect(store.debouncedFilterLower).toBe(""); // services tab, no filter
+
+      store.activateTab(podsId);
+      expect(store.filter).toBe("nginx");
+      expect(store.debouncedFilterLower).toBe("nginx");
+    });
+
+    test("setFilter debounce fires on the captured tab even after switch", async () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      const podsId = store.activeTabId;
+      store.setFilter("nginx");
+
+      // Switch tabs. _flushDebounce commits "nginx" to pods tab synchronously.
+      store.openTab("table", { label: "Services", resourceType: "services" });
+      store.setFilter("api");
+
+      // Wait beyond debounce
+      await new Promise((r) => setTimeout(r, 200));
+
+      // Services debounced should now be "api"
+      expect(store.debouncedFilterLower).toBe("api");
+
+      // Pods debounced should be "nginx" (flushed at switch, not overwritten)
+      store.activateTab(podsId);
+      expect(store.debouncedFilterLower).toBe("nginx");
+    });
+
+    test("tab without per-tab fields falls back to defaults (backwards compat)", () => {
+      // Simulate a tab constructed without optional fields (e.g., by legacy
+      // code or future deserialization).
+      const legacyTab: Tab = {
+        id: "tab-legacy",
+        type: "table",
+        label: "Legacy",
+        closable: true,
+      };
+      store.tabs = [...store.tabs, legacyTab];
+      store.activateTab("tab-legacy");
+
+      expect(store.filter).toBe("");
+      expect(store.sortColumn).toBe("name");
+      expect(store.sortDirection).toBe("asc");
+      expect(store.statFilter).toBeNull();
+      expect(store.selectedCount).toBe(0);
+      expect(store.selectedRowIndex).toBe(-1);
+    });
+  });
+
+  describe("tab persistence (serialization)", () => {
+    test("serializeTabs strips ephemeral fields", () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      store.setFilter("nginx");
+      store.setSort("cpu");
+      store.selectAllRows(["uid-1", "uid-2"]);
+      store.selectedRowIndex = 3;
+      // Simulate cache population
+      const tab = store.activeTab!;
+      tab.cachedItems = [];
+      tab.cacheReady = true;
+      tab.count = 42;
+
+      const snap = serializeTabs(store.tabs, store.activeTabId);
+      const persistedPods = snap.tabs.find((t) => t.label === "Pods")!;
+
+      // Saved:
+      expect(persistedPods.filter).toBe("nginx");
+      expect(persistedPods.sortColumn).toBe("cpu");
+      expect(persistedPods.resourceType).toBe("pods");
+
+      // NOT saved (not present on SerializableTab at all):
+      expect("cachedItems" in persistedPods).toBe(false);
+      expect("cachedResource" in persistedPods).toBe(false);
+      expect("cacheReady" in persistedPods).toBe(false);
+      expect("count" in persistedPods).toBe(false);
+      expect("selectedRows" in persistedPods).toBe(false);
+      expect("selectedRowIndex" in persistedPods).toBe(false);
+      expect("_debouncedFilter" in persistedPods).toBe(false);
+    });
+
+    test("serializeTabs omits defaults to keep payload small", () => {
+      // overview tab with no filter/sort/statFilter set
+      const snap = serializeTabs(store.tabs, store.activeTabId);
+      const overview = snap.tabs[0];
+      expect("filter" in overview).toBe(false);
+      expect("sortColumn" in overview).toBe(false);
+      expect("sortDirection" in overview).toBe(false);
+      expect("statFilter" in overview).toBe(false);
+    });
+
+    test("serialize + deserialize round-trip", () => {
+      store.openTab("table", { label: "Pods", resourceType: "pods", namespace: "default" });
+      store.setFilter("nginx");
+      store.setSort("cpu");
+      store.setSort("cpu"); // toggle to desc
+      store.toggleStatFilter("running");
+
+      const snap = serializeTabs(store.tabs, store.activeTabId);
+      const json = JSON.stringify(snap);
+      const parsed = deserializeTabs(json);
+      expect(parsed).not.toBeNull();
+      expect(parsed!.version).toBe(TABS_STORAGE_VERSION);
+      expect(parsed!.activeTabId).toBe(store.activeTabId);
+      expect(parsed!.tabs.length).toBe(store.tabs.length);
+
+      const restored = parsed!.tabs.map(restoreTab);
+      const podsRestored = restored.find((t) => t.label === "Pods")!;
+      expect(podsRestored.filter).toBe("nginx");
+      expect(podsRestored.sortColumn).toBe("cpu");
+      expect(podsRestored.sortDirection).toBe("desc");
+      expect(podsRestored.statFilter).toBe("running");
+      expect(podsRestored.resourceType).toBe("pods");
+      expect(podsRestored.namespace).toBe("default");
+    });
+
+    test("deserializeTabs rejects null / empty / invalid JSON", () => {
+      expect(deserializeTabs(null)).toBeNull();
+      expect(deserializeTabs("")).toBeNull();
+      expect(deserializeTabs("{not json")).toBeNull();
+      expect(deserializeTabs("[]")).toBeNull();
+    });
+
+    test("deserializeTabs rejects wrong version", () => {
+      const bad = JSON.stringify({
+        version: 999,
+        tabs: [{ id: "tab-overview", type: "overview", label: "Overview", closable: true }],
+        activeTabId: "tab-overview",
+      });
+      expect(deserializeTabs(bad)).toBeNull();
+    });
+
+    test("deserializeTabs rejects unknown tab type", () => {
+      const bad = JSON.stringify({
+        version: TABS_STORAGE_VERSION,
+        tabs: [{ id: "tab-1", type: "does-not-exist", label: "?", closable: true }],
+        activeTabId: "tab-1",
+      });
+      expect(deserializeTabs(bad)).toBeNull();
+    });
+
+    test("deserializeTabs rejects payload with dangling activeTabId", () => {
+      const bad = JSON.stringify({
+        version: TABS_STORAGE_VERSION,
+        tabs: [{ id: "tab-overview", type: "overview", label: "Overview", closable: true }],
+        activeTabId: "tab-missing",
+      });
+      expect(deserializeTabs(bad)).toBeNull();
+    });
+
+    test("deserializeTabs rejects empty tabs array", () => {
+      const bad = JSON.stringify({
+        version: TABS_STORAGE_VERSION,
+        tabs: [],
+        activeTabId: "tab-overview",
+      });
+      expect(deserializeTabs(bad)).toBeNull();
+    });
+
+    test("maxTabIdSuffix finds highest numeric suffix", () => {
+      expect(maxTabIdSuffix([])).toBe(0);
+      expect(maxTabIdSuffix([{ id: "tab-overview" }])).toBe(0);
+      expect(maxTabIdSuffix([
+        { id: "tab-overview" },
+        { id: "tab-1" },
+        { id: "tab-7" },
+        { id: "tab-3" },
+      ])).toBe(7);
+      // mixed / malformed ids — ignored
+      expect(maxTabIdSuffix([{ id: "weird-5" }, { id: "tab-2" }])).toBe(2);
+    });
+
+    test("restoreTab discards ephemeral fields by construction", () => {
+      // The SerializableTab type has no cache/selection fields, so restoreTab
+      // produces a runtime Tab with those undefined — verified by shape check.
+      const restored = restoreTab({
+        id: "tab-1", type: "table", label: "Pods", closable: true,
+        resourceType: "pods", filter: "nginx",
+      });
+      expect(restored.filter).toBe("nginx");
+      expect(restored.cachedItems).toBeUndefined();
+      expect(restored.selectedRows).toBeUndefined();
+      expect(restored.selectedRowIndex).toBeUndefined();
     });
   });
 

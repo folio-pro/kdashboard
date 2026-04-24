@@ -10,7 +10,6 @@
     k8sStore.selectedResourceType.slice(1)
   );
 
-  let searchValue = $state("");
   let searchInput: HTMLInputElement | undefined = $state();
   let nsOpen = $state(false);
   let nsFilter = $state("");
@@ -23,7 +22,6 @@
 
   function handleSearchInput(e: Event) {
     const target = e.target as HTMLInputElement;
-    searchValue = target.value;
     uiStore.setFilter(target.value);
   }
 
@@ -137,7 +135,7 @@
         id="resource-filter"
         type="text"
         placeholder="Search resources..."
-        value={searchValue}
+        value={uiStore.filter}
         oninput={handleSearchInput}
         onkeydown={handleSearchKeydown}
         class="h-full flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
