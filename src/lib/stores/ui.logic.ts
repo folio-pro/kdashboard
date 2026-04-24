@@ -631,6 +631,7 @@ export function restoreTab(st: SerializableTab): Tab {
     resourceType: st.resourceType,
     namespace: st.namespace,
     filter: st.filter,
+    _debouncedFilter: st.filter,
     sortColumn: st.sortColumn,
     sortDirection: st.sortDirection,
     statFilter: st.statFilter,
