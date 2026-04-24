@@ -1,6 +1,6 @@
 [package]
 name = "kdashboard"
-version = "0.1.5"
+version = "0.1.6"
 description = "Lightweight desktop IDE for Kubernetes"
 authors = ["Folio Innova S.L."]
 edition = "2021"
