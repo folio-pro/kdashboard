@@ -26,7 +26,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
@@ -149,16 +150,8 @@ async fn read_disk_meta(provider: &str) -> Option<DatasetMeta> {
 
 async fn write_disk_meta(provider: &str, meta: &DatasetMeta) -> Result<()> {
     let path = meta_path(provider).context("home dir unavailable")?;
-    if let Some(dir) = path.parent() {
-        tokio::fs::create_dir_all(dir)
-            .await
-            .with_context(|| format!("create_dir_all {dir:?}"))?;
-    }
     let body = serde_json::to_string(meta).context("serialise meta")?;
-    tokio::fs::write(&path, body)
-        .await
-        .with_context(|| format!("write {path:?}"))?;
-    Ok(())
+    atomic_write(&path, body.as_bytes()).await
 }
 
 async fn read_disk_body(provider: &str) -> Option<String> {
@@ -167,14 +160,46 @@ async fn read_disk_body(provider: &str) -> Option<String> {
 
 async fn write_disk_body(provider: &str, body: &str) -> Result<()> {
     let path = dataset_path(provider).context("home dir unavailable")?;
+    atomic_write(&path, body.as_bytes()).await
+}
+
+/// Crash-safe replacement of `path` with `contents`. Writes to a uniquely-named
+/// temp sibling first, then atomically renames it onto the target. If the
+/// process dies mid-write, the previous file at `path` is untouched and the
+/// orphaned temp file can be ignored or cleaned up later — it never partially
+/// replaces real cache content. Multiple concurrent callers writing to the
+/// same `path` get distinct temp names (process id + monotonic counter), so
+/// they don't clobber each other's intermediate writes.
+async fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
         tokio::fs::create_dir_all(dir)
             .await
             .with_context(|| format!("create_dir_all {dir:?}"))?;
     }
-    tokio::fs::write(&path, body)
-        .await
-        .with_context(|| format!("write {path:?}"))?;
+
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let tmp_path = {
+        let mut name = path.as_os_str().to_os_string();
+        name.push(format!(
+            ".tmp.{}.{}",
+            std::process::id(),
+            TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        PathBuf::from(name)
+    };
+
+    if let Err(e) = tokio::fs::write(&tmp_path, contents).await {
+        return Err(anyhow::Error::from(e))
+            .with_context(|| format!("write temp {tmp_path:?} for {path:?}"));
+    }
+
+    if let Err(e) = tokio::fs::rename(&tmp_path, path).await {
+        // Best-effort cleanup; the orphan temp is harmless if this also fails.
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        return Err(anyhow::Error::from(e))
+            .with_context(|| format!("rename {tmp_path:?} -> {path:?}"));
+    }
+
     Ok(())
 }
 
@@ -630,6 +655,82 @@ mod tests {
     #[tokio::test]
     async fn resolve_pricing_returns_none_for_empty_input() {
         assert!(resolve_pricing(&[]).await.is_none());
+    }
+
+    fn unique_tmp_dir(label: &str) -> PathBuf {
+        let unique = format!(
+            "kdashboard-pricing-{}-{}-{}",
+            label,
+            std::process::id(),
+            TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
+        std::env::temp_dir().join(unique)
+    }
+
+    static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[tokio::test]
+    async fn atomic_write_creates_file_and_parent_dirs() {
+        let dir = unique_tmp_dir("create");
+        let path = dir.join("nested").join("a.json");
+        atomic_write(&path, b"hello").await.expect("write ok");
+        let got = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(got, "hello");
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn atomic_write_replaces_existing_content() {
+        let dir = unique_tmp_dir("replace");
+        let path = dir.join("a.json");
+        atomic_write(&path, b"first").await.expect("first write");
+        atomic_write(&path, b"second").await.expect("second write");
+        let got = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(got, "second");
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn atomic_write_leaves_no_temp_files_behind() {
+        let dir = unique_tmp_dir("notemp");
+        let path = dir.join("a.json");
+        atomic_write(&path, b"x").await.expect("write");
+
+        let mut entries = tokio::fs::read_dir(&dir).await.expect("read_dir");
+        let mut names = Vec::new();
+        while let Some(entry) = entries.next_entry().await.expect("next_entry") {
+            names.push(entry.file_name().to_string_lossy().into_owned());
+        }
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["a.json".to_string()],
+            "expected only the target file, found {names:?}"
+        );
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn atomic_write_concurrent_callers_do_not_clobber_temp() {
+        // Many concurrent writes to the same path must each succeed (each gets
+        // its own temp name) and the final content must be one of the inputs.
+        let dir = unique_tmp_dir("concurrent");
+        let path = dir.join("a.json");
+        let mut handles = Vec::new();
+        for i in 0..16u8 {
+            let p = path.clone();
+            handles.push(tokio::spawn(async move {
+                let payload = vec![i; 64];
+                atomic_write(&p, &payload).await.map(|_| payload)
+            }));
+        }
+        let mut payloads = Vec::new();
+        for h in handles {
+            payloads.push(h.await.unwrap().expect("write ok"));
+        }
+        let final_bytes = tokio::fs::read(&path).await.unwrap();
+        assert!(payloads.contains(&final_bytes), "final content must be one of the writes");
+        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
     /// Live network test against the actual GitHub release. Ignored by default —
