@@ -1,0 +1,59 @@
+name: Update pricing dataset
+
+on:
+  schedule:
+    # Daily at 03:17 UTC (off-peak, jittered to avoid GH cron pile-up).
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-pricing
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Fetch and normalise pricing
+        run: bun scripts/fetch-pricing.ts
+
+      - name: Verify outputs
+        run: |
+          set -euo pipefail
+          for f in pricing-out/aws.json pricing-out/azure.json pricing-out/gcp.json pricing-out/index.json; do
+            test -s "$f" || { echo "missing or empty: $f" >&2; exit 1; }
+          done
+          ls -lh pricing-out/
+
+      - name: Publish to release tag pricing-data
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="pricing-data"
+          NOTES="Daily pricing snapshot from instances.vantage.sh.\nGenerated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')\n\nNormalised cloud instance pricing for AWS, Azure, GCP. Replaced daily."
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists, replacing assets"
+            gh release upload "$TAG" pricing-out/aws.json pricing-out/azure.json pricing-out/gcp.json pricing-out/index.json --clobber
+            gh release edit "$TAG" --notes "$(printf '%b' "$NOTES")"
+          else
+            echo "release $TAG does not exist, creating"
+            gh release create "$TAG" \
+              --title "Pricing dataset (rolling)" \
+              --notes "$(printf '%b' "$NOTES")" \
+              --latest=false \
+              pricing-out/aws.json pricing-out/azure.json pricing-out/gcp.json pricing-out/index.json
+          fi
