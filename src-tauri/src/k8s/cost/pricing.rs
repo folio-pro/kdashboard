@@ -415,18 +415,72 @@ pub(super) async fn resolve_pricing(nodes: &[NodeInfo]) -> Option<HashMap<String
         return None;
     }
 
+    // Track which providers we successfully (re)loaded. A `false` here means
+    // both network and stale-disk fallback failed — DATASET_CACHE may still
+    // hold a pre-existing entry from a previous run, but we have no way to
+    // confirm its freshness, so we MUST NOT serve from it.
+    let mut loaded_ok: Vec<&str> = Vec::with_capacity(providers.len());
     for provider in &providers {
-        ensure_dataset_loaded(provider).await;
+        if ensure_dataset_loaded(provider).await {
+            loaded_ok.push(*provider);
+        } else {
+            tracing::warn!(
+                provider = %provider,
+                "pricing dataset unavailable (network + disk fallback both failed); \
+                 skipping this provider"
+            );
+        }
+    }
+
+    if loaded_ok.is_empty() {
+        return None;
     }
 
     let cache = DATASET_CACHE.lock().await;
     let map = cache.as_ref()?;
+    let prices = lookup_prices(nodes, &loaded_ok, map, Instant::now());
 
+    if prices.is_empty() {
+        tracing::info!(
+            providers_loaded = loaded_ok.len(),
+            "pricing dataset loaded but no nodes matched any region/instance_type"
+        );
+        None
+    } else {
+        Some(prices)
+    }
+}
+
+/// Pure lookup over a previously-loaded cache map. Two guards layered for
+/// defence-in-depth:
+///   1. Skip any provider not in `loaded_ok` — its presence in `cache` may be
+///      a stale leftover from a previous run that we couldn't refresh.
+///   2. Skip any entry whose `expires_at` is in the past. By construction
+///      `ensure_dataset_loaded` only installs entries with a future
+///      `expires_at`, so this should never fire in practice — but it
+///      protects against future refactors that decouple "loaded ok" from
+///      "freshly installed".
+fn lookup_prices(
+    nodes: &[NodeInfo],
+    loaded_ok: &[&str],
+    cache: &HashMap<String, ProviderDataset>,
+    now: Instant,
+) -> HashMap<String, f64> {
     let mut prices: HashMap<String, f64> = HashMap::new();
     for node in nodes {
-        let Some(ds) = map.get(&node.provider) else {
+        if !loaded_ok.contains(&node.provider.as_str()) {
+            continue;
+        }
+        let Some(ds) = cache.get(&node.provider) else {
             continue;
         };
+        if ds.expires_at <= now {
+            tracing::warn!(
+                provider = %node.provider,
+                "pricing dataset unexpectedly expired between load and read; skipping"
+            );
+            continue;
+        }
         let Some(by_region) = ds.prices.get(&node.region) else {
             continue;
         };
@@ -436,16 +490,7 @@ pub(super) async fn resolve_pricing(nodes: &[NodeInfo]) -> Option<HashMap<String
         let key = format!("{}/{}/{}", node.provider, node.region, node.instance_type);
         prices.insert(key, *price);
     }
-
-    if prices.is_empty() {
-        tracing::info!(
-            providers_loaded = providers.len(),
-            "pricing dataset loaded but no nodes matched any region/instance_type"
-        );
-        None
-    } else {
-        Some(prices)
-    }
+    prices
 }
 
 /// Force-clear the in-memory pricing cache and the cost overview cache. Disk
@@ -655,6 +700,94 @@ mod tests {
     #[tokio::test]
     async fn resolve_pricing_returns_none_for_empty_input() {
         assert!(resolve_pricing(&[]).await.is_none());
+    }
+
+    fn fake_node(provider: &str, region: &str, itype: &str) -> NodeInfo {
+        NodeInfo {
+            name: format!("{provider}-node"),
+            instance_type: itype.into(),
+            provider: provider.into(),
+            region: region.into(),
+            cpu_capacity: 2.0,
+            memory_capacity_bytes: 8.0 * 1024.0 * 1024.0 * 1024.0,
+        }
+    }
+
+    fn cache_with(provider: &str, region: &str, itype: &str, price: f64, ttl: Duration) -> HashMap<String, ProviderDataset> {
+        let mut by_type = HashMap::new();
+        by_type.insert(itype.to_string(), price);
+        let mut by_region = HashMap::new();
+        by_region.insert(region.to_string(), by_type);
+        let mut map = HashMap::new();
+        map.insert(
+            provider.to_string(),
+            ProviderDataset {
+                prices: by_region,
+                expires_at: Instant::now() + ttl,
+            },
+        );
+        map
+    }
+
+    #[test]
+    fn lookup_prices_returns_match_for_loaded_provider() {
+        let nodes = vec![fake_node("aws", "us-east-1", "m5.large")];
+        let cache = cache_with("aws", "us-east-1", "m5.large", 0.096, DATASET_TTL);
+        let out = lookup_prices(&nodes, &["aws"], &cache, Instant::now());
+        assert_eq!(out.get("aws/us-east-1/m5.large").copied(), Some(0.096));
+    }
+
+    #[test]
+    fn lookup_prices_skips_provider_not_in_loaded_ok() {
+        // Cache has aws but the loader didn't OK it (e.g. previous-run leftover
+        // that we couldn't refresh). Must not be served.
+        let nodes = vec![fake_node("aws", "us-east-1", "m5.large")];
+        let cache = cache_with("aws", "us-east-1", "m5.large", 0.096, DATASET_TTL);
+        let out = lookup_prices(&nodes, &[], &cache, Instant::now());
+        assert!(out.is_empty(), "expected no match without loaded_ok, got {out:?}");
+    }
+
+    #[test]
+    fn lookup_prices_skips_expired_dataset_even_when_loaded_ok() {
+        // Defensive: even if loaded_ok lists the provider, an expires_at in the
+        // past means the entry is stale and must not be served.
+        let nodes = vec![fake_node("aws", "us-east-1", "m5.large")];
+        let mut cache = cache_with("aws", "us-east-1", "m5.large", 0.096, DATASET_TTL);
+        // Force expiry into the past.
+        if let Some(ds) = cache.get_mut("aws") {
+            ds.expires_at = Instant::now() - Duration::from_secs(1);
+        }
+        let out = lookup_prices(&nodes, &["aws"], &cache, Instant::now());
+        assert!(out.is_empty(), "expired dataset must be skipped, got {out:?}");
+    }
+
+    #[test]
+    fn lookup_prices_partial_when_one_provider_fails() {
+        // aws loaded ok, gcp not: aws node resolves, gcp node doesn't.
+        let nodes = vec![
+            fake_node("aws", "us-east-1", "m5.large"),
+            fake_node("gcp", "us-central1", "e2-standard-4"),
+        ];
+        let mut cache = cache_with("aws", "us-east-1", "m5.large", 0.096, DATASET_TTL);
+        // Pre-existing stale gcp entry — exactly the leftover scenario.
+        let mut by_type = HashMap::new();
+        by_type.insert("e2-standard-4".to_string(), 0.13);
+        let mut by_region = HashMap::new();
+        by_region.insert("us-central1".to_string(), by_type);
+        cache.insert(
+            "gcp".to_string(),
+            ProviderDataset {
+                prices: by_region,
+                expires_at: Instant::now() + DATASET_TTL,
+            },
+        );
+
+        let out = lookup_prices(&nodes, &["aws"], &cache, Instant::now());
+        assert_eq!(out.get("aws/us-east-1/m5.large").copied(), Some(0.096));
+        assert!(
+            !out.contains_key("gcp/us-central1/e2-standard-4"),
+            "gcp not in loaded_ok must be skipped despite being in cache"
+        );
     }
 
     fn unique_tmp_dir(label: &str) -> PathBuf {
