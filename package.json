@@ -15,6 +15,7 @@
     "test:e2e:debug": "playwright test --debug",
     "benchmark": "tsx scripts/run-playwright-benchmarks.ts",
     "benchmark:ci": "tsx scripts/run-playwright-benchmarks.ts ./benchmark-results.json",
+    "fetch-pricing": "bun scripts/fetch-pricing.ts",
     "test": "bun test && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
