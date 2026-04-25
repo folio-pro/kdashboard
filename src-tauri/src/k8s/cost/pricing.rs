@@ -42,6 +42,11 @@ const PRICING_BASE_URL: &str =
 const SUPPORTED_PROVIDERS: &[&str] = &["aws", "azure", "gcp"];
 
 const DATASET_TTL: Duration = Duration::from_secs(86400); // 24h
+/// TTL applied when we install a dataset whose freshness we could NOT validate
+/// (network down + only a stale disk cache available). Short so the next
+/// `resolve_pricing` call retries the network instead of serving the
+/// unvalidated bytes for a full day.
+const STALE_RETRY_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const DISK_CACHE_DIR: &str = ".kdashboard/pricing";
 
 // ---------------------------------------------------------------------------
@@ -345,10 +350,18 @@ async fn ensure_dataset_loaded(provider: &str) -> bool {
         }
     }
 
-    // Last resort: stale disk body.
+    // Last resort: stale disk body. We could not validate freshness against
+    // either the meta TTL or the network, so apply a short TTL — the next
+    // resolve_pricing call (5 minutes from now) will retry the network instead
+    // of serving these unvalidated bytes for a full day.
     if let Some(body) = read_disk_body(provider).await {
-        if let Ok(ds) = parse_dataset(&body) {
-            tracing::info!(provider, "using stale disk cache (network unreachable)");
+        if let Ok(mut ds) = parse_dataset(&body) {
+            ds.expires_at = Instant::now() + STALE_RETRY_TTL;
+            tracing::info!(
+                provider,
+                retry_in_secs = STALE_RETRY_TTL.as_secs(),
+                "using stale disk cache (network unreachable), short TTL"
+            );
             install_dataset(provider, ds).await;
             return true;
         }
@@ -566,6 +579,20 @@ mod tests {
             fetched_at: now_epoch_seconds() - DATASET_TTL.as_secs() - 60,
         };
         assert!(!meta_is_fresh(&meta));
+    }
+
+    #[test]
+    fn stale_retry_ttl_is_much_shorter_than_dataset_ttl() {
+        // Guards against a future change that accidentally equates the two —
+        // which would re-introduce the bug where unvalidated stale-disk loads
+        // are kept for a full day after a transient network failure.
+        assert!(STALE_RETRY_TTL > Duration::ZERO);
+        assert!(
+            STALE_RETRY_TTL * 10 < DATASET_TTL,
+            "STALE_RETRY_TTL ({:?}) must be << DATASET_TTL ({:?})",
+            STALE_RETRY_TTL,
+            DATASET_TTL,
+        );
     }
 
     #[test]
