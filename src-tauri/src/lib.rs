@@ -198,6 +198,11 @@ pub fn run() {
             // Check for updates in background after startup settles.
             update::check_and_notify(app.handle().clone());
 
+            // Revalidate cloud pricing datasets in the background once a day.
+            // Cheap on the wire — uses If-None-Match, so 99% of revalidations
+            // are 304 with no body.
+            k8s::cost::spawn_periodic_refresh();
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

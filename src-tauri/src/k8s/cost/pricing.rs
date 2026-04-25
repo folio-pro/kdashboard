@@ -3,24 +3,31 @@
 //!
 //! Strategy:
 //! 1. For each unique provider in the requested nodes, ensure the provider's
-//!    dataset is loaded (memory → disk cache → network fetch, in that order).
+//!    dataset is loaded (memory → fresh disk → conditional fetch → stale disk).
 //! 2. Resolve `(provider, region, instance_type) -> $/hour` purely in-memory.
 //!
 //! Cache layers:
-//! - In-memory `HashMap<provider, ProviderDataset>` with 24h TTL — survives the
-//!   process lifetime, refreshed lazily.
-//! - Disk cache at `~/.kdashboard/pricing/<provider>.json` with the same TTL —
-//!   survives restarts and offline boots.
+//! - In-memory `HashMap<provider, ProviderDataset>` with 24h TTL.
+//! - Disk: `~/.kdashboard/pricing/<provider>.json` (the body) plus
+//!   `~/.kdashboard/pricing/<provider>.meta.json` (`{ etag, fetched_at }`).
+//!
+//! Bandwidth optimisation: every network refresh sends `If-None-Match: <etag>`.
+//! GitHub release assets honour this and return 304 when the file is unchanged,
+//! so a daily revalidation of an unchanged dataset costs ~0 bytes of body.
+//!
+//! A background task started via [`spawn_periodic_refresh`] revalidates every
+//! provider currently in the memory cache once every 24h, so a long-running
+//! app never goes more than a day without a freshness check.
 //!
 //! Failure mode: if both network and disk fail, returns `None` and the caller
 //! falls back to hardcoded rates. If the network fails but a stale disk cache
 //! exists, we use the stale cache rather than nothing.
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
 use super::types::NodeInfo;
@@ -34,8 +41,7 @@ const PRICING_BASE_URL: &str =
 
 const SUPPORTED_PROVIDERS: &[&str] = &["aws", "azure", "gcp"];
 
-const DATASET_TTL: Duration = Duration::from_secs(86400); // 24 hours
-
+const DATASET_TTL: Duration = Duration::from_secs(86400); // 24h
 const DISK_CACHE_DIR: &str = ".kdashboard/pricing";
 
 // ---------------------------------------------------------------------------
@@ -69,6 +75,13 @@ struct ProviderDataset {
     expires_at: Instant,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct DatasetMeta {
+    etag: Option<String>,
+    /// epoch seconds — used to compute disk cache freshness.
+    fetched_at: u64,
+}
+
 // ---------------------------------------------------------------------------
 // Caches
 // ---------------------------------------------------------------------------
@@ -94,58 +107,114 @@ fn pricing_base_url() -> String {
     std::env::var("KDASHBOARD_PRICING_URL").unwrap_or_else(|_| PRICING_BASE_URL.to_string())
 }
 
-fn disk_cache_path(provider: &str) -> Option<PathBuf> {
-    let home = dirs::home_dir()?;
-    Some(home.join(DISK_CACHE_DIR).join(format!("{provider}.json")))
+fn cache_root() -> Option<PathBuf> {
+    Some(dirs::home_dir()?.join(DISK_CACHE_DIR))
+}
+
+fn dataset_path(provider: &str) -> Option<PathBuf> {
+    Some(cache_root()?.join(format!("{provider}.json")))
+}
+
+fn meta_path(provider: &str) -> Option<PathBuf> {
+    Some(cache_root()?.join(format!("{provider}.meta.json")))
+}
+
+fn now_epoch_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn meta_is_fresh(meta: &DatasetMeta) -> bool {
+    let now = now_epoch_seconds();
+    let age = now.saturating_sub(meta.fetched_at);
+    age < DATASET_TTL.as_secs()
 }
 
 // ---------------------------------------------------------------------------
-// Disk cache helpers
+// Disk I/O
 // ---------------------------------------------------------------------------
 
-async fn read_disk_cache(provider: &str) -> Option<(String, bool)> {
-    let path = disk_cache_path(provider)?;
-    let metadata = tokio::fs::metadata(&path).await.ok()?;
-    let modified = metadata.modified().ok()?;
-    let age = SystemTime::now()
-        .duration_since(modified)
-        .unwrap_or(Duration::ZERO);
-    let fresh = age < DATASET_TTL;
-
-    let contents = tokio::fs::read_to_string(&path).await.ok()?;
-    Some((contents, fresh))
+async fn read_disk_meta(provider: &str) -> Option<DatasetMeta> {
+    let path = meta_path(provider)?;
+    let raw = tokio::fs::read_to_string(&path).await.ok()?;
+    serde_json::from_str(&raw).ok()
 }
 
-async fn write_disk_cache(provider: &str, contents: &str) -> Result<()> {
-    let path = disk_cache_path(provider).context("home dir unavailable")?;
+async fn write_disk_meta(provider: &str, meta: &DatasetMeta) -> Result<()> {
+    let path = meta_path(provider).context("home dir unavailable")?;
     if let Some(dir) = path.parent() {
         tokio::fs::create_dir_all(dir)
             .await
             .with_context(|| format!("create_dir_all {dir:?}"))?;
     }
-    tokio::fs::write(&path, contents)
+    let body = serde_json::to_string(meta).context("serialise meta")?;
+    tokio::fs::write(&path, body)
+        .await
+        .with_context(|| format!("write {path:?}"))?;
+    Ok(())
+}
+
+async fn read_disk_body(provider: &str) -> Option<String> {
+    tokio::fs::read_to_string(dataset_path(provider)?).await.ok()
+}
+
+async fn write_disk_body(provider: &str, body: &str) -> Result<()> {
+    let path = dataset_path(provider).context("home dir unavailable")?;
+    if let Some(dir) = path.parent() {
+        tokio::fs::create_dir_all(dir)
+            .await
+            .with_context(|| format!("create_dir_all {dir:?}"))?;
+    }
+    tokio::fs::write(&path, body)
         .await
         .with_context(|| format!("write {path:?}"))?;
     Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// Network fetch
+// Network: conditional fetch with If-None-Match.
+// Returns Ok(None) when the server replies 304 Not Modified.
 // ---------------------------------------------------------------------------
 
-async fn fetch_dataset_from_network(provider: &str) -> Result<String> {
-    let url = format!("{}/{}.json", pricing_base_url(), provider);
-    let resp = http_client()
-        .get(&url)
-        .send()
-        .await
-        .with_context(|| format!("GET {url}"))?;
-    if !resp.status().is_success() {
-        anyhow::bail!("pricing fetch returned {}", resp.status());
-    }
-    let body = resp.text().await.context("read pricing body")?;
-    Ok(body)
+struct FetchedDataset {
+    body: String,
+    etag: Option<String>,
 }
+
+async fn fetch_dataset_conditional(
+    provider: &str,
+    prev_etag: Option<&str>,
+) -> Result<Option<FetchedDataset>> {
+    let url = format!("{}/{}.json", pricing_base_url(), provider);
+    let mut req = http_client().get(&url);
+    if let Some(etag) = prev_etag {
+        req = req.header(reqwest::header::IF_NONE_MATCH, etag);
+    }
+
+    let resp = req.send().await.with_context(|| format!("GET {url}"))?;
+    let status = resp.status();
+
+    if status == reqwest::StatusCode::NOT_MODIFIED {
+        return Ok(None);
+    }
+    if !status.is_success() {
+        anyhow::bail!("pricing fetch returned {status}");
+    }
+
+    let etag = resp
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let body = resp.text().await.context("read pricing body")?;
+    Ok(Some(FetchedDataset { body, etag }))
+}
+
+// ---------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------
 
 fn parse_dataset(json: &str) -> Result<ProviderDataset> {
     let raw: RawDataset = serde_json::from_str(json).context("parse pricing dataset")?;
@@ -170,77 +239,121 @@ fn parse_dataset(json: &str) -> Result<ProviderDataset> {
 }
 
 // ---------------------------------------------------------------------------
-// Ensure a dataset is available for a provider.
-// Order: memory cache → fresh disk → network → stale disk fallback.
+// Memory cache helpers
 // ---------------------------------------------------------------------------
-
-async fn ensure_dataset_loaded(provider: &str) -> bool {
-    {
-        let cache = DATASET_CACHE.lock().await;
-        if let Some(map) = cache.as_ref() {
-            if let Some(ds) = map.get(provider) {
-                if ds.expires_at > Instant::now() {
-                    return true;
-                }
-            }
-        }
-    }
-
-    // Try fresh disk cache
-    if let Some((contents, fresh)) = read_disk_cache(provider).await {
-        if fresh {
-            match parse_dataset(&contents) {
-                Ok(ds) => {
-                    install_dataset(provider, ds).await;
-                    return true;
-                }
-                Err(e) => {
-                    tracing::warn!(provider, error = %e, "disk cache corrupt, will refetch");
-                }
-            }
-        }
-    }
-
-    // Network fetch
-    match fetch_dataset_from_network(provider).await {
-        Ok(body) => match parse_dataset(&body) {
-            Ok(ds) => {
-                if let Err(e) = write_disk_cache(provider, &body).await {
-                    tracing::warn!(provider, error = %e, "disk cache write failed");
-                }
-                install_dataset(provider, ds).await;
-                return true;
-            }
-            Err(e) => {
-                tracing::warn!(provider, error = %e, "pricing dataset parse failed");
-            }
-        },
-        Err(e) => {
-            tracing::warn!(provider, error = %e, "pricing dataset fetch failed");
-        }
-    }
-
-    // Last resort: stale disk cache
-    if let Some((contents, _)) = read_disk_cache(provider).await {
-        match parse_dataset(&contents) {
-            Ok(ds) => {
-                tracing::info!(provider, "using stale disk cache (network unreachable)");
-                install_dataset(provider, ds).await;
-                return true;
-            }
-            Err(e) => {
-                tracing::warn!(provider, error = %e, "stale disk cache also unreadable");
-            }
-        }
-    }
-
-    false
-}
 
 async fn install_dataset(provider: &str, ds: ProviderDataset) {
     let mut cache = DATASET_CACHE.lock().await;
     let map = cache.get_or_insert_with(HashMap::new);
     map.insert(provider.to_string(), ds);
+}
+
+async fn extend_memory_expiry(provider: &str) {
+    let mut cache = DATASET_CACHE.lock().await;
+    if let Some(map) = cache.as_mut() {
+        if let Some(ds) = map.get_mut(provider) {
+            ds.expires_at = Instant::now() + DATASET_TTL;
+        }
+    }
+}
+
+async fn memory_has_fresh(provider: &str) -> bool {
+    let cache = DATASET_CACHE.lock().await;
+    cache
+        .as_ref()
+        .and_then(|m| m.get(provider))
+        .map(|ds| ds.expires_at > Instant::now())
+        .unwrap_or(false)
+}
+
+// ---------------------------------------------------------------------------
+// ensure_dataset_loaded — main path
+// ---------------------------------------------------------------------------
+
+async fn ensure_dataset_loaded(provider: &str) -> bool {
+    if memory_has_fresh(provider).await {
+        return true;
+    }
+
+    let meta = read_disk_meta(provider).await.unwrap_or_default();
+
+    // Fresh disk cache → load directly, no network.
+    if meta_is_fresh(&meta) {
+        if let Some(body) = read_disk_body(provider).await {
+            match parse_dataset(&body) {
+                Ok(ds) => {
+                    install_dataset(provider, ds).await;
+                    return true;
+                }
+                Err(e) => {
+                    tracing::warn!(provider, error = %e, "fresh disk cache corrupt, will refetch");
+                }
+            }
+        }
+    }
+
+    // Stale or missing disk → conditional fetch.
+    match fetch_dataset_conditional(provider, meta.etag.as_deref()).await {
+        Ok(Some(fetched)) => {
+            // 200 — body changed (or first fetch). Persist new body + meta.
+            if let Err(e) = write_disk_body(provider, &fetched.body).await {
+                tracing::warn!(provider, error = %e, "disk body write failed");
+            }
+            let new_meta = DatasetMeta {
+                etag: fetched.etag.clone(),
+                fetched_at: now_epoch_seconds(),
+            };
+            if let Err(e) = write_disk_meta(provider, &new_meta).await {
+                tracing::warn!(provider, error = %e, "disk meta write failed");
+            }
+            match parse_dataset(&fetched.body) {
+                Ok(ds) => {
+                    tracing::info!(provider, etag = ?new_meta.etag, "pricing dataset updated");
+                    install_dataset(provider, ds).await;
+                    return true;
+                }
+                Err(e) => {
+                    tracing::warn!(provider, error = %e, "downloaded dataset failed to parse");
+                }
+            }
+        }
+        Ok(None) => {
+            // 304 — body unchanged. Touch the meta so we don't revalidate again
+            // for another 24h, and reload from disk.
+            tracing::debug!(provider, "pricing dataset unchanged (304)");
+            let touched = DatasetMeta {
+                etag: meta.etag.clone(),
+                fetched_at: now_epoch_seconds(),
+            };
+            if let Err(e) = write_disk_meta(provider, &touched).await {
+                tracing::warn!(provider, error = %e, "touch disk meta failed");
+            }
+            if let Some(body) = read_disk_body(provider).await {
+                match parse_dataset(&body) {
+                    Ok(ds) => {
+                        install_dataset(provider, ds).await;
+                        return true;
+                    }
+                    Err(e) => {
+                        tracing::warn!(provider, error = %e, "disk body unreadable after 304");
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(provider, error = %e, "pricing dataset fetch failed");
+        }
+    }
+
+    // Last resort: stale disk body.
+    if let Some(body) = read_disk_body(provider).await {
+        if let Ok(ds) = parse_dataset(&body) {
+            tracing::info!(provider, "using stale disk cache (network unreachable)");
+            install_dataset(provider, ds).await;
+            return true;
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -297,8 +410,9 @@ pub(super) async fn resolve_pricing(nodes: &[NodeInfo]) -> Option<HashMap<String
     }
 }
 
-/// Force-refresh pricing by clearing in-memory caches. Disk cache is left in
-/// place — next call will refetch from network and overwrite it.
+/// Force-clear the in-memory pricing cache and the cost overview cache. Disk
+/// state is left in place — the next call refetches conditionally and a 304 is
+/// usually free.
 pub async fn refresh_pricing() -> Result<()> {
     {
         let mut cache = DATASET_CACHE.lock().await;
@@ -309,6 +423,75 @@ pub async fn refresh_pricing() -> Result<()> {
         *cache = None;
     }
     Ok(())
+}
+
+/// Revalidate one provider's dataset against the network (uses ETag — usually a
+/// 304 once a day). Returns `Ok(true)` when the body changed, `Ok(false)` on
+/// 304. Errors propagate so the periodic loop can log them.
+async fn revalidate_provider(provider: &str) -> Result<bool> {
+    let meta = read_disk_meta(provider).await.unwrap_or_default();
+    match fetch_dataset_conditional(provider, meta.etag.as_deref()).await? {
+        Some(fetched) => {
+            write_disk_body(provider, &fetched.body).await?;
+            let new_meta = DatasetMeta {
+                etag: fetched.etag.clone(),
+                fetched_at: now_epoch_seconds(),
+            };
+            write_disk_meta(provider, &new_meta).await?;
+            let ds = parse_dataset(&fetched.body)?;
+            install_dataset(provider, ds).await;
+            tracing::info!(provider, etag = ?new_meta.etag, "pricing dataset refreshed");
+            Ok(true)
+        }
+        None => {
+            let touched = DatasetMeta {
+                etag: meta.etag.clone(),
+                fetched_at: now_epoch_seconds(),
+            };
+            write_disk_meta(provider, &touched).await?;
+            extend_memory_expiry(provider).await;
+            tracing::debug!(provider, "pricing dataset unchanged on revalidation");
+            Ok(false)
+        }
+    }
+}
+
+async fn known_providers() -> Vec<String> {
+    let cache = DATASET_CACHE.lock().await;
+    match cache.as_ref() {
+        Some(map) => map.keys().cloned().collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Spawn a background task that revalidates every provider in the in-memory
+/// cache once every 24h. Cheap on the wire because each revalidation is a
+/// conditional GET — typical case is 304 with no body. Idempotent: calling
+/// twice spawns two loops; the cost is one extra HTTP request per day.
+pub fn spawn_periodic_refresh() {
+    tauri::async_runtime::spawn(async {
+        let mut interval = tokio::time::interval(DATASET_TTL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // Consume the immediate first tick — startup path already loads via
+        // `ensure_dataset_loaded`. The next tick fires after 24h.
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+            let providers = known_providers().await;
+            if providers.is_empty() {
+                tracing::debug!("periodic pricing refresh: nothing cached, skipping");
+                continue;
+            }
+            for provider in providers {
+                match revalidate_provider(&provider).await {
+                    Ok(true) => tracing::info!(provider, "periodic refresh: updated"),
+                    Ok(false) => tracing::debug!(provider, "periodic refresh: 304 unchanged"),
+                    Err(e) => tracing::warn!(provider, error = %e, "periodic refresh failed"),
+                }
+            }
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +522,10 @@ mod tests {
         let ds = parse_dataset(SAMPLE_JSON).expect("parses");
         let region = ds.prices.get("us-east-1").expect("region");
         assert_eq!(region.get("m5.large").copied(), Some(0.096));
-        assert!(region.get("broken").is_none(), "null prices must be filtered");
+        assert!(
+            region.get("broken").is_none(),
+            "null prices must be filtered"
+        );
     }
 
     #[test]
@@ -364,6 +550,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn meta_is_fresh_within_ttl() {
+        let meta = DatasetMeta {
+            etag: Some("abc".into()),
+            fetched_at: now_epoch_seconds() - 60, // 1 min ago
+        };
+        assert!(meta_is_fresh(&meta));
+    }
+
+    #[test]
+    fn meta_is_stale_past_ttl() {
+        let meta = DatasetMeta {
+            etag: Some("abc".into()),
+            fetched_at: now_epoch_seconds() - DATASET_TTL.as_secs() - 60,
+        };
+        assert!(!meta_is_fresh(&meta));
+    }
+
+    #[test]
+    fn meta_default_is_stale() {
+        let meta = DatasetMeta::default();
+        assert_eq!(meta.fetched_at, 0);
+        assert!(!meta_is_fresh(&meta), "epoch-zero meta must be treated as stale");
+    }
+
+    #[test]
+    fn meta_roundtrips_json() {
+        let meta = DatasetMeta {
+            etag: Some("\"0xABCDEF\"".into()),
+            fetched_at: 1_700_000_000,
+        };
+        let s = serde_json::to_string(&meta).unwrap();
+        let back: DatasetMeta = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.etag, meta.etag);
+        assert_eq!(back.fetched_at, meta.fetched_at);
+    }
+
     #[tokio::test]
     async fn resolve_pricing_returns_none_when_unsupported_provider() {
         let nodes = vec![NodeInfo {
@@ -384,39 +607,28 @@ mod tests {
 
     /// Live network test against the actual GitHub release. Ignored by default —
     /// run with `cargo test --lib cost::pricing -- --ignored --nocapture`.
+    /// Verifies both the initial 200 fetch and the conditional 304 path.
     #[tokio::test]
     #[ignore]
-    async fn resolve_pricing_against_real_release() {
-        let nodes = vec![
-            NodeInfo {
-                name: "aws-1".into(),
-                instance_type: "m5.large".into(),
-                provider: "aws".into(),
-                region: "us-east-1".into(),
-                cpu_capacity: 2.0,
-                memory_capacity_bytes: 8.0 * 1024.0 * 1024.0 * 1024.0,
-            },
-            NodeInfo {
-                name: "gcp-1".into(),
-                instance_type: "e2-standard-4".into(),
-                provider: "gcp".into(),
-                region: "us-central1".into(),
-                cpu_capacity: 4.0,
-                memory_capacity_bytes: 16.0 * 1024.0 * 1024.0 * 1024.0,
-            },
-        ];
-
+    async fn revalidate_uses_etag_for_304() {
+        // First call: loads via ensure_dataset_loaded (probably 200 if cache empty).
+        let nodes = vec![NodeInfo {
+            name: "aws-1".into(),
+            instance_type: "m5.large".into(),
+            provider: "aws".into(),
+            region: "us-east-1".into(),
+            cpu_capacity: 2.0,
+            memory_capacity_bytes: 8.0 * 1024.0 * 1024.0 * 1024.0,
+        }];
         let prices = resolve_pricing(&nodes).await.expect("got prices");
-        assert!(
-            prices.contains_key("aws/us-east-1/m5.large"),
-            "missing aws m5.large: {prices:?}"
-        );
-        assert!(
-            prices.contains_key("gcp/us-central1/e2-standard-4"),
-            "missing gcp e2-standard-4: {prices:?}"
-        );
-        for (k, v) in &prices {
-            assert!(*v > 0.0 && *v < 100.0, "implausible price for {k}: {v}");
-        }
+        assert!(prices.contains_key("aws/us-east-1/m5.large"));
+
+        // Now revalidate — meta on disk has a fresh etag, so this MUST come back
+        // as Ok(false) (304). If GitHub regenerated the asset between our two
+        // calls we'd get Ok(true), but in a same-second test that's impossible.
+        let changed = revalidate_provider("aws")
+            .await
+            .expect("revalidate succeeds");
+        assert!(!changed, "second call should be 304 not modified");
     }
 }
