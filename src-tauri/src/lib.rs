@@ -118,7 +118,8 @@ pub(crate) fn get_os_version() -> &'static str {
 // Tracing infrastructure
 // ===========================================================================
 
-const DEFAULT_LOG_FILTER: &str = "kdashboard_lib=info,kube=warn";
+const DEFAULT_LOG_FILTER: &str =
+    "kdashboard_lib=info,kube_client=warn,kube=warn,tower::buffer=warn,hyper=warn,rustls=warn";
 
 fn build_env_filter() -> tracing_subscriber::EnvFilter {
     tracing_subscriber::EnvFilter::try_from_default_env()
@@ -162,8 +163,11 @@ pub fn run() {
     let _ = dotenvy::dotenv();
     fix_path_env();
 
+    use std::io::IsTerminal;
     tracing_subscriber::fmt()
         .with_env_filter(build_env_filter())
+        .with_target(true)
+        .with_ansi(std::io::stderr().is_terminal())
         .init();
 
     tracing::info!("Starting kdashboard v2");

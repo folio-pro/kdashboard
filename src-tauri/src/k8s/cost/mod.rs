@@ -1,9 +1,12 @@
 mod calculations;
 mod metrics;
+mod metrics_availability;
 mod node_metrics;
 mod nodes;
 mod pricing;
 mod types;
+
+pub use metrics_availability::reset as reset_metrics_availability;
 
 #[cfg(test)]
 mod tests;

@@ -41,6 +41,7 @@ pub async fn save_settings(
         if old.kubeconfig_path != settings.kubeconfig_path {
             k8s::client::set_kubeconfig_path(settings.kubeconfig_path.clone());
             k8s::client::reset_client();
+            k8s::cost::reset_metrics_availability();
         }
     }
 
