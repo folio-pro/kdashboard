@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::time::Instant;
 
 // ---------------------------------------------------------------------------
@@ -71,36 +70,6 @@ pub struct NodeCostInfo {
 pub(super) struct CostCache {
     pub data: Option<CostOverview>,
     pub expires_at: Instant,
-}
-
-pub(super) struct ResolvedPricing {
-    pub prices: HashMap<String, f64>,
-    pub expires_at: Instant,
-}
-
-#[derive(Debug, Serialize)]
-pub(super) struct PricingResolveRequest {
-    pub provider: String,
-    pub region: String,
-    #[serde(rename = "instanceType")]
-    pub instance_type: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct PricingResolveItem {
-    pub key: String,
-    #[serde(rename = "pricePerHour")]
-    pub price_per_hour: f64,
-    #[serde(rename = "pricePerMonth")]
-    #[allow(dead_code)]
-    pub price_per_month: f64,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct PricingResolveResponse {
-    pub results: Vec<PricingResolveItem>,
-    pub resolved: u32,
-    pub total: u32,
 }
 
 // Pod / node metrics types used by the metrics-server integration

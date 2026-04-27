@@ -1,9 +1,12 @@
 mod calculations;
 mod metrics;
+mod metrics_availability;
 mod node_metrics;
 mod nodes;
 mod pricing;
 mod types;
+
+pub use metrics_availability::reset as reset_metrics_availability;
 
 #[cfg(test)]
 mod tests;
@@ -15,4 +18,4 @@ pub use types::{CostOverview, NamespaceCostSummary, NodeCostInfo, NodeMetricsInf
 // Re-export public functions
 pub use calculations::get_cost_overview;
 pub use node_metrics::{get_node_costs, get_node_metrics};
-pub use pricing::refresh_pricing;
+pub use pricing::{refresh_pricing, spawn_periodic_refresh};

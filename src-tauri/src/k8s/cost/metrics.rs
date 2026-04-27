@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use super::metrics_availability::{self, MetricsKind};
 use super::types::{
     ContainerMetrics, PodMetrics, PodMetricsList, PodMetricsMetadata, ResourceUsage,
 };
@@ -12,14 +13,31 @@ pub(super) async fn fetch_pod_metrics(
     client: &kube::Client,
     namespace: Option<&str>,
 ) -> Result<Vec<PodMetrics>> {
+    if !metrics_availability::is_available(MetricsKind::Pods) {
+        anyhow::bail!("metrics-server pods endpoint marked unavailable; using fallback");
+    }
+
     let url = match namespace {
         Some(ns) => format!("/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods", ns),
         None => "/apis/metrics.k8s.io/v1beta1/pods".to_string(),
     };
 
     let request = kube::api::Request::new(&url).list(&Default::default())?;
-    let response: PodMetricsList = client.request(request).await?;
-    Ok(response.items)
+    match client.request::<PodMetricsList>(request).await {
+        Ok(response) => {
+            metrics_availability::mark_available(MetricsKind::Pods);
+            Ok(response.items)
+        }
+        Err(err) => {
+            let backoff = metrics_availability::mark_unavailable(MetricsKind::Pods);
+            tracing::warn!(
+                backoff_secs = backoff.as_secs(),
+                error = %err,
+                "metrics-server pods endpoint failed; backing off",
+            );
+            Err(err.into())
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

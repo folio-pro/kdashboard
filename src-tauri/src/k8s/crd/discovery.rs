@@ -73,6 +73,12 @@ pub async fn discover_crds() -> Result<Vec<CrdGroup>> {
         "authentication.k8s.io",
         "authorization.k8s.io",
         "internal.apiserver.k8s.io",
+        // Aggregated metrics APIs — served by metrics-server / custom adapters,
+        // not user CRDs. Listing them often returns 403/404/500 on managed
+        // clusters (GKE etc.) and floods the logs on every sidebar refresh.
+        "metrics.k8s.io",
+        "external.metrics.k8s.io",
+        "custom.metrics.k8s.io",
     ];
 
     let mut groups_map: HashMap<String, Vec<CrdInfo>> = HashMap::new();

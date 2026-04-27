@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use super::calculations::HOURS_PER_MONTH;
 use super::metrics::{parse_cpu, parse_memory};
+use super::metrics_availability::{self, MetricsKind};
 use super::nodes::get_node_info;
 use super::pricing::resolve_pricing;
 use super::types::{NodeCostInfo, NodeMetricsInfo, NodeMetricsList};
@@ -15,12 +16,34 @@ use crate::k8s::client::get_client;
 pub async fn get_node_metrics() -> Result<Vec<NodeMetricsInfo>> {
     let client = get_client().await?;
 
+    if !metrics_availability::is_available(MetricsKind::Nodes) {
+        anyhow::bail!("metrics-server nodes endpoint marked unavailable; skipping");
+    }
+
     let url = "/apis/metrics.k8s.io/v1beta1/nodes";
     let request = kube::api::Request::new(url).list(&Default::default())?;
-    let response: NodeMetricsList = client.request(request).await?;
 
-    // Reuse get_node_info to avoid a duplicate node list API call
-    let nodes = get_node_info(&client).await.unwrap_or_default();
+    let (metrics_result, nodes) = tokio::join!(
+        client.request::<NodeMetricsList>(request),
+        async { get_node_info(&client).await.unwrap_or_default() },
+    );
+
+    let response: NodeMetricsList = match metrics_result {
+        Ok(resp) => {
+            metrics_availability::mark_available(MetricsKind::Nodes);
+            resp
+        }
+        Err(err) => {
+            let backoff = metrics_availability::mark_unavailable(MetricsKind::Nodes);
+            tracing::warn!(
+                backoff_secs = backoff.as_secs(),
+                error = %err,
+                "metrics-server nodes endpoint failed; backing off",
+            );
+            return Err(err.into());
+        }
+    };
+
     let capacity_map: HashMap<String, (f64, f64)> = nodes
         .into_iter()
         .map(|n| (n.name, (n.cpu_capacity, n.memory_capacity_bytes)))

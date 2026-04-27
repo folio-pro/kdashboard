@@ -55,6 +55,8 @@ pub fn set_context(context: &str) -> Result<()> {
 
     // Force the client to reconnect with the new context.
     reset_client();
+    // Clear cached metrics-server availability so the new cluster is probed fresh.
+    super::cost::reset_metrics_availability();
 
     Ok(())
 }
