@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicokosi/tauri-apps.github.io/refs/heads/dev/docs/_schema/config.schema.json",
   "productName": "kdashboard",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "identifier": "com.kdashboard.app",
   "build": {
     "beforeDevCommand": "npm run dev",
