@@ -156,6 +156,9 @@ export async function maybeRunBenchmark(): Promise<boolean> {
       const ok = await invoke<boolean>("check_connection").catch((e) => {
         throw new Error(`check_connection failed on ${cfg.context}: ${e}`);
       });
+      if (!ok) {
+        throw new Error(`check_connection returned false on ${cfg.context}`);
+      }
       console.log(`[bench] connected to ${active} (check_connection=${ok})`);
     }
     // namespace: null/empty => all namespaces (the stress case)
@@ -163,7 +166,9 @@ export async function maybeRunBenchmark(): Promise<boolean> {
     k8sStore.currentNamespace = namespace ?? "";
     k8sStore.connectionStatus = "connected";
 
-    const types = (cfg.resource_types?.split(",").map((s) => s.trim()).filter(Boolean)) ?? DEFAULT_TYPES;
+    const parsedTypes =
+      cfg.resource_types?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+    const types = parsedTypes.length > 0 ? parsedTypes : DEFAULT_TYPES;
 
     const results: TypeResult[] = [];
     for (const t of types) {

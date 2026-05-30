@@ -124,6 +124,12 @@ pub async fn bench_config() -> Result<BenchConfig, String> {
 
 #[tauri::command]
 pub async fn write_bench_results(path: String, contents: String) -> Result<(), String> {
+    // Defense-in-depth: this command is registered unconditionally, so only allow
+    // writing to the path the harness configured via KDASH_BENCH_OUT.
+    let allowed = std::env::var("KDASH_BENCH_OUT").unwrap_or_default();
+    if allowed.is_empty() || path != allowed {
+        return Err("write_bench_results: path must match KDASH_BENCH_OUT".into());
+    }
     std::fs::write(&path, contents).map_err(|e| format!("write {path}: {e}"))
 }
 
