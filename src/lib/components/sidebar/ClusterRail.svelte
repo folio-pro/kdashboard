@@ -21,7 +21,13 @@
   }
 </script>
 
-<div class="flex h-full w-[56px] shrink-0 flex-col items-center border-r border-[var(--border-color)] bg-[var(--rail-bg,var(--sidebar-bg))]">
+<!-- Rail sits a shade below the sidebar. kdashboard sets --rail-bg explicitly;
+     every other theme derives a subtle darken from its own --sidebar-bg so the
+     separation holds without a per-theme token. -->
+<div
+  class="flex h-full w-[56px] shrink-0 flex-col items-center border-r border-[var(--border-color)]"
+  style="background: var(--rail-bg, color-mix(in srgb, var(--sidebar-bg) 92%, #000));"
+>
   <!-- Collapse button -->
   <button
     class={cn(
@@ -66,7 +72,7 @@
           <button
             class="relative flex h-[34px] w-[34px] shrink-0 items-center justify-center transition-[border-radius,transform] {isActive ? 'rounded-[8px]' : 'rounded-[10px] hover:rounded-[8px]'}"
             style={isActive
-              ? `background-color: var(${color}); color: white; box-shadow: 0 0 0 2px var(--rail-bg,var(--sidebar-bg)), 0 0 0 3.5px rgba(255,255,255,0.22);`
+              ? `background-color: var(${color}); color: white; box-shadow: 0 0 0 2px var(--rail-bg, color-mix(in srgb, var(--sidebar-bg) 92%, #000)), 0 0 0 3.5px rgba(255,255,255,0.22);`
               : `background-color: color-mix(in srgb, var(${color}) 20%, transparent); color: var(${color});`}
             onclick={() => switchContext(ctx)}
             title={ctx}

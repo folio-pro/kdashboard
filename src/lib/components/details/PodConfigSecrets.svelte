@@ -255,6 +255,7 @@
         <input
           type="text"
           placeholder="Filter keys…"
+          aria-label="Filter configmap and secret keys"
           bind:value={keyFilter}
           class="h-full flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
         />

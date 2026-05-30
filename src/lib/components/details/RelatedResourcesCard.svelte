@@ -23,8 +23,9 @@
     if (!SERVICE_MATCHABLE_TYPES.has(resourceType)) return;
     let cancelled = false;
     invoke<ResourceList>("list_resources", {
+      // Match services in the resource's own namespace, not the selected one.
       resourceType: "services",
-      namespace: k8sStore.currentNamespace,
+      namespace: resource.metadata.namespace ?? k8sStore.currentNamespace,
     }).then((result) => {
       if (!cancelled) allServices = result.items;
     }).catch(() => {

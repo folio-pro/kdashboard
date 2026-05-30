@@ -107,8 +107,10 @@
   onMount(() => {
     let cancelled = false;
     invoke<ResourceList>("list_resources", {
+      // Match services in the pod's own namespace, not the currently selected
+      // one (they can differ when opening a pod via cross-link / All Namespaces).
       resourceType: "services",
-      namespace: k8sStore.currentNamespace,
+      namespace: resource.metadata.namespace ?? k8sStore.currentNamespace,
     }).then((result) => {
       if (!cancelled) allServices = result.items;
     }).catch(() => {
