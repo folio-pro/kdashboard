@@ -19,6 +19,11 @@ static WATCHER_ABORT: std::sync::OnceLock<Mutex<Option<tokio::task::JoinHandle<(
     std::sync::OnceLock::new();
 static WATCHER_RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// Max watch events to buffer before emitting a batch to the frontend.
+const WATCH_BATCH_SIZE: usize = 20;
+/// Max time (ms) to hold a partial batch before flushing it.
+const WATCH_FLUSH_INTERVAL_MS: u64 = 50;
+
 fn watcher_handle() -> &'static Mutex<Option<tokio::task::JoinHandle<()>>> {
     WATCHER_ABORT.get_or_init(|| Mutex::new(None))
 }
@@ -204,66 +209,98 @@ pub async fn start_watch(
         let mut stream = std::pin::pin!(watcher(api, watcher_config));
         let mut is_initial_sync = true;
 
-        while let Some(event) = stream.next().await {
+        // Coalesce Applied/Deleted events into batches (mirrors logs.rs) so a
+        // burst (e.g. a 1000-pod rollout) collapses from ~1000 IPC crossings to
+        // ~ceil(N/BATCH) — one serialization + one JS callback each — instead of
+        // emitting one event per change. Always emitted as a JSON array; the
+        // frontend handles both single objects and arrays.
+        let mut batch: Vec<WatchEvent> = Vec::with_capacity(WATCH_BATCH_SIZE);
+        let flush_duration = tokio::time::Duration::from_millis(WATCH_FLUSH_INTERVAL_MS);
+
+        let flush = |b: &mut Vec<WatchEvent>, handle: &tauri::AppHandle| {
+            if !b.is_empty() {
+                let _ = handle.emit("resource-watch-event", &*b);
+                b.clear();
+            }
+        };
+
+        loop {
             // NOTE: This check-then-act on an AtomicBool is intentionally non-atomic.
             // The worst case is one extra iteration before the loop observes the stop
             // signal, which is benign because stop_watch() also calls handle.abort()
             // to forcefully terminate this task.  No data-corruption risk exists.
             if !WATCHER_RUNNING.load(Ordering::SeqCst) {
+                flush(&mut batch, &app_handle);
                 break;
             }
 
-            match event {
-                Ok(watcher::Event::Apply(obj)) => {
-                    let resource = dynamic_to_resource(obj, &api_version, &kind);
-                    let watch_event = WatchEvent {
-                        event_type: "Applied".to_string(),
-                        resource_type: rt.clone(),
-                        resource,
-                    };
-                    let _ = app_handle.emit("resource-watch-event", &watch_event);
+            match tokio::time::timeout(flush_duration, stream.next()).await {
+                // Window elapsed with no new event: flush any partial batch so
+                // updates aren't held back during low-rate activity.
+                Err(_) => flush(&mut batch, &app_handle),
+                // Stream ended.
+                Ok(None) => {
+                    flush(&mut batch, &app_handle);
+                    break;
                 }
-                Ok(watcher::Event::Delete(obj)) => {
-                    let resource = dynamic_to_resource(obj, &api_version, &kind);
-                    let watch_event = WatchEvent {
-                        event_type: "Deleted".to_string(),
-                        resource_type: rt.clone(),
-                        resource,
-                    };
-                    let _ = app_handle.emit("resource-watch-event", &watch_event);
-                }
-                Ok(watcher::Event::Init) | Ok(watcher::Event::InitApply(_)) => {
-                    // Skip initial list items — we already have them from loadResources.
-                    // This also avoids format mismatches (e.g. Secrets need special
-                    // base64 handling that only list_resources performs).
-                }
-                Ok(watcher::Event::InitDone) => {
-                    if is_initial_sync {
-                        // First sync done; nothing to do, we have the data.
-                        is_initial_sync = false;
-                    } else {
-                        // Re-sync after a disconnect: tell frontend to do a full refresh
-                        // so it picks up any changes we missed during the gap.
-                        let watch_event = WatchEvent {
-                            event_type: "Resync".to_string(),
+                Ok(Some(event)) => match event {
+                    Ok(watcher::Event::Apply(obj)) => {
+                        let resource = dynamic_to_resource(obj, &api_version, &kind);
+                        batch.push(WatchEvent {
+                            event_type: "Applied".to_string(),
                             resource_type: rt.clone(),
-                            resource: Resource {
-                                api_version: String::new(),
-                                kind: String::new(),
-                                metadata: ResourceMetadata::default(),
-                                spec: None,
-                                status: None,
-                                data: None,
-                                type_: None,
-                            },
-                        };
-                        let _ = app_handle.emit("resource-watch-event", &watch_event);
+                            resource,
+                        });
+                        if batch.len() >= WATCH_BATCH_SIZE {
+                            flush(&mut batch, &app_handle);
+                        }
                     }
-                }
-                Err(e) => {
-                    tracing::warn!("Watch error for {}: {}", rt, e);
-                    // The watcher will automatically try to recover via re-list
-                }
+                    Ok(watcher::Event::Delete(obj)) => {
+                        let resource = dynamic_to_resource(obj, &api_version, &kind);
+                        batch.push(WatchEvent {
+                            event_type: "Deleted".to_string(),
+                            resource_type: rt.clone(),
+                            resource,
+                        });
+                        if batch.len() >= WATCH_BATCH_SIZE {
+                            flush(&mut batch, &app_handle);
+                        }
+                    }
+                    Ok(watcher::Event::Init) | Ok(watcher::Event::InitApply(_)) => {
+                        // Skip initial list items — we already have them from loadResources.
+                        // This also avoids format mismatches (e.g. Secrets need special
+                        // base64 handling that only list_resources performs).
+                    }
+                    Ok(watcher::Event::InitDone) => {
+                        if is_initial_sync {
+                            // First sync done; nothing to do, we have the data.
+                            is_initial_sync = false;
+                        } else {
+                            // Re-sync after a disconnect: flush any pending deltas first
+                            // so they're applied before the full refresh (preserving
+                            // ordering), then emit the Resync on its own.
+                            flush(&mut batch, &app_handle);
+                            let resync = WatchEvent {
+                                event_type: "Resync".to_string(),
+                                resource_type: rt.clone(),
+                                resource: Resource {
+                                    api_version: String::new(),
+                                    kind: String::new(),
+                                    metadata: ResourceMetadata::default(),
+                                    spec: None,
+                                    status: None,
+                                    data: None,
+                                    type_: None,
+                                },
+                            };
+                            let _ = app_handle.emit("resource-watch-event", vec![resync]);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Watch error for {}: {}", rt, e);
+                        // The watcher will automatically try to recover via re-list
+                    }
+                },
             }
         }
 

@@ -15,7 +15,13 @@ class K8sStore extends K8sStoreLogic {
   override currentContext = $state<string>("");
   override namespaces = $state<string[]>([]);
   override currentNamespace = $state<string>("default");
-  override resources = $state<ResourceList>({ items: [], resource_type: "" });
+  // $state.raw, not deep $state: k8s payloads are immutable snapshots from the
+  // backend — replaced wholesale (never field-mutated by the UI), so per-field
+  // reactivity is pure overhead. Deep-proxying every list would allocate tens of
+  // thousands of Proxy objects per load at 1-5k items. Every writer below
+  // reassigns `resources` to a fresh object, so reactivity still fires; the
+  // watch-flush MUST build a new items array (never mutate the stored one).
+  override resources = $state.raw<ResourceList>({ items: [], resource_type: "" });
   override selectedResource = $state<Resource | null>(null);
   override selectedResourceType = $state<string>("pods");
   override pendingResourceType = $state<string>("");
@@ -33,7 +39,10 @@ class K8sStore extends K8sStoreLogic {
 
   // CRD state
   override crdGroups = $state<CrdGroup[]>([]);
-  override crdResources = $state<CrdResourceList>({ items: [], columns: [] });
+  // $state.raw: CRD payloads are arbitrary, often-large JSON shown in a
+  // non-virtualized table — deep-proxying them is the worst offender. Replaced
+  // wholesale, never field-mutated, so raw is both faster and correct.
+  override crdResources = $state.raw<CrdResourceList>({ items: [], columns: [] });
   override crdLoading = $state<boolean>(false);
   override crdError = $state<string | null>(null);
   override crdCounts = $state<Record<string, number>>({});
@@ -46,6 +55,10 @@ class K8sStore extends K8sStoreLogic {
   private _pfUnlisten: UnlistenFn | null = null;
   private _pendingWatchEvents: import("./k8s.logic.js").WatchEvent[] = [];
   private _watchFlushScheduled = false;
+  // Serializes start/stop so two fire-and-forget callers can't race on the
+  // single _ageInterval/_watchUnlisten/_watchActive slots and orphan a timer
+  // or listener (a slow, unbounded leak under rapid type/tab switching).
+  private _watchOp: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
@@ -328,27 +341,37 @@ class K8sStore extends K8sStoreLogic {
     });
   }
 
-  private async _startWatch(resourceType: string, namespace: string): Promise<void> {
-    await this._stopWatch();
-    // Start age ticker every 30s to refresh displayed ages (1s is wasteful – age labels barely change)
-    this._ageInterval = setInterval(() => { this.ageTick++; }, 30_000);
-    try {
-      // Listen for watch events from the backend
-      this._watchUnlisten = await listen<import("./k8s.logic.js").WatchEvent>("resource-watch-event", (event) => {
-        this._handleWatchEvent(event.payload);
-      });
-      // Start the backend watcher
-      await invoke("start_resource_watch", {
-        resourceType,
-        namespace,
-      });
-      this._watchActive = true;
-    } catch (err) {
-      if (import.meta.env.DEV) console.warn("Failed to start resource watch:", err);
-    }
+  private _startWatch(resourceType: string, namespace: string): Promise<void> {
+    // Chain onto the shared op so a stop always completes before the next start
+    // runs — no two starts can interleave on the single interval/listener slots.
+    this._watchOp = this._watchOp.then(async () => {
+      await this._stopWatchInner();
+      // Start age ticker every 30s to refresh displayed ages (1s is wasteful – age labels barely change)
+      this._ageInterval = setInterval(() => { this.ageTick++; }, 30_000);
+      try {
+        // Listen for watch events from the backend
+        this._watchUnlisten = await listen<import("./k8s.logic.js").WatchEvent | import("./k8s.logic.js").WatchEvent[]>("resource-watch-event", (event) => {
+          this._handleWatchEvents(event.payload);
+        });
+        // Start the backend watcher
+        await invoke("start_resource_watch", {
+          resourceType,
+          namespace,
+        });
+        this._watchActive = true;
+      } catch (err) {
+        if (import.meta.env.DEV) console.warn("Failed to start resource watch:", err);
+      }
+    });
+    return this._watchOp;
   }
 
-  private async _stopWatch(): Promise<void> {
+  private _stopWatch(): Promise<void> {
+    this._watchOp = this._watchOp.then(() => this._stopWatchInner());
+    return this._watchOp;
+  }
+
+  private async _stopWatchInner(): Promise<void> {
     this._pendingWatchEvents = [];
     this._watchFlushScheduled = false;
     if (this._ageInterval) {
@@ -366,6 +389,15 @@ class K8sStore extends K8sStoreLogic {
     if (this._watchUnlisten) {
       this._watchUnlisten();
       this._watchUnlisten = null;
+    }
+  }
+
+  /** Backend may emit a single event or a coalesced batch (array). */
+  private _handleWatchEvents(payload: import("./k8s.logic.js").WatchEvent | import("./k8s.logic.js").WatchEvent[]): void {
+    if (Array.isArray(payload)) {
+      for (const event of payload) this._handleWatchEvent(event);
+    } else {
+      this._handleWatchEvent(payload);
     }
   }
 
@@ -398,8 +430,20 @@ class K8sStore extends K8sStoreLogic {
     // Guard: discard stale events if context/namespace changed during the frame
     const scopeGen = this._scopeGeneration;
 
-    const items = this.resources.items;
+    // Build an ordered uid→Resource map once (O(N)) so each event is an O(1)
+    // upsert/delete instead of an O(N) findIndex/splice — turns the worst-case
+    // O(N·M) flush (M events over N items) into O(N+M). Map iteration order
+    // matches the current array and set() keeps an existing key's position, so
+    // the resulting item order is identical to the previous in-place logic.
+    // A fresh array is built at the end (required for $state.raw correctness).
+    const byUid = new Map<string, Resource>();
+    for (const r of this.resources.items) {
+      const uid = r.metadata?.uid;
+      if (uid) byUid.set(uid, r);
+    }
+
     let selectedResourceUpdate: Resource | null | undefined;
+    let changed = false;
 
     for (const event of batch) {
       // Double-check scope hasn't changed mid-flush
@@ -409,19 +453,14 @@ class K8sStore extends K8sStoreLogic {
       if (!uid) continue;
 
       if (event.event_type === "Applied") {
-        const idx = items.findIndex((r) => r.metadata?.uid === uid);
-        if (idx >= 0) {
-          items[idx] = event.resource;
-        } else {
-          items.push(event.resource);
-        }
+        byUid.set(uid, event.resource);
+        changed = true;
         if (this.selectedResource?.metadata?.uid === uid) {
           selectedResourceUpdate = event.resource;
         }
       } else if (event.event_type === "Deleted") {
-        const idx = items.findIndex((r) => r.metadata?.uid === uid);
-        if (idx >= 0) {
-          items.splice(idx, 1);
+        if (byUid.delete(uid)) {
+          changed = true;
           if (this.selectedResource?.metadata?.uid === uid) {
             selectedResourceUpdate = null;
           }
@@ -429,9 +468,12 @@ class K8sStore extends K8sStoreLogic {
       }
     }
 
-    // Trigger Svelte 5 reactivity ONCE for the entire batch
-    this.resources = { ...this.resources, items };
-    this._setCount(this.selectedResourceType, items.length);
+    if (changed) {
+      const items = Array.from(byUid.values());
+      // Trigger Svelte 5 reactivity ONCE for the entire batch
+      this.resources = { items, resource_type: this.resources.resource_type };
+      this._setCount(this.selectedResourceType, items.length);
+    }
 
     if (selectedResourceUpdate !== undefined) {
       this.selectedResource = selectedResourceUpdate;
