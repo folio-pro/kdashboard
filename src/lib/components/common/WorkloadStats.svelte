@@ -94,7 +94,7 @@
           <Skeleton class="h-3 w-14" />
         </div>
         <Skeleton class="h-7 w-10" />
-        <Skeleton class="h-1.5 w-full rounded-full" />
+        <Skeleton class="h-[3px] w-full rounded-full" />
       </div>
     {/each}
   </div>
@@ -129,7 +129,7 @@
           <!-- Value -->
           <div class="flex items-baseline gap-1.5">
             <span
-              class="text-[22px] font-bold leading-none tabular-nums tracking-tight transition-colors duration-200"
+              class="text-[26px] font-semibold leading-none tabular-nums tracking-tight transition-colors duration-200"
               style:color={isEmpty ? 'var(--text-dimmed)' : stat.color}
             >
               {formatValue(displayValue)}
@@ -141,7 +141,7 @@
 
           <!-- Health bar on Total card / progress bar on others -->
           {#if stat.key === "total" && healthSegments.length > 0 && healthTotal > 0}
-            <div class="mt-1 flex h-1.5 w-full overflow-hidden rounded-full bg-[var(--border-color)]">
+            <div class="mt-1 flex h-[3px] w-full overflow-hidden rounded-full bg-[var(--border-color)]">
               {#each healthSegments as seg (seg.key)}
                 {#if seg.value > 0}
                   <div
@@ -152,7 +152,7 @@
               {/each}
             </div>
           {:else}
-            <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[var(--border-color)]">
+            <div class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-[var(--border-color)]">
               <div
                 class="h-full rounded-full transition-all duration-300"
                 style="width: {stat.value > 0 && totalValue > 0 ? Math.max(6, (stat.value / totalValue) * 100) : 0}%; background-color: {stat.color};"
@@ -180,12 +180,12 @@
             </span>
           </div>
           <div class="flex items-baseline gap-1.5">
-            <span class="text-[22px] font-bold leading-none tabular-nums tracking-tight text-[var(--status-failed)]">
+            <span class="text-[26px] font-semibold leading-none tabular-nums tracking-tight text-[var(--status-failed)]">
               {formatValue(animatedAttention)}
             </span>
             <span class="text-[10px] text-[var(--text-dimmed)]">issues</span>
           </div>
-          <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[var(--border-color)]">
+          <div class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-[var(--border-color)]">
             <div
               class="h-full rounded-full transition-all duration-300"
               style="width: {needsAttention > 0 && totalValue > 0 ? Math.max(6, (needsAttention / totalValue) * 100) : 0}%; background-color: var(--status-failed);"

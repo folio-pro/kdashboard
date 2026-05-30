@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronRight, FileText, Lock, Copy, Check } from "lucide-svelte";
+  import { ChevronRight, FileText, Lock, Copy, Check, Search, X } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { Resource, ResourceList } from "$lib/types";
   import { toggleSetItem } from "$lib/utils/k8s-helpers";
@@ -121,11 +121,29 @@
     }
     copyValue("__all__", lines.join("\n"));
   }
+
+  // --- Key search/filter ---
+  let keyFilter = $state("");
+  let filterLower = $derived(keyFilter.trim().toLowerCase());
+
+  function matchKey(key: string): boolean {
+    return !filterLower || key.toLowerCase().includes(filterLower);
+  }
+
+  let totalMatches = $derived(
+    !filterLower
+      ? 0
+      : [...fetchedConfigMaps, ...fetchedSecrets]
+          .flatMap((r) => Object.keys(r.data ?? {}))
+          .filter(matchKey).length
+  );
 </script>
 
 {#snippet configEntry(res: Resource, expandKey: string, subtitle: string, isSecret: boolean)}
   {@const dataEntries = Object.entries(res.data ?? {})}
-  {@const isExpanded = expandedConfigs.has(expandKey)}
+  {@const matchedEntries = filterLower ? dataEntries.filter(([k]) => matchKey(k)) : dataEntries}
+  {@const isExpanded = filterLower ? true : expandedConfigs.has(expandKey)}
+  {#if !filterLower || matchedEntries.length > 0}
   <div class="border-t border-[var(--border-hover)]">
     <button
       class="flex w-full items-center justify-between px-5 py-3.5 text-left transition-colors hover:bg-[var(--bg-tertiary)]"
@@ -139,13 +157,16 @@
         {/if}
         <div class="flex flex-col gap-0.5">
           <span class="truncate text-[13px] font-medium text-[var(--text-primary)]">{res.metadata.name}</span>
-          <span class="text-[11px] text-[var(--text-muted)]">{subtitle} · {dataEntries.length} key{dataEntries.length !== 1 ? 's' : ''}</span>
+          <span class="text-[11px] text-[var(--text-muted)]">
+            {subtitle} ·
+            {#if filterLower}{matchedEntries.length} of {dataEntries.length} keys{:else}{dataEntries.length} key{dataEntries.length !== 1 ? 's' : ''}{/if}
+          </span>
         </div>
       </div>
       <ChevronRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-dimmed)] transition-transform {isExpanded ? 'rotate-90' : ''}" />
     </button>
     {#if isExpanded}
-      {#each dataEntries as [key, value]}
+      {#each matchedEntries as [key, value]}
         {@const displayValue = isSecret ? decodeBase64(String(value ?? "")) : String(value ?? "")}
         {@const revealKey = `${expandKey}:${key}`}
         {@const isRevealed = !isSecret || revealedSecrets.has(revealKey)}
@@ -189,11 +210,12 @@
       {/if}
     {/if}
   </div>
+  {/if}
 {/snippet}
 
-<div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-  <div class="flex items-center justify-between px-5 py-4">
-    <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">ConfigMaps & Secrets</h3>
+<div class="border-b border-[var(--border-color)]">
+  <div class="flex items-center justify-between px-6 py-4">
+    <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Config &amp; Secrets</span>
     <div class="flex items-center gap-3">
       {#if !configLoading && (fetchedConfigMaps.length > 0 || fetchedSecrets.length > 0)}
         <button
@@ -209,19 +231,41 @@
           {allRevealed ? "hide all" : "reveal all"}
         </button>
       {/if}
-      <span class="text-[11px] text-[var(--text-muted)]">
+      <span class="font-mono text-[11px] text-[var(--text-dimmed)]">
         {#if configLoading}
-          loading...
+          …
         {:else}
-          {fetchedConfigMaps.length + fetchedSecrets.length} resources
+          {fetchedConfigMaps.length + fetchedSecrets.length}
         {/if}
       </span>
     </div>
   </div>
 
   {#if !configLoading && fetchedConfigMaps.length === 0 && fetchedSecrets.length === 0}
-    <div class="border-t border-[var(--border-hover)] px-5 py-4">
+    <div class="px-6 pb-4">
       <span class="text-xs text-[var(--text-muted)]">No configmaps or secrets referenced</span>
+    </div>
+  {/if}
+
+  <!-- Key search -->
+  {#if !configLoading && (fetchedConfigMaps.length > 0 || fetchedSecrets.length > 0)}
+    <div class="px-6 pb-3">
+      <div class="flex h-8 items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 transition-colors focus-within:border-[var(--accent)]">
+        <Search class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
+        <input
+          type="text"
+          placeholder="Filter keys…"
+          aria-label="Filter configmap and secret keys"
+          bind:value={keyFilter}
+          class="h-full flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+        />
+        {#if keyFilter}
+          <span class="shrink-0 font-mono text-[10px] text-[var(--text-dimmed)]">{totalMatches}</span>
+          <button class="shrink-0 text-[var(--text-dimmed)] transition-colors hover:text-[var(--text-primary)]" onclick={() => (keyFilter = "")} title="Clear">
+            <X class="h-3.5 w-3.5" />
+          </button>
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -232,4 +276,10 @@
   {#each fetchedSecrets as sec}
     {@render configEntry(sec, `sec:${sec.metadata.name}`, sec.type ?? "Opaque", true)}
   {/each}
+
+  {#if filterLower && totalMatches === 0 && (fetchedConfigMaps.length > 0 || fetchedSecrets.length > 0)}
+    <div class="border-t border-[var(--border-hover)] px-6 py-4">
+      <span class="text-xs text-[var(--text-muted)]">No keys match “{keyFilter}”</span>
+    </div>
+  {/if}
 </div>

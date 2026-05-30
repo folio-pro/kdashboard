@@ -3,6 +3,7 @@ import { unshadowState } from "./_unshadow.js";
 import {
   UiStoreLogic,
   type ActiveView,
+  type DetailSubtab,
   type Tab,
   RESOURCE_TAB_TYPES,
   VIEW_LABELS,
@@ -29,6 +30,7 @@ class UiStore extends UiStoreLogic {
   override commandPaletteOpen = $state<boolean>(false);
   override activeView = $state<ActiveView>("overview");
   override previousView = $state<ActiveView | null>(null);
+  override detailSubtab = $state<DetailSubtab>("overview");
 
   // Tab system
   override tabs = $state<Tab[]>([{ id: "tab-overview", type: "overview", label: "Overview", closable: true }]);

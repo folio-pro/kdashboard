@@ -138,13 +138,28 @@ describe("UiStore", () => {
     });
 
     test("backToPrevious closes current tab and activates nearest", () => {
-      store.showDetails();
+      // showLogs from a non-details view opens a dedicated logs tab.
       store.showLogs();
       expect(store.activeView).toBe("logs");
-      expect(store.previousView).toBe("details");
+      expect(store.previousView).toBe("overview");
       store.backToPrevious();
       // closing logs tab activates the nearest remaining tab
       expect(store.activeView).not.toBe("logs");
+    });
+
+    test("showLogs/showTerminal/showYamlEditor switch the detail sub-tab in place when a detail is open", () => {
+      store.showDetails();
+      store.showLogs();
+      expect(store.activeView).toBe("details");
+      expect(store.detailSubtab).toBe("logs");
+
+      store.showTerminal();
+      expect(store.activeView).toBe("details");
+      expect(store.detailSubtab).toBe("shell");
+
+      store.showYamlEditor();
+      expect(store.activeView).toBe("details");
+      expect(store.detailSubtab).toBe("yaml");
     });
 
     test("backToPrevious from overview reopens overview (only tab)", () => {

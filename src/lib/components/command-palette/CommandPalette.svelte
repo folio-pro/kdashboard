@@ -466,6 +466,12 @@
           {/each}
         </CommandList>
       </Command>
+      <!-- Footer hint bar (reference console parity) -->
+      <div class="flex items-center gap-4 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-2 text-[11px] text-[var(--text-muted)]">
+        <span class="flex items-center gap-1.5"><kbd class="rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1 font-mono text-[10px] text-[var(--text-secondary)]">↑↓</kbd> Navigate</span>
+        <span class="flex items-center gap-1.5"><kbd class="rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1 font-mono text-[10px] text-[var(--text-secondary)]">↵</kbd> Open</span>
+        <span class="flex items-center gap-1.5"><kbd class="rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1 font-mono text-[10px] text-[var(--text-secondary)]">esc</kbd> Close</span>
+      </div>
     </div>
   </DialogContent>
 </Dialog>

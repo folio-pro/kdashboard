@@ -1,6 +1,6 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
-  import { Search, ChevronDown, Check, AlertTriangle, RefreshCw } from "lucide-svelte";
+  import { Search, ChevronDown, Check, AlertTriangle, RefreshCw, Boxes } from "lucide-svelte";
   import { Popover, PopoverTrigger, PopoverContent } from "$lib/components/ui/popover";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
@@ -57,18 +57,19 @@
   data-tauri-drag-region
 >
   <!-- Left: Page title + Namespace badge -->
-  <div class="flex items-center gap-2.5" data-tauri-drag-region>
-    <span class="text-sm font-semibold text-[var(--text-primary)]" data-tauri-drag-region>
+  <div class="flex items-center gap-3" data-tauri-drag-region>
+    <span class="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]" data-tauri-drag-region>
       {resourceTypeLabel}
     </span>
 
     <Popover bind:open={nsOpen}>
       <PopoverTrigger>
         <button
-          class="flex items-center gap-1 rounded-md border border-[var(--border-hover)] bg-[var(--bg-tertiary)] px-2 py-1"
+          class="flex items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-tertiary)] py-1 pl-2 pr-1.5 transition-colors hover:border-[var(--border-color)] hover:bg-[var(--sidebar-active)]"
         >
+          <Boxes class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
           <span class="text-xs text-[var(--text-secondary)]">
-            {k8sStore.currentNamespace || "All"}
+            {k8sStore.currentNamespace || "All Namespaces"}
           </span>
           <ChevronDown class="h-3 w-3 text-[var(--text-muted)]" />
         </button>
@@ -128,7 +129,7 @@
 
   <!-- Right: Search -->
   <div class="flex items-center gap-2">
-    <div class="flex h-7 w-[220px] items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-tertiary)] px-2">
+    <div class="flex h-8 w-[260px] items-center gap-2 rounded-md border border-[var(--border-hover)] bg-[var(--bg-tertiary)] px-2.5 transition-[border-color,box-shadow] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]">
       <Search class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
       <input
         bind:this={searchInput}
@@ -140,6 +141,7 @@
         onkeydown={handleSearchKeydown}
         class="h-full flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
       />
+      <kbd class="shrink-0 rounded border border-[var(--border-hover)] px-1 font-mono text-[10px] leading-[14px] text-[var(--text-dimmed)]">/</kbd>
     </div>
   </div>
 </header>

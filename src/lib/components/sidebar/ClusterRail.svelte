@@ -21,11 +21,17 @@
   }
 </script>
 
-<div class="flex h-full w-[52px] shrink-0 flex-col items-center border-r border-[var(--border-color)] py-2">
+<!-- Rail sits a shade below the sidebar. kdashboard sets --rail-bg explicitly;
+     every other theme derives a subtle darken from its own --sidebar-bg so the
+     separation holds without a per-theme token. -->
+<div
+  class="flex h-full w-[56px] shrink-0 flex-col items-center border-r border-[var(--border-color)]"
+  style="background: var(--rail-bg, color-mix(in srgb, var(--sidebar-bg) 92%, #000));"
+>
   <!-- Collapse button -->
   <button
     class={cn(
-      "mb-2 flex h-7 w-7 items-center justify-center rounded-full",
+      "mt-2 mb-1 flex h-7 w-7 items-center justify-center rounded-full",
       "text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-hover)] hover:text-[var(--text-primary)]"
     )}
     onclick={() => uiStore.toggleSidebar()}
@@ -35,11 +41,11 @@
   </button>
 
   <!-- Context icons -->
-  <div class="flex flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden">
+  <div class="flex w-full flex-1 flex-col items-center gap-[9px] overflow-y-auto overflow-x-hidden py-2">
     {#if k8sStore.contextsLoadError}
       <Tooltip>
         <TooltipTrigger>
-          <div class="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--status-failed)]/15 text-[var(--status-failed)]">
+          <div class="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-[var(--status-failed)]/15 text-[var(--status-failed)]">
             <AlertTriangle class="h-4 w-4" />
           </div>
         </TooltipTrigger>
@@ -64,13 +70,16 @@
       <Tooltip>
         <TooltipTrigger>
           <button
-            class="relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors"
+            class="relative flex h-[34px] w-[34px] shrink-0 items-center justify-center transition-[border-radius,transform] {isActive ? 'rounded-[8px]' : 'rounded-[10px] hover:rounded-[8px]'}"
             style={isActive
-              ? `background-color: var(${color}); color: white;`
+              ? `background-color: var(${color}); color: white; box-shadow: 0 0 0 2px var(--rail-bg, color-mix(in srgb, var(--sidebar-bg) 92%, #000)), 0 0 0 3.5px rgba(255,255,255,0.22);`
               : `background-color: color-mix(in srgb, var(${color}) 20%, transparent); color: var(${color});`}
             onclick={() => switchContext(ctx)}
             title={ctx}
           >
+            {#if isActive}
+              <span class="absolute top-1/2 -left-[11px] h-5 w-[3px] -translate-y-1/2 rounded-r-[3px] bg-[var(--accent)]"></span>
+            {/if}
             {#if iconDef && label}
               <!-- Icon + label combo -->
               <div class="flex flex-col items-center gap-0.5">
@@ -83,12 +92,6 @@
               <span class="text-[10px] font-bold leading-none tracking-tight">{label}</span>
             {:else}
               <span class="text-sm font-bold">{ctx.charAt(0).toUpperCase()}</span>
-            {/if}
-            {#if isActive}
-              <span
-                class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--sidebar-bg)]"
-                style="background-color: var({color});"
-              ></span>
             {/if}
           </button>
         </TooltipTrigger>
@@ -105,12 +108,12 @@
   {/each}
   <button
     class={cn(
-      "mt-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border-color)]",
-      "text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-hover)] hover:text-[var(--text-primary)]"
+      "flex w-full items-center justify-center border-t border-[var(--border-color)] py-3",
+      "text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
     )}
     onclick={() => uiStore.toggleSettings()}
     title="Settings"
   >
-    <Settings class="h-3.5 w-3.5" />
+    <Settings class="h-[18px] w-[18px]" />
   </button>
 </div>

@@ -97,29 +97,27 @@
   };
 </script>
 
-<div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+<div class="border-b border-[var(--border-color)]">
   <button
-    class="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[var(--bg-tertiary)]/50"
+    class="group flex w-full items-center justify-between px-6 py-4 text-left"
     onclick={toggle}
   >
     <div class="flex items-center gap-2">
-      <Clock class="h-4 w-4 text-[var(--text-muted)]" />
-      <span class="text-xs font-semibold text-[var(--text-primary)]">Activity</span>
+      <Clock class="h-3.5 w-3.5 text-[var(--text-muted)]" />
+      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)] transition-colors group-hover:text-[var(--text-secondary)]">Activity</span>
       {#if entries.length > 0}
-        <span class="rounded-full bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
-          {entries.length}
-        </span>
+        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{entries.length}</span>
       {/if}
     </div>
     {#if expanded}
-      <ChevronUp class="h-3.5 w-3.5 text-[var(--text-muted)]" />
+      <ChevronUp class="h-3.5 w-3.5 text-[var(--text-dimmed)]" />
     {:else}
-      <ChevronDown class="h-3.5 w-3.5 text-[var(--text-muted)]" />
+      <ChevronDown class="h-3.5 w-3.5 text-[var(--text-dimmed)]" />
     {/if}
   </button>
 
   {#if expanded}
-    <div class="border-t border-[var(--border-color)] px-4 py-3">
+    <div class="px-6 pb-4">
       {#if isLoading}
         <div class="py-4 text-center text-xs text-[var(--text-muted)]">Loading timeline...</div>
       {:else if entries.length === 0}

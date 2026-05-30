@@ -11,7 +11,7 @@
   import BulkActionBar from "./BulkActionBar.svelte";
   import TableEmptyStates from "./TableEmptyStates.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
-  import { RefreshCw, LayoutGrid, Filter, ClipboardPaste } from "lucide-svelte";
+  import { RefreshCw, LayoutGrid, Filter, ClipboardPaste, Plus } from "lucide-svelte";
   import { extensions } from "$lib/extensions";
   import { Checkbox } from "$lib/components/ui/checkbox";
   import { isInputElement } from "$lib/utils/keyboard";
@@ -87,7 +87,7 @@
   let filteredResources = $derived(sortResources(filteredItems, uiStore.sortColumn, uiStore.sortDirection as "asc" | "desc"));
 
   // Virtual scrolling
-  const ROW_HEIGHT: Record<string, number> = { compact: 32, comfortable: 40 };
+  const ROW_HEIGHT: Record<string, number> = { compact: 32, comfortable: 44 };
   const estimateSizeFor: Record<string, () => number> = {
     compact: () => ROW_HEIGHT.compact,
     comfortable: () => ROW_HEIGHT.comfortable,
@@ -377,6 +377,26 @@
     if (uiStore.selectedCount > 0) confirmBulkDelete();
   }
 
+  // --- List toolbar actions (reference console parity) ---
+  function focusFilter() {
+    document.getElementById("resource-filter")?.focus();
+  }
+
+  async function handleCreate() {
+    try {
+      const yaml = await navigator.clipboard.readText();
+      if (!yaml.trim()) {
+        toastStore.error("Empty clipboard", "Copy a YAML manifest first, then Create");
+        return;
+      }
+      await invoke("apply_yaml", { yaml });
+      toastStore.success("Applied", "Resource created from clipboard YAML");
+      await k8sStore.refreshResources();
+    } catch (err) {
+      toastStore.error("Create failed", String(err));
+    }
+  }
+
   onMount(() => {
     window.addEventListener("keydown", handleTableKeydown);
     window.addEventListener("kdash:bulk-delete", handleBulkDeleteEvt);
@@ -406,10 +426,45 @@
     ondeselect={() => uiStore.clearSelection()}
   />
 
+  <!-- List toolbar: count + Filter / Refresh / Create -->
+  {#if uiStore.selectedCount === 0}
+    <div class="flex items-center gap-2 px-6 pb-2.5">
+      <span class="text-xs text-[var(--text-muted)]">
+        {filteredResources.length}
+        {resourceTypeLabel.toLowerCase()}{filteredResources.length === 1 ? "" : "s"}
+      </span>
+      <div class="flex-1"></div>
+      <button
+        class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+        onclick={focusFilter}
+        title="Filter (/)"
+      >
+        <Filter class="h-3.5 w-3.5" />
+        Filter
+      </button>
+      <button
+        class="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+        onclick={() => k8sStore.refreshResources()}
+        title="Refresh (r)"
+        aria-label="Refresh"
+      >
+        <RefreshCw class="h-3.5 w-3.5 {k8sStore.isLoading ? 'animate-spin' : ''}" />
+      </button>
+      <button
+        class="inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 text-xs font-semibold text-[var(--bg-primary)] transition-colors hover:bg-[var(--accent-hover)]"
+        onclick={handleCreate}
+        title="Create from clipboard YAML"
+      >
+        <Plus class="h-3.5 w-3.5" />
+        Create
+      </button>
+    </div>
+  {/if}
+
   <!-- Table -->
-  <div class="relative flex-1 overflow-hidden px-6 pb-4">
+  <div class="relative flex-1 overflow-hidden">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="virtual-scroll-container h-full overflow-auto rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]" bind:this={scrollRef} oncontextmenu={handleTableContextMenu} role="region" aria-label="{resourceTypeLabel} resources">
+    <div class="virtual-scroll-container h-full overflow-auto border-t border-[var(--border-color)] bg-[var(--bg-primary)]" bind:this={scrollRef} oncontextmenu={handleTableContextMenu} role="region" aria-label="{resourceTypeLabel} resources">
     {#if k8sStore.isLoading}
       <TableEmptyStates
         state="loading"
@@ -442,8 +497,8 @@
       />
     {:else}
       <table class="w-full" style="table-layout: fixed;" role="grid" aria-label="{resourceTypeLabel} resources">
-        <thead class="sticky top-0 z-10 bg-[var(--bg-secondary)]">
-          <tr class="border-b border-[var(--border-hover)]">
+        <thead class="sticky top-0 z-10 bg-[var(--bg-primary)]">
+          <tr class="border-b border-[var(--border-color)]">
             <th class="px-4 py-2 text-center" style="width: 40px;">
               <Checkbox
                 checked={allSelected}

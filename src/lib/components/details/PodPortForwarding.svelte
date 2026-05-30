@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Play, Box, Info, Square, ExternalLink, Loader2 } from "lucide-svelte";
+  import { Play, Box, Info, Square, ExternalLink, Loader2, ArrowRight } from "lucide-svelte";
   import { open } from "@tauri-apps/plugin-shell";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { getContainerIconUrl } from "$lib/utils/container-icon";
@@ -88,12 +88,7 @@
   {/if}
 {/snippet}
 
-<div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-  <div class="flex items-center justify-between px-5 py-4">
-    <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Port Forward</h3>
-    <span class="text-xs text-[var(--text-muted)]">{allPorts.length} ports</span>
-  </div>
-
+<div class="flex flex-col gap-[7px]">
   {#each allPorts as port}
     {@const activePf = activeForwardsByPort.get(port.containerPort)}
     {@const forwarded = !!activePf}
@@ -101,86 +96,72 @@
     {@const containerImage = specContainerMap.get(port.containerName)?.image ?? ""}
     {@const rawIcon = getContainerIconUrl(containerImage)}
     {@const portIcon = rawIcon && !failedIcons.has(rawIcon) ? rawIcon : null}
-    <div class="border-t border-[var(--border-hover)] px-4 py-3">
+    <div
+      class="flex items-center gap-3 rounded-[7px] border px-3 py-2.5 {forwarded ? '' : 'border-[var(--border-color)] bg-[var(--bg-secondary)]'}"
+      style={forwarded
+        ? "border-color: color-mix(in srgb, var(--accent) 28%, transparent); background-color: color-mix(in srgb, var(--accent) 9%, transparent);"
+        : ""}
+    >
+      <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--bg-tertiary)]">
+        {@render containerIcon(portIcon, port.containerName)}
+      </span>
+      <span class="min-w-[80px] truncate text-[12.5px] font-medium text-[var(--text-primary)]" title={port.containerName}>{port.containerName}</span>
+      <span class="min-w-[72px] font-mono text-[12px] text-[var(--text-secondary)]">{port.containerPort}/{port.protocol}</span>
+      <ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-dimmed)]" />
       {#if forwarded && activePf}
-        <!-- Active state: compact with status -->
-        <div class="flex items-center gap-3 rounded-md bg-[var(--status-running)]/5 px-3 py-2.5">
-          <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--bg-secondary)]">
-            {@render containerIcon(portIcon, port.containerName)}
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="text-[12px] font-medium text-[var(--text-primary)]">
-              :{activePf.local_port} → {port.containerPort}/{port.protocol}
-            </div>
-            <div class="text-[11px] text-[var(--text-muted)]">{port.containerName}</div>
-          </div>
-          <div class="flex shrink-0 items-center gap-1.5">
-            <button
-              class="flex h-7 w-7 items-center justify-center rounded border border-[var(--border-hover)] bg-[var(--bg-secondary)] transition-colors hover:border-[var(--accent)]"
-              onclick={() => open(`http://localhost:${activePf.local_port}`)}
-              title="Open in browser"
-            >
-              <ExternalLink class="h-3 w-3 text-[var(--accent)]" />
-            </button>
-            <button
-              class="flex h-7 w-7 items-center justify-center rounded border border-[var(--border-hover)] bg-[var(--bg-secondary)] transition-colors hover:border-[var(--status-failed)]"
-              onclick={() => handleStopPortForward(port.containerPort)}
-              title="Stop"
-            >
-              <Square class="h-3 w-3 text-[var(--status-failed)]" />
-            </button>
-          </div>
-        </div>
+        <button
+          class="inline-flex items-center gap-1.5 font-mono text-[12px] text-[var(--accent)] hover:underline"
+          onclick={() => open(`http://localhost:${activePf.local_port}`)}
+          title="Open in browser"
+        >localhost:{activePf.local_port} <ExternalLink class="h-3 w-3" /></button>
+        <span class="ml-auto inline-flex items-center gap-1.5 text-[12px] text-[var(--status-running)]">
+          <span class="h-1.5 w-1.5 rounded-full bg-[var(--status-running)]"></span>active
+        </span>
+        <button
+          class="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-secondary)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--status-failed)] hover:text-[var(--text-primary)]"
+          onclick={() => handleStopPortForward(port.containerPort)}
+        >
+          <Square class="h-3 w-3 text-[var(--status-failed)]" /> Stop
+        </button>
       {:else}
-        <!-- Inactive state: port info + inline forward action -->
-        <div class="flex items-center gap-2.5">
-          <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--bg-tertiary)]">
-            {@render containerIcon(portIcon, port.containerName)}
-          </div>
-          <div class="min-w-0 flex-1">
-            <span class="text-[12px] font-medium text-[var(--text-primary)]">{port.containerPort}<span class="text-[var(--text-dimmed)]">/{port.protocol}</span></span>
-          </div>
-          <div class="flex shrink-0 items-center gap-1.5">
-            <div class="flex h-7 w-14 items-center rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-2">
-              <input
-                type="text"
-                class="w-full bg-transparent text-center text-[12px] text-[var(--text-primary)] outline-none"
-                value={getLocalPort(port.containerPort)}
-                oninput={(e) => {
-                  const target = e.target as HTMLInputElement;
-                  portInputs[port.containerPort] = target.value;
-                }}
-                disabled={loading}
-                title="Local port"
-              />
-            </div>
-            <button
-              class="flex h-7 items-center gap-1 rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-2.5 transition-colors hover:border-[var(--status-running)] disabled:opacity-50"
-              onclick={() => handlePortForward(port.containerPort)}
-              disabled={loading}
-            >
-              {#if loading}
-                <Loader2 class="h-3 w-3 animate-spin text-[var(--status-running)]" />
-              {:else}
-                <Play class="h-3 w-3 text-[var(--status-running)]" />
-              {/if}
-            </button>
-          </div>
+        <div class="ml-auto flex items-center gap-2">
+          <span class="font-mono text-[12px] text-[var(--text-muted)]">localhost:</span>
+          <input
+            type="text"
+            class="h-7 w-14 rounded-md border border-[var(--border-hover)] bg-[var(--bg-primary)] px-1.5 text-center font-mono text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+            value={getLocalPort(port.containerPort)}
+            oninput={(e) => {
+              const target = e.target as HTMLInputElement;
+              portInputs[port.containerPort] = target.value;
+            }}
+            disabled={loading}
+            title="Local port"
+          />
+          <button
+            class="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-secondary)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--status-running)] hover:text-[var(--text-primary)] disabled:opacity-50"
+            onclick={() => handlePortForward(port.containerPort)}
+            disabled={loading}
+          >
+            {#if loading}
+              <Loader2 class="h-3 w-3 animate-spin text-[var(--status-running)]" />
+            {:else}
+              <Play class="h-3 w-3 text-[var(--status-running)]" />
+            {/if}
+            Forward
+          </button>
         </div>
       {/if}
     </div>
   {/each}
 
   {#if portForwardError}
-    <div class="flex items-center gap-1.5 border-t border-[var(--border-hover)] bg-[var(--status-failed)]/5 px-5 py-3">
+    <div class="flex items-center gap-1.5 rounded-[7px] border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/5 px-3 py-2.5">
       <Info class="h-3.5 w-3.5 shrink-0 text-[var(--status-failed)]" />
       <span class="text-xs text-[var(--status-failed)]">{portForwardError}</span>
     </div>
   {/if}
 
   {#if allPorts.length === 0}
-    <div class="border-t border-[var(--border-hover)] px-5 py-3.5">
-      <p class="text-xs text-[var(--text-muted)]">No ports defined</p>
-    </div>
+    <p class="text-xs text-[var(--text-muted)]">No ports defined</p>
   {/if}
 </div>

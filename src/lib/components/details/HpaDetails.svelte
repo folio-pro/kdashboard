@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { Badge } from "$lib/components/ui/badge";
+  import { TrendingUp } from "lucide-svelte";
   import type { Resource } from "$lib/types";
-  import InfoRow from "./InfoRow.svelte";
-  import InlineStat from "./InlineStat.svelte";
+  import MetadataSection from "./MetadataSection.svelte";
+  import LabelsSection from "./LabelsSection.svelte";
+  import DetailSection from "./DetailSection.svelte";
+  import KvField from "./KvField.svelte";
+  import KvGrid from "./KvGrid.svelte";
   import CollapsibleConditions from "./CollapsibleConditions.svelte";
-  import CollapsibleLabels from "./CollapsibleLabels.svelte";
-  import EventsCard from "./EventsCard.svelte";
   import SmartAnnotationsCard from "./SmartAnnotationsCard.svelte";
   import RelatedResourcesCard from "./RelatedResourcesCard.svelte";
   import ScalingBehaviorCard from "./ScalingBehaviorCard.svelte";
@@ -34,10 +35,7 @@
         name?: string;
         target?: { type?: string; averageUtilization?: number; averageValue?: string; value?: string };
       };
-      pods?: {
-        metric?: { name?: string };
-        target?: { type?: string; averageValue?: string };
-      };
+      pods?: { metric?: { name?: string }; target?: { type?: string; averageValue?: string } };
       object?: {
         metric?: { name?: string };
         describedObject?: { kind?: string; name?: string };
@@ -49,20 +47,12 @@
   let currentMetrics = $derived(
     (status.currentMetrics as Array<{
       type?: string;
-      resource?: {
-        name?: string;
-        current?: { averageUtilization?: number; averageValue?: string };
-      };
+      resource?: { name?: string; current?: { averageUtilization?: number; averageValue?: string } };
     }>) ?? []
   );
 
   let conditions = $derived(
-    (status.conditions as Array<{
-      type: string;
-      status: string;
-      reason?: string;
-      message?: string;
-    }>) ?? []
+    (status.conditions as Array<{ type: string; status: string; reason?: string; message?: string }>) ?? []
   );
 
   let labels = $derived(resource.metadata.labels ?? {});
@@ -85,75 +75,59 @@
     if (metric.resource?.target?.value) return metric.resource.target.value;
     return "-";
   }
+
 </script>
 
-<div class="mx-auto max-w-4xl space-y-6 p-7">
-  <!-- Overview Card -->
-  <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-    <div class="flex items-center px-5 py-4">
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Overview</h3>
-    </div>
-    <InfoRow label="Name" value={resource.metadata.name} />
-    <InfoRow label="Namespace" value={resource.metadata.namespace ?? "-"} valueColor="var(--status-running)" />
-    <InfoRow label="Target">
-      <div class="flex items-center gap-2">
-        <Badge variant="secondary">{scaleTargetRef.kind ?? "Unknown"}</Badge>
-        <span class="truncate font-mono text-[13px] font-medium text-[var(--text-primary)]">{scaleTargetRef.name ?? "-"}</span>
-      </div>
-    </InfoRow>
-    <InfoRow label="Created" value={resource.metadata.creation_timestamp} />
+<div class="select-text">
+  <MetadataSection {resource} />
 
-    <!-- Replicas -->
-    <div class="border-t border-[var(--border-hover)] px-5 py-4">
-      <div class="flex items-center gap-4">
-        <InlineStat label="Min" value={minReplicas} />
-        <span class="text-[var(--border-hover)]">/</span>
-        <InlineStat label="Max" value={maxReplicas} />
-        <span class="text-[var(--border-hover)]">·</span>
-        <InlineStat label="Current" value={currentReplicas} />
-        <span class="text-[var(--border-hover)]">/</span>
-        <InlineStat label="Desired" value={desiredReplicas} color={desiredReplicas !== currentReplicas ? "var(--status-pending)" : undefined} />
-      </div>
-    </div>
+  <DetailSection title="HPA Spec" icon={TrendingUp}>
+    <KvGrid>
+      <KvField label="Target">
+        <span class="font-mono text-[13px] text-[var(--text-primary)]">{scaleTargetRef.kind ?? "Unknown"}/{scaleTargetRef.name ?? "-"}</span>
+      </KvField>
+      <KvField label="Min Replicas" value={minReplicas} />
+      <KvField label="Max Replicas" value={maxReplicas} />
+      <KvField label="Current" value={currentReplicas} />
+      <KvField label="Desired">
+        <span class="font-mono text-[13px] {desiredReplicas !== currentReplicas ? 'text-[var(--status-pending)]' : 'text-[var(--text-primary)]'}">{desiredReplicas}</span>
+      </KvField>
+    </KvGrid>
+  </DetailSection>
 
+  {#if conditions.length > 0}
     <CollapsibleConditions {conditions} />
-  </div>
-
-  <!-- Metrics Card -->
-  {#if metrics.length > 0}
-    <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-      <div class="flex items-center justify-between px-5 py-4">
-        <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Metrics</h3>
-        <span class="text-[11px] text-[var(--text-muted)]">{metrics.length} metrics</span>
-      </div>
-      {#each metrics as metric}
-        {@const metricName = metric.resource?.name ?? metric.pods?.metric?.name ?? metric.object?.metric?.name ?? "unknown"}
-        {@const current = metric.type === "Resource" && metric.resource?.name ? getCurrentForMetric(metric.resource.name) : "-"}
-        {@const target = getTargetForMetric(metric)}
-        <div class="flex items-center justify-between border-t border-[var(--border-hover)] px-5 py-3.5">
-          <div class="flex items-center gap-2.5">
-            <span class="text-[13px] font-semibold text-[var(--text-primary)]">{metricName}</span>
-            <Badge variant="secondary">{metric.type ?? "Resource"}</Badge>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="font-mono text-sm font-bold text-[var(--text-primary)]">{current}</span>
-            <span class="text-xs text-[var(--text-dimmed)]">/ {target}</span>
-          </div>
-        </div>
-      {/each}
-    </div>
   {/if}
 
-  <!-- Scaling Behavior -->
+  {#if metrics.length > 0}
+    <DetailSection title="Metrics" icon={TrendingUp}>
+      {#snippet actions()}
+        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{metrics.length}</span>
+      {/snippet}
+      <div class="flex flex-col gap-2">
+        {#each metrics as metric}
+          {@const metricName = metric.resource?.name ?? metric.pods?.metric?.name ?? metric.object?.metric?.name ?? "unknown"}
+          {@const current = metric.type === "Resource" && metric.resource?.name ? getCurrentForMetric(metric.resource.name) : "-"}
+          {@const target = getTargetForMetric(metric)}
+          <div class="flex items-center justify-between rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
+            <div class="flex items-center gap-2.5">
+              <span class="text-[13px] font-medium text-[var(--text-primary)]">{metricName}</span>
+              <span class="inline-flex items-center rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">{metric.type ?? "Resource"}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[13px] font-medium text-[var(--text-primary)]">{current}</span>
+              <span class="text-[11px] text-[var(--text-dimmed)]">/ {target}</span>
+            </div>
+          </div>
+        {/each}
+      </div>
+    </DetailSection>
+  {/if}
+
   <ScalingBehaviorCard {spec} />
 
-  <!-- Related Resources -->
   <RelatedResourcesCard {resource} resourceType="hpa" />
 
-  <!-- Events -->
-  <EventsCard {resource} />
-
-  <!-- Labels & Annotations -->
-  <CollapsibleLabels {labels} />
+  <LabelsSection {labels} />
   <SmartAnnotationsCard annotations={annotations} />
 </div>

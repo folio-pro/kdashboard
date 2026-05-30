@@ -1,12 +1,14 @@
 <script lang="ts">
   import type { Resource } from "$lib/types";
   import { invoke } from "@tauri-apps/api/core";
+  import { Box } from "lucide-svelte";
   import StatusBadge from "$lib/components/common/StatusBadge.svelte";
-  import InfoRow from "./InfoRow.svelte";
-  import InlineStat from "./InlineStat.svelte";
+  import MetadataSection from "./MetadataSection.svelte";
+  import LabelsSection from "./LabelsSection.svelte";
+  import DetailSection from "./DetailSection.svelte";
+  import KvGrid from "./KvGrid.svelte";
+  import KvField from "./KvField.svelte";
   import CollapsibleConditions from "./CollapsibleConditions.svelte";
-  import CollapsibleLabels from "./CollapsibleLabels.svelte";
-  import IncidentTimeline from "./IncidentTimeline.svelte";
   import SmartAnnotationsCard from "./SmartAnnotationsCard.svelte";
   import RelatedResourcesCard from "./RelatedResourcesCard.svelte";
   import StrategyCard from "./StrategyCard.svelte";
@@ -43,6 +45,18 @@
   );
   let labels = $derived(resource.metadata.labels ?? {});
   let annotations = $derived(resource.metadata.annotations ?? {});
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let image = $derived(
+    (((spec.template as any)?.spec?.containers?.[0]?.image) as string) ?? "—"
+  );
+  let conditionLabel = $derived(
+    conditions.find((c) => c.type === "Available")?.status === "True"
+      ? "Available"
+      : conditions.find((c) => c.type === "Progressing")?.status === "True"
+        ? "Progressing"
+        : "Unavailable"
+  );
 
   // Pods belonging to this deployment
   let pods = $state<Resource[]>([]);
@@ -94,112 +108,78 @@
   });
 </script>
 
-<div class="mx-auto max-w-4xl space-y-6 p-7">
-  <!-- Overview Card -->
-  <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-    <div class="flex items-center px-5 py-4">
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Overview</h3>
-    </div>
-    <InfoRow label="Name" value={resource.metadata.name} />
-    <InfoRow label="Namespace" value={resource.metadata.namespace ?? "-"} valueColor="var(--status-running)" />
-    <InfoRow label="Strategy" value={strategy} />
-    <InfoRow label="Created" value={resource.metadata.creation_timestamp} />
+<div class="select-text">
+  <MetadataSection {resource} />
 
-    <!-- Replicas -->
-    <div class="border-t border-[var(--border-hover)] px-5 py-4">
-      <div class="flex items-center gap-4">
-        <InlineStat label="Desired" value={replicas} />
-        <span class="text-[var(--border-hover)]">/</span>
-        <InlineStat label="Ready" value={readyReplicas} color={readyReplicas === replicas ? "var(--status-running)" : "var(--status-pending)"} />
-        <span class="text-[var(--border-hover)]">/</span>
-        <InlineStat label="Available" value={availableReplicas} />
-        <span class="text-[var(--border-hover)]">/</span>
-        <InlineStat label="Updated" value={updatedReplicas} />
-      </div>
-    </div>
+  <!-- Deployment Spec -->
+  <DetailSection title="Deployment Spec" icon={Box}>
+    <KvGrid>
+      <KvField label="Ready">
+        <span class="font-mono text-[13px] {readyReplicas === replicas ? 'text-[var(--text-primary)]' : 'text-[var(--status-pending)]'}">{readyReplicas}/{replicas}</span>
+      </KvField>
+      <KvField label="Up-to-date" value={updatedReplicas} />
+      <KvField label="Available" value={availableReplicas} />
+      <KvField label="Strategy" value={strategy} mono={false} />
+      <KvField label="Conditions">
+        <StatusBadge status={conditionLabel} />
+      </KvField>
+      {#if selectorString}
+        <KvField label="Selector" value={selectorString} />
+      {/if}
+      <KvField label="Image" value={image} />
+      {#if spec.paused}
+        <KvField label="Paused">
+          <span class="font-mono text-[13px] text-[var(--status-pending)]">true</span>
+        </KvField>
+      {/if}
+    </KvGrid>
+  </DetailSection>
 
+  <LabelsSection {labels} />
+
+  <!-- Conditions -->
+  {#if conditions.length > 0}
     <CollapsibleConditions {conditions} />
-    {#if spec.minReadySeconds}
-      <InfoRow label="Min Ready Seconds" value={String(spec.minReadySeconds)} />
-    {/if}
-    {#if spec.progressDeadlineSeconds}
-      <InfoRow label="Progress Deadline" value={`${spec.progressDeadlineSeconds}s`} />
-    {/if}
-    {#if spec.paused}
-      <InfoRow label="Paused" value="Deployment is paused" valueColor="var(--status-pending)" />
-    {/if}
-  </div>
+  {/if}
 
-  <!-- Pods Card -->
-  <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-    <div class="flex items-center justify-between px-5 py-4">
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Pods</h3>
-      <span class="text-[11px] text-[var(--text-muted)]">
-        {#if podsLoading}
-          loading…
-        {:else}
-          {pods.length} pods
-        {/if}
-      </span>
-    </div>
+  <!-- Pods -->
+  <DetailSection title="Pods" icon={Box}>
+    {#snippet actions()}
+      <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{podsLoading ? "…" : pods.length}</span>
+    {/snippet}
     {#if pods.length > 0}
-      <div class="border-t border-[var(--border-hover)]">
-        <table class="w-full">
-          <thead>
-            <tr class="border-b border-[var(--border-hover)]">
-              <th class="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Name</th>
-              <th class="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Status</th>
-              <th class="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Ready</th>
-              <th class="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Restarts</th>
-              <th class="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Age</th>
+      <table class="w-full border-collapse text-[13px]">
+        <thead>
+          <tr class="border-b border-[var(--border-color)]">
+            <th class="px-3 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Name</th>
+            <th class="px-3 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Status</th>
+            <th class="px-3 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Ready</th>
+            <th class="px-3 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Restarts</th>
+            <th class="px-3 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Age</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each pods as pod}
+            <tr
+              class="cursor-pointer border-b border-[var(--border-color)] last:border-b-0 transition-colors hover:bg-[var(--table-row-hover)]"
+              onclick={() => handlePodClick(pod)}
+            >
+              <td class="max-w-[200px] truncate px-3 py-2.5 text-[12px] font-medium text-[var(--text-primary)]" title={pod.metadata.name}>{pod.metadata.name}</td>
+              <td class="px-3 py-2.5"><StatusBadge status={getPodPhase(pod)} /></td>
+              <td class="px-3 py-2.5 font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">{getPodReadyCount(pod)}</td>
+              <td class="px-3 py-2.5 font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">{getPodRestarts(pod)}</td>
+              <td class="px-3 py-2.5 font-mono text-[12px] text-[var(--text-muted)]">{formatAge(pod.metadata.creation_timestamp)}</td>
             </tr>
-          </thead>
-          <tbody>
-            {#each pods as pod}
-              <tr
-                class="cursor-pointer border-b border-[var(--border-hover)] last:border-b-0 transition-colors hover:bg-[var(--bg-tertiary)]"
-                onclick={() => handlePodClick(pod)}
-              >
-                <td class="max-w-[200px] truncate px-4 py-2.5 text-[12px] font-medium text-[var(--text-primary)]" title={pod.metadata.name}>
-                  {pod.metadata.name}
-                </td>
-                <td class="px-4 py-2.5">
-                  <StatusBadge status={getPodPhase(pod)} />
-                </td>
-                <td class="px-4 py-2.5 text-[12px] text-[var(--text-secondary)]">
-                  {getPodReadyCount(pod)}
-                </td>
-                <td class="px-4 py-2.5 text-[12px] text-[var(--text-secondary)]">
-                  {getPodRestarts(pod)}
-                </td>
-                <td class="px-4 py-2.5 text-[12px] text-[var(--text-muted)]">
-                  {formatAge(pod.metadata.creation_timestamp)}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+          {/each}
+        </tbody>
+      </table>
     {:else if !podsLoading}
-      <div class="border-t border-[var(--border-hover)] px-5 py-4">
-        <span class="text-xs text-[var(--text-muted)]">No pods found</span>
-      </div>
+      <p class="text-xs text-[var(--text-muted)]">No pods found</p>
     {/if}
-  </div>
+  </DetailSection>
 
-  <!-- Strategy & Rollout -->
   <StrategyCard {spec} kind="Deployment" />
-
-  <!-- Revision History -->
   <RevisionHistoryCard {resource} />
-
-  <!-- Activity Timeline -->
-  <IncidentTimeline {resource} />
-
-  <!-- Related Resources -->
   <RelatedResourcesCard {resource} resourceType="deployments" />
-
-  <!-- Labels & Annotations -->
-  <CollapsibleLabels labels={labels} selector={selector} />
   <SmartAnnotationsCard annotations={annotations} />
 </div>

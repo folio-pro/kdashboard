@@ -18,8 +18,8 @@
   {#if !sidebarCollapsed}
     <button
       class={cn(
-        "flex w-full items-center justify-between px-4 py-2",
-        "text-[11px] font-bold uppercase tracking-wider",
+        "flex w-full items-center justify-between px-2.5 pt-[7px] pb-1.5",
+        "text-[10.5px] font-semibold uppercase tracking-[0.09em]",
         "text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
       )}
       onclick={ontoggle}
@@ -27,7 +27,7 @@
       <span>{title}</span>
       <ChevronDown
         class={cn(
-          "h-3.5 w-3.5 shrink-0 transition-transform",
+          "h-3.5 w-3.5 shrink-0 text-[var(--text-dimmed)] transition-transform",
           collapsed && "-rotate-90"
         )}
       />

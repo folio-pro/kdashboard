@@ -1,6 +1,6 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
-  import { ChevronsUpDown } from "lucide-svelte";
+  import { ChevronsUpDown, ArrowUp, ArrowDown } from "lucide-svelte";
   import type { Column, SortDirection } from "$lib/types";
 
   interface Props {
@@ -76,14 +76,20 @@
 >
   {#if column.sortable}
     <button
-      class="inline-flex items-center gap-1.5"
+      class={cn(
+        "inline-flex items-center gap-1.5 transition-colors",
+        isActive && "text-[var(--text-primary)]"
+      )}
       onclick={() => onclick(column.key)}
     >
       <span>{column.label}</span>
-      <ChevronsUpDown class={cn(
-        "h-3.5 w-3.5",
-        isActive ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"
-      )} />
+      {#if isActive && sortDirection === "asc"}
+        <ArrowUp class="h-3 w-3 text-[var(--accent)]" />
+      {:else if isActive}
+        <ArrowDown class="h-3 w-3 text-[var(--accent)]" />
+      {:else}
+        <ChevronsUpDown class="h-3.5 w-3.5 text-[var(--text-dimmed)]" />
+      {/if}
     </button>
   {:else}
     <span>{column.label}</span>
