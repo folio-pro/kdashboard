@@ -82,10 +82,13 @@
               <div class="truncate font-mono text-[11.5px] text-[var(--text-muted)]" title={c.image}>{c.image}</div>
             </div>
             <StatusBadge status={getContainerState(c.state ?? {})} />
-            <span
-              class="shrink-0 text-right font-mono text-[12px]"
-              style:color={c.restartCount > 5 ? "var(--status-failed)" : "var(--text-muted)"}
-            >↻ {c.restartCount ?? 0}</span>
+            {#if c.restartCount > 0}
+              <span
+                class="shrink-0 text-right font-mono text-[12px]"
+                style:color={c.restartCount > 5 ? "var(--status-failed)" : "var(--status-pending)"}
+                title="Restarts"
+              >↻ {c.restartCount}</span>
+            {/if}
           </div>
           <!-- grid -->
           <div class="mt-3.5 grid gap-x-6 gap-y-3 border-t border-[var(--border-color)] pt-3.5 [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
