@@ -26,6 +26,11 @@ export default defineConfig(async () => ({
           if (id.includes("/node_modules/@xterm/")) {
             return "vendor-xterm";
           }
+          // bits-ui + its @floating-ui dependency are heavy and eagerly loaded;
+          // isolate them so app-code edits don't bust their cache entry.
+          if (id.includes("/node_modules/bits-ui/") || id.includes("/node_modules/@floating-ui/")) {
+            return "vendor-bits-ui";
+          }
         },
       },
     },

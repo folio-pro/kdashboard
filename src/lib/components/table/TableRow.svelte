@@ -34,6 +34,10 @@
 
   let rowHeight = $derived(density === "compact" ? "h-8" : "h-11");
 
+  // Precompute the lowercased name once per row instead of re-lowercasing the
+  // cell value inline on every render of the name-column filter highlight.
+  let nameLower = $derived(resource.metadata.name.toLowerCase());
+
   let failedIcons: Set<string> = $state(new Set());
 
   type ContainerState = "running" | "waiting" | "error" | "terminated";
@@ -365,7 +369,7 @@
           )}
           title={cellValue}
         >
-{#if column.key === "name" && uiStore.filter}{@const idx = cellValue.toLowerCase().indexOf(uiStore.filterLower)}{#if idx >= 0}{cellValue.slice(0, idx)}<span style="color:var(--accent)">{cellValue.slice(idx, idx + uiStore.filter.length)}</span>{cellValue.slice(idx + uiStore.filter.length)}{:else}{cellValue}{/if}{:else}{cellValue}{/if}
+{#if column.key === "name" && uiStore.filter}{@const idx = nameLower.indexOf(uiStore.filterLower)}{#if idx >= 0}{cellValue.slice(0, idx)}<span style="color:var(--accent)">{cellValue.slice(idx, idx + uiStore.filter.length)}</span>{cellValue.slice(idx + uiStore.filter.length)}{:else}{cellValue}{/if}{:else}{cellValue}{/if}
         </span>
       {/if}
     </td>

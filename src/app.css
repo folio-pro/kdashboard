@@ -12,6 +12,11 @@ html, body {
   background: var(--bg-primary, #0C0C0C);
   color: var(--text-primary, #E5E5E5);
   font-family: "IBM Plex Sans", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Make the packaged macOS WKWebView paint native scrollbars and window
+     chrome in dark mode by default. Without this, the production build
+     defaults to light and renders white scrollbars/titlebar. Overridden
+     per-theme below for the light presets. */
+  color-scheme: dark;
 }
 
 /* Layout tokens (theme-agnostic) */
@@ -407,6 +412,30 @@ html, body {
 [data-theme] {
   --border-color: color-mix(in srgb, var(--text-primary) 14%, var(--bg-primary));
   --border-hover: color-mix(in srgb, var(--text-primary) 22%, var(--bg-primary));
+}
+
+/* ========================================
+   Native color-scheme per theme
+   Drives macOS WKWebView native scrollbars + window chrome so they match
+   the active theme in the production build (not just in dev).
+   ======================================== */
+
+:root,
+[data-theme="kdashboard"],
+[data-theme="gruvbox-dark"],
+[data-theme="solarized-dark"],
+[data-theme="everforest-dark"],
+[data-theme="dracula-dark"],
+[data-theme="monokai-dark"] {
+  color-scheme: dark;
+}
+
+[data-theme="gruvbox-light"],
+[data-theme="solarized-light"],
+[data-theme="everforest-light"],
+[data-theme="rosepine-dawn"],
+[data-theme="github-light"] {
+  color-scheme: light;
 }
 
 /* ========================================
