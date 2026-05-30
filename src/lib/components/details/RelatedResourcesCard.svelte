@@ -96,16 +96,16 @@
 </script>
 
 {#if related.length > 0}
-  <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-    <div class="flex items-center justify-between px-5 py-4">
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Related Resources</h3>
-      <span class="text-[11px] text-[var(--text-muted)]">{related.length}</span>
+  <div class="border-b border-[var(--border-color)]">
+    <div class="flex items-center justify-between px-6 py-4">
+      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Related Resources</span>
+      <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{related.length}</span>
     </div>
 
     {#each groups as group}
       {@const Icon = group.icon}
       <!-- Category header -->
-      <div class="flex items-center gap-2 border-t border-[var(--border-hover)] bg-[var(--bg-primary)] px-5 py-2">
+      <div class="flex items-center gap-2 border-t border-[var(--border-hover)] bg-[var(--bg-secondary)] px-6 py-2">
         <Icon class="h-3 w-3 shrink-0" color={group.color} />
         <span class="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-dimmed)]">{group.label}</span>
         <span class="text-[10px] text-[var(--text-dimmed)]">{group.items.length}</span>

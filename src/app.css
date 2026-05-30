@@ -2,8 +2,8 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "IBM Plex Sans", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "Geist Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
 /* Prevent white flash while app loads */
@@ -11,12 +11,14 @@ html, body {
   margin: 0;
   background: var(--bg-primary, #0C0C0C);
   color: var(--text-primary, #E5E5E5);
+  font-family: "IBM Plex Sans", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 /* Layout tokens (theme-agnostic) */
 :root {
   --sidebar-width-collapsed: 44px;
-  --sidebar-width-expanded: 260px;
+  /* Reference console: 56px cluster rail + 248px nav = 304px */
+  --sidebar-width-expanded: 304px;
 }
 
 /* ========================================
@@ -43,9 +45,10 @@ html, body {
   --status-succeeded: #3C83F6;
   --status-warning: #F59F0A;
   --status-terminating: #F97316;
-  --sidebar-bg: #171717;
-  --sidebar-hover: #242424;
-  --sidebar-active: #333333;
+  --rail-bg: #060708;
+  --sidebar-bg: #0D0E10;
+  --sidebar-hover: #17191C;
+  --sidebar-active: #1E2329;
   --table-header-bg: #242424;
   --table-row-hover: #1A1A1A;
   --log-bg: #171717;

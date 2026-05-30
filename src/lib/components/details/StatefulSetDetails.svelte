@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { Database, HardDrive } from "lucide-svelte";
   import type { Resource } from "$lib/types";
-  import StatusBadge from "$lib/components/common/StatusBadge.svelte";
-  import InfoRow from "./InfoRow.svelte";
-  import InlineStat from "./InlineStat.svelte";
+  import MetadataSection from "./MetadataSection.svelte";
+  import LabelsSection from "./LabelsSection.svelte";
+  import DetailSection from "./DetailSection.svelte";
+  import KvField from "./KvField.svelte";
+  import KvGrid from "./KvGrid.svelte";
   import CollapsibleConditions from "./CollapsibleConditions.svelte";
-  import CollapsibleLabels from "./CollapsibleLabels.svelte";
-  import EventsCard from "./EventsCard.svelte";
   import SmartAnnotationsCard from "./SmartAnnotationsCard.svelte";
   import RelatedResourcesCard from "./RelatedResourcesCard.svelte";
   import StrategyCard from "./StrategyCard.svelte";
@@ -24,9 +25,7 @@
   let currentReplicas = $derived((status.currentReplicas as number) ?? 0);
   let updatedReplicas = $derived((status.updatedReplicas as number) ?? 0);
 
-  let updateStrategy = $derived(
-    (spec.updateStrategy as { type?: string }) ?? {}
-  );
+  let updateStrategy = $derived((spec.updateStrategy as { type?: string }) ?? {});
   let serviceName = $derived((spec.serviceName as string) ?? "-");
   let podManagementPolicy = $derived((spec.podManagementPolicy as string) ?? "OrderedReady");
 
@@ -42,78 +41,57 @@
   );
 
   let conditions = $derived(
-    (status.conditions as Array<{
-      type: string;
-      status: string;
-      reason?: string;
-      message?: string;
-    }>) ?? []
+    (status.conditions as Array<{ type: string; status: string; reason?: string; message?: string }>) ?? []
   );
 
   let labels = $derived(resource.metadata.labels ?? {});
   let annotations = $derived(resource.metadata.annotations ?? {});
+
 </script>
 
-<div class="mx-auto max-w-4xl space-y-6 p-7">
-  <!-- Overview Card -->
-  <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-    <div class="flex items-center px-5 py-4">
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Overview</h3>
-    </div>
-    <InfoRow label="Name" value={resource.metadata.name} />
-    <InfoRow label="Namespace" value={resource.metadata.namespace ?? "-"} valueColor="var(--status-running)" />
-    <InfoRow label="Service Name" value={serviceName} />
-    <InfoRow label="Update Strategy" value={updateStrategy.type ?? "RollingUpdate"} />
-    <InfoRow label="Pod Management" value={podManagementPolicy} />
-    <InfoRow label="Created" value={resource.metadata.creation_timestamp} />
+<div class="select-text">
+  <MetadataSection {resource} />
 
-    <!-- Replicas -->
-    <div class="border-t border-[var(--border-hover)] px-5 py-4">
-      <div class="flex items-center gap-4">
-        <InlineStat label="Desired" value={replicas} />
-        <span class="text-[var(--border-hover)]">/</span>
-        <InlineStat label="Ready" value={readyReplicas} color={readyReplicas === replicas ? "var(--status-running)" : "var(--status-pending)"} />
-        <span class="text-[var(--border-hover)]">/</span>
-        <InlineStat label="Current" value={currentReplicas} />
-        <span class="text-[var(--border-hover)]">/</span>
-        <InlineStat label="Updated" value={updatedReplicas} />
-      </div>
-    </div>
+  <DetailSection title="StatefulSet Spec" icon={Database}>
+    <KvGrid>
+      <KvField label="Ready">
+        <span class="font-mono text-[13px] {readyReplicas === replicas ? 'text-[var(--text-primary)]' : 'text-[var(--status-pending)]'}">{readyReplicas}/{replicas}</span>
+      </KvField>
+      <KvField label="Current" value={currentReplicas} />
+      <KvField label="Updated" value={updatedReplicas} />
+      <KvField label="Service Name" value={serviceName} />
+      <KvField label="Update Strategy" value={updateStrategy.type ?? "RollingUpdate"} mono={false} />
+      <KvField label="Pod Management" value={podManagementPolicy} mono={false} />
+    </KvGrid>
+  </DetailSection>
 
+  {#if conditions.length > 0}
     <CollapsibleConditions {conditions} />
-  </div>
-
-  <!-- Volume Claim Templates -->
-  {#if volumeClaimTemplates.length > 0}
-    <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-      <div class="flex items-center justify-between px-5 py-4">
-        <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Volume Claim Templates</h3>
-        <span class="text-[11px] text-[var(--text-muted)]">{volumeClaimTemplates.length} templates</span>
-      </div>
-      {#each volumeClaimTemplates as vct}
-        <div class="flex items-center justify-between border-t border-[var(--border-hover)] px-5 py-3.5">
-          <div class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-[13px] font-semibold text-[var(--text-primary)]">{vct.metadata?.name ?? "unnamed"}</span>
-            <span class="text-xs text-[var(--text-muted)]">
-              {vct.spec?.storageClassName ?? "default"} · {vct.spec?.accessModes?.join(", ") ?? "-"}
-            </span>
-          </div>
-          <span class="font-mono text-sm font-bold text-[var(--text-primary)]">{vct.spec?.resources?.requests?.storage ?? "-"}</span>
-        </div>
-      {/each}
-    </div>
   {/if}
 
-  <!-- Update Strategy -->
+  {#if volumeClaimTemplates.length > 0}
+    <DetailSection title="Volume Claim Templates" icon={HardDrive}>
+      {#snippet actions()}
+        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{volumeClaimTemplates.length}</span>
+      {/snippet}
+      <div class="flex flex-col gap-2">
+        {#each volumeClaimTemplates as vct}
+          <div class="flex items-center justify-between rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <span class="text-[13px] font-medium text-[var(--text-primary)]">{vct.metadata?.name ?? "unnamed"}</span>
+              <span class="font-mono text-[11px] text-[var(--text-muted)]">{vct.spec?.storageClassName ?? "default"} · {vct.spec?.accessModes?.join(", ") ?? "-"}</span>
+            </div>
+            <span class="font-mono text-[13px] font-medium text-[var(--text-primary)]">{vct.spec?.resources?.requests?.storage ?? "-"}</span>
+          </div>
+        {/each}
+      </div>
+    </DetailSection>
+  {/if}
+
   <StrategyCard {spec} kind="StatefulSet" />
 
-  <!-- Related Resources -->
   <RelatedResourcesCard {resource} resourceType="statefulsets" />
 
-  <!-- Events -->
-  <EventsCard {resource} />
-
-  <!-- Labels & Annotations -->
-  <CollapsibleLabels {labels} />
+  <LabelsSection {labels} />
   <SmartAnnotationsCard annotations={annotations} />
 </div>

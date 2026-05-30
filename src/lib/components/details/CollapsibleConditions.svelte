@@ -26,12 +26,12 @@
 </script>
 
 {#if conditions.length > 0}
-  <div class="border-t border-[var(--border-hover)]">
+  <div class="border-b border-[var(--border-color)]">
     <button
-      class="flex w-full items-center justify-between px-5 py-3 text-left transition-colors hover:bg-[var(--bg-tertiary)]"
+      class="group flex w-full items-center justify-between px-6 py-4 text-left"
       onclick={() => expanded = !expanded}
     >
-      <span class="text-xs font-medium text-[var(--text-dimmed)]">Conditions</span>
+      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)] transition-colors group-hover:text-[var(--text-secondary)]">Conditions</span>
       <div class="flex items-center gap-2">
         <div class="flex items-center gap-1.5">
           {#each conditions as condition}

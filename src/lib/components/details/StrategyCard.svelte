@@ -28,9 +28,9 @@
 
 </script>
 
-<div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-  <div class="flex items-center justify-between px-5 py-4">
-    <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Update Strategy</h3>
+<div class="border-b border-[var(--border-color)]">
+  <div class="flex items-center justify-between px-6 py-4">
+    <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Update Strategy</span>
     <span class="rounded bg-[var(--bg-tertiary)] px-2 py-0.5 font-mono text-[11px] font-medium text-[var(--text-primary)]">{strategyType || "—"}</span>
   </div>
 

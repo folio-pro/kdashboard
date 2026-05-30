@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, AlertTriangle } from "lucide-svelte";
+  import { AlertTriangle } from "lucide-svelte";
   import type { Resource, Event as K8sEvent } from "$lib/types";
   import { invoke } from "@tauri-apps/api/core";
   import { formatAge } from "$lib/utils/age";
@@ -13,14 +13,17 @@
 
   let events = $state<K8sEvent[]>([]);
   let eventsLoading = $state(false);
+  let error = $state<string | null>(null);
 
   let eventKey = $derived(`${resource.kind}:${resource.metadata.name}:${resource.metadata.namespace}`);
 
   $effect(() => {
-    const key = eventKey;
+    // Track key so the fetch re-runs when the resource changes.
+    void eventKey;
     let cancelled = false;
 
     eventsLoading = true;
+    error = null;
     invoke<K8sEvent[]>("get_resource_events", {
       resourceType: kindToResourceType(resource.kind),
       name: resource.metadata.name,
@@ -29,9 +32,10 @@
       if (!cancelled) {
         events = result;
       }
-    }).catch(() => {
+    }).catch((err) => {
       if (!cancelled) {
         events = [];
+        error = String(err);
       }
     }).finally(() => {
       if (!cancelled) {
@@ -42,46 +46,107 @@
     return () => { cancelled = true; };
   });
 
-  function getEventAge(event: K8sEvent): string {
-    const ts = event.last_timestamp ?? event.first_timestamp;
-    if (!ts) return "";
+  interface EventRow {
+    ts: string;
+    warning: boolean;
+    reason: string;
+    message: string;
+    count: number | null;
+  }
+
+  // Merge real Kubernetes events with the resource's lifecycle conditions so
+  // the table stays useful after events expire (~1h) — mirroring Activity.
+  let rows = $derived.by<EventRow[]>(() => {
+    const out: EventRow[] = [];
+
+    for (const e of events) {
+      out.push({
+        ts: e.last_timestamp ?? e.first_timestamp ?? "",
+        warning: e.type === "Warning",
+        reason: e.reason || "Event",
+        message: e.message ?? "",
+        count: e.count ?? 1,
+      });
+    }
+
+    const conditions = (resource.status?.conditions as Array<{
+      type: string;
+      status: string;
+      lastTransitionTime?: string;
+      reason?: string;
+      message?: string;
+    }>) ?? [];
+    for (const c of conditions) {
+      if (!c.lastTransitionTime) continue;
+      const bad = c.status === "False" &&
+        ["Available", "Ready", "PodScheduled", "ContainersReady", "Initialized"].includes(c.type);
+      out.push({
+        ts: c.lastTransitionTime,
+        warning: bad,
+        reason: c.type,
+        message: `${c.status}${c.reason ? " · " + c.reason : ""}${c.message ? " — " + c.message : ""}`,
+        count: null,
+      });
+    }
+
+    out.sort((a, b) => {
+      if (!a.ts) return 1;
+      if (!b.ts) return -1;
+      return new Date(b.ts).getTime() - new Date(a.ts).getTime();
+    });
+    return out;
+  });
+
+  function lastSeen(ts: string): string {
+    if (!ts) return "—";
     const age = formatAge(ts);
-    return age ? `${age} ago` : "";
+    return age ? `${age} ago` : "—";
   }
 </script>
 
-<div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-  <div class="flex items-center justify-between px-5 py-4">
-    <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Events</h3>
-    <span class="text-xs text-[var(--text-muted)]">{events.length} events</span>
+{#if eventsLoading && rows.length === 0}
+  <p class="px-6 py-4 text-xs text-[var(--text-muted)]">Loading events…</p>
+{:else if error && rows.length === 0}
+  <div class="mx-6 my-4 flex items-start gap-2 rounded-md border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/5 px-3 py-2.5">
+    <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--status-failed)]" />
+    <span class="text-xs text-[var(--status-failed)]">{error}</span>
   </div>
-
-  {#if eventsLoading}
-    <div class="border-t border-[var(--border-hover)] px-5 py-3.5">
-      <p class="text-xs text-[var(--text-muted)]">Loading events...</p>
-    </div>
-  {:else if events.length === 0}
-    <div class="border-t border-[var(--border-hover)] px-5 py-3.5">
-      <p class="text-xs text-[var(--text-muted)]">No events found</p>
-    </div>
-  {:else}
-    {#each events as event}
-      <div class="flex gap-3.5 border-t border-[var(--border-hover)] px-5 py-3.5">
-        {#if event.type === "Warning"}
-          <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--status-failed)]/10">
-            <AlertTriangle class="h-3.5 w-3.5 text-[var(--status-failed)]" />
-          </div>
-        {:else}
-          <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--status-running)]/10">
-            <Check class="h-3.5 w-3.5 text-[var(--status-running)]" />
-          </div>
-        {/if}
-        <div class="flex min-w-0 flex-col gap-0.5">
-          <span class="text-[13px] font-semibold text-[var(--text-primary)]">{event.reason}</span>
-          <span class="text-xs text-[var(--text-muted)]">{event.message}</span>
-          <span class="text-[11px] text-[var(--text-dimmed)]">{getEventAge(event)}</span>
-        </div>
-      </div>
-    {/each}
-  {/if}
-</div>
+{:else if rows.length === 0}
+  <div class="flex flex-col items-center gap-1.5 py-16 text-center">
+    <div class="text-[13px] text-[var(--text-secondary)]">No events for this {resource.kind}</div>
+    <p class="max-w-sm text-[11px] leading-relaxed text-[var(--text-dimmed)]">
+      Kubernetes events expire after about an hour.{resource.kind === "Deployment" || resource.kind === "StatefulSet" || resource.kind === "DaemonSet" ? " Most workload events live on the child Pods — open a Pod to see them." : ""}
+    </p>
+  </div>
+{:else}
+  <table class="w-full border-collapse text-[13px]">
+    <thead>
+      <tr class="border-b border-[var(--border-color)]">
+        <th class="sticky top-0 z-[1] bg-[var(--bg-primary)] px-4 py-2.5 text-left text-[11px] font-medium text-[var(--text-muted)]" style="width: 110px;">Type</th>
+        <th class="sticky top-0 z-[1] bg-[var(--bg-primary)] px-4 py-2.5 text-left text-[11px] font-medium text-[var(--text-muted)]" style="width: 180px;">Reason</th>
+        <th class="sticky top-0 z-[1] bg-[var(--bg-primary)] px-4 py-2.5 text-left text-[11px] font-medium text-[var(--text-muted)]">Message</th>
+        <th class="sticky top-0 z-[1] bg-[var(--bg-primary)] px-4 py-2.5 text-left text-[11px] font-medium text-[var(--text-muted)]" style="width: 70px;">Count</th>
+        <th class="sticky top-0 z-[1] bg-[var(--bg-primary)] px-4 py-2.5 text-left text-[11px] font-medium text-[var(--text-muted)]" style="width: 120px;">Last Seen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#each rows as row}
+        <tr class="border-b border-[var(--border-color)]">
+          <td class="px-4 py-3 align-top">
+            <span
+              class="inline-flex items-center gap-1.5 text-[12px] font-medium"
+              style:color={row.warning ? "var(--status-pending)" : "var(--status-running)"}
+            >
+              <span class="h-[7px] w-[7px] shrink-0 rounded-full" style:background-color={row.warning ? "var(--status-pending)" : "var(--status-running)"}></span>
+              {row.warning ? "Warning" : "Normal"}
+            </span>
+          </td>
+          <td class="px-4 py-3 align-top font-mono text-[12px] text-[var(--text-secondary)]">{row.reason}</td>
+          <td class="px-4 py-3 align-top text-[var(--text-muted)]">{row.message}</td>
+          <td class="px-4 py-3 align-top font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">{row.count ?? "—"}</td>
+          <td class="px-4 py-3 align-top whitespace-nowrap font-mono text-[12px] text-[var(--text-muted)]">{lastSeen(row.ts)}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+{/if}

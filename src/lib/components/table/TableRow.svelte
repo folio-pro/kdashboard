@@ -32,7 +32,7 @@
     extensions.mountsFor("table-row-trailing").filter((m) => !m.visible || m.visible()),
   );
 
-  let rowHeight = $derived(density === "compact" ? "h-8" : "h-10");
+  let rowHeight = $derived(density === "compact" ? "h-8" : "h-11");
 
   let failedIcons: Set<string> = $state(new Set());
 
@@ -190,6 +190,21 @@
   let isContainersColumn = (key: string) => key === "containers";
   let isUsageColumn = (key: string) => key === "cpuUsage" || key === "memUsage";
 
+  // Reference console renders numeric / identifier cells in monospace tabular
+  // figures, and type/class/role cells as tag pills.
+  const MONO_COLUMNS = new Set([
+    "age", "ready", "deployReady", "upToDate", "available",
+    "rsDesired", "rsCurrent", "rsReady", "stsReady",
+    "dsDesired", "dsCurrent", "dsReady", "dsAvailable",
+    "jobCompletions", "jobDuration", "cjSchedule", "cjActive", "cjLastSchedule",
+    "clusterIP", "externalIP", "ports", "ingressHosts", "ingressAddress",
+    "data", "hpaReference", "hpaMinPods", "hpaMaxPods", "hpaCurrentReplicas",
+    "vpaTarget", "version", "instanceType", "nodeCost", "ip",
+  ]);
+  const TAG_COLUMNS = new Set(["type", "ingressClass", "roles", "vpaUpdateMode"]);
+  let isMonoColumn = (key: string) => MONO_COLUMNS.has(key);
+  let isTagColumn = (key: string) => TAG_COLUMNS.has(key);
+
   function getUsageData(key: string): { percent: number; label: string } | null {
     const m = costStore.getNodeMetrics(resource.metadata.name);
     if (!m) return null;
@@ -245,7 +260,7 @@
 
 <tr
   class={cn(
-    "cursor-pointer border-b border-[var(--border-hover)] transition-colors",
+    "cursor-pointer border-b border-[var(--border-color)] transition-colors",
     rowHeight,
     selected
       ? "bg-[var(--accent)]/10"
@@ -278,7 +293,9 @@
         <div class="flex items-center gap-1.5 overflow-hidden">
           {#each containerStatuses as c}
             <div
-              class="relative flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--border-hover)] bg-[var(--bg-tertiary)]"
+              class="relative flex h-6 w-6 shrink-0 items-center justify-center rounded border"
+              style:background-color={`color-mix(in srgb, ${containerStateColor(c.state)} 14%, var(--bg-tertiary))`}
+              style:border-color={`color-mix(in srgb, ${containerStateColor(c.state)} 28%, transparent)`}
               title="{c.name} ({c.state})"
             >
               {#if c.iconUrl}
@@ -317,14 +334,34 @@
         {:else}
           <span class="text-[var(--text-muted)]">-</span>
         {/if}
+      {:else if column.key === "restarts"}
+        {@const restarts = parseInt(getCellValue("restarts"), 10) || 0}
+        <span
+          class={cn(
+            "font-mono text-[12px] tabular-nums",
+            restarts > 5
+              ? "font-medium text-[var(--status-failed)]"
+              : restarts > 0
+                ? "font-medium text-[var(--status-pending)]"
+                : "text-[var(--text-muted)]"
+          )}
+        >{restarts}</span>
+      {:else if isTagColumn(column.key)}
+        {@const tagValue = getCellValue(column.key)}
+        {#if tagValue && tagValue !== "-" && tagValue !== "<none>"}
+          <span class="inline-flex max-w-full items-center truncate rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--text-secondary)]" title={tagValue}>{tagValue}</span>
+        {:else}
+          <span class="text-[var(--text-muted)]">—</span>
+        {/if}
       {:else}
         {@const cellValue = getCellValue(column.key)}
         <span
           class={cn(
             "block truncate text-[var(--text-secondary)]",
+            isMonoColumn(column.key) && "font-mono text-[12px] tabular-nums text-[var(--text-secondary)]",
             column.key === "name" && "font-medium text-[var(--text-primary)]",
-            column.key === "node" && "text-[11px] text-[var(--text-muted)]",
-            column.key === "restarts" && cellValue !== "0" && "text-[var(--status-failed)] font-medium"
+            column.key === "namespace" && "text-[var(--text-muted)]",
+            column.key === "node" && "text-[11px] text-[var(--text-muted)]"
           )}
           title={cellValue}
         >

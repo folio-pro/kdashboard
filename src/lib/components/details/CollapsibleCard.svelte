@@ -16,20 +16,22 @@
   let expanded = $state(defaultExpanded);
 </script>
 
-<div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+<div class="border-b border-[var(--border-color)]">
   <button
-    class="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-[var(--bg-tertiary)]"
+    class="group flex w-full items-center justify-between px-6 py-4 text-left"
     onclick={() => expanded = !expanded}
   >
-    <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">{title}</h3>
+    <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)] transition-colors group-hover:text-[var(--text-secondary)]">{title}</span>
     <div class="flex items-center gap-2">
       {#if count !== undefined}
-        <span class="text-xs text-[var(--text-muted)]">{count}</span>
+        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{count}</span>
       {/if}
       <ChevronDown class={cn("h-3.5 w-3.5 text-[var(--text-dimmed)] transition-transform", expanded && "rotate-180")} />
     </div>
   </button>
   {#if expanded && children}
-    {@render children()}
+    <div class="pb-3">
+      {@render children()}
+    </div>
   {/if}
 </div>

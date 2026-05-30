@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { Badge } from "$lib/components/ui/badge";
+  import { Clock } from "lucide-svelte";
   import type { Resource } from "$lib/types";
-  import InfoRow from "./InfoRow.svelte";
-  import InlineStat from "./InlineStat.svelte";
-  import CollapsibleLabels from "./CollapsibleLabels.svelte";
-  import EventsCard from "./EventsCard.svelte";
+  import MetadataSection from "./MetadataSection.svelte";
+  import LabelsSection from "./LabelsSection.svelte";
+  import DetailSection from "./DetailSection.svelte";
+  import KvField from "./KvField.svelte";
+  import KvGrid from "./KvGrid.svelte";
   import SmartAnnotationsCard from "./SmartAnnotationsCard.svelte";
   import RelatedResourcesCard from "./RelatedResourcesCard.svelte";
   import { formatTimestamp } from "$lib/utils/age";
@@ -33,65 +34,52 @@
 
   let labels = $derived(resource.metadata.labels ?? {});
   let annotations = $derived(resource.metadata.annotations ?? {});
+
 </script>
 
-<div class="mx-auto max-w-4xl space-y-6 p-7">
-  <!-- Overview Card -->
-  <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-    <div class="flex items-center justify-between px-5 py-4">
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Overview</h3>
+<div class="select-text">
+  <MetadataSection {resource} />
+
+  <DetailSection title="CronJob Spec" icon={Clock}>
+    {#snippet actions()}
       {#if suspend}
-        <Badge variant="destructive">Suspended</Badge>
+        <span class="inline-flex items-center rounded border border-[var(--status-pending)]/30 bg-[var(--status-pending)]/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--status-pending)]">Suspended</span>
       {/if}
-    </div>
-    <InfoRow label="Name" value={resource.metadata.name} />
-    <InfoRow label="Namespace" value={resource.metadata.namespace ?? "-"} valueColor="var(--status-running)" />
-    <InfoRow label="Schedule" value={schedule} />
-    <InfoRow label="Concurrency" value={concurrencyPolicy} />
-    {#if startingDeadlineSeconds !== null}
-      <InfoRow label="Start Deadline" value={`${startingDeadlineSeconds}s`} />
-    {/if}
-    <InfoRow label="Created" value={resource.metadata.creation_timestamp} />
-    {#if spec.timeZone}<InfoRow label="Time Zone" value={spec.timeZone as string} />{/if}
-    {#if spec.failedJobsHistoryLimit !== undefined}<InfoRow label="Failed History Limit" value={String(spec.failedJobsHistoryLimit)} />{/if}
-    {#if spec.successfulJobsHistoryLimit !== undefined}<InfoRow label="Success History Limit" value={String(spec.successfulJobsHistoryLimit)} />{/if}
-
-    <!-- History + status -->
-    <div class="border-t border-[var(--border-hover)] px-5 py-4">
-      <div class="flex items-center gap-4">
-        <InlineStat label="Keep Success" value={successfulJobsHistoryLimit} color="var(--status-running)" />
-        <span class="text-[var(--border-hover)]">·</span>
-        <InlineStat label="Keep Failed" value={failedJobsHistoryLimit} color="var(--status-failed)" />
-        <span class="text-[var(--border-hover)]">·</span>
-        <InlineStat label="Active" value={activeJobs.length} color={activeJobs.length > 0 ? "var(--status-pending)" : undefined} />
-      </div>
-    </div>
-
-    <InfoRow label="Last Schedule" value={lastScheduleTime ? formatTimestamp(lastScheduleTime) : "-"} />
-    <InfoRow label="Last Success" value={lastSuccessfulTime ? formatTimestamp(lastSuccessfulTime) : "-"} />
-  </div>
+    {/snippet}
+    <KvGrid>
+      <KvField label="Schedule" value={schedule} />
+      <KvField label="Concurrency" value={concurrencyPolicy} mono={false} />
+      <KvField label="Active">
+        <span class="font-mono text-[13px] {activeJobs.length > 0 ? 'text-[var(--status-pending)]' : 'text-[var(--text-primary)]'}">{activeJobs.length}</span>
+      </KvField>
+      <KvField label="Last Schedule" value={lastScheduleTime ? formatTimestamp(lastScheduleTime) : "-"} mono={false} />
+      <KvField label="Last Success" value={lastSuccessfulTime ? formatTimestamp(lastSuccessfulTime) : "-"} mono={false} />
+      {#if startingDeadlineSeconds !== null}
+        <KvField label="Start Deadline" value={`${startingDeadlineSeconds}s`} />
+      {/if}
+      {#if spec.timeZone}
+        <KvField label="Time Zone" value={spec.timeZone as string} mono={false} />
+      {/if}
+      <KvField label="Keep Success" value={successfulJobsHistoryLimit} />
+      <KvField label="Keep Failed" value={failedJobsHistoryLimit} />
+    </KvGrid>
+  </DetailSection>
 
   {#if activeJobs.length > 0}
-    <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-      <div class="flex items-center justify-between px-5 py-4">
-        <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Active Jobs</h3>
-        <span class="text-[11px] text-[var(--text-muted)]">{activeJobs.length} running</span>
+    <DetailSection title="Active Jobs" icon={Clock}>
+      {#snippet actions()}
+        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{activeJobs.length}</span>
+      {/snippet}
+      <div class="flex flex-col gap-1.5">
+        {#each activeJobs as job}
+          <span class="truncate font-mono text-[12px] text-[var(--text-primary)]">{job.name ?? "unknown"}</span>
+        {/each}
       </div>
-      {#each activeJobs as job}
-        <div class="flex items-center gap-3.5 border-t border-[var(--border-hover)] px-5 py-3.5">
-          <span class="truncate font-mono text-[13px] font-medium text-[var(--text-primary)]">{job.name ?? "unknown"}</span>
-        </div>
-      {/each}
-    </div>
+    </DetailSection>
   {/if}
 
-  <!-- Related Resources -->
   <RelatedResourcesCard {resource} resourceType="cronjobs" />
 
-  <!-- Events -->
-  <EventsCard {resource} />
-
-  <!-- Labels & Annotations -->
-  <CollapsibleLabels {labels} />
+  <LabelsSection {labels} />
   <SmartAnnotationsCard annotations={annotations} />
 </div>

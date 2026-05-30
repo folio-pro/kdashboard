@@ -110,7 +110,7 @@
     {#each hints as hint}
       <div class="flex items-center gap-1">
         <kbd
-          class="inline-flex items-center rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-1 py-px text-[10px] font-medium text-[var(--text-secondary)]"
+          class="inline-flex min-w-[16px] items-center justify-center rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1 py-px font-mono text-[10px] font-medium text-[var(--text-secondary)]"
         >
           {hint.key}
         </kbd>

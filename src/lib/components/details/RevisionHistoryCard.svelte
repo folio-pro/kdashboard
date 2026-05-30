@@ -81,11 +81,11 @@
   }
 </script>
 
-<div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-  <div class="flex items-center justify-between px-5 py-4">
+<div class="border-b border-[var(--border-color)]">
+  <div class="flex items-center justify-between px-6 py-4">
     <div class="flex items-center gap-2">
       <History class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Revision History</h3>
+      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Revision History</span>
     </div>
     <span class="text-[11px] text-[var(--text-muted)]">
       {#if loading}

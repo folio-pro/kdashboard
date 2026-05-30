@@ -1,14 +1,18 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Pencil, FileText, Terminal, Trash2, Scale, RotateCcw, History, ChevronRight } from "lucide-svelte";
+  import { Pencil, Terminal, Trash2, Scale, RotateCcw, History, ChevronRight, Info, ScrollText, FileCode, Bell } from "lucide-svelte";
+  import type { IconComponent } from "$lib/actions/types";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
   import { restartWorkload, rollbackDeployment } from "$lib/actions/registry";
   import { extensions } from "$lib/extensions";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
+  import { cn } from "$lib/utils";
   import { deriveKind, deriveShowLogsButton, deriveNodeName, deriveResourceType, deriveIsScalable, deriveIsRestartable, deriveIsRollbackable, deriveCurrentReplicas } from "./detail-panel";
+  import LazyView from "$lib/components/common/LazyView.svelte";
+  import EventsCard from "./EventsCard.svelte";
   import PodDetails from "./PodDetails.svelte";
   import DeploymentDetails from "./DeploymentDetails.svelte";
   import StatefulSetDetails from "./StatefulSetDetails.svelte";
@@ -27,16 +31,53 @@
   let showLogsButton = $derived(deriveShowLogsButton(kind));
   let nodeName = $derived(deriveNodeName(resource));
 
+  // --- Subtabs (in-panel) ---------------------------------------------------
+  type Subtab = "overview" | "logs" | "shell" | "yaml" | "events";
+
+  const SUBTAB_META: Record<Subtab, { label: string; icon: IconComponent }> = {
+    overview: { label: "Overview", icon: Info },
+    logs: { label: "Logs", icon: ScrollText },
+    shell: { label: "Shell", icon: Terminal },
+    yaml: { label: "YAML", icon: FileCode },
+    events: { label: "Events", icon: Bell },
+  };
+
+  let subtabs = $derived.by<Subtab[]>(() => {
+    const tabs: Subtab[] = ["overview"];
+    if (showLogsButton) tabs.push("logs");
+    if (kind === "pod") tabs.push("shell");
+    tabs.push("yaml", "events");
+    return tabs;
+  });
+
+  // The active sub-tab is backed by the store so header buttons, keyboard
+  // shortcuts and the command palette all drive it in place. Clamp to a valid
+  // tab for the current kind (e.g. ignore "shell" on a non-pod).
+  let activeSubtab = $derived<Subtab>(
+    subtabs.includes(uiStore.detailSubtab as Subtab) ? (uiStore.detailSubtab as Subtab) : "overview"
+  );
+
+  function setSubtab(t: Subtab) {
+    uiStore.detailSubtab = t;
+  }
+
+  // Reset to Overview whenever the selected resource changes. Tracks only the
+  // uid so flipping subtabs doesn't retrigger the reset.
+  let lastUid = "";
+  $effect(() => {
+    const uid = resource?.metadata.uid ?? "";
+    if (uid !== lastUid) {
+      lastUid = uid;
+      uiStore.detailSubtab = "overview";
+    }
+  });
+
   function close() {
     if (k8sStore.navigateBack()) return;
     k8sStore.selectResource(null);
     if (uiStore.activeTab?.closable) {
       uiStore.closeTab(uiStore.activeTabId);
     }
-  }
-
-  function handleViewLogs() {
-    uiStore.showLogs(resource?.metadata.name);
   }
 
   let restartLoading = $state(false);
@@ -76,7 +117,6 @@
     if (!resource) return;
     dialogStore.openDelete(resource);
   }
-
 </script>
 
 {#if resource}
@@ -109,7 +149,7 @@
             {/if}
           </div>
         {:else}
-          <span class="text-[15px] font-semibold text-[var(--text-primary)]">{resource.metadata.name}</span>
+          <span class="truncate text-[15px] font-semibold text-[var(--text-primary)]">{resource.metadata.name}</span>
           <div class="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
             <span class="text-[var(--text-dimmed)]">{resource.kind}</span>
             {#if resource.metadata.namespace}
@@ -132,6 +172,18 @@
             Scale
           </Button>
         {/if}
+        {#if showLogsButton}
+          <Button variant="outline" size="sm" class="gap-2" onclick={() => setSubtab("logs")} title="Logs (l)">
+            <ScrollText class="h-3.5 w-3.5" />
+            Logs
+          </Button>
+        {/if}
+        {#if kind === "pod"}
+          <Button variant="outline" size="sm" class="gap-2" onclick={() => setSubtab("shell")} title="Shell (t)">
+            <Terminal class="h-3.5 w-3.5" />
+            Shell
+          </Button>
+        {/if}
         {#if isRestartable}
           <Button variant="outline" size="sm" class="gap-2" onclick={doRestart} disabled={restartLoading} title="Restart">
             <RotateCcw class="h-3.5 w-3.5" />
@@ -147,22 +199,10 @@
         {#each extensions.mountsFor("detail-panel-actions") as mount (mount.id)}
           <mount.component {resource} />
         {/each}
-        <Button variant="outline" size="sm" class="gap-2" onclick={() => uiStore.showYamlEditor(resource?.metadata.name)} title="Edit YAML">
+        <Button variant="outline" size="sm" class="gap-2" onclick={() => setSubtab("yaml")} title="Edit YAML (e)">
           <Pencil class="h-3.5 w-3.5" />
           Edit
         </Button>
-        {#if showLogsButton}
-          <Button variant="outline" size="sm" class="gap-2" onclick={handleViewLogs} title="View Logs">
-            <FileText class="h-3.5 w-3.5" />
-            Logs
-          </Button>
-        {/if}
-        {#if kind === "pod"}
-          <Button variant="outline" size="sm" class="gap-2" onclick={() => uiStore.showTerminal(resource?.metadata.name)} title="Terminal">
-            <Terminal class="h-3.5 w-3.5" />
-            Terminal
-          </Button>
-        {/if}
         <Button variant="destructive" size="sm" class="gap-2" onclick={handleDelete} title="Delete Resource">
           <Trash2 class="h-3.5 w-3.5" />
           Delete
@@ -170,32 +210,81 @@
       </div>
     </div>
 
-    <!-- Content -->
-    <ScrollArea class="min-h-0 flex-1 select-text">
-      {#if kind === "pod"}
-        <PodDetails {resource} />
-      {:else if kind === "deployment"}
-        <DeploymentDetails {resource} />
-      {:else if kind === "statefulset"}
-        <StatefulSetDetails {resource} />
-      {:else if kind === "daemonset"}
-        <DaemonSetDetails {resource} />
-      {:else if kind === "job"}
-        <JobDetails {resource} />
-      {:else if kind === "cronjob"}
-        <CronJobDetails {resource} />
-      {:else if kind === "service"}
-        <ServiceDetails {resource} />
-      {:else if kind === "ingress"}
-        <IngressDetails {resource} />
-      {:else if kind === "horizontalpodautoscaler"}
-        <HpaDetails {resource} />
-      {:else if kind === "node"}
-        <NodeDetails {resource} />
-      {:else}
-        <GenericDetails {resource} />
-      {/if}
-    </ScrollArea>
-  </div>
+    <!-- Subtab bar -->
+    <div class="flex shrink-0 items-stretch gap-0.5 border-b border-[var(--border-color)] px-6">
+      {#each subtabs as t (t)}
+        {@const TabIcon = SUBTAB_META[t].icon}
+        {@const isActive = activeSubtab === t}
+        <button
+          class={cn(
+            "relative flex items-center gap-1.5 px-3 pb-2.5 pt-2 text-[13px] transition-colors",
+            isActive ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+          )}
+          onclick={() => setSubtab(t)}
+        >
+          <TabIcon class={cn("h-3.5 w-3.5", isActive ? "text-[var(--accent)]" : "")} />
+          {SUBTAB_META[t].label}
+          {#if isActive}
+            <span class="absolute inset-x-1.5 -bottom-px h-0.5 rounded-full bg-[var(--accent)]"></span>
+          {/if}
+        </button>
+      {/each}
+    </div>
 
+    <!-- Subtab content -->
+    <div class="min-h-0 flex-1">
+      {#if activeSubtab === "overview"}
+        <ScrollArea class="h-full select-text">
+          {#if kind === "pod"}
+            <PodDetails {resource} />
+          {:else if kind === "deployment"}
+            <DeploymentDetails {resource} />
+          {:else if kind === "statefulset"}
+            <StatefulSetDetails {resource} />
+          {:else if kind === "daemonset"}
+            <DaemonSetDetails {resource} />
+          {:else if kind === "job"}
+            <JobDetails {resource} />
+          {:else if kind === "cronjob"}
+            <CronJobDetails {resource} />
+          {:else if kind === "service"}
+            <ServiceDetails {resource} />
+          {:else if kind === "ingress"}
+            <IngressDetails {resource} />
+          {:else if kind === "horizontalpodautoscaler"}
+            <HpaDetails {resource} />
+          {:else if kind === "node"}
+            <NodeDetails {resource} />
+          {:else}
+            <GenericDetails {resource} />
+          {/if}
+        </ScrollArea>
+      {:else if activeSubtab === "logs"}
+        <div class="h-full">
+          <LazyView
+            loader={() => import("$lib/components/logs/LogViewer.svelte")}
+            name="logs"
+          />
+        </div>
+      {:else if activeSubtab === "shell"}
+        <div class="h-full">
+          <LazyView
+            loader={() => import("$lib/components/terminal/TerminalView.svelte")}
+            name="terminal"
+          />
+        </div>
+      {:else if activeSubtab === "yaml"}
+        <div class="h-full">
+          <LazyView
+            loader={() => import("$lib/components/details/YamlEditor.svelte")}
+            name="YAML editor"
+          />
+        </div>
+      {:else if activeSubtab === "events"}
+        <ScrollArea class="h-full select-text">
+          <EventsCard {resource} />
+        </ScrollArea>
+      {/if}
+    </div>
+  </div>
 {/if}

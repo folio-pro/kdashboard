@@ -15,6 +15,9 @@
   import { topologyStore } from "$lib/stores/topology.svelte";
   import { costStore } from "$lib/stores/cost.svelte";
   import { securityStore } from "$lib/stores/security.svelte";
+  import { getContextColor } from "$lib/utils/context-colors";
+  import { getIconById } from "$lib/utils/context-icons";
+  import DeviconIcon from "$lib/components/common/DeviconIcon.svelte";
 
   interface SectionDef {
     name: string;
@@ -264,14 +267,41 @@
       <ClusterRail />
 
       <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <!-- Active cluster header: at-a-glance context + namespace, matching
+             the reference console's cluster block above the nav. -->
+        {#if k8sStore.currentContext}
+          {@const headerCustom = settingsStore.getContextCustomization(k8sStore.currentContext)}
+          {@const headerColor = headerCustom?.color || getContextColor(k8sStore.currentContext)}
+          {@const headerIcon = headerCustom?.icon ? getIconById(headerCustom.icon) : undefined}
+          {@const headerLabel = headerCustom?.label}
+          <div class="flex items-center gap-[9px] border-b border-[var(--border-color)] px-3.5 pt-[13px] pb-[11px]">
+            <span
+              class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-[12px] font-semibold text-white"
+              style={`background-color: var(${headerColor});`}
+            >
+              {#if headerIcon}
+                <DeviconIcon id={headerIcon.id} class="h-4 w-4" />
+              {:else if headerLabel}
+                {headerLabel}
+              {:else}
+                {k8sStore.currentContext.charAt(0).toUpperCase()}
+              {/if}
+            </span>
+            <div class="flex min-w-0 flex-1 flex-col leading-tight">
+              <span class="truncate text-[13px] font-semibold text-[var(--text-primary)]" title={k8sStore.currentContext}>{k8sStore.currentContext}</span>
+              <span class="truncate text-[11px] text-[var(--text-muted)]">{k8sStore.currentNamespace || "all namespaces"}</span>
+            </div>
+          </div>
+        {/if}
+
         {#each extensions.mountsFor("sidebar-header") as mount (mount.id)}
           <mount.component />
         {/each}
 
-        <ScrollArea class="flex-1 py-2">
-          <div class="flex flex-col gap-2">
+        <ScrollArea class="flex-1 px-1 py-2">
+          <div class="flex flex-col gap-1.5">
             <!-- Overview (always first) -->
-            <div class="px-1">
+            <div class="px-2 pb-1">
               <SidebarItem
                 name="Overview"
                 resourceType="overview"

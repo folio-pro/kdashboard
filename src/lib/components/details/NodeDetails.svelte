@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { Badge } from "$lib/components/ui/badge";
+  import { Server, Cpu, Ban } from "lucide-svelte";
   import type { Resource } from "$lib/types";
-  import InfoRow from "./InfoRow.svelte";
+  import MetadataSection from "./MetadataSection.svelte";
+  import LabelsSection from "./LabelsSection.svelte";
+  import DetailSection from "./DetailSection.svelte";
+  import KvField from "./KvField.svelte";
+  import KvGrid from "./KvGrid.svelte";
   import CollapsibleConditions from "./CollapsibleConditions.svelte";
-  import CollapsibleLabels from "./CollapsibleLabels.svelte";
-  import EventsCard from "./EventsCard.svelte";
   import SmartAnnotationsCard from "./SmartAnnotationsCard.svelte";
   import RelatedResourcesCard from "./RelatedResourcesCard.svelte";
 
@@ -33,27 +35,13 @@
   let allocatable = $derived((status.allocatable as Record<string, string>) ?? {});
 
   let conditions = $derived(
-    (status.conditions as Array<{
-      type: string;
-      status: string;
-      reason?: string;
-      message?: string;
-    }>) ?? []
+    (status.conditions as Array<{ type: string; status: string; reason?: string; message?: string }>) ?? []
   );
 
-  let addresses = $derived(
-    (status.addresses as Array<{
-      type: string;
-      address: string;
-    }>) ?? []
-  );
+  let addresses = $derived((status.addresses as Array<{ type: string; address: string }>) ?? []);
 
   let taints = $derived(
-    (spec.taints as Array<{
-      key: string;
-      value?: string;
-      effect: string;
-    }>) ?? []
+    (spec.taints as Array<{ key: string; value?: string; effect: string }>) ?? []
   );
 
   let labels = $derived(resource.metadata.labels ?? {});
@@ -65,88 +53,78 @@
     if (type === "Ready") return conditionStatus === "True";
     return conditionStatus !== "True";
   }
+
 </script>
 
-<div class="mx-auto max-w-4xl space-y-6 p-7">
-  <!-- Overview Card -->
-  <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-    <div class="flex items-center justify-between px-5 py-4">
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Overview</h3>
-      <div class="flex items-center gap-1.5">
-        {#each conditions as condition}
-          <span
-            class="h-1.5 w-1.5 rounded-full"
-            style:background-color={isConditionHealthy(condition.type, condition.status) ? "var(--status-running)" : "var(--status-failed)"}
-            title="{condition.type}: {condition.status}"
-          ></span>
-        {/each}
-      </div>
-    </div>
-    <InfoRow label="Name" value={resource.metadata.name} />
-    <InfoRow label="OS Image" value={nodeInfo.osImage ?? "-"} />
-    <InfoRow label="Architecture" value={nodeInfo.architecture ?? "-"} />
-    <InfoRow label="Kernel" value={nodeInfo.kernelVersion ?? "-"} />
-    <InfoRow label="Runtime" value={nodeInfo.containerRuntimeVersion ?? "-"} />
-    <InfoRow label="Kubelet" value={nodeInfo.kubeletVersion ?? "-"} />
-    <InfoRow label="Created" value={resource.metadata.creation_timestamp} />
-    {#if spec.unschedulable}<InfoRow label="Unschedulable" value="Yes (Cordoned)" valueColor="var(--status-pending)" />{/if}
-    {#if spec.podCIDR}<InfoRow label="Pod CIDR" value={spec.podCIDR as string} />{/if}
+<div class="select-text">
+  <MetadataSection {resource} />
 
-    {#if addresses.length > 0}
+  <DetailSection title="Node Info" icon={Server}>
+    <KvGrid>
+      <KvField label="OS Image" value={nodeInfo.osImage ?? "-"} mono={false} />
+      <KvField label="Architecture" value={nodeInfo.architecture ?? "-"} />
+      <KvField label="Kernel" value={nodeInfo.kernelVersion ?? "-"} />
+      <KvField label="Runtime" value={nodeInfo.containerRuntimeVersion ?? "-"} />
+      <KvField label="Kubelet" value={nodeInfo.kubeletVersion ?? "-"} />
       {#each addresses as addr}
-        <InfoRow label={addr.type} value={addr.address} />
+        <KvField label={addr.type} value={addr.address} />
       {/each}
-    {/if}
-
-    <CollapsibleConditions {conditions} healthFn={isConditionHealthy} />
-  </div>
-
-  <!-- Resources Card -->
-  <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-    <div class="flex items-center px-5 py-4">
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Resources</h3>
-    </div>
-    <div class="flex h-10 items-center border-t border-[var(--border-hover)] bg-[var(--bg-primary)] px-5">
-      <div class="w-[140px] shrink-0 text-[11px] font-semibold text-[var(--text-dimmed)]">Resource</div>
-      <div class="flex-1 text-[11px] font-semibold text-[var(--text-dimmed)]">Capacity</div>
-      <div class="flex-1 text-[11px] font-semibold text-[var(--text-dimmed)]">Allocatable</div>
-    </div>
-    {#each resourceKeys as key}
-      {#if capacity[key] || allocatable[key]}
-        <div class="flex h-11 items-center border-t border-[var(--border-hover)] px-5">
-          <div class="w-[140px] shrink-0 text-xs font-medium text-[var(--text-dimmed)]">{key}</div>
-          <div class="flex-1 font-mono text-[13px] font-medium text-[var(--text-primary)]">{capacity[key] ?? "-"}</div>
-          <div class="flex-1 font-mono text-[13px] font-medium text-[var(--text-primary)]">{allocatable[key] ?? "-"}</div>
-        </div>
+      {#if spec.podCIDR}
+        <KvField label="Pod CIDR" value={spec.podCIDR as string} />
       {/if}
-    {/each}
-  </div>
+      {#if spec.unschedulable}
+        <KvField label="Unschedulable">
+          <span class="font-mono text-[13px] text-[var(--status-pending)]">Yes (Cordoned)</span>
+        </KvField>
+      {/if}
+    </KvGrid>
+  </DetailSection>
 
-  {#if taints.length > 0}
-    <!-- Taints Card -->
-    <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-      <div class="flex items-center justify-between px-5 py-4">
-        <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Taints</h3>
-        <span class="text-xs text-[var(--text-muted)]">{taints.length}</span>
-      </div>
-      {#each taints as taint}
-        <div class="flex items-center gap-3.5 border-t border-[var(--border-hover)] px-5 py-3.5">
-          <Badge variant="secondary" class="text-[10px]">{taint.effect}</Badge>
-          <span class="truncate font-mono text-[11px] text-[var(--text-primary)]">
-            {taint.key}{taint.value ? `=${taint.value}` : ""}
-          </span>
-        </div>
-      {/each}
-    </div>
+  {#if conditions.length > 0}
+    <CollapsibleConditions {conditions} healthFn={isConditionHealthy} />
   {/if}
 
-  <!-- Related Resources -->
+  <DetailSection title="Resources" icon={Cpu}>
+    <table class="w-full border-collapse text-[13px]">
+      <thead>
+        <tr class="border-b border-[var(--border-color)]">
+          <th class="px-3 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]" style="width: 160px;">Resource</th>
+          <th class="px-3 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Capacity</th>
+          <th class="px-3 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Allocatable</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each resourceKeys as key}
+          {#if capacity[key] || allocatable[key]}
+            <tr class="border-b border-[var(--border-color)] last:border-b-0">
+              <td class="px-3 py-2.5 text-xs font-medium text-[var(--text-muted)]">{key}</td>
+              <td class="px-3 py-2.5 font-mono text-[13px] text-[var(--text-primary)]">{capacity[key] ?? "-"}</td>
+              <td class="px-3 py-2.5 font-mono text-[13px] text-[var(--text-primary)]">{allocatable[key] ?? "-"}</td>
+            </tr>
+          {/if}
+        {/each}
+      </tbody>
+    </table>
+  </DetailSection>
+
+  {#if taints.length > 0}
+    <DetailSection title="Taints" icon={Ban}>
+      {#snippet actions()}
+        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{taints.length}</span>
+      {/snippet}
+      <div class="flex flex-col gap-2">
+        {#each taints as taint}
+          <div class="flex items-center gap-3 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
+            <span class="inline-flex items-center rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">{taint.effect}</span>
+            <span class="truncate font-mono text-[12px] text-[var(--text-primary)]">{taint.key}{taint.value ? `=${taint.value}` : ""}</span>
+          </div>
+        {/each}
+      </div>
+    </DetailSection>
+  {/if}
+
   <RelatedResourcesCard {resource} resourceType="nodes" />
 
-  <!-- Events -->
-  <EventsCard {resource} />
-
-  <!-- Labels & Annotations -->
-  <CollapsibleLabels {labels} />
+  <LabelsSection {labels} />
   <SmartAnnotationsCard annotations={annotations} />
 </div>

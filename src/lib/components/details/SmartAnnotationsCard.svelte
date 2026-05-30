@@ -46,7 +46,7 @@
 </script>
 
 {#if Object.keys(annotations).length > 0}
-  <div class="flex flex-col gap-3">
+  <div class="flex flex-col">
     {#each groups as group}
       {@const groupId = getGroupId(group)}
       {@const collapsible = isCollapsible(group)}
@@ -54,9 +54,9 @@
       {@const count = Object.keys(group.annotations).length}
 
       {#if group.tool === null}
-        <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-          <div class="flex items-center justify-between px-5 py-4">
-            <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Other Annotations</h3>
+        <div class="border-b border-[var(--border-color)]">
+          <div class="flex items-center justify-between px-6 py-4">
+            <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Other Annotations</h3>
             <span class="text-xs text-[var(--text-muted)]">{count}</span>
           </div>
           {#each Object.entries(group.annotations) as [key, value]}
@@ -68,10 +68,10 @@
         </div>
       {:else}
         <!-- Tool group -->
-        <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+        <div class="border-b border-[var(--border-color)]">
           {#if collapsible}
             <button
-              class="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-[var(--bg-tertiary)]"
+              class="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-[var(--bg-tertiary)]"
               onclick={() => collapsed = toggleSetItem(collapsed, groupId)}
             >
               <div class="flex items-center gap-2.5">
@@ -79,7 +79,7 @@
                   {@const ToolIcon = ICON_MAP[group.tool.icon]}
                   <ToolIcon class="h-3.5 w-3.5 text-[var(--text-dimmed)]" />
                 {/if}
-                <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">{group.tool.name}</h3>
+                <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{group.tool.name}</h3>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-xs text-[var(--text-muted)]">{count}</span>
@@ -87,13 +87,13 @@
               </div>
             </button>
           {:else}
-            <div class="flex items-center justify-between px-5 py-4">
+            <div class="flex items-center justify-between px-6 py-4">
               <div class="flex items-center gap-2.5">
                 {#if group.tool.icon && ICON_MAP[group.tool.icon]}
                   {@const ToolIcon = ICON_MAP[group.tool.icon]}
                   <ToolIcon class="h-3.5 w-3.5 text-[var(--text-dimmed)]" />
                 {/if}
-                <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">{group.tool.name}</h3>
+                <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{group.tool.name}</h3>
               </div>
               <span class="text-xs text-[var(--text-muted)]">{count}</span>
             </div>

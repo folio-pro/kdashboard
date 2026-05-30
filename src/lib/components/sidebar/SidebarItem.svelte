@@ -56,9 +56,9 @@
 {:else}
   <button
     class={cn(
-      "flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md px-3 text-xs transition-colors",
+      "flex w-full min-w-0 items-center gap-2.5 rounded-[5px] px-2.5 py-[7px] text-[13px] transition-colors",
       active
-        ? "bg-[var(--sidebar-active)] text-[var(--text-primary)]"
+        ? "bg-[var(--sidebar-active)] font-medium text-[var(--text-primary)]"
         : "text-[var(--text-secondary)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--text-primary)]"
     )}
     {onclick}
@@ -73,7 +73,7 @@
     <span class="flex-1 truncate text-left">{name}</span>
     {#if count !== undefined && count > 0}
       <span class={cn(
-        "ml-auto shrink-0 tabular-nums text-[10px]",
+        "ml-auto shrink-0 font-mono tabular-nums text-[11px]",
         active ? "text-[var(--text-secondary)]" : "text-[var(--text-dimmed)]"
       )}>{count}</span>
     {/if}

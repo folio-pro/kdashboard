@@ -89,6 +89,27 @@
   let warningCount = $derived(events.reduce((n, e) => n + (e.type === "Warning" ? 1 : 0), 0));
   let counts = $derived(k8sStore.resourceCounts);
 
+  // Pod-status donut (reference console parity). Pure SVG over data already
+  // loaded — no extra fetch.
+  const DONUT_R = 52;
+  const DONUT_C = 2 * Math.PI * DONUT_R;
+  let podLegend = $derived([
+    { label: "Running", color: "var(--status-running)", value: podCounts.running },
+    { label: "Pending", color: "var(--status-pending)", value: podCounts.pending },
+    { label: "Failed", color: "var(--status-failed)", value: podCounts.failed },
+    { label: "Succeeded", color: "var(--status-succeeded)", value: podCounts.succeeded },
+  ]);
+  let donutArcs = $derived.by(() => {
+    const total = podCounts.total || 1;
+    let offset = 0;
+    return podLegend.map((s) => {
+      const len = (s.value / total) * DONUT_C;
+      const arc = { color: s.color, len, gap: DONUT_C - len, offset: -offset };
+      offset += len;
+      return arc;
+    });
+  });
+
   // Update dock badge with error pod count
   $effect(() => {
     const errorCount = podCounts.failed + podCounts.pending;
@@ -292,6 +313,51 @@
             </div>
           {/if}
         </div>
+
+        <!-- Pod Status donut -->
+        {#if !isLoading && podCounts.total > 0}
+          <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
+            <div class="mb-3 flex items-center gap-2">
+              <Box class="h-3.5 w-3.5 text-[var(--accent)]" />
+              <span class="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Pod Status</span>
+              <span class="ml-auto text-[10px] tabular-nums text-[var(--text-dimmed)]">{podCounts.total} total</span>
+            </div>
+            <div class="flex items-center gap-6">
+              <div class="relative shrink-0">
+                <svg width="124" height="124" viewBox="0 0 124 124" style="transform: rotate(-90deg);">
+                  <circle cx="62" cy="62" r={DONUT_R} fill="none" stroke="var(--bg-tertiary)" stroke-width="14" />
+                  {#each donutArcs as arc}
+                    {#if arc.len > 0}
+                      <circle
+                        cx="62"
+                        cy="62"
+                        r={DONUT_R}
+                        fill="none"
+                        stroke={arc.color}
+                        stroke-width="14"
+                        stroke-dasharray="{arc.len} {arc.gap}"
+                        stroke-dashoffset={arc.offset}
+                      />
+                    {/if}
+                  {/each}
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <span class="text-xl font-bold tabular-nums text-[var(--text-primary)]">{podCounts.total}</span>
+                  <span class="text-[10px] text-[var(--text-muted)]">pods</span>
+                </div>
+              </div>
+              <div class="flex flex-1 flex-col gap-2.5">
+                {#each podLegend as seg}
+                  <div class="flex items-center gap-2.5 text-xs">
+                    <span class="h-2.5 w-2.5 shrink-0 rounded-[3px]" style="background-color: {seg.color};"></span>
+                    <span class="text-[var(--text-secondary)]">{seg.label}</span>
+                    <span class="ml-auto font-mono tabular-nums text-[var(--text-primary)]">{seg.value}</span>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          </div>
+        {/if}
 
         <!-- Resource Counts -->
         {#if isLoading}

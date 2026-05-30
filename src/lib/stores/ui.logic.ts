@@ -120,11 +120,18 @@ function mkOverviewTab(): Tab {
   return { id: "tab-overview", type: "overview", label: "Overview", closable: true };
 }
 
+export type DetailSubtab = "overview" | "logs" | "shell" | "yaml" | "events";
+
 export class UiStoreLogic {
   sidebarCollapsed = false;
   commandPaletteOpen = false;
   activeView: ActiveView = "overview";
   previousView: ActiveView | null = null;
+
+  // Active sub-tab inside the resource DetailPanel (Overview/Logs/Shell/YAML/
+  // Events). Lifted to the store so header buttons, keyboard shortcuts and the
+  // command palette can switch it in-place instead of opening a new top tab.
+  detailSubtab: DetailSubtab = "overview";
 
   // Tab system
   tabs: Tab[] = [mkOverviewTab()];
@@ -378,14 +385,28 @@ export class UiStoreLogic {
   }
 
   showLogs(resourceName?: string): void {
+    // When a resource detail is open, switch its sub-tab in place rather than
+    // spawning a new top-level tab.
+    if (this.activeView === "details") {
+      this.detailSubtab = "logs";
+      return;
+    }
     this._switchView("logs", { label: resourceName ?? "Logs", resourceName });
   }
 
   showTerminal(resourceName?: string): void {
+    if (this.activeView === "details") {
+      this.detailSubtab = "shell";
+      return;
+    }
     this._switchView("terminal", { label: resourceName ?? "Terminal", resourceName });
   }
 
   showYamlEditor(resourceName?: string): void {
+    if (this.activeView === "details") {
+      this.detailSubtab = "yaml";
+      return;
+    }
     this._switchView("yaml", { label: resourceName ?? "YAML", resourceName });
   }
 
