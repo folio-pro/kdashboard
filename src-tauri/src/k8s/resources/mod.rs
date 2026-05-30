@@ -18,7 +18,7 @@ pub use helpers::{
     api_resource_for_kind, binding_to_resource, dynamic_api_for_resource, meta_from,
     vpa_api_resource,
 };
-pub use listing::{get_resource_yaml, list_pods_by_selector, list_resources};
+pub use listing::{get_resource, get_resource_yaml, list_pods_by_selector, list_resources};
 #[allow(unused_imports)]
 pub use namespace::get_namespace_info;
 pub use operations::{

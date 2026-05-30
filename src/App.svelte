@@ -91,6 +91,14 @@
       return;
     }
 
+    // Benchmark mode (env KDASH_BENCH=1): drive the real list path and exit.
+    try {
+      const { maybeRunBenchmark } = await import("$lib/benchmark/e2e-runner");
+      if (await maybeRunBenchmark()) return;
+    } catch (err) {
+      console.error("[initApp] benchmark run failed", err);
+    }
+
     try {
       await k8sStore.restoreConnection(
         settingsStore.settings.context,

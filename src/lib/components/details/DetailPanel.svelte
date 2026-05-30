@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
+  import type { Resource } from "$lib/types";
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { Pencil, Terminal, Trash2, Scale, RotateCcw, History, ChevronRight, Info, ScrollText, FileCode, Bell } from "lucide-svelte";
@@ -25,7 +27,38 @@
   import NodeDetails from "./NodeDetails.svelte";
   import GenericDetails from "./GenericDetails.svelte";
 
-  let resource = $derived(k8sStore.selectedResource);
+  // The list item (lean for projected types like pods). Renders the header
+  // instantly while the full object hydrates.
+  let listItem = $derived(k8sStore.selectedResource);
+
+  // Pods are listed with a projected (lean) spec/status, so the detail panel
+  // re-fetches the full object on demand. Other types carry full data in the
+  // list already and need no hydration.
+  let hydrated = $state<Resource | null>(null);
+  $effect(() => {
+    const li = listItem;
+    if (!li || (li.kind ?? "").toLowerCase() !== "pod") {
+      hydrated = null;
+      return;
+    }
+    const uid = li.metadata?.uid;
+    invoke<Resource>("get_resource", {
+      kind: li.kind,
+      name: li.metadata.name,
+      namespace: li.metadata.namespace ?? "",
+    })
+      .then((full) => {
+        // Discard if the selection changed while in-flight.
+        if (k8sStore.selectedResource?.metadata?.uid === uid) hydrated = full;
+      })
+      .catch(() => {
+        // Fall back to the lean list item on error.
+      });
+  });
+
+  let resource = $derived(
+    hydrated && hydrated.metadata?.uid === listItem?.metadata?.uid ? hydrated : listItem,
+  );
 
   let kind = $derived(deriveKind(resource));
   let showLogsButton = $derived(deriveShowLogsButton(kind));
