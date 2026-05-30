@@ -17,21 +17,15 @@ export default defineConfig(async () => ({
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Split heavy deps into separate chunks for better caching
-          "vendor-codemirror": [
-            "codemirror",
-            "@codemirror/state",
-            "@codemirror/view",
-            "@codemirror/lang-yaml",
-            "@codemirror/language",
-            "@codemirror/commands",
-            "@codemirror/search",
-            "@codemirror/autocomplete",
-            "@codemirror/lint",
-            "@codemirror/merge",
-          ],
-          "vendor-xterm": ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links"],
+        // Split heavy deps into separate chunks for better caching.
+        // Function form is required by Rolldown (Vite 8+).
+        manualChunks(id) {
+          if (id.includes("/node_modules/codemirror/") || id.includes("/node_modules/@codemirror/")) {
+            return "vendor-codemirror";
+          }
+          if (id.includes("/node_modules/@xterm/")) {
+            return "vendor-xterm";
+          }
         },
       },
     },
