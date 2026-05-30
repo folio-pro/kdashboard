@@ -21,9 +21,9 @@
   }
 </script>
 
-<!-- Rail sits a shade below the sidebar. kdashboard sets --rail-bg explicitly;
-     every other theme derives a subtle darken from its own --sidebar-bg so the
-     separation holds without a per-theme token. -->
+<!-- Rail sits a shade below the sidebar. The background derives a subtle darken
+     from the active theme's own --sidebar-bg so the separation holds across every
+     theme without a per-theme token. A theme may still set --rail-bg to override. -->
 <div
   class="flex h-full w-[56px] shrink-0 flex-col items-center border-r border-[var(--border-color)]"
   style="background: var(--rail-bg, color-mix(in srgb, var(--sidebar-bg) 92%, #000));"
