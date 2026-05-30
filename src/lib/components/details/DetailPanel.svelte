@@ -210,8 +210,9 @@
       </div>
     </div>
 
-    <!-- Subtab bar -->
-    <div class="flex shrink-0 items-stretch gap-0.5 border-b border-[var(--border-color)] px-6">
+    <!-- Subtab bar — px-3 here + px-3 per tab lands the first tab's content at
+         24px, aligned with the header and the section titles below. -->
+    <div class="flex shrink-0 items-stretch gap-0.5 border-b border-[var(--border-color)] px-3">
       {#each subtabs as t (t)}
         {@const TabIcon = SUBTAB_META[t].icon}
         {@const isActive = activeSubtab === t}
