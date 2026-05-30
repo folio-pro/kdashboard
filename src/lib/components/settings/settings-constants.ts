@@ -43,6 +43,12 @@ export const DARK_THEMES: ThemeOption[] = [
   { id: "monokai-dark", name: "Monokai" },
 ];
 
+/** Whether a theme id is a light preset. Anything not in LIGHT_THEMES is dark
+ *  (mirrors the `color-scheme` mapping in app.css). Used to drive the native
+ *  window appearance so the macOS titlebar matches the active theme. */
+export const isLightTheme = (id: string): boolean =>
+  LIGHT_THEMES.some((t) => t.id === id);
+
 export const TABS = [
   { id: "general", label: "General", icon: Palette },
   { id: "kubernetes", label: "Kubernetes", icon: Container },
