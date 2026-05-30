@@ -92,6 +92,20 @@ pub async fn get_resource_yaml(
         .str_err()
 }
 
+/// Fetch a single resource with full spec/status/data. Used by the detail panel
+/// to hydrate after the (projected) list returns lean items.
+#[tauri::command]
+#[tracing::instrument(skip_all, fields(kind, name, namespace))]
+pub async fn get_resource(
+    kind: String,
+    name: String,
+    namespace: String,
+) -> Result<k8s::resources::Resource, String> {
+    k8s::resources::get_resource(&kind, &name, &namespace)
+        .await
+        .str_err()
+}
+
 #[tauri::command]
 pub async fn apply_yaml(yaml: String) -> Result<String, String> {
     k8s::resources::apply_resource_yaml(&yaml).await.str_err()

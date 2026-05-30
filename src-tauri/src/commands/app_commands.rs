@@ -81,6 +81,59 @@ pub async fn get_app_metadata() -> Result<AppMetadata, String> {
 }
 
 // ===========================================================================
+// Benchmark mode (end-to-end list latency harness)
+//
+// Activated via env vars read at launch so an automated harness can drive the
+// real backend + IPC + render path without a WebDriver. The frontend polls
+// `bench_config`, and when enabled runs the list benchmark and persists the
+// results JSON via `write_bench_results`.
+// ===========================================================================
+
+#[derive(Clone, Serialize)]
+pub struct BenchConfig {
+    enabled: bool,
+    iterations: u32,
+    warmup: u32,
+    context: Option<String>,
+    namespace: Option<String>,
+    out_path: Option<String>,
+    /// Optional comma-separated override of resource types to measure.
+    resource_types: Option<String>,
+}
+
+#[tauri::command]
+pub async fn bench_config() -> Result<BenchConfig, String> {
+    let enabled = std::env::var("KDASH_BENCH").map(|v| v == "1").unwrap_or(false);
+    let parse = |k: &str, d: u32| {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(d)
+    };
+    let opt = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
+    Ok(BenchConfig {
+        enabled,
+        iterations: parse("KDASH_BENCH_ITERS", 5),
+        warmup: parse("KDASH_BENCH_WARMUP", 1),
+        context: opt("KDASH_BENCH_CONTEXT"),
+        namespace: opt("KDASH_BENCH_NS"),
+        out_path: opt("KDASH_BENCH_OUT"),
+        resource_types: opt("KDASH_BENCH_TYPES"),
+    })
+}
+
+#[tauri::command]
+pub async fn write_bench_results(path: String, contents: String) -> Result<(), String> {
+    // Defense-in-depth: this command is registered unconditionally, so only allow
+    // writing to the path the harness configured via KDASH_BENCH_OUT.
+    let allowed = std::env::var("KDASH_BENCH_OUT").unwrap_or_default();
+    if allowed.is_empty() || path != allowed {
+        return Err("write_bench_results: path must match KDASH_BENCH_OUT".into());
+    }
+    std::fs::write(&path, contents).map_err(|e| format!("write {path}: {e}"))
+}
+
+// ===========================================================================
 // kubectl execution
 // ===========================================================================
 

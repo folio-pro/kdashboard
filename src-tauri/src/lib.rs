@@ -221,6 +221,7 @@ pub fn run() {
             list_pods_by_selector,
             get_resource_counts,
             get_resource_yaml,
+            get_resource,
             apply_yaml,
             delete_resource,
             get_events,
@@ -267,6 +268,9 @@ pub fn run() {
             run_kubectl,
             // Observability
             get_app_metadata,
+            // Benchmark harness
+            bench_config,
+            write_bench_results,
             // Splash
             close_splashscreen,
             // Settings
