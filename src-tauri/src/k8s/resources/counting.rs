@@ -20,13 +20,16 @@ use crate::k8s::client::get_client;
 // Lightweight resource count (metadata-only, no spec/status serialization)
 // ---------------------------------------------------------------------------
 
+// `list_metadata` requests only object metadata (PartialObjectMeta) instead of
+// full spec/status bodies, cutting the wire + serde payload ~10-50x for heavy
+// types (Pods/ConfigMaps/Secrets). We only need `.items.len()` for the count.
 macro_rules! count_namespaced_resource {
     ($type:ty, $client:expr, $namespace:expr) => {{
         let api: Api<$type> = match $namespace {
             Some(ref ns) => Api::namespaced($client.clone(), ns),
             None => Api::all($client.clone()),
         };
-        let list = api.list(&ListParams::default()).await?;
+        let list = api.list_metadata(&ListParams::default()).await?;
         Ok(list.items.len() as u32)
     }};
 }
@@ -34,7 +37,7 @@ macro_rules! count_namespaced_resource {
 macro_rules! count_cluster_resource {
     ($type:ty, $client:expr) => {{
         let api: Api<$type> = Api::all($client.clone());
-        let list = api.list(&ListParams::default()).await?;
+        let list = api.list_metadata(&ListParams::default()).await?;
         Ok(list.items.len() as u32)
     }};
 }
@@ -80,7 +83,7 @@ async fn count_resources_with_client(
                 Some(ref ns) => Api::namespaced_with(client.clone(), ns, &ar),
                 None => Api::all_with(client.clone(), &ar),
             };
-            match api.list(&ListParams::default()).await {
+            match api.list_metadata(&ListParams::default()).await {
                 Ok(list) => Ok(list.items.len() as u32),
                 Err(_) => Ok(0), // VPA CRD may not be installed
             }

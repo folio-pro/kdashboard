@@ -12,6 +12,12 @@ export const MIN_COL_WIDTH = 40;
 
 export type SortDirection = "asc" | "desc";
 
+// NOTE: we use String.prototype.localeCompare directly here, NOT a cached
+// Intl.Collator. A micro-benchmark on 3000 names showed the cached collator is
+// ~1.5-2x SLOWER than localeCompare in JavaScriptCore (the Tauri webview engine
+// on macOS/Linux) and also changes ordering semantics — so the "cache a
+// collator" optimization is a regression for this runtime. See the perf audit.
+
 /** Clamp a column width to the minimum allowed value. */
 export function clampColumnWidth(width: number): number {
   return Math.max(MIN_COL_WIDTH, width);

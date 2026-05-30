@@ -4,15 +4,13 @@
   import Sidebar from "$lib/components/sidebar/Sidebar.svelte";
   import TitleBar from "$lib/components/titlebar/TitleBar.svelte";
   import ResourceTable from "$lib/components/table/ResourceTable.svelte";
-  import DetailPanel from "$lib/components/details/DetailPanel.svelte";
   import StatusBar from "$lib/components/common/StatusBar.svelte";
   import CommandPalette from "$lib/components/command-palette/CommandPalette.svelte";
-  import PortForwardView from "$lib/components/port-forwards/PortForwardView.svelte";
   import TabBar from "$lib/components/tabs/TabBar.svelte";
   import LazyView from "$lib/components/common/LazyView.svelte";
-  // LogViewer, TerminalView and YamlEditor pull in large vendor chunks
-  // (xterm ~337 kB, CodeMirror ~493 kB) so they're loaded via LazyView
-  // to keep the initial bundle small.
+  // DetailPanel (pulls in the yaml parser ~97 kB), LogViewer, TerminalView and
+  // YamlEditor pull in large vendor chunks (xterm ~337 kB, CodeMirror ~493 kB)
+  // so they're loaded via LazyView to keep the initial bundle small.
   import { ToastContainer } from "$lib/components/ui/toast";
   import ContextMenu from "$lib/components/context-menu/ContextMenu.svelte";
   import UpdateBanner from "$lib/components/common/UpdateBanner.svelte";
@@ -161,7 +159,10 @@
         {:else if uiStore.activeView === "table"}
           <ResourceTable />
         {:else if uiStore.activeView === "details"}
-          <DetailPanel />
+          <LazyView
+            loader={() => import("$lib/components/details/DetailPanel.svelte")}
+            name="details"
+          />
         {:else if uiStore.activeView === "logs"}
           <LazyView
             loader={() => import("$lib/components/logs/LogViewer.svelte")}
@@ -173,7 +174,10 @@
             name="terminal"
           />
         {:else if uiStore.activeView === "portforwards"}
-          <PortForwardView />
+          <LazyView
+            loader={() => import("$lib/components/port-forwards/PortForwardView.svelte")}
+            name="port forwards"
+          />
         {:else if uiStore.activeView === "yaml"}
           <LazyView
             loader={() => import("$lib/components/details/YamlEditor.svelte")}
