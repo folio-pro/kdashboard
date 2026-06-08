@@ -15,6 +15,7 @@ import { app, BrowserWindow, ipcMain, shell, nativeImage } from 'electron';
 import * as path from 'node:path';
 import { buildDispatcher, type HandlerCtx, type HandlerModule } from './dispatch';
 import { setKubeconfigPath } from './k8s/client';
+import { fixPathEnv } from './path-fix';
 
 // Handler modules — each exports register(handlers, ctx). See dispatch.ts.
 import * as appHandlers from './handlers/app';
@@ -248,6 +249,10 @@ function bootstrap(): void {
     return dispatch(cmd, args);
   });
 
+  // Revalidate cached pricing datasets once a day in the background (mirrors
+  // the Rust spawn_periodic_refresh in setup()).
+  cost.startPeriodicRefresh();
+
   splashWindow = createSplashWindow();
   mainWindow = createMainWindow();
 
@@ -260,6 +265,11 @@ function bootstrap(): void {
   });
   setTimeout(revealMainWindow, 5000);
 }
+
+// Adopt the login shell's PATH so GUI launches can find kubectl / trivy / grype
+// / cloud auth plugins (macOS/Linux GUI apps don't inherit it). Synchronous and
+// must run before any handler spawns a process.
+fixPathEnv();
 
 app.whenReady().then(bootstrap);
 

@@ -862,6 +862,32 @@ function refreshPricing(): void {
   costCache = null;
 }
 
+/**
+ * Background pricing revalidation — port of pricing.rs spawn_periodic_refresh.
+ * Every 24h, conditionally re-fetch each ALREADY-CACHED provider's dataset
+ * (cheap 304 when unchanged) so pricing never goes stale. Providers that were
+ * never loaded are skipped (mirrors Rust known_providers()), so a GCP-only
+ * cluster never fetches aws/azure. The first tick is at +24h; startup itself
+ * loads lazily on the first cost request. Returns a stop function.
+ */
+export function startPeriodicRefresh(): () => void {
+  const timer = setInterval(() => {
+    void (async () => {
+      const cached = datasetCache ? [...datasetCache.keys()] : [];
+      for (const provider of cached) {
+        try {
+          await ensureDatasetLoaded(provider);
+        } catch {
+          // best-effort: a failed revalidation keeps the existing cached data
+        }
+      }
+    })();
+  }, DATASET_TTL_MS);
+  // Don't keep the process alive solely for this timer.
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
