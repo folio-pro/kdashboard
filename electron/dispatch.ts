@@ -51,8 +51,6 @@ export function buildDispatcher(modules: HandlerModule[], ctx: HandlerCtx): {
     mod.register(handlers, ctx);
   }
 
-  registerStubHandlers(handlers);
-
   async function dispatch(cmd: string, args: Record<string, unknown> | undefined): Promise<unknown> {
     const handler = handlers.get(cmd);
     if (!handler) {
@@ -62,28 +60,4 @@ export function buildDispatcher(modules: HandlerModule[], ctx: HandlerCtx): {
   }
 
   return { handlers, dispatch };
-}
-
-/**
- * Streaming / stateful / updater commands that are NOT yet ported. Registered
- * only if a real handler module hasn't already claimed the name, so the Wire
- * and Port phases can override these by registering first. Each throws a clear
- * phase-2 error so the app still boots and the failure is legible in the UI.
- *
- * Phase 2 (streaming subsystems) is complete: logs, terminal exec, port-forward,
- * resource watch, and the updater are all implemented by real handler modules
- * (electron/handlers/{logs,terminal,portforward,watch,updater}.ts). The list is
- * intentionally empty — every Tauri command now has a real handler. It is kept
- * (rather than deleted) as the documented seam for any future not-yet-ported
- * command, and registerStubHandlers below is a no-op while it is empty.
- */
-export const STUBBED_PHASE2_COMMANDS = [] as const;
-
-function registerStubHandlers(handlers: HandlerMap): void {
-  for (const cmd of STUBBED_PHASE2_COMMANDS) {
-    if (handlers.has(cmd)) continue; // a real module already claimed it
-    handlers.set(cmd, () => {
-      throw new Error('Not yet implemented — streaming subsystem, migration phase 2');
-    });
-  }
 }

@@ -26,37 +26,22 @@
 import * as YAML from 'yaml';
 
 import { getCoreV1Api, kc } from '../k8s/client';
+import type {
+  RawList,
+  RawObject,
+  RawObjectMeta,
+  Resource,
+  ResourceList,
+  ResourceMetadata,
+} from '../k8s/resource-types';
+import { metaFrom } from '../k8s/resource-mapping';
+import { apiVersionOf, resolveKindOrThrow } from '../k8s/kinds';
 import type { Handler, HandlerMap } from '../dispatch';
 
 // ---------------------------------------------------------------------------
-// Wire types (match Rust serde output exactly)
+// Wire types. Resource/ResourceMetadata/ResourceList/Raw* come from the shared
+// k8s core; only the resources-specific Event shapes live here.
 // ---------------------------------------------------------------------------
-
-interface ResourceMetadata {
-  name?: string;
-  namespace?: string;
-  uid?: string;
-  resource_version?: string;
-  labels?: Record<string, string>;
-  annotations?: Record<string, string>;
-  creation_timestamp?: string;
-  owner_references?: unknown;
-}
-
-interface Resource {
-  api_version: string;
-  kind: string;
-  metadata: ResourceMetadata;
-  spec?: unknown;
-  status?: unknown;
-  data?: unknown;
-  /** Only populated for Secrets (the Secret `type` field). Renamed from type_. */
-  type?: string;
-}
-
-interface ResourceList {
-  items: Resource[];
-}
 
 interface EventItem {
   name?: string;
@@ -72,40 +57,9 @@ interface EventItem {
 }
 
 // ---------------------------------------------------------------------------
-// Raw k8s API shapes (the JSON bodies returned by CustomObjectsApi etc.)
+// Raw k8s API shapes. RawObjectMeta/RawObject/RawList come from the shared core;
+// only the resources-specific Event raw shapes live here.
 // ---------------------------------------------------------------------------
-
-interface RawObjectMeta {
-  name?: string;
-  namespace?: string;
-  uid?: string;
-  resourceVersion?: string;
-  labels?: Record<string, string>;
-  annotations?: Record<string, string>;
-  creationTimestamp?: string;
-  ownerReferences?: unknown[];
-  managedFields?: unknown;
-  [k: string]: unknown;
-}
-
-interface RawObject {
-  apiVersion?: string;
-  kind?: string;
-  metadata?: RawObjectMeta;
-  spec?: unknown;
-  status?: unknown;
-  data?: unknown;
-  stringData?: Record<string, string>;
-  type?: string;
-  roleRef?: unknown;
-  subjects?: unknown;
-  [k: string]: unknown;
-}
-
-interface RawList {
-  items?: RawObject[];
-  metadata?: { continue?: string };
-}
 
 interface RawEvent {
   metadata?: RawObjectMeta;
@@ -138,14 +92,11 @@ interface ApiResource {
 
 const LIST_PAGE_SIZE = 500;
 
-/** group/"" + version => api_version string ("v1" or "group/version"). */
-function apiVersionOf(group: string, version: string): string {
-  return group === '' ? version : `${group}/${version}`;
-}
-
 /**
- * Resolve the (group, version, plural, scope) for a plural resource_type as
- * used by list_resources / get_resource_counts. Mirrors the listing.rs match.
+ * Resolve the (group, version, plural, scope) for a PLURAL resource_type as used
+ * by list_resources / get_resource_counts. Mirrors the listing.rs match. This is
+ * keyed by the frontend's plural resourceType (pods, deployments, hpa, vpa, …) —
+ * a distinct key space from the singular kind registry, so it stays local.
  * `undefined` for unknown types (the caller decides how to error).
  */
 function apiResourceForType(resourceType: string): ApiResource | undefined {
@@ -193,72 +144,20 @@ function apiResourceForType(resourceType: string): ApiResource | undefined {
  * the returned Resource.kind / ApiResource.kind).
  */
 function apiResourceForKind(kind: string): { ar: ApiResource; clusterScoped: boolean } {
-  // [group, version, plural, clusterScoped]
-  const table: Record<string, [string, string, string, boolean]> = {
-    pod: ['', 'v1', 'pods', false],
-    deployment: ['apps', 'v1', 'deployments', false],
-    service: ['', 'v1', 'services', false],
-    configmap: ['', 'v1', 'configmaps', false],
-    secret: ['', 'v1', 'secrets', false],
-    ingress: ['networking.k8s.io', 'v1', 'ingresses', false],
-    statefulset: ['apps', 'v1', 'statefulsets', false],
-    daemonset: ['apps', 'v1', 'daemonsets', false],
-    job: ['batch', 'v1', 'jobs', false],
-    cronjob: ['batch', 'v1', 'cronjobs', false],
-    replicaset: ['apps', 'v1', 'replicasets', false],
-    node: ['', 'v1', 'nodes', true],
-    namespace: ['', 'v1', 'namespaces', true],
-    horizontalpodautoscaler: ['autoscaling', 'v2', 'horizontalpodautoscalers', false],
-    hpa: ['autoscaling', 'v2', 'horizontalpodautoscalers', false],
-    verticalpodautoscaler: ['autoscaling.k8s.io', 'v1', 'verticalpodautoscalers', false],
-    vpa: ['autoscaling.k8s.io', 'v1', 'verticalpodautoscalers', false],
-    event: ['', 'v1', 'events', false],
-    networkpolicy: ['networking.k8s.io', 'v1', 'networkpolicies', false],
-    persistentvolume: ['', 'v1', 'persistentvolumes', true],
-    pv: ['', 'v1', 'persistentvolumes', true],
-    persistentvolumeclaim: ['', 'v1', 'persistentvolumeclaims', false],
-    pvc: ['', 'v1', 'persistentvolumeclaims', false],
-    storageclass: ['storage.k8s.io', 'v1', 'storageclasses', true],
-    sc: ['storage.k8s.io', 'v1', 'storageclasses', true],
-    role: ['rbac.authorization.k8s.io', 'v1', 'roles', false],
-    rolebinding: ['rbac.authorization.k8s.io', 'v1', 'rolebindings', false],
-    clusterrole: ['rbac.authorization.k8s.io', 'v1', 'clusterroles', true],
-    clusterrolebinding: ['rbac.authorization.k8s.io', 'v1', 'clusterrolebindings', true],
-    resourcequota: ['', 'v1', 'resourcequotas', false],
-    limitrange: ['', 'v1', 'limitranges', false],
-    poddisruptionbudget: ['policy', 'v1', 'poddisruptionbudgets', false],
-    pdb: ['policy', 'v1', 'poddisruptionbudgets', false],
-  };
-  const row = table[kind.toLowerCase()];
-  if (!row) {
-    throw new Error(`Unsupported kind for YAML fetch: ${kind}`);
-  }
-  const [group, version, plural, clusterScoped] = row;
+  const k = resolveKindOrThrow(kind);
   return {
-    ar: { group, version, apiVersion: apiVersionOf(group, version), plural, clusterScoped },
-    clusterScoped,
+    ar: {
+      group: k.group,
+      version: k.version,
+      apiVersion: apiVersionOf(k.group, k.version),
+      plural: k.plural,
+      clusterScoped: k.clusterScoped,
+    },
+    clusterScoped: k.clusterScoped,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Metadata projection — port of helpers.rs meta_from
-// ---------------------------------------------------------------------------
-
-function metaFrom(m: RawObjectMeta | undefined): ResourceMetadata {
-  const meta = m ?? {};
-  const owners = Array.isArray(meta.ownerReferences) ? meta.ownerReferences : undefined;
-  return {
-    name: meta.name,
-    namespace: meta.namespace,
-    uid: meta.uid,
-    resource_version: meta.resourceVersion,
-    labels: meta.labels,
-    annotations: meta.annotations,
-    creation_timestamp: meta.creationTimestamp,
-    // Only included when non-empty (matches the Rust filter on !refs.is_empty()).
-    owner_references: owners && owners.length > 0 ? owners : undefined,
-  };
-}
+// metaFrom now lives in electron/k8s/resource-mapping.ts (shared).
 
 /** Drop a value if it is null/undefined (Rust's `.filter(|v| !v.is_null())`). */
 function presentOrUndefined<T>(v: T | null | undefined): T | undefined {

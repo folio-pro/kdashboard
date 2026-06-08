@@ -24,6 +24,8 @@ import {
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import { kc } from '../k8s/client.js';
+import { apiVersionOf, resolveKindOrThrow } from '../k8s/kinds.js';
+import { k8sErrorMessage } from '../k8s/errors.js';
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 
 // ---------------------------------------------------------------------------
@@ -55,55 +57,13 @@ interface KindInfo {
   kind: string;
 }
 
-// (group, version, kind) per Rust helpers::api_resource_for_kind. The Rust uses
-// (group, version, plural); here we need apiVersion + Kind for KubernetesObjectApi.
-const KIND_TABLE: Record<string, { group: string; version: string; kind: string }> = {
-  pod: { group: '', version: 'v1', kind: 'Pod' },
-  deployment: { group: 'apps', version: 'v1', kind: 'Deployment' },
-  service: { group: '', version: 'v1', kind: 'Service' },
-  configmap: { group: '', version: 'v1', kind: 'ConfigMap' },
-  secret: { group: '', version: 'v1', kind: 'Secret' },
-  ingress: { group: 'networking.k8s.io', version: 'v1', kind: 'Ingress' },
-  statefulset: { group: 'apps', version: 'v1', kind: 'StatefulSet' },
-  daemonset: { group: 'apps', version: 'v1', kind: 'DaemonSet' },
-  job: { group: 'batch', version: 'v1', kind: 'Job' },
-  cronjob: { group: 'batch', version: 'v1', kind: 'CronJob' },
-  replicaset: { group: 'apps', version: 'v1', kind: 'ReplicaSet' },
-  node: { group: '', version: 'v1', kind: 'Node' },
-  namespace: { group: '', version: 'v1', kind: 'Namespace' },
-  horizontalpodautoscaler: { group: 'autoscaling', version: 'v2', kind: 'HorizontalPodAutoscaler' },
-  hpa: { group: 'autoscaling', version: 'v2', kind: 'HorizontalPodAutoscaler' },
-  verticalpodautoscaler: { group: 'autoscaling.k8s.io', version: 'v1', kind: 'VerticalPodAutoscaler' },
-  vpa: { group: 'autoscaling.k8s.io', version: 'v1', kind: 'VerticalPodAutoscaler' },
-  event: { group: '', version: 'v1', kind: 'Event' },
-  networkpolicy: { group: 'networking.k8s.io', version: 'v1', kind: 'NetworkPolicy' },
-  persistentvolume: { group: '', version: 'v1', kind: 'PersistentVolume' },
-  pv: { group: '', version: 'v1', kind: 'PersistentVolume' },
-  persistentvolumeclaim: { group: '', version: 'v1', kind: 'PersistentVolumeClaim' },
-  pvc: { group: '', version: 'v1', kind: 'PersistentVolumeClaim' },
-  storageclass: { group: 'storage.k8s.io', version: 'v1', kind: 'StorageClass' },
-  sc: { group: 'storage.k8s.io', version: 'v1', kind: 'StorageClass' },
-  role: { group: 'rbac.authorization.k8s.io', version: 'v1', kind: 'Role' },
-  rolebinding: { group: 'rbac.authorization.k8s.io', version: 'v1', kind: 'RoleBinding' },
-  clusterrole: { group: 'rbac.authorization.k8s.io', version: 'v1', kind: 'ClusterRole' },
-  clusterrolebinding: { group: 'rbac.authorization.k8s.io', version: 'v1', kind: 'ClusterRoleBinding' },
-  resourcequota: { group: '', version: 'v1', kind: 'ResourceQuota' },
-  limitrange: { group: '', version: 'v1', kind: 'LimitRange' },
-  poddisruptionbudget: { group: 'policy', version: 'v1', kind: 'PodDisruptionBudget' },
-  pdb: { group: 'policy', version: 'v1', kind: 'PodDisruptionBudget' },
-};
-
 /**
- * Resolve apiVersion + Kind for a kind string. Mirrors
- * helpers::api_resource_for_kind, including the unsupported-kind error message.
+ * Resolve apiVersion + Kind for a kind string, via the canonical kind registry
+ * (electron/k8s/kinds.ts). Throws the same unsupported-kind error as Rust.
  */
 function apiResourceForKind(kind: string): KindInfo {
-  const entry = KIND_TABLE[kind.toLowerCase()];
-  if (!entry) {
-    throw new Error(`Unsupported kind for YAML fetch: ${kind}`);
-  }
-  const apiVersion = entry.group === '' ? entry.version : `${entry.group}/${entry.version}`;
-  return { apiVersion, kind: entry.kind };
+  const entry = resolveKindOrThrow(kind);
+  return { apiVersion: apiVersionOf(entry.group, entry.version), kind: entry.kind };
 }
 
 // ---------------------------------------------------------------------------
@@ -133,20 +93,6 @@ function objectApi(): KubernetesObjectApi {
 
 function appsApi(): AppsV1Api {
   return kc().makeApiClient(AppsV1Api);
-}
-
-/** Best-effort human message extracted from a @kubernetes/client-node error. */
-function k8sErrorMessage(err: unknown): string {
-  if (err && typeof err === 'object') {
-    const e = err as { body?: { message?: string }; message?: string };
-    if (e.body && typeof e.body.message === 'string' && e.body.message.length > 0) {
-      return e.body.message;
-    }
-    if (typeof e.message === 'string' && e.message.length > 0) {
-      return e.message;
-    }
-  }
-  return String(err);
 }
 
 // ---------------------------------------------------------------------------

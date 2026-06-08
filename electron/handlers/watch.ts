@@ -37,6 +37,8 @@
 import { Watch } from '@kubernetes/client-node';
 
 import { kc } from '../k8s/client';
+import type { RawObject, Resource } from '../k8s/resource-types';
+import { dynamicToResource } from '../k8s/resource-mapping';
 import type { Handler, HandlerCtx, HandlerMap } from '../dispatch';
 
 const WATCH_CHANNEL = 'resource-watch-event';
@@ -47,62 +49,14 @@ const WATCH_BATCH_SIZE = 20;
 const WATCH_FLUSH_INTERVAL_MS = 50;
 
 // ---------------------------------------------------------------------------
-// Wire types (match the Rust serde output exactly — see resources.ts).
+// Wire types. Resource/RawObject come from the shared k8s core; only the
+// watch-specific WatchEvent envelope lives here.
 // ---------------------------------------------------------------------------
-
-interface ResourceMetadata {
-  name?: string;
-  namespace?: string;
-  uid?: string;
-  resource_version?: string;
-  labels?: Record<string, string>;
-  annotations?: Record<string, string>;
-  creation_timestamp?: string;
-  owner_references?: unknown;
-}
-
-interface Resource {
-  api_version: string;
-  kind: string;
-  metadata: ResourceMetadata;
-  spec?: unknown;
-  status?: unknown;
-  data?: unknown;
-  /** Only populated for Secrets (the Secret `type` field). Renamed from type_. */
-  type?: string;
-}
 
 interface WatchEvent {
   event_type: 'Applied' | 'Deleted' | 'Resync';
   resource_type: string;
   resource: Resource;
-}
-
-// ---------------------------------------------------------------------------
-// Raw k8s object shapes.
-// ---------------------------------------------------------------------------
-
-interface RawObjectMeta {
-  name?: string;
-  namespace?: string;
-  uid?: string;
-  resourceVersion?: string;
-  labels?: Record<string, string>;
-  annotations?: Record<string, string>;
-  creationTimestamp?: string;
-  ownerReferences?: unknown[];
-  [k: string]: unknown;
-}
-
-interface RawObject {
-  apiVersion?: string;
-  kind?: string;
-  metadata?: RawObjectMeta;
-  spec?: unknown;
-  status?: unknown;
-  data?: unknown;
-  type?: string;
-  [k: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,46 +138,10 @@ function watchPath(ar: ApiResource, namespace?: string): string {
 // Projection — port of helpers.rs meta_from + watch.rs dynamic_to_resource.
 // ---------------------------------------------------------------------------
 
-function metaFrom(m: RawObjectMeta | undefined): ResourceMetadata {
-  const meta = m ?? {};
-  const owners = Array.isArray(meta.ownerReferences) ? meta.ownerReferences : undefined;
-  return {
-    name: meta.name,
-    namespace: meta.namespace,
-    uid: meta.uid,
-    resource_version: meta.resourceVersion,
-    labels: meta.labels,
-    annotations: meta.annotations,
-    creation_timestamp: meta.creationTimestamp,
-    owner_references: owners && owners.length > 0 ? owners : undefined,
-  };
-}
-
-function presentOrUndefined<T>(v: T | null | undefined): T | undefined {
-  return v === null || v === undefined ? undefined : v;
-}
-
-/**
- * Generic dynamic-object -> Resource projection (watch.rs dynamic_to_resource):
- * spec/status/data/type taken verbatim from the body for EVERY kind. The
- * api_version/kind come from the resolved ApiResource (the watch stream object
- * may omit them on some servers, so we don't trust obj.apiVersion/obj.kind).
- */
-function dynamicToResource(obj: RawObject, apiVersion: string, kind: string): Resource {
-  const res: Resource = {
-    api_version: apiVersion,
-    kind,
-    metadata: metaFrom(obj.metadata),
-  };
-  const spec = presentOrUndefined(obj.spec);
-  const status = presentOrUndefined(obj.status);
-  const data = presentOrUndefined(obj.data);
-  if (spec !== undefined) res.spec = spec;
-  if (status !== undefined) res.status = status;
-  if (data !== undefined) res.data = data;
-  if (typeof obj.type === 'string') res.type = obj.type;
-  return res;
-}
+// dynamic_to_resource + meta_from now live in electron/k8s/resource-mapping.ts
+// (shared with the resources and CRD paths). watch.rs uses the GENERIC
+// projection — spec/status/data taken verbatim for every kind — which is
+// exactly what the shared dynamicToResource does.
 
 // ---------------------------------------------------------------------------
 // Single active watch slot (mirrors watch.rs WATCHER_ABORT / WATCHER_RUNNING).
