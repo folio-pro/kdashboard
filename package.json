@@ -14,6 +14,7 @@
     "dev:electron": "concurrently -k -n vite,electron -c blue,green \"vite\" \"wait-on tcp:1420 && npm run build:electron:main && cross-env ELECTRON_DEV=1 electron .\"",
     "build:electron": "vite build && npm run build:electron:main && electron-builder",
     "test:js": "bun test",
+    "test:electron": "bun test ./electron",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -21,7 +22,7 @@
     "benchmark": "tsx scripts/run-playwright-benchmarks.ts",
     "benchmark:ci": "tsx scripts/run-playwright-benchmarks.ts ./benchmark-results.json",
     "fetch-pricing": "bun scripts/fetch-pricing.ts",
-    "test": "bun test && cargo test --manifest-path src-tauri/Cargo.toml"
+    "test": "bun test && bun test ./electron"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.2",

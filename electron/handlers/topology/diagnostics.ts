@@ -42,7 +42,7 @@ export interface DiagnosticResult {
 // pod.rs::diagnose_pod
 // ---------------------------------------------------------------------------
 
-function diagnosePod(obj: JsonObject): DiagnosticIssue[] {
+export function diagnosePod(obj: JsonObject): DiagnosticIssue[] {
   const issues: DiagnosticIssue[] = [];
   const status = asObject(obj['status']);
   if (!status) return issues;
@@ -227,7 +227,7 @@ function diagnosePod(obj: JsonObject): DiagnosticIssue[] {
 // workload.rs::diagnose_deployment
 // ---------------------------------------------------------------------------
 
-function diagnoseDeployment(obj: JsonObject): DiagnosticIssue[] {
+export function diagnoseDeployment(obj: JsonObject): DiagnosticIssue[] {
   const issues: DiagnosticIssue[] = [];
   const status = asObject(obj['status']);
   if (!status) return issues;

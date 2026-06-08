@@ -104,7 +104,7 @@ interface RawResource {
 // Status extraction (port of extraction.rs::extract_status_str)
 // ---------------------------------------------------------------------------
 
-function extractStatusStr(kind: string, obj: JsonObject): string | undefined {
+export function extractStatusStr(kind: string, obj: JsonObject): string | undefined {
   const status = asObject(obj['status']);
   if (!status) return undefined;
 
@@ -182,7 +182,7 @@ function parseOwnerRefs(meta: JsonObject): OwnerRef[] {
 // Dynamic -> RawResource conversion (port of extraction.rs::raw_from_dynamic)
 // ---------------------------------------------------------------------------
 
-function rawFromDynamic(kind: string, apiVersion: string, items: JsonValue[]): RawResource[] {
+export function rawFromDynamic(kind: string, apiVersion: string, items: JsonValue[]): RawResource[] {
   const out: RawResource[] = [];
   for (const itemRaw of items) {
     const obj = asObject(itemRaw);
@@ -237,7 +237,7 @@ async function fetchTyped(
 // Graph building (port of building.rs::build_graph)
 // ---------------------------------------------------------------------------
 
-function buildGraph(resources: RawResource[], autoCluster: boolean): TopologyGraph {
+export function buildGraph(resources: RawResource[], autoCluster: boolean): TopologyGraph {
   const totalResources = resources.length;
   const nodesMap = new Map<string, TopologyNode>();
   const edges: TopologyEdge[] = [];
