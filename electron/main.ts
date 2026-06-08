@@ -11,7 +11,15 @@
 //      phase extends the marked block below).
 //   5. After ~5s (or when the renderer signals ready) show main + close splash.
 
-import { app, BrowserWindow, ipcMain, shell, nativeImage } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  nativeImage,
+  Menu,
+  type MenuItemConstructorOptions,
+} from 'electron';
 import * as path from 'node:path';
 import { buildDispatcher, type HandlerCtx, type HandlerModule } from './dispatch';
 import { setKubeconfigPath } from './k8s/client';
@@ -231,6 +239,8 @@ function buildHandlerModules(): HandlerModule[] {
 // ---------------------------------------------------------------------------
 
 function bootstrap(): void {
+  buildApplicationMenu();
+
   // macOS dock icon. Packaged builds get the icon from the app bundle
   // (electron-builder mac.icon); in dev we load the same source icon so the
   // dock shows kdashboard's icon instead of the generic Electron one.
@@ -278,6 +288,68 @@ function bootstrap(): void {
 // the default application menu is built. (Packaged builds also get this from
 // electron-builder productName -> CFBundleName.)
 app.setName('kdashboard');
+
+// Explicitly name the macOS About panel — otherwise it falls back to the
+// running bundle (which is "Electron" in dev).
+app.setAboutPanelOptions({
+  applicationName: 'kdashboard',
+  applicationVersion: app.getVersion(),
+});
+
+/**
+ * Build the macOS application menu so the app submenu reads "kdashboard" (not
+ * "Electron") and the standard shortcuts (Cmd+Q/C/V/W, fullscreen, devtools)
+ * work in a frameless window. No-op on Windows/Linux (the default menu is fine
+ * and there is no global app-name menu item there).
+ */
+function buildApplicationMenu(): void {
+  if (process.platform !== 'darwin') return;
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: 'kdashboard',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'close' }],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
 
 // Adopt the login shell's PATH so GUI launches can find kubectl / trivy / grype
 // / cloud auth plugins (macOS/Linux GUI apps don't inherit it). Synchronous and
