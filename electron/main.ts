@@ -41,7 +41,11 @@ import * as watch from './handlers/watch';
 import * as updater from './handlers/updater';
 
 const isDev = !app.isPackaged;
-const DEV_URL = 'http://localhost:1420';
+// electron-vite sets this to the dev-server URL during `electron-vite dev`. It
+// is undefined for `electron-vite preview` and packaged builds, which load the
+// built renderer from out/renderer. Presence of the URL — not isDev — decides
+// dev-server vs file load (preview is unpackaged but has no dev server).
+const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
@@ -73,17 +77,17 @@ function createMainWindow(): BrowserWindow {
     // Avoid a white flash before the renderer paints the themed bar.
     backgroundColor: '#0c0c0c',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false, // preload needs require('electron'); handlers run in main
     },
   });
 
-  if (isDev) {
-    void win.loadURL(DEV_URL);
+  if (RENDERER_URL) {
+    void win.loadURL(RENDERER_URL);
   } else {
-    void win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    void win.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
   win.on('closed', () => {
@@ -107,10 +111,10 @@ function createSplashWindow(): BrowserWindow {
     },
   });
 
-  if (isDev) {
-    void win.loadURL(`${DEV_URL}/splashscreen.html`);
+  if (RENDERER_URL) {
+    void win.loadURL(`${RENDERER_URL}/splashscreen.html`);
   } else {
-    void win.loadFile(path.join(__dirname, '..', 'dist', 'splashscreen.html'));
+    void win.loadFile(path.join(__dirname, '../renderer/splashscreen.html'));
   }
 
   win.on('closed', () => {
@@ -244,8 +248,10 @@ function bootstrap(): void {
   // macOS dock icon. Packaged builds get the icon from the app bundle
   // (electron-builder mac.icon); in dev we load the same source icon so the
   // dock shows kdashboard's icon instead of the generic Electron one.
-  if (process.platform === 'darwin' && app.dock) {
-    const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'build', 'icon.png'));
+  if (isDev && process.platform === 'darwin' && app.dock) {
+    // out/main -> repo root /build/icon.png (dev only; packaged builds get the
+    // dock icon from the app bundle via electron-builder mac.icon).
+    const icon = nativeImage.createFromPath(path.join(__dirname, '../../build/icon.png'));
     if (!icon.isEmpty()) app.dock.setIcon(icon);
   }
 

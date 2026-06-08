@@ -3,15 +3,15 @@
   "private": true,
   "version": "0.1.9",
   "type": "module",
-  "main": "dist-electron/main.js",
+  "main": "out/main/index.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
-    "build:electron:main": "node -e \"require('fs').rmSync('dist-electron',{recursive:true,force:true})\" && esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --outdir=dist-electron --external:electron --sourcemap && node -e \"require('fs').writeFileSync('dist-electron/package.json', JSON.stringify({type:'commonjs'}))\"",
-    "dev:electron": "concurrently -k -n vite,electron -c blue,green \"vite\" \"wait-on tcp:1420 && npm run build:electron:main && cross-env ELECTRON_DEV=1 electron .\"",
-    "build:electron": "vite build && npm run build:electron:main && electron-builder",
+    "dev:electron": "electron-vite dev",
+    "build:electron": "electron-vite build && electron-builder",
+    "preview:electron": "electron-vite preview",
     "test:js": "bun test",
     "test:electron": "bun test ./electron",
     "test:e2e": "playwright test",
@@ -51,22 +51,19 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/vite": "^4.3.0",
     "@types/bun": "^1.3.14",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.19.20",
-    "concurrently": "^9.2.1",
-    "cross-env": "^7.0.3",
     "electron": "^42.3.3",
     "electron-builder": "^25.1.8",
-    "esbuild": "^0.28.0",
+    "electron-vite": "^5.0.0",
     "svelte": "^5.56.0",
     "svelte-check": "^4.4.8",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14",
-    "wait-on": "^8.0.5"
+    "vite": "^7.3.5"
   },
   "overrides": {
     "@codemirror/view": "^6.43.0"
@@ -75,8 +72,7 @@
     "appId": "com.kdashboard.app",
     "productName": "kdashboard",
     "files": [
-      "dist-electron/**/*",
-      "dist/**/*",
+      "out/**/*",
       "package.json"
     ],
     "directories": {
