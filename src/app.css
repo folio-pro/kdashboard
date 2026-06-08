@@ -59,11 +59,8 @@ html, body {
   user-select: text;
 }
 
-/* macOS: reserve space on the left of the top bar for the traffic lights so the
-   page title doesn't sit under them. `data-os` is set by the tauri-window shim. */
-[data-os="macos"] [data-tauri-drag-region]:first-child {
-  padding-left: 78px;
-}
+/* The persistent WindowTitleBar centers its title, so the macOS traffic lights
+   (top-left, ~78px) never collide with it — no left padding needed. */
 
 /* ========================================
    kdashboard v2 - Theme System

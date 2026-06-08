@@ -54,12 +54,11 @@ function createMainWindow(): BrowserWindow {
     // TitleBar.svelte (bg-[var(--bg-primary)]) becomes the visible top bar and
     // tracks the active theme. The web content fills the whole window.
     titleBarStyle: 'hidden',
-    // macOS: float the traffic lights, vertically centered in the 48px bar.
-    ...(isMac ? { trafficLightPosition: { x: 14, y: 17 } } : {}),
+    // macOS: float the traffic lights, vertically centered in the 36px WindowTitleBar.
+    ...(isMac ? { trafficLightPosition: { x: 13, y: 11 } } : {}),
     // Windows/Linux have no traffic lights — overlay native window controls so
-    // min/max/close stay reachable (the app draws no custom buttons). Colors are
-    // refreshed from the active theme via setTitleBarOverlay (see applyThemeChrome).
-    ...(isMac ? {} : { titleBarOverlay: { color: '#0c0c0c', symbolColor: '#e5e5e5', height: 48 } }),
+    // min/max/close stay reachable (the app draws no custom buttons).
+    ...(isMac ? {} : { titleBarOverlay: { color: '#0c0c0c', symbolColor: '#e5e5e5', height: 36 } }),
     // Avoid a white flash before the renderer paints the themed bar.
     backgroundColor: '#0c0c0c',
     webPreferences: {

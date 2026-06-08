@@ -2,6 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import Sidebar from "$lib/components/sidebar/Sidebar.svelte";
+  import WindowTitleBar from "$lib/components/titlebar/WindowTitleBar.svelte";
   import TitleBar from "$lib/components/titlebar/TitleBar.svelte";
   import ResourceTable from "$lib/components/table/ResourceTable.svelte";
   import StatusBar from "$lib/components/common/StatusBar.svelte";
@@ -135,18 +136,24 @@
   control.
 -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-  class="sidebar-grid h-screen w-screen select-none overflow-hidden bg-[var(--bg-primary)]"
-  style="grid-template-columns: {uiStore.sidebarCollapsed
-    ? 'var(--sidebar-width-collapsed)'
-    : 'var(--sidebar-width-expanded)'} 1fr"
-  oncontextmenu={(e) => e.preventDefault()}
->
-  <!-- Sidebar -->
-  <Sidebar />
+<div class="flex h-screen w-screen select-none flex-col overflow-hidden bg-[var(--bg-primary)]">
+  <!-- Persistent window title bar (VSCode-style): always present, draggable,
+       hosts the macOS traffic lights. -->
+  <WindowTitleBar />
 
-  <!-- Main Content Area -->
-  <div class="flex min-w-0 flex-1 overflow-hidden border-t border-[var(--border-color)]">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="sidebar-grid min-h-0 w-full flex-1 overflow-hidden"
+    style="grid-template-columns: {uiStore.sidebarCollapsed
+      ? 'var(--sidebar-width-collapsed)'
+      : 'var(--sidebar-width-expanded)'} 1fr"
+    oncontextmenu={(e) => e.preventDefault()}
+  >
+    <!-- Sidebar -->
+    <Sidebar />
+
+    <!-- Main Content Area -->
+    <div class="flex min-w-0 flex-1 overflow-hidden">
     <!-- Main Content -->
     <div class="main-content flex min-w-0 flex-1 flex-col">
       <!-- Tab Bar -->
@@ -226,6 +233,7 @@
     {#each extensions.mountsFor("app-overlay") as mount (mount.id)}
       <mount.component />
     {/each}
+    </div>
   </div>
 </div>
 
