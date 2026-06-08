@@ -69,24 +69,15 @@ export function buildDispatcher(modules: HandlerModule[], ctx: HandlerCtx): {
  * only if a real handler module hasn't already claimed the name, so the Wire
  * and Port phases can override these by registering first. Each throws a clear
  * phase-2 error so the app still boots and the failure is legible in the UI.
+ *
+ * Phase 2 (streaming subsystems) is complete: logs, terminal exec, port-forward,
+ * resource watch, and the updater are all implemented by real handler modules
+ * (electron/handlers/{logs,terminal,portforward,watch,updater}.ts). The list is
+ * intentionally empty — every Tauri command now has a real handler. It is kept
+ * (rather than deleted) as the documented seam for any future not-yet-ported
+ * command, and registerStubHandlers below is a no-op while it is empty.
  */
-export const STUBBED_PHASE2_COMMANDS = [
-  // Port forwarding (stateful sessions + port-forward-closed channel)
-  'start_port_forward',
-  'stop_port_forward',
-  // Terminal exec (stateful PTY + terminal-output / terminal-exit channels)
-  'start_terminal_exec',
-  'stop_terminal_exec',
-  'send_terminal_input',
-  'resize_terminal',
-  // Logs (streaming + log-lines channel)
-  'stream_pod_logs',
-  'stream_multi_pod_logs',
-  'stop_log_stream',
-  // Resource watch (streaming + resource-watch-event channel)
-  'start_resource_watch',
-  'stop_resource_watch',
-] as const;
+export const STUBBED_PHASE2_COMMANDS = [] as const;
 
 function registerStubHandlers(handlers: HandlerMap): void {
   for (const cmd of STUBBED_PHASE2_COMMANDS) {
