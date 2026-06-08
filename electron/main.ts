@@ -24,6 +24,11 @@ import * as workloadOps from './handlers/workload-ops';
 import * as topology from './handlers/topology';
 import * as cost from './handlers/cost';
 import * as securityCrd from './handlers/security-crd';
+import * as logs from './handlers/logs';
+import * as terminal from './handlers/terminal';
+import * as portforward from './handlers/portforward';
+import * as watch from './handlers/watch';
+import * as updater from './handlers/updater';
 
 const isDev = !app.isPackaged;
 const DEV_URL = 'http://localhost:1420';
@@ -37,6 +42,7 @@ let splashClosed = false;
 // ---------------------------------------------------------------------------
 
 function createMainWindow(): BrowserWindow {
+  const isMac = process.platform === 'darwin';
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -44,6 +50,18 @@ function createMainWindow(): BrowserWindow {
     minHeight: 600,
     show: false, // mirrors tauri.conf.json `visible: false`
     title: '',
+    // VSCode-style custom title bar: hide the native chrome so the in-app
+    // TitleBar.svelte (bg-[var(--bg-primary)]) becomes the visible top bar and
+    // tracks the active theme. The web content fills the whole window.
+    titleBarStyle: 'hidden',
+    // macOS: float the traffic lights, vertically centered in the 48px bar.
+    ...(isMac ? { trafficLightPosition: { x: 14, y: 17 } } : {}),
+    // Windows/Linux have no traffic lights — overlay native window controls so
+    // min/max/close stay reachable (the app draws no custom buttons). Colors are
+    // refreshed from the active theme via setTitleBarOverlay (see applyThemeChrome).
+    ...(isMac ? {} : { titleBarOverlay: { color: '#0c0c0c', symbolColor: '#e5e5e5', height: 48 } }),
+    // Avoid a white flash before the renderer paints the themed bar.
+    backgroundColor: '#0c0c0c',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -167,10 +185,9 @@ const internalModule: HandlerModule = {
       return null;
     });
 
-    // --- updater (tauri-updater shim) — phase 2; report "no update" for now ---
-    handlers.set('__updater_check', () => {
-      return null;
-    });
+    // --- updater (tauri-updater shim) ---
+    // __updater_check / __updater_download are owned by the updater handler
+    // module (electron/handlers/updater.ts), registered in buildHandlerModules.
   },
 };
 
@@ -195,6 +212,12 @@ function buildHandlerModules(): HandlerModule[] {
     topology, // get_namespace_topology, get_resource_topology, diagnose_resource
     cost, // get_cost_overview, get_node_costs, get_node_metrics, refresh_pricing
     securityCrd, // get_security_overview, scan_image, discover_crds, list_crd_resources, get_crd_counts, get_crd_conditions
+    // --- Phase 2: streaming subsystems ---
+    logs, // stream_pod_logs, stream_multi_pod_logs, stop_log_stream
+    terminal, // start_terminal_exec, send_terminal_input, resize_terminal, stop_terminal_exec
+    portforward, // start_port_forward, stop_port_forward
+    watch, // start_resource_watch, stop_resource_watch
+    updater, // __updater_check, __updater_download (+ background update-available notice)
   ];
 
   return modules;
