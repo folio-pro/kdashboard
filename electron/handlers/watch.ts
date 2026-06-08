@@ -269,6 +269,11 @@ async function startResourceWatch(
         (err: unknown) => {
           // Stream ended (close, timeout, or error). Flush pending deltas.
           if (!isCurrent()) return;
+          // eslint-disable-next-line no-console
+          console.error(
+            `[watch] stream ended for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
+            err instanceof Error ? err.message : err,
+          );
           flush();
           state.controller = null;
 
@@ -314,11 +319,21 @@ async function startResourceWatch(
         state.controller = controller;
       })
       .catch((err: unknown) => {
-        // Failed to OPEN the very first watch — reject the start promise only if
-        // this is still the active, never-synced watch.
+        // eslint-disable-next-line no-console
+        console.error(
+          `[watch] failed to open watch for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
+          err instanceof Error ? err.message : err,
+        );
+        // Failed to OPEN the watch. Reject the start promise only if this is the
+        // active, never-synced watch; otherwise keep the loop alive by retrying,
+        // so a transient open failure (e.g. a token refresh) doesn't strand the
+        // list empty until the next user action.
         if (isCurrent() && !state.hadInitialSync) {
           clearActive();
           throw err instanceof Error ? err : new Error(String(err));
+        }
+        if (isCurrent()) {
+          setTimeout(connect, 1000);
         }
       });
   };
