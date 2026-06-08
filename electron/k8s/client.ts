@@ -9,6 +9,11 @@
 //   - honor a kubeconfigPath override persisted in settings
 //   - allow switching the active context at runtime (switch_context)
 
+import * as fs from 'node:fs';
+import * as tls from 'node:tls';
+
+import { Agent, setGlobalDispatcher } from 'undici';
+
 import {
   KubeConfig,
   CoreV1Api,
@@ -85,8 +90,65 @@ function buildConfig(): KubeConfig {
 export function kc(): KubeConfig {
   if (!cachedConfig) {
     cachedConfig = buildConfig();
+    installTlsDispatcher(cachedConfig);
   }
   return cachedConfig;
+}
+
+/** Decode a kubeconfig CA/cert/key field: base64 `*Data` first, else read the file. */
+function pemFromDataOrFile(data?: string, file?: string): string | undefined {
+  if (data && data.length > 0) {
+    // kubeconfig *-data fields are base64-encoded PEM.
+    return Buffer.from(data, 'base64').toString('utf8');
+  }
+  if (file && file.length > 0) {
+    try {
+      return fs.readFileSync(file, 'utf8');
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Install a global undici dispatcher whose TLS context trusts the active
+ * cluster's CA (appended to the system roots, so non-cluster fetches such as
+ * the cost pricing CDN still verify) and presents the client cert/key when the
+ * user authenticates via mTLS.
+ *
+ * WHY THIS EXISTS: @kubernetes/client-node 1.x applies the kubeconfig CA to a
+ * Node `https.Agent` via `opts.agent` (see node_modules/.../config.js:157). The
+ * native `fetch` (undici) used by Electron's main process IGNORES `agent` —
+ * that is a node-fetch option; undici honors `dispatcher`. Without this bridge
+ * every API request fails TLS verification with UNABLE_TO_VERIFY_LEAF_SIGNATURE.
+ *
+ * Re-runs automatically whenever the cached config is rebuilt (kubeconfig path
+ * or active-context change both null the cache).
+ */
+function installTlsDispatcher(cfg: KubeConfig): void {
+  const cluster = cfg.getCurrentCluster();
+  if (!cluster) return;
+
+  const ca: string[] = [...tls.rootCertificates];
+  const clusterCa = pemFromDataOrFile(cluster.caData, cluster.caFile);
+  if (clusterCa) ca.push(clusterCa);
+
+  const connect: tls.SecureContextOptions & { rejectUnauthorized?: boolean } = { ca };
+
+  const user = cfg.getCurrentUser();
+  if (user) {
+    const cert = pemFromDataOrFile(user.certData, user.certFile);
+    const key = pemFromDataOrFile(user.keyData, user.keyFile);
+    if (cert && key) {
+      connect.cert = cert;
+      connect.key = key;
+    }
+  }
+
+  if (cluster.skipTLSVerify) connect.rejectUnauthorized = false;
+
+  setGlobalDispatcher(new Agent({ connect }));
 }
 
 /**

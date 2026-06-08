@@ -51,6 +51,7 @@
     "lucide-svelte": "^1.0.1",
     "tailwind-merge": "^3.6.0",
     "tailwind-variants": "^3.2.2",
+    "undici": "^8.4.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
