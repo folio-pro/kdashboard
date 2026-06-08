@@ -33,13 +33,17 @@ html, body {
    to Electron's -webkit-app-region, and clear the macOS traffic lights.
    ======================================== */
 
-/* Make the title bar draggable; Tauri used the data attribute, Electron needs
-   the CSS app-region. */
+/* Make the title bar draggable (move the window) and double-click-to-zoom on
+   macOS; Tauri used the data attribute, Electron needs the CSS app-region.
+   user-select:none so grabbing the bar doesn't select the title text. */
 [data-tauri-drag-region] {
   -webkit-app-region: drag;
+  user-select: none;
+  cursor: default;
 }
 
-/* Interactive controls inside the drag region must stay clickable. */
+/* Interactive controls inside the drag region must stay clickable (and not
+   trigger window-move / double-click-zoom). */
 [data-tauri-drag-region] button,
 [data-tauri-drag-region] input,
 [data-tauri-drag-region] a,
@@ -47,6 +51,12 @@ html, body {
 [data-tauri-drag-region] [role="button"],
 [data-tauri-drag-region] [data-no-drag] {
   -webkit-app-region: no-drag;
+}
+
+/* …but text inputs inside the bar must stay selectable/typable. */
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] textarea {
+  user-select: text;
 }
 
 /* macOS: reserve space on the left of the top bar for the traffic lights so the
