@@ -23,7 +23,8 @@ import * as resources from './handlers/resources';
 import * as workloadOps from './handlers/workload-ops';
 import * as topology from './handlers/topology';
 import * as cost from './handlers/cost';
-import * as securityCrd from './handlers/security-crd';
+import * as security from './handlers/security';
+import * as crd from './handlers/crd';
 import * as logs from './handlers/logs';
 import * as terminal from './handlers/terminal';
 import * as portforward from './handlers/portforward';
@@ -211,7 +212,8 @@ function buildHandlerModules(): HandlerModule[] {
     workloadOps, // apply_yaml, delete_resource, scale_workload, restart_workload, rollback_deployment, list_deployment_revisions
     topology, // get_namespace_topology, get_resource_topology, diagnose_resource
     cost, // get_cost_overview, get_node_costs, get_node_metrics, refresh_pricing
-    securityCrd, // get_security_overview, scan_image, discover_crds, list_crd_resources, get_crd_counts, get_crd_conditions
+    security, // get_security_overview, scan_image
+    crd, // discover_crds, list_crd_resources, get_crd_counts, get_crd_conditions
     // --- Phase 2: streaming subsystems ---
     logs, // stream_pod_logs, stream_multi_pod_logs, stop_log_stream
     terminal, // start_terminal_exec, send_terminal_input, resize_terminal, stop_terminal_exec
