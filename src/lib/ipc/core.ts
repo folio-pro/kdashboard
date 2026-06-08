@@ -1,5 +1,5 @@
-// Shim for `@tauri-apps/api/core`. Aliased in vite.config so the renderer's
-// `import { invoke } from "@tauri-apps/api/core"` resolves here unchanged.
+// Shim for `$lib/ipc/core`. Aliased in vite.config so the renderer's
+// `import { invoke } from "$lib/ipc/core"` resolves here unchanged.
 //
 // Delegates to the preload bridge, which forwards to ipcMain.handle('k8s:invoke').
 

@@ -1,4 +1,4 @@
-// Shim for `@tauri-apps/api/window`. Only the methods the renderer actually
+// Shim for `$lib/ipc/window`. Only the methods the renderer actually
 // uses are implemented (grepped from src/):
 //   - getCurrentWindow().setBadgeCount(n?)  (OverviewDashboard.svelte)
 //   - show() / hide() are provided for App-level reveal/teardown parity.

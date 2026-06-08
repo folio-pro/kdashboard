@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ChevronRight, FileText, Lock, Copy, Check, Search, X } from "lucide-svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import type { Resource, ResourceList } from "$lib/types";
   import { toggleSetItem } from "$lib/utils/k8s-helpers";
   import { decodeBase64, truncateValue, type ConfigRef } from "./pod-utils";

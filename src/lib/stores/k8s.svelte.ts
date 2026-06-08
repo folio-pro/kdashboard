@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke } from "$lib/ipc/core";
+import { listen, type UnlistenFn } from "$lib/ipc/event";
 import type { Resource, ResourceList, ConnectionStatus, PortForwardInfo, CrdGroup, CrdInfo, CrdResourceList } from "../types/index.js";
 import { settingsStore } from "./settings.svelte";
 import { toastStore } from "./toast.svelte.js";

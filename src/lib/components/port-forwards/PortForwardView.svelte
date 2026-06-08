@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { open } from "@tauri-apps/plugin-shell";
+  import { open } from "$lib/ipc/shell";
   import { cn } from "$lib/utils";
   import { ChevronsUpDown, Unplug, ExternalLink, Square } from "lucide-svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";

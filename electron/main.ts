@@ -231,6 +231,14 @@ function buildHandlerModules(): HandlerModule[] {
 // ---------------------------------------------------------------------------
 
 function bootstrap(): void {
+  // macOS dock icon. Packaged builds get the icon from the app bundle
+  // (electron-builder mac.icon); in dev we load the same source icon so the
+  // dock shows kdashboard's icon instead of the generic Electron one.
+  if (process.platform === 'darwin' && app.dock) {
+    const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'build', 'icon.png'));
+    if (!icon.isEmpty()) app.dock.setIcon(icon);
+  }
+
   // Honor a kubeconfig path override persisted in settings, if present.
   // The settings handler (Port phase) is the source of truth; this is a
   // best-effort early hint and a no-op until that handler exists.
@@ -266,6 +274,11 @@ function bootstrap(): void {
   setTimeout(revealMainWindow, 5000);
 }
 
+// App name drives the macOS menu-bar title + about panel. Must be set before
+// the default application menu is built. (Packaged builds also get this from
+// electron-builder productName -> CFBundleName.)
+app.setName('kdashboard');
+
 // Adopt the login shell's PATH so GUI launches can find kubectl / trivy / grype
 // / cloud auth plugins (macOS/Linux GUI apps don't inherit it). Synchronous and
 // must run before any handler spawns a process.
@@ -280,7 +293,3 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) bootstrap();
 });
-
-// Suppress unused-import warning for nativeImage (reserved for future dock icon
-// work); reference it so strict/noUnusedLocals stays happy if enabled.
-void nativeImage;

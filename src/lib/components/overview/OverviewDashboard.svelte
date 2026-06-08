@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { invoke } from "$lib/ipc/core";
+  import { getCurrentWindow } from "$lib/ipc/window";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { openResourceDetail } from "$lib/actions/navigation";
@@ -172,8 +172,8 @@
 
 <div class="flex h-full flex-col overflow-hidden bg-[var(--bg-primary)]">
   <!-- Header -->
-  <div class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border-color)] px-6" data-tauri-drag-region>
-    <div class="flex items-center gap-2" data-tauri-drag-region>
+  <div class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border-color)] px-6" data-drag-region>
+    <div class="flex items-center gap-2" data-drag-region>
       <Activity class="h-4 w-4 text-[var(--accent)]" />
       <span class="text-sm font-semibold text-[var(--text-primary)]">Cluster Overview</span>
       {#if k8sStore.currentContext}

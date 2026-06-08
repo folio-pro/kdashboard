@@ -10,7 +10,7 @@
  * Results are printed to the console (sentinel line) and persisted to JSON via
  * `write_bench_results` so an automated harness can read them without a WebDriver.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "$lib/ipc/core";
 import type { ResourceList } from "../types/index.js";
 import { k8sStore } from "../stores/k8s.svelte.js";
 import { uiStore } from "../stores/ui.svelte.js";
@@ -221,7 +221,7 @@ export async function maybeRunBenchmark(): Promise<boolean> {
 
   // Exit so the orchestration script knows the run is complete.
   try {
-    const { exit } = await import("@tauri-apps/plugin-process");
+    const { exit } = await import("$lib/ipc/process");
     await exit(0);
   } catch {
     // plugin-process unavailable — leave the window open.

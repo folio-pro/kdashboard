@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import { History } from "lucide-svelte";
   import { Button } from "$lib/components/ui/button";
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";

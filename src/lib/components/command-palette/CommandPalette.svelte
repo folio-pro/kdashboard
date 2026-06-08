@@ -1,6 +1,6 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import { Dialog, DialogContent } from "$lib/components/ui/dialog";
   import Command from "$lib/components/ui/command/Command.svelte";
   import CommandInput from "$lib/components/ui/command/CommandInput.svelte";

@@ -1,4 +1,4 @@
-// Shim for `@tauri-apps/plugin-updater`, backed by electron-updater via the
+// Shim for `$lib/ipc/updater`, backed by electron-updater via the
 // Electron main process (electron/handlers/updater.ts).
 //
 // UpdateBanner.svelte (the only consumer) does:

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import Sidebar from "$lib/components/sidebar/Sidebar.svelte";
   import WindowTitleBar from "$lib/components/titlebar/WindowTitleBar.svelte";
   import TitleBar from "$lib/components/titlebar/TitleBar.svelte";

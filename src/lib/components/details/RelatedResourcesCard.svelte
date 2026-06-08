@@ -4,7 +4,7 @@
   import { getRelatedResources, displayKind, type RelatedResource } from "$lib/utils/related-resources";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { openRelatedResourceTab } from "$lib/actions/navigation";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import { onMount } from "svelte";
 
   interface Props {

@@ -1,4 +1,4 @@
-// Shim for `@tauri-apps/api/event`. Preserves Tauri's listen() contract:
+// Shim for `$lib/ipc/event`. Preserves Tauri's listen() contract:
 //   - the callback receives an event object with a `.payload` field
 //   - listen() resolves to an UnlistenFn that removes the subscription
 //

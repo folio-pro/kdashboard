@@ -1,7 +1,7 @@
 <script lang="ts">
   import { AlertTriangle } from "lucide-svelte";
   import type { Resource, Event as K8sEvent } from "$lib/types";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import { formatAge } from "$lib/utils/age";
   import { kindToResourceType } from "$lib/utils";
 

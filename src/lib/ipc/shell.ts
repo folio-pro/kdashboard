@@ -1,4 +1,4 @@
-// Shim for `@tauri-apps/plugin-shell`. The renderer imports `{ open }`
+// Shim for `$lib/ipc/shell`. The renderer imports `{ open }`
 // (named) in PortForwardView.svelte, PodPortForwarding.svelte and
 // actions/registry.ts. Only `open` is used; back it with the preload bridge.
 

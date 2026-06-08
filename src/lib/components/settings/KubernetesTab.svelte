@@ -10,7 +10,7 @@
   import { getIconById, iconsByCategory } from "$lib/utils/context-icons";
   import { getContextColor } from "$lib/utils/context-colors";
   import DeviconIcon from "$lib/components/common/DeviconIcon.svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import { COLOR_OPTIONS, ICON_CATEGORIES } from "./settings-constants";
 
   let kubeconfigPath = $state(settingsStore.settings.kubeconfig_path);

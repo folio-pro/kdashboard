@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "$lib/ipc/core";
 import type { AppSettings } from "../types/index.js";
 import {
   SettingsStoreLogic,

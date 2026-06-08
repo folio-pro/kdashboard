@@ -40,7 +40,7 @@ KDASH_BENCH_TYPES=pods,deployments ./scripts/bench/run.sh
 ```
 
 Results land in `benchmark-out/e2e-<label>.json` and the app log in
-`benchmark-out/tauri-<label>.log`.
+`benchmark-out/electron-<label>.log`.
 
 ## Env knobs
 

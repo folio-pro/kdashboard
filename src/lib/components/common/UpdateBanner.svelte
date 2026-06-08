@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { check } from "@tauri-apps/plugin-updater";
-  import { relaunch } from "@tauri-apps/plugin-process";
-  import { listen } from "@tauri-apps/api/event";
+  import { check } from "$lib/ipc/updater";
+  import { relaunch } from "$lib/ipc/process";
+  import { listen } from "$lib/ipc/event";
   import { onMount } from "svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
   import { ArrowDownToLine, X } from "lucide-svelte";

@@ -5,7 +5,7 @@
   import { uiStore } from "$lib/stores/ui.svelte";
   import { openResourceDetail } from "$lib/actions/navigation";
   import { settingsStore } from "$lib/stores/settings.svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import AppTableHeader from "./TableHeader.svelte";
   import AppTableRow from "./TableRow.svelte";
   import BulkActionBar from "./BulkActionBar.svelte";

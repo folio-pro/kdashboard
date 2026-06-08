@@ -404,7 +404,7 @@ EOF
   dim "CronJobs:    cleanup-job"
   echo ""
   echo "  Now run the app:"
-  dim "npm run tauri dev"
+  dim "npm run dev:electron"
   echo ""
   echo "  Test actions to try in AI chat:"
   dim "\"Scale web-api to 5 replicas\"           → YELLOW (confirm dialog)"

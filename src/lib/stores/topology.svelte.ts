@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "$lib/ipc/core";
 import { AsyncLoadStore } from "./async-load.svelte";
 import { unshadowState } from "./_unshadow.js";
 import type { TopologyGraph } from "$lib/types";

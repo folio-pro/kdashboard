@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "$lib/ipc/core";
 import { AsyncLoadStoreLogic } from "./async-load.logic";
 import { unshadowState } from "./_unshadow.js";
 

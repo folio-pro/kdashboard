@@ -13,7 +13,7 @@
     Code,
     Search,
   } from "lucide-svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import type { Resource } from "$lib/types";

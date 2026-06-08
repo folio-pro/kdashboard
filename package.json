@@ -8,14 +8,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
     "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
     "build:electron:main": "node -e \"require('fs').rmSync('dist-electron',{recursive:true,force:true})\" && esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --outdir=dist-electron --external:electron --sourcemap && node -e \"require('fs').writeFileSync('dist-electron/package.json', JSON.stringify({type:'commonjs'}))\"",
     "dev:electron": "concurrently -k -n vite,electron -c blue,green \"vite\" \"wait-on tcp:1420 && npm run build:electron:main && cross-env ELECTRON_DEV=1 electron .\"",
     "build:electron": "vite build && npm run build:electron:main && electron-builder",
     "test:js": "bun test",
     "test:electron": "bun test ./electron",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
@@ -37,10 +35,6 @@
     "@kubernetes/client-node": "^1.4.0",
     "@lezer/highlight": "^1.2.3",
     "@tanstack/svelte-virtual": "^3.13.26",
-    "@tauri-apps/api": "^2.11.0",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-shell": "^2.3.5",
-    "@tauri-apps/plugin-updater": "^2.10.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
@@ -59,7 +53,6 @@
     "@playwright/test": "^1.60.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tailwindcss/vite": "^4.3.0",
-    "@tauri-apps/cli": "^2.11.2",
     "@types/bun": "^1.3.14",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.19.20",
@@ -90,13 +83,16 @@
       "output": "release"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "build/icon.icns"
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "icon": "build/icon.png"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     }
   }
 }
