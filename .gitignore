@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-electron/
+release/
 src-tauri/target/
 src-tauri/gen/
 .DS_Store

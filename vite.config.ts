@@ -10,6 +10,15 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       $lib: path.resolve("./src/lib"),
+      // --- Tauri -> Electron shims ---
+      // Keep the Svelte UI's `@tauri-apps/*` imports working unchanged by
+      // redirecting them to thin shims that delegate to window.electronAPI.
+      "@tauri-apps/api/core": path.resolve("./src/lib/shims/tauri-core.ts"),
+      "@tauri-apps/api/event": path.resolve("./src/lib/shims/tauri-event.ts"),
+      "@tauri-apps/api/window": path.resolve("./src/lib/shims/tauri-window.ts"),
+      "@tauri-apps/plugin-shell": path.resolve("./src/lib/shims/tauri-shell.ts"),
+      "@tauri-apps/plugin-process": path.resolve("./src/lib/shims/tauri-process.ts"),
+      "@tauri-apps/plugin-updater": path.resolve("./src/lib/shims/tauri-updater.ts"),
     },
   },
   clearScreen: false,
