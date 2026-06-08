@@ -9,7 +9,7 @@
 </script>
 
 <div
-  class="window-titlebar flex h-9 shrink-0 items-center justify-center border-b border-[var(--border-color)] bg-[var(--bg-primary)]"
+  class="window-titlebar flex h-[35px] shrink-0 items-center justify-center border-b border-[var(--border-color)] bg-[var(--bg-primary)]"
   data-tauri-drag-region
 >
   <span
