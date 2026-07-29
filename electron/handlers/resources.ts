@@ -176,7 +176,14 @@ interface ListOpts {
   namespace?: string;
   labelSelector?: string;
   paginate?: boolean; // pods/deployments/etc. paginate; bindings do a single list
+  accept?: string; // optional content negotiation (e.g. metadata-only for counts)
 }
+
+// Metadata-only content negotiation: the apiserver returns a
+// PartialObjectMetadataList (just metadata, no spec/status/managedFields) for
+// any resource that supports it — a fraction of the full-body payload, which is
+// all counting needs. Falls back to a normal list for the rare kind that 406s.
+const META_ACCEPT = 'application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1,application/json';
 
 /**
  * Build the REST base path for a resource. Core-group resources (group="")
@@ -197,7 +204,11 @@ function resourcePath(ar: ApiResource, namespace?: string): string {
 }
 
 /** Issue an authenticated GET against the active cluster, returning parsed JSON. */
-async function apiGet<T>(path: string, query?: Record<string, string>): Promise<T> {
+async function apiGet<T>(
+  path: string,
+  query?: Record<string, string>,
+  accept?: string,
+): Promise<T> {
   const cfg = kc();
   const cluster = cfg.getCurrentCluster();
   if (!cluster) {
@@ -211,6 +222,11 @@ async function apiGet<T>(path: string, query?: Record<string, string>): Promise<
   // applyToFetchOptions injects auth headers + the TLS agent (client certs/CA).
   const opts = await cfg.applyToFetchOptions({});
   opts.method = 'GET';
+  if (accept) {
+    // Content negotiation (e.g. PartialObjectMetadataList for counts) — far
+    // smaller payloads, much faster to transfer + JSON.parse.
+    opts.headers = { ...(opts.headers as Record<string, string> | undefined), Accept: accept };
+  }
 
   const resp = await fetch(url.toString(), opts as RequestInit);
   if (!resp.ok) {
@@ -221,7 +237,7 @@ async function apiGet<T>(path: string, query?: Record<string, string>): Promise<
 }
 
 async function listRaw(opts: ListOpts): Promise<RawObject[]> {
-  const { ar, namespace, labelSelector, paginate = true } = opts;
+  const { ar, namespace, labelSelector, paginate = true, accept } = opts;
   const path = resourcePath(ar, namespace);
   const items: RawObject[] = [];
   let cont: string | undefined;
@@ -233,7 +249,7 @@ async function listRaw(opts: ListOpts): Promise<RawObject[]> {
     if (paginate) query.limit = String(LIST_PAGE_SIZE);
     if (cont) query.continue = cont;
 
-    const list = await apiGet<RawList>(path, query);
+    const list = await apiGet<RawList>(path, query, accept);
     if (list.items) items.push(...list.items);
 
     const token = list.metadata?.continue;
@@ -600,12 +616,22 @@ async function getResourceYaml(kind: string, name: string, namespace: string): P
 async function countResourceType(resourceType: string, namespace?: string): Promise<number> {
   const ar = apiResourceForType(resourceType);
   if (!ar) return 0; // Rust returns 0 for unknown/unsupported types.
+  // Fast path: metadata-only list (no spec/status/managedFields). This runs for
+  // ~25 kinds on every context/namespace switch (sidebar badges), so shrinking
+  // each payload from full bodies to bare metadata is the dominant navigation win.
   try {
-    const items = await listRaw({ ar, namespace });
+    const items = await listRaw({ ar, namespace, accept: META_ACCEPT });
     return items.length;
   } catch {
-    // VPA CRD (and any flaky kind) -> 0, matching the Rust unwrap_or(0) path.
-    return 0;
+    // The kind doesn't support metadata negotiation (some CRDs 406) — fall back
+    // to a full-body list so the count stays correct rather than wrongly 0.
+    try {
+      const items = await listRaw({ ar, namespace });
+      return items.length;
+    } catch {
+      // VPA CRD (and any flaky kind) -> 0, matching the Rust unwrap_or(0) path.
+      return 0;
+    }
   }
 }
 

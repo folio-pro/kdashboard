@@ -105,7 +105,7 @@
       {@const displayValue = animatedValues[stat.key] ?? stat.value}
       {@const isEmpty = stat.value === 0}
       <button
-        class="stat-card group flex flex-1 flex-col rounded-lg border text-left transition-all duration-200"
+        class="stat-card group flex flex-1 flex-col rounded-lg border text-left transition-[color,background-color,border-color,box-shadow] duration-200"
         class:stat-card-active={isActive}
         class:stat-card-clickable={stat.filterable}
         style:--card-color={stat.color}
@@ -117,7 +117,7 @@
           <!-- Label row with colored dot -->
           <div class="flex items-center gap-1.5">
             <div
-              class="h-[7px] w-[7px] shrink-0 rounded-full transition-all duration-200"
+              class="h-[7px] w-[7px] shrink-0 rounded-full transition-[background-color,box-shadow] duration-200"
               style:background-color={isEmpty ? 'var(--text-dimmed)' : stat.color}
               style:box-shadow={!isEmpty && stat.value > 0 ? `0 0 6px ${stat.color}` : 'none'}
             ></div>
@@ -145,7 +145,7 @@
               {#each healthSegments as seg (seg.key)}
                 {#if seg.value > 0}
                   <div
-                    class="h-full transition-all duration-500"
+                    class="h-full transition-[width] duration-500"
                     style="width: {(seg.value / healthTotal) * 100}%; background-color: {seg.color};"
                   ></div>
                 {/if}
@@ -154,7 +154,7 @@
           {:else}
             <div class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-[var(--border-color)]">
               <div
-                class="h-full rounded-full transition-all duration-300"
+                class="h-full rounded-full transition-[width] duration-300"
                 style="width: {stat.value > 0 && totalValue > 0 ? Math.max(6, (stat.value / totalValue) * 100) : 0}%; background-color: {stat.color};"
               ></div>
             </div>
@@ -167,7 +167,7 @@
     {#if needsAttention > 0}
       {@const isActive = uiStore.statFilter === "needsAttention"}
       <button
-        class="stat-card stat-card-attention group flex flex-1 flex-col rounded-lg border text-left transition-all duration-200"
+        class="stat-card stat-card-attention group flex flex-1 flex-col rounded-lg border text-left transition-[color,background-color,border-color,box-shadow] duration-200"
         class:stat-card-attention-active={isActive}
         onclick={() => uiStore.toggleStatFilter("needsAttention")}
         title={isActive ? "Click to clear filter" : "Filter by resources needing attention"}
@@ -187,7 +187,7 @@
           </div>
           <div class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-[var(--border-color)]">
             <div
-              class="h-full rounded-full transition-all duration-300"
+              class="h-full rounded-full transition-[width] duration-300"
               style="width: {needsAttention > 0 && totalValue > 0 ? Math.max(6, (needsAttention / totalValue) * 100) : 0}%; background-color: var(--status-failed);"
             ></div>
           </div>

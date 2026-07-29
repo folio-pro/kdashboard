@@ -20,7 +20,7 @@
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore, viewShowsTitleBar } from "$lib/stores/ui.svelte";
+  import { uiStore, viewShowsTitleBar, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { deleteResource } from "$lib/actions/registry";
@@ -121,10 +121,44 @@
       return;
     }
 
+    // Re-hydrate the restored active tab so it isn't blank on cold boot. The
+    // selected resource and visible list are ephemeral (never persisted), so a
+    // details/logs/yaml or table tab restored from a previous session has no
+    // data until something fetches it — initApp never did, which left a
+    // restored pod-detail tab showing an empty panel.
+    try {
+      await bootstrapActiveTab();
+    } catch (err) {
+      console.error("[initApp] bootstrapActiveTab failed", err);
+    }
+
     // Fire-and-forget: sidebar counts are nice-to-have, never block init.
     void k8sStore.loadAllResourceCounts().catch((err) => {
       console.error("[initApp] loadAllResourceCounts failed", err);
     });
+  }
+
+  /**
+   * Fetch the data the restored active tab needs to render. Table tabs load
+   * their list; resource-bound views (details/logs/yaml/terminal) re-select
+   * their resource by reference. No-op for views that carry no resource.
+   */
+  async function bootstrapActiveTab() {
+    const tab = uiStore.activeTab;
+    if (!tab) return;
+
+    if (tab.namespace !== undefined && tab.namespace !== k8sStore.currentNamespace) {
+      k8sStore.currentNamespace = tab.namespace;
+    }
+
+    if (tab.type === "table" && tab.resourceType) {
+      await k8sStore.loadResources(tab.resourceType);
+      return;
+    }
+
+    if (RESOURCE_TAB_TYPES.has(tab.type) && tab.resourceType && tab.resourceName) {
+      await k8sStore.selectResourceByRef(tab.resourceType, tab.resourceName, tab.namespace);
+    }
   }
 </script>
 

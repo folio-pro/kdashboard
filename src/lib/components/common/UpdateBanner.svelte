@@ -101,7 +101,7 @@
         <div class="flex items-center gap-2">
           <div class="h-1.5 w-24 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
             <div
-              class="h-full rounded-full bg-[var(--accent)] transition-all duration-300"
+              class="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300"
               style="width: {progress}%"
             ></div>
           </div>

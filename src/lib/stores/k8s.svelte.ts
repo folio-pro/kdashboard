@@ -219,6 +219,43 @@ class K8sStore extends K8sStoreLogic {
     ) ?? null;
   }
 
+  /**
+   * Re-select a resource by reference (Kind OR plural type) + name and set it as
+   * the selected resource. Used to re-hydrate a restored detail/logs/yaml tab on
+   * cold boot — its selectedResource is ephemeral and was never persisted, so
+   * the view would otherwise render blank.
+   *
+   * A detail tab stores resourceType as either the Kind ("Pod", when opened from
+   * the table) or the plural ("pods", from related-resource nav), so we try the
+   * targeted get_resource path (Kind form) first, then fall back to a list+find
+   * (plural form). Returns true if a resource was selected.
+   */
+  async selectResourceByRef(typeOrKind: string, name: string, namespace?: string): Promise<boolean> {
+    try {
+      const full = await invoke<Resource>("get_resource", {
+        kind: typeOrKind,
+        name,
+        namespace: namespace ?? "",
+      });
+      if (full) {
+        this.selectedResource = full;
+        return true;
+      }
+    } catch {
+      // Not a Kind alias (e.g. a plural type) or the object is gone — try listing.
+    }
+    try {
+      const found = await this.fetchResource(typeOrKind, name, namespace);
+      if (found) {
+        this.selectedResource = found;
+        return true;
+      }
+    } catch {
+      // Unknown type or list failed — leave selection unset (view shows empty).
+    }
+    return false;
+  }
+
   /** @deprecated Use openRelatedResourceTab() or openResourceDetail() instead */
   async navigateToRelated(resourceType: string, name: string, namespace?: string): Promise<void> {
     // Push current state

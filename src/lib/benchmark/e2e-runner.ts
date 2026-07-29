@@ -14,6 +14,7 @@ import { invoke } from "$lib/ipc/core";
 import type { ResourceList } from "../types/index.js";
 import { k8sStore } from "../stores/k8s.svelte.js";
 import { uiStore } from "../stores/ui.svelte.js";
+import { COUNTABLE_RESOURCE_TYPES } from "../stores/k8s.logic.js";
 
 interface BenchConfig {
   enabled: boolean;
@@ -183,6 +184,26 @@ export async function maybeRunBenchmark(): Promise<boolean> {
       }
     }
 
+    // Sidebar-counts path: the burst of get_resource_counts fired on every
+    // context/namespace switch — the dominant "navigation" backend cost.
+    let countsMs: Stat | null = null;
+    try {
+      const samples: number[] = [];
+      for (let i = 0; i < cfg.warmup + cfg.iterations; i++) {
+        const t0 = performance.now();
+        await invoke<Record<string, number>>("get_resource_counts", {
+          resourceTypes: [...COUNTABLE_RESOURCE_TYPES],
+          namespace,
+        });
+        const t1 = performance.now();
+        if (i >= cfg.warmup) samples.push(t1 - t0);
+      }
+      countsMs = stat(samples);
+      console.log(`[bench] ${"get_resource_counts".padEnd(14)} types=${COUNTABLE_RESOURCE_TYPES.length}  median=${countsMs.median}ms`);
+    } catch (err) {
+      console.warn("[bench] get_resource_counts failed:", err);
+    }
+
     const payload = {
       meta: {
         timestamp: new Date().toISOString(),
@@ -195,6 +216,7 @@ export async function maybeRunBenchmark(): Promise<boolean> {
           .catch(() => "unknown"),
       },
       results,
+      countsMs,
     };
 
     const json = JSON.stringify(payload, null, 2);
