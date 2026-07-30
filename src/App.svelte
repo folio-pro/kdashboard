@@ -24,7 +24,7 @@
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { deleteResource } from "$lib/actions/registry";
   import { initKeyboardShortcuts } from "$lib/utils/keyboard";
-  import { handleTabSwitch } from "$lib/utils/tabLifecycle";
+  import { handleTabSwitch, invalidateTabCacheForNamespace } from "$lib/utils/tabLifecycle";
 
   // Synchronous hook: restore cached data BEFORE the view changes
   // (prevents empty state flash). Implementation lives in tabLifecycle
@@ -33,22 +33,12 @@
     handleTabSwitch(fromTab, toTab, k8sStore);
   };
 
-  // When namespace changes, save it to the active tab and invalidate cache.
-  // Writes to tab.* are wrapped in untrack so they don't retrigger this effect
-  // via Svelte 5's deep $state proxy on the tabs array.
+  // When the namespace changes, drop the active table tab's stale cache.
+  // The mutation lives in tabLifecycle (tested); untrack keeps the tab.* writes
+  // from retriggering this effect via Svelte 5's deep $state proxy.
   $effect(() => {
     const ns = k8sStore.currentNamespace;
-    untrack(() => {
-      const tab = uiStore.activeTab;
-      if (tab && (tab.type === "table" || tab.type === "crd-table")) {
-        if (tab.namespace !== ns) {
-          tab.namespace = ns;
-          tab.cachedItems = undefined;
-          tab.count = undefined;
-          tab.cacheReady = false;
-        }
-      }
-    });
+    untrack(() => invalidateTabCacheForNamespace(uiStore.activeTab, ns));
   });
 
   async function confirmGlobalDelete() {

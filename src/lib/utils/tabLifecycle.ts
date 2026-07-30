@@ -17,6 +17,7 @@ export interface TabLifecycleK8sStore {
   selectResource(resource: Resource | null): void;
   setResourceType(resourceType: string): void;
   restoreResources(resourceType: string, items: Resource[]): void;
+  reconcileResources(resourceType: string): Promise<void>;
   switchNamespace(namespace: string): Promise<void>;
   loadResources(resourceType: string): Promise<void>;
 }
@@ -53,6 +54,26 @@ export function handleTabSwitch(
   }
 }
 
+/**
+ * Drop a table tab's cached rows when the namespace changes: the cache is a
+ * snapshot for the *previous* namespace, so the next visit must refetch.
+ *
+ * Centralised here (rather than inline in App.svelte's namespace effect) so
+ * every mutation of the per-tab cache lives in one tested module — the cache
+ * invariant is enforced in a single place instead of by several writers
+ * agreeing by luck.
+ */
+export function invalidateTabCacheForNamespace(
+  tab: Tab | undefined,
+  namespace: string,
+): void {
+  if (!isTableTab(tab) || tab.namespace === namespace) return;
+  tab.namespace = namespace;
+  tab.cachedItems = undefined;
+  tab.count = undefined;
+  tab.cacheReady = false;
+}
+
 function saveOutgoingTabState(
   fromTab: Tab | undefined,
   k8s: TabLifecycleK8sStore,
@@ -84,8 +105,18 @@ function restoreFromCache(toTab: Tab, k8s: TabLifecycleK8sStore): void {
   if (toTab.namespace !== undefined && toTab.namespace !== k8s.currentNamespace) {
     k8s.currentNamespace = toTab.namespace;
   }
-  // resourceType guaranteed by caller guard in handleTabSwitch.
-  k8s.restoreResources(toTab.resourceType!, toTab.cachedItems!);
+  const resourceType = toTab.resourceType!; // guaranteed by caller guard.
+  // Paint the cached snapshot immediately so there's no empty-state flash.
+  k8s.restoreResources(resourceType, toTab.cachedItems!);
+
+  // Then reconcile against the cluster in the background. The cache is a
+  // snapshot from when we last left this tab; any create/delete/modify that
+  // happened while it was inactive is not covered by the freshly-started
+  // watcher (the backend suppresses the initial list on watch start — see
+  // k8s/watch.rs). Without this refetch the stale rows survive until each
+  // object next changes. reconcileResources keeps the cached rows on error
+  // and never shows a spinner, so the instant paint above is undisturbed.
+  void k8s.reconcileResources(resourceType);
 }
 
 function triggerLoad(toTab: Tab, k8s: TabLifecycleK8sStore): void {

@@ -1,7 +1,11 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test";
 import type { Resource, ResourceList } from "$lib/types";
 import type { Tab } from "$lib/stores/ui.logic";
-import { handleTabSwitch, type TabLifecycleK8sStore } from "./tabLifecycle";
+import {
+  handleTabSwitch,
+  invalidateTabCacheForNamespace,
+  type TabLifecycleK8sStore,
+} from "./tabLifecycle";
 
 function mkResource(name: string, namespace = "default"): Resource {
   return {
@@ -45,6 +49,7 @@ function mkStore(overrides: Partial<TabLifecycleK8sStore> = {}): TabLifecycleK8s
     },
     setResourceType: () => {},
     restoreResources: () => {},
+    reconcileResources: async () => {},
     switchNamespace: async () => {},
     loadResources: async () => {},
   };
@@ -128,6 +133,9 @@ describe("handleTabSwitch", () => {
     const k8s = mkStore({
       currentNamespace: "default",
       restoreResources,
+      reconcileResources: async () => {
+        calls.push("reconcileResources");
+      },
       switchNamespace: async () => {
         calls.push("switchNamespace");
       },
@@ -140,7 +148,53 @@ describe("handleTabSwitch", () => {
 
     expect(k8s.currentNamespace).toBe("kube-system");
     expect(restoreResources).toHaveBeenCalledWith("pods", cachedItems);
-    expect(calls).toEqual(["restoreResources"]);
+    // Paint happens from cache first (instant, no empty-state flash)...
+    expect(calls[0]).toBe("restoreResources");
+    // ...and a background reconcile follows so stale rows can't survive.
+    expect(calls).toContain("reconcileResources");
+    // A cache hit must NOT go through the heavier loadResources (spinner +
+    // watch restart + blanks-on-error).
+    expect(calls).not.toContain("loadResources");
+  });
+
+  test("reconciles against the live cluster after a cache hit (stale-on-return)", async () => {
+    // While the tab was inactive the cluster changed: the cache holds the old
+    // snapshot, but a fresh list would return the new one. Returning must not
+    // leave the user staring at the stale rows — the exact reported bug.
+    const stale = [mkResource("old-pod")];
+    const live = [mkResource("old-pod"), mkResource("new-pod")];
+    const toTab = mkTab({
+      id: "to",
+      type: "table",
+      resourceType: "pods",
+      namespace: "default",
+      cachedItems: stale,
+      cacheReady: true,
+    });
+    const k8s = mkStore({
+      currentNamespace: "default",
+      // Real store: paints the cached snapshot synchronously (restoreResourcesSync).
+      restoreResources(type, items) {
+        this.resources = { items, resource_type: type };
+      },
+      // Real store: reconcileResources awaits list_resources before swapping
+      // items in, so the cached paint is visible until the fetch resolves.
+      reconcileResources: async (type) => {
+        await Promise.resolve();
+        k8s.resources = { items: live, resource_type: type };
+        k8s.selectedResourceType = type;
+      },
+    });
+
+    handleTabSwitch(undefined, toTab, k8s);
+    // Instant paint from cache — the perf win (no empty flash) is preserved.
+    expect(k8s.resources.items).toBe(stale);
+
+    // Let the background reconcile settle.
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(k8s.resources.items).toBe(live);
   });
 
   test("cache hit with matching namespace does not mutate currentNamespace", () => {
@@ -324,6 +378,56 @@ describe("handleTabSwitch", () => {
     handleTabSwitch(undefined, toTab, k8s);
 
     expect(loadResources).not.toHaveBeenCalled();
+  });
+});
+
+describe("invalidateTabCacheForNamespace", () => {
+  test("drops a table tab's cache and adopts the new namespace", () => {
+    const tab = mkTab({
+      type: "table",
+      resourceType: "pods",
+      namespace: "default",
+      cachedItems: [mkResource("a")],
+      count: 1,
+      cacheReady: true,
+    });
+
+    invalidateTabCacheForNamespace(tab, "kube-system");
+
+    expect(tab.namespace).toBe("kube-system");
+    expect(tab.cachedItems).toBeUndefined();
+    expect(tab.count).toBeUndefined();
+    expect(tab.cacheReady).toBe(false);
+  });
+
+  test("no-op when the namespace is unchanged (cache preserved)", () => {
+    const items = [mkResource("a")];
+    const tab = mkTab({
+      type: "table",
+      resourceType: "pods",
+      namespace: "default",
+      cachedItems: items,
+      cacheReady: true,
+    });
+
+    invalidateTabCacheForNamespace(tab, "default");
+
+    expect(tab.cachedItems).toBe(items);
+    expect(tab.cacheReady).toBe(true);
+  });
+
+  test("no-op for a non-table tab", () => {
+    const tab = mkTab({ type: "overview", namespace: "default" });
+
+    invalidateTabCacheForNamespace(tab, "kube-system");
+
+    // A non-table tab has no resource cache to invalidate and its namespace is
+    // left untouched.
+    expect(tab.namespace).toBe("default");
+  });
+
+  test("no-op (no throw) when there is no active tab", () => {
+    expect(() => invalidateTabCacheForNamespace(undefined, "kube-system")).not.toThrow();
   });
 });
 
