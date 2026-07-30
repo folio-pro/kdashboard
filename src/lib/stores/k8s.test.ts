@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import type { Resource, ResourceList, ConnectionStatus, PortForwardInfo } from "../types/index.js";
 import { K8sStoreLogic, type WatchEvent } from "./k8s.logic.js";
+import { FakeKubeIo } from "./k8s.io.fake.js";
 
 interface ResourceOverrides {
   kind?: string;
@@ -33,7 +34,7 @@ describe("K8sStore", () => {
   let store: K8sStoreLogic;
 
   beforeEach(() => {
-    store = new K8sStoreLogic();
+    store = new K8sStoreLogic(new FakeKubeIo());
   });
 
   describe("initial state", () => {
@@ -213,136 +214,10 @@ describe("K8sStore", () => {
     });
   });
 
-  describe("handleWatchEvent", () => {
-    test("ignores events for different resource types", () => {
-      store.selectedResourceType = "pods";
-      const resource = makeResource({ metadata: { name: "svc-1", uid: "uid-1" } });
-      store.handleWatchEvent({
-        event_type: "Applied",
-        resource_type: "services",
-        resource,
-      });
-      expect(store.resources.items).toEqual([]);
-    });
-
-    test("Applied event adds new resource", () => {
-      store.selectedResourceType = "pods";
-      const resource = makeResource({ metadata: { name: "pod-1", uid: "uid-1" } });
-      store.handleWatchEvent({
-        event_type: "Applied",
-        resource_type: "pods",
-        resource,
-      });
-      expect(store.resources.items.length).toBe(1);
-      expect(store.resources.items[0].metadata.name).toBe("pod-1");
-      expect(store.resourceCounts["pods"]).toBe(1);
-    });
-
-    test("Applied event updates existing resource", () => {
-      store.selectedResourceType = "pods";
-      const resource = makeResource({
-        metadata: { name: "pod-1", uid: "uid-1" },
-        status: { phase: "Running" },
-      });
-      store.resources = { items: [resource], resource_type: "pods" };
-
-      const updated = makeResource({
-        metadata: { name: "pod-1", uid: "uid-1" },
-        status: { phase: "Succeeded" },
-      });
-      store.handleWatchEvent({
-        event_type: "Applied",
-        resource_type: "pods",
-        resource: updated,
-      });
-
-      expect(store.resources.items.length).toBe(1);
-      expect(store.resources.items[0].status).toEqual({ phase: "Succeeded" });
-    });
-
-    test("Applied event updates selectedResource if matching", () => {
-      store.selectedResourceType = "pods";
-      const resource = makeResource({
-        metadata: { name: "pod-1", uid: "uid-1" },
-        status: { phase: "Running" },
-      });
-      store.resources = { items: [resource], resource_type: "pods" };
-      store.selectedResource = resource;
-
-      const updated = makeResource({
-        metadata: { name: "pod-1", uid: "uid-1" },
-        status: { phase: "Succeeded" },
-      });
-      store.handleWatchEvent({
-        event_type: "Applied",
-        resource_type: "pods",
-        resource: updated,
-      });
-
-      expect(store.selectedResource?.status).toEqual({ phase: "Succeeded" });
-    });
-
-    test("Deleted event removes resource", () => {
-      store.selectedResourceType = "pods";
-      const r1 = makeResource({ metadata: { name: "pod-1", uid: "uid-1" } });
-      const r2 = makeResource({ metadata: { name: "pod-2", uid: "uid-2" } });
-      store.resources = { items: [r1, r2], resource_type: "pods" };
-      store._setCount("pods", 2);
-
-      store.handleWatchEvent({
-        event_type: "Deleted",
-        resource_type: "pods",
-        resource: r1,
-      });
-
-      expect(store.resources.items.length).toBe(1);
-      expect(store.resources.items[0].metadata.uid).toBe("uid-2");
-      expect(store.resourceCounts["pods"]).toBe(1);
-    });
-
-    test("Deleted event clears selectedResource if matching", () => {
-      store.selectedResourceType = "pods";
-      const resource = makeResource({ metadata: { name: "pod-1", uid: "uid-1" } });
-      store.resources = { items: [resource], resource_type: "pods" };
-      store.selectedResource = resource;
-
-      store.handleWatchEvent({
-        event_type: "Deleted",
-        resource_type: "pods",
-        resource,
-      });
-
-      expect(store.selectedResource).toBeNull();
-    });
-
-    test("Deleted event for non-existent resource is a no-op", () => {
-      store.selectedResourceType = "pods";
-      const existing = makeResource({ metadata: { name: "pod-1", uid: "uid-1" } });
-      store.resources = { items: [existing], resource_type: "pods" };
-
-      const nonExistent = makeResource({ metadata: { name: "pod-2", uid: "uid-2" } });
-      store.handleWatchEvent({
-        event_type: "Deleted",
-        resource_type: "pods",
-        resource: nonExistent,
-      });
-
-      expect(store.resources.items.length).toBe(1);
-    });
-
-    test("ignores event without uid", () => {
-      store.selectedResourceType = "pods";
-      const resource = makeResource({ metadata: { name: "pod-1", uid: "" } });
-      // @ts-ignore - testing edge case
-      resource.metadata.uid = undefined as any;
-      store.handleWatchEvent({
-        event_type: "Applied",
-        resource_type: "pods",
-        resource,
-      });
-      expect(store.resources.items).toEqual([]);
-    });
-  });
+  // Watch-event handling moved to the real batched flush (_flushWatchEvents),
+  // exercised end-to-end in k8s.orchestration.test.ts via FakeKubeIo. The old
+  // duplicate handleWatchEvent (which stubbed Resync and used a different
+  // algorithm than production) has been deleted.
 
   describe("port forwards", () => {
     test("addPortForwardSync adds to list", () => {
