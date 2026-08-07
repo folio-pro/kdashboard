@@ -2,6 +2,7 @@
   "name": "kdashboard",
   "private": true,
   "version": "0.1.9",
+  "author": "Nicolás Mengual",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
@@ -78,8 +79,13 @@
       "output": "release"
     },
     "mac": {
-      "target": "dmg",
+      "target": ["dmg", "zip"],
       "icon": "build/icon.icns"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "folio-pro",
+      "repo": "kdashboard"
     },
     "linux": {
       "target": "AppImage",
