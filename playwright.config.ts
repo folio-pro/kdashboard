@@ -25,7 +25,7 @@ export default defineConfig({
   webServer: process.env.CI
     ? undefined
     : {
-        command: "npm run tauri dev -- --test",
+        command: "npm run dev",
         url: "http://localhost:1420",
         reuseExistingServer: !process.env.CI,
         timeout: 120000,

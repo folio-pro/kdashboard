@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Play, Box, Info, Square, ExternalLink, Loader2, ArrowRight } from "lucide-svelte";
-  import { open } from "@tauri-apps/plugin-shell";
+  import { open } from "$lib/ipc/shell";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { getContainerIconUrl } from "$lib/utils/container-icon";
   import type { PortInfo, SpecContainer } from "./pod-utils";

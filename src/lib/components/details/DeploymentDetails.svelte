@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Resource } from "$lib/types";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import { Box } from "lucide-svelte";
   import StatusBadge from "$lib/components/common/StatusBadge.svelte";
   import MetadataSection from "./MetadataSection.svelte";

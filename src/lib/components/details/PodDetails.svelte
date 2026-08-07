@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Box, Link, FileText, Lock, GitBranch, Database, Copy, Globe, Server, Network, Layers, Unplug } from "lucide-svelte";
   import { onMount } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import type { Resource, ResourceList } from "$lib/types";
   import type { IconComponent } from "$lib/actions/types";
   import StatusBadge from "$lib/components/common/StatusBadge.svelte";

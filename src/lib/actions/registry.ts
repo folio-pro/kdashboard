@@ -13,8 +13,8 @@ import { settingsStore } from "$lib/stores/settings.svelte";
 import { kindToResourceType } from "$lib/utils/related-resources";
 import { dialogStore } from "$lib/stores/dialogs.svelte";
 import { extensions } from "$lib/extensions";
-import { invoke } from "@tauri-apps/api/core";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { invoke } from "$lib/ipc/core";
+import { open as shellOpen } from "$lib/ipc/shell";
 
 export { SCALABLE_TYPES, RESTARTABLE_TYPES, LOG_TYPES, GROUP_ORDER, groupActions, getResourceUrl } from "./registry.logic.js";
 import { SCALABLE_TYPES, RESTARTABLE_TYPES, LOG_TYPES, GROUP_ORDER, getResourceUrl as getResourceUrlPure } from "./registry.logic.js";

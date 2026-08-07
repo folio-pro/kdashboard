@@ -15,9 +15,9 @@ import { test, expect } from "./fixtures/mocked-cluster";
 test.describe("Cluster unavailable", () => {
   test("shows the connection error overlay when get_contexts fails on boot", async ({
     page,
-    mockTauriInvoke,
+    mockInvoke,
   }) => {
-    await mockTauriInvoke(`(cmd) => {
+    await mockInvoke(`(cmd) => {
       if (cmd === "get_contexts") throw new Error("dial tcp 10.0.0.1:6443: i/o timeout");
       if (cmd === "get_current_context") return "";
       if (cmd === "get_namespaces") return [];
@@ -36,9 +36,9 @@ test.describe("Cluster unavailable", () => {
 
   test("surfaces the underlying error message in the overlay body", async ({
     page,
-    mockTauriInvoke,
+    mockInvoke,
   }) => {
-    await mockTauriInvoke(`(cmd) => {
+    await mockInvoke(`(cmd) => {
       if (cmd === "get_contexts") throw new Error("kubeconfig not found at /nonexistent/path");
       return null;
     }`);
@@ -48,8 +48,8 @@ test.describe("Cluster unavailable", () => {
     await expect(page.getByText(/kubeconfig not found/i)).toBeVisible({ timeout: 10_000 });
   });
 
-  test("does not hang the UI — app chrome still renders", async ({ page, mockTauriInvoke }) => {
-    await mockTauriInvoke(`(cmd) => {
+  test("does not hang the UI — app chrome still renders", async ({ page, mockInvoke }) => {
+    await mockInvoke(`(cmd) => {
       if (cmd === "get_contexts") throw new Error("cluster unreachable");
       return null;
     }`);
@@ -72,9 +72,9 @@ test.describe("Cluster unavailable", () => {
 
   test("retry button is present and not stuck in a loading state on first render", async ({
     page,
-    mockTauriInvoke,
+    mockInvoke,
   }) => {
-    await mockTauriInvoke(`(cmd) => {
+    await mockInvoke(`(cmd) => {
       if (cmd === "get_contexts") throw new Error("cluster unreachable");
       return null;
     }`);

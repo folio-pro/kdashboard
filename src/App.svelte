@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import Sidebar from "$lib/components/sidebar/Sidebar.svelte";
+  import WindowTitleBar from "$lib/components/titlebar/WindowTitleBar.svelte";
   import TitleBar from "$lib/components/titlebar/TitleBar.svelte";
   import ResourceTable from "$lib/components/table/ResourceTable.svelte";
   import StatusBar from "$lib/components/common/StatusBar.svelte";
@@ -19,7 +20,7 @@
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore, viewShowsTitleBar } from "$lib/stores/ui.svelte";
+  import { uiStore, viewShowsTitleBar, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { deleteResource } from "$lib/actions/registry";
@@ -120,10 +121,44 @@
       return;
     }
 
+    // Re-hydrate the restored active tab so it isn't blank on cold boot. The
+    // selected resource and visible list are ephemeral (never persisted), so a
+    // details/logs/yaml or table tab restored from a previous session has no
+    // data until something fetches it — initApp never did, which left a
+    // restored pod-detail tab showing an empty panel.
+    try {
+      await bootstrapActiveTab();
+    } catch (err) {
+      console.error("[initApp] bootstrapActiveTab failed", err);
+    }
+
     // Fire-and-forget: sidebar counts are nice-to-have, never block init.
     void k8sStore.loadAllResourceCounts().catch((err) => {
       console.error("[initApp] loadAllResourceCounts failed", err);
     });
+  }
+
+  /**
+   * Fetch the data the restored active tab needs to render. Table tabs load
+   * their list; resource-bound views (details/logs/yaml/terminal) re-select
+   * their resource by reference. No-op for views that carry no resource.
+   */
+  async function bootstrapActiveTab() {
+    const tab = uiStore.activeTab;
+    if (!tab) return;
+
+    if (tab.namespace !== undefined && tab.namespace !== k8sStore.currentNamespace) {
+      k8sStore.currentNamespace = tab.namespace;
+    }
+
+    if (tab.type === "table" && tab.resourceType) {
+      await k8sStore.loadResources(tab.resourceType);
+      return;
+    }
+
+    if (RESOURCE_TAB_TYPES.has(tab.type) && tab.resourceType && tab.resourceName) {
+      await k8sStore.selectResourceByRef(tab.resourceType, tab.resourceName, tab.namespace);
+    }
   }
 </script>
 
@@ -135,18 +170,24 @@
   control.
 -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-  class="sidebar-grid h-screen w-screen select-none overflow-hidden bg-[var(--bg-primary)]"
-  style="grid-template-columns: {uiStore.sidebarCollapsed
-    ? 'var(--sidebar-width-collapsed)'
-    : 'var(--sidebar-width-expanded)'} 1fr"
-  oncontextmenu={(e) => e.preventDefault()}
->
-  <!-- Sidebar -->
-  <Sidebar />
+<div class="flex h-screen w-screen select-none flex-col overflow-hidden bg-[var(--bg-primary)]">
+  <!-- Persistent window title bar (VSCode-style): always present, draggable,
+       hosts the macOS traffic lights. -->
+  <WindowTitleBar />
 
-  <!-- Main Content Area -->
-  <div class="flex min-w-0 flex-1 overflow-hidden border-t border-[var(--border-color)]">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="sidebar-grid min-h-0 w-full flex-1 overflow-hidden"
+    style="grid-template-columns: {uiStore.sidebarCollapsed
+      ? 'var(--sidebar-width-collapsed)'
+      : 'var(--sidebar-width-expanded)'} 1fr"
+    oncontextmenu={(e) => e.preventDefault()}
+  >
+    <!-- Sidebar -->
+    <Sidebar />
+
+    <!-- Main Content Area -->
+    <div class="flex min-w-0 flex-1 overflow-hidden">
     <!-- Main Content -->
     <div class="main-content flex min-w-0 flex-1 flex-col">
       <!-- Tab Bar -->
@@ -226,6 +267,7 @@
     {#each extensions.mountsFor("app-overlay") as mount (mount.id)}
       <mount.component />
     {/each}
+    </div>
   </div>
 </div>
 

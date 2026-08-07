@@ -27,6 +27,42 @@ html, body {
 }
 
 /* ========================================
+   Electron custom title bar (VSCode-style)
+   The window uses titleBarStyle:'hidden', so the in-app TitleBar IS the top
+   bar. These rules port Tauri's `data-drag-region` (a no-op in Electron)
+   to Electron's -webkit-app-region, and clear the macOS traffic lights.
+   ======================================== */
+
+/* Make the title bar draggable (move the window) and double-click-to-zoom on
+   macOS; Tauri used the data attribute, Electron needs the CSS app-region.
+   user-select:none so grabbing the bar doesn't select the title text. */
+[data-drag-region] {
+  -webkit-app-region: drag;
+  user-select: none;
+  cursor: default;
+}
+
+/* Interactive controls inside the drag region must stay clickable (and not
+   trigger window-move / double-click-zoom). */
+[data-drag-region] button,
+[data-drag-region] input,
+[data-drag-region] a,
+[data-drag-region] select,
+[data-drag-region] [role="button"],
+[data-drag-region] [data-no-drag] {
+  -webkit-app-region: no-drag;
+}
+
+/* …but text inputs inside the bar must stay selectable/typable. */
+[data-drag-region] input,
+[data-drag-region] textarea {
+  user-select: text;
+}
+
+/* The persistent WindowTitleBar centers its title, so the macOS traffic lights
+   (top-left, ~78px) never collide with it — no left padding needed. */
+
+/* ========================================
    kdashboard v2 - Theme System
    11 Theme Presets with CSS Variables
    ======================================== */
@@ -517,7 +553,7 @@ body,
    Tauri Window Controls
    ======================================== */
 
-[data-tauri-drag-region] {
+[data-drag-region] {
   -webkit-app-region: drag;
 }
 

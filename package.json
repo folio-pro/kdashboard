@@ -2,21 +2,27 @@
   "name": "kdashboard",
   "private": true,
   "version": "0.1.9",
+  "author": "Nicolás Mengual",
   "type": "module",
+  "main": "out/main/index.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
+    "dev:electron": "electron-vite dev",
+    "build:electron": "electron-vite build && electron-builder",
+    "preview:electron": "electron-vite preview",
     "test:js": "bun test",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:electron": "bun test ./electron",
+    "test:integration": "node --import tsx --test electron/integration/*.itest.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "benchmark": "tsx scripts/run-playwright-benchmarks.ts",
     "benchmark:ci": "tsx scripts/run-playwright-benchmarks.ts ./benchmark-results.json",
     "fetch-pricing": "bun scripts/fetch-pricing.ts",
-    "test": "bun test && cargo test --manifest-path src-tauri/Cargo.toml"
+    "test": "bun test && bun test ./electron"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -27,37 +33,69 @@
     "@codemirror/merge": "^6.12.2",
     "@codemirror/search": "^6.7.1",
     "@codemirror/state": "^6.7.1",
-    "@codemirror/view": "^6.43.7",
+    "@codemirror/view": "^6.43.8",
+    "@kubernetes/client-node": "^1.4.0",
     "@lezer/highlight": "^1.2.3",
     "@tanstack/svelte-virtual": "^3.13.35",
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-shell": "^2.3.5",
-    "@tauri-apps/plugin-updater": "^2.10.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "codemirror": "^6.0.2",
+    "electron-updater": "^6.8.9",
+    "js-yaml": "^5.2.3",
     "lucide-svelte": "^1.0.1",
     "tailwind-merge": "^3.6.0",
-    "tailwind-variants": "^3.3.0",
+    "tailwind-variants": "^3.3.1",
+    "undici": "^8.10.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.0",
-    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@playwright/test": "^1.62.1",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/cli": "^2.11.4",
     "@types/bun": "^1.3.14",
+    "@types/node": "^26.2.0",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
     "svelte": "^5.56.8",
-    "svelte-check": "^4.7.4",
+    "svelte-check": "^4.7.5",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.11",
     "typescript": "^6.0.3",
-    "vite": "^8.1.5"
+    "vite": "^7.3.6"
   },
   "overrides": {
     "@codemirror/view": "^6.43.0"
+  },
+  "build": {
+    "appId": "com.kdashboard.app",
+    "productName": "kdashboard",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "build/icon.icns"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "folio-pro",
+      "repo": "kdashboard"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    }
   }
 }

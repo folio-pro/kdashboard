@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke } from "$lib/ipc/core";
+import { listen, type UnlistenFn } from "$lib/ipc/event";
 import type { Resource, ResourceList, ConnectionStatus, PortForwardInfo, CrdGroup, CrdInfo, CrdResourceList } from "../types/index.js";
 import { settingsStore } from "./settings.svelte";
 import { toastStore } from "./toast.svelte.js";
@@ -8,6 +8,11 @@ import { unshadowState } from "./_unshadow.js";
 
 export type { WatchEvent, NavigationEntry } from "./k8s.logic.js";
 export { COUNTABLE_RESOURCE_TYPES } from "./k8s.logic.js";
+
+/** User-facing message from a caught invoke() rejection (no "Error:" prefix). */
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 class K8sStore extends K8sStoreLogic {
   // Override all state properties with $state runes for Svelte 5 reactivity
@@ -98,7 +103,7 @@ class K8sStore extends K8sStoreLogic {
       }
       this.connectionStatus = "connected";
     } catch (err) {
-      const message = `Failed to load contexts: ${err}`;
+      const message = `Failed to load contexts: ${errMsg(err)}`;
       this.contextsLoadError = message;
       this.error = message;
       this.connectionStatus = "error";
@@ -114,7 +119,7 @@ class K8sStore extends K8sStoreLogic {
       this.namespaces = result;
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
-      const message = `Failed to load namespaces: ${err}`;
+      const message = `Failed to load namespaces: ${errMsg(err)}`;
       this.namespacesLoadError = message;
       this.error = message;
     }
@@ -152,7 +157,7 @@ class K8sStore extends K8sStoreLogic {
       void this.loadAllResourceCounts(scopeGeneration);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
-      this.error = `Failed to switch context: ${err}`;
+      this.error = `Failed to switch context: ${errMsg(err)}`;
       this.connectionStatus = "error";
     } finally {
       if (scopeGeneration === this._scopeGeneration) {
@@ -177,7 +182,7 @@ class K8sStore extends K8sStoreLogic {
       void this.loadAllResourceCounts(scopeGeneration);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
-      this.error = `Failed to switch namespace: ${err}`;
+      this.error = `Failed to switch namespace: ${errMsg(err)}`;
     }
   }
 
@@ -195,7 +200,7 @@ class K8sStore extends K8sStoreLogic {
       this._startWatch(resourceType, this.currentNamespace);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
-      this.error = `Failed to load resources: ${err}`;
+      this.error = `Failed to load resources: ${errMsg(err)}`;
       this.resources = { items: [], resource_type: resourceType };
     } finally {
       clearTimeout(timer);
@@ -217,6 +222,43 @@ class K8sStore extends K8sStoreLogic {
     return result.items.find(
       (r) => r.metadata.name === name && (!namespace || r.metadata.namespace === namespace)
     ) ?? null;
+  }
+
+  /**
+   * Re-select a resource by reference (Kind OR plural type) + name and set it as
+   * the selected resource. Used to re-hydrate a restored detail/logs/yaml tab on
+   * cold boot — its selectedResource is ephemeral and was never persisted, so
+   * the view would otherwise render blank.
+   *
+   * A detail tab stores resourceType as either the Kind ("Pod", when opened from
+   * the table) or the plural ("pods", from related-resource nav), so we try the
+   * targeted get_resource path (Kind form) first, then fall back to a list+find
+   * (plural form). Returns true if a resource was selected.
+   */
+  async selectResourceByRef(typeOrKind: string, name: string, namespace?: string): Promise<boolean> {
+    try {
+      const full = await invoke<Resource>("get_resource", {
+        kind: typeOrKind,
+        name,
+        namespace: namespace ?? "",
+      });
+      if (full) {
+        this.selectedResource = full;
+        return true;
+      }
+    } catch {
+      // Not a Kind alias (e.g. a plural type) or the object is gone — try listing.
+    }
+    try {
+      const found = await this.fetchResource(typeOrKind, name, namespace);
+      if (found) {
+        this.selectedResource = found;
+        return true;
+      }
+    } catch {
+      // Unknown type or list failed — leave selection unset (view shows empty).
+    }
+    return false;
   }
 
   /** @deprecated Use openRelatedResourceTab() or openResourceDetail() instead */
@@ -325,7 +367,7 @@ class K8sStore extends K8sStoreLogic {
         this.currentNamespace = namespace;
       }
     } catch (err) {
-      this.error = `Failed to restore connection: ${err}`;
+      this.error = `Failed to restore connection: ${errMsg(err)}`;
       this.connectionStatus = "error";
     }
   }
@@ -523,7 +565,7 @@ class K8sStore extends K8sStoreLogic {
         { ...info, local_port: result.local_port, session_id: result.session_id },
       ];
     } catch (err) {
-      this.error = `Failed to start port forward: ${err}`;
+      this.error = `Failed to start port forward: ${errMsg(err)}`;
     }
   }
 

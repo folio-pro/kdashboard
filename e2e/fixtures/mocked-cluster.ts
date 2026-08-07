@@ -1,7 +1,8 @@
 /**
- * Playwright fixture that replaces Tauri's IPC bridge with a user-supplied
- * handler. The replacement happens before any app script runs so the very first
- * invoke() call the app makes on boot is intercepted.
+ * Playwright fixture that replaces the Electron IPC bridge (window.electronAPI,
+ * exposed by electron/preload.ts) with a user-supplied handler. The replacement
+ * happens before any app script runs so the very first invoke() call the app
+ * makes on boot is intercepted.
  *
  * This mocks the whole Kubernetes backend surface so the frontend can be tested
  * against synthetic cluster states (connection failures, empty clusters,
@@ -16,8 +17,8 @@
  *
  *   import { test, expect } from "./fixtures/mocked-cluster";
  *
- *   test("cluster unreachable shows overlay", async ({ page, mockTauriInvoke }) => {
- *     await mockTauriInvoke(`(cmd) => {
+ *   test("cluster unreachable shows overlay", async ({ page, mockInvoke }) => {
+ *     await mockInvoke(`(cmd) => {
  *       if (cmd === "get_contexts") throw new Error("dial tcp: no route to host");
  *       return null;
  *     }`);
@@ -34,11 +35,11 @@ export type MockInvokeHandler = (cmd: string, args: Record<string, unknown>) => 
 
 interface Fixtures {
   page: Page;
-  mockTauriInvoke: (handlerSource: string) => Promise<void>;
+  mockInvoke: (handlerSource: string) => Promise<void>;
 }
 
 export const test = base.extend<Fixtures>({
-  mockTauriInvoke: async ({ page }, use) => {
+  mockInvoke: async ({ page }, use) => {
     const install = async (handlerSource: string) => {
       await page.addInitScript(`
         (function () {
@@ -48,20 +49,19 @@ export const test = base.extend<Fixtures>({
               const result = handler(cmd, args ?? {});
               return result && typeof result.then === "function" ? await result : result;
             } catch (err) {
-              // Propagate as a string so callers see a stable shape — matches
-              // real Tauri behavior where errors cross the IPC boundary as
-              // serialized strings, not Error instances.
+              // Reject with a string so callers see a stable shape (the UI was
+              // written to read string error messages off the IPC boundary).
               throw String(err instanceof Error ? err.message : err);
             }
           };
-          Object.defineProperty(window, "__TAURI_INTERNALS__", {
+          // Mirror the preload-exposed bridge (electron/preload.ts). on/off are
+          // no-ops — the mock never emits backend events.
+          Object.defineProperty(window, "electronAPI", {
             value: {
               invoke: fakeInvoke,
-              // Tauri plugins register event callbacks via transformCallback.
-              // Returning a stable id is enough — we are not firing events
-              // from the mock.
-              transformCallback: () => 0,
-              metadata: { plugins: {} },
+              on: () => {},
+              off: () => {},
+              openExternal: async () => {},
             },
             writable: true,
             configurable: true,

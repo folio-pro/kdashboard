@@ -29,7 +29,7 @@ TIMEOUT="${TIMEOUT:-900}"              # seconds; generous for first Rust compil
 OUT_DIR="$ROOT_DIR/benchmark-out"
 mkdir -p "$OUT_DIR"
 OUT_FILE="$OUT_DIR/e2e-${LABEL}.json"
-LOG_FILE="$OUT_DIR/tauri-${LABEL}.log"
+LOG_FILE="$OUT_DIR/electron-${LABEL}.log"
 rm -f "$OUT_FILE"
 
 echo "▸ context=$CONTEXT  ns=${NS:-(all)}  iters=$ITERS  warmup=$WARMUP"
@@ -46,13 +46,13 @@ export KDASH_BENCH_OUT="$OUT_FILE"
 
 cleanup() {
   pkill -f "target/debug/kdashboard" 2>/dev/null || true
-  pkill -f "tauri dev" 2>/dev/null || true
+  pkill -f "electron ." 2>/dev/null || true
   [[ -n "${TAURI_PID:-}" ]] && kill "$TAURI_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
 echo "▸ launching app (first run compiles Rust — be patient)..."
-npm run tauri dev -- --no-watch >"$LOG_FILE" 2>&1 &
+npm run dev:electron >"$LOG_FILE" 2>&1 &
 TAURI_PID=$!
 
 elapsed=0

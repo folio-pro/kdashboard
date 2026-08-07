@@ -54,11 +54,11 @@
 
 <header
   class="flex h-[48px] shrink-0 items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-6"
-  data-tauri-drag-region
+  data-drag-region
 >
   <!-- Left: Page title + Namespace badge -->
-  <div class="flex items-center gap-3" data-tauri-drag-region>
-    <span class="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]" data-tauri-drag-region>
+  <div class="flex items-center gap-3" data-drag-region>
+    <span class="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]" data-drag-region>
       {resourceTypeLabel}
     </span>
 

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { check } from "@tauri-apps/plugin-updater";
-  import { relaunch } from "@tauri-apps/plugin-process";
-  import { listen } from "@tauri-apps/api/event";
+  import { check } from "$lib/ipc/updater";
+  import { relaunch } from "$lib/ipc/process";
+  import { listen } from "$lib/ipc/event";
   import { onMount } from "svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
   import { ArrowDownToLine, X } from "lucide-svelte";
@@ -101,7 +101,7 @@
         <div class="flex items-center gap-2">
           <div class="h-1.5 w-24 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
             <div
-              class="h-full rounded-full bg-[var(--accent)] transition-all duration-300"
+              class="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300"
               style="width: {progress}%"
             ></div>
           </div>

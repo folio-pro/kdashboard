@@ -476,11 +476,14 @@ export class UiStoreLogic {
     tab.filter = value;
     if (this._debounceTimer) clearTimeout(this._debounceTimer);
     this._debounceTarget = tab;
+    // Coalesce bursts of keystrokes, but stay short enough that results feel
+    // instant: filtering a few thousand rows costs <5 ms, so the old 150 ms was
+    // pure perceived latency. ~3 frames batches a fast typist without lag.
     this._debounceTimer = setTimeout(() => {
       tab._debouncedFilter = value;
       this._debounceTimer = null;
       this._debounceTarget = null;
-    }, 150);
+    }, 48);
   }
 
   toggleStatFilter(key: string): void {

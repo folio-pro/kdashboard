@@ -6,8 +6,8 @@
     Trash2,
     TerminalSquare,
   } from "lucide-svelte";
-  import { listen } from "@tauri-apps/api/event";
-  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "$lib/ipc/event";
+  import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { onMount } from "svelte";

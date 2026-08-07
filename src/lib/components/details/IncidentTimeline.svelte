@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke } from "$lib/ipc/core";
   import { Clock, AlertTriangle, CheckCircle, ChevronDown, ChevronUp } from "lucide-svelte";
   import type { Resource, Event, TimelineEntry } from "$lib/types";
   import { formatRelativeTime } from "$lib/utils/age";
