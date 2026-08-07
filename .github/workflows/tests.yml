@@ -32,3 +32,37 @@ jobs:
 
       - name: Run Electron backend tests
         run: bun run test:electron
+
+  integration-tests:
+    name: Integration (K8s)
+    runs-on: ubuntu-latest
+    needs: [js-tests]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: kdash-integration
+          wait: 60s
+
+      - name: Seed test resources
+        run: |
+          kubectl apply -f electron/integration/fixtures/seed.yaml
+          kubectl rollout status deployment/test-nginx -n kdash-test --timeout=120s
+
+      - name: Run integration tests
+        env:
+          KDASH_TEST_CONTEXT: kind-kdash-integration
+          KDASH_TEST_NAMESPACE: kdash-test
+        run: bun run test:integration
