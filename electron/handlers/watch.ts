@@ -47,6 +47,11 @@ const WATCH_CHANNEL = 'resource-watch-event';
 const WATCH_BATCH_SIZE = 20;
 /** Max time (ms) to hold a partial batch before flushing it. */
 const WATCH_FLUSH_INTERVAL_MS = 50;
+/** Reconnect backoff: base delay, doubled per unhealthy cycle up to the cap. */
+const BACKOFF_BASE_MS = 500;
+const BACKOFF_MAX_MS = 30_000;
+/** A connection must survive this long before it counts as healthy (resets backoff). */
+const HEALTHY_CONN_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // Wire types. Resource/RawObject come from the shared k8s core; only the
@@ -150,12 +155,18 @@ function watchPath(ar: ApiResource, namespace?: string): string {
 interface ActiveWatch {
   /** Aborts the in-flight HTTP watch request. */
   controller: AbortController | null;
-  /** Flush timer for the pending batch. */
-  flushTimer: ReturnType<typeof setInterval> | null;
+  /** On-demand flush timer for the pending batch (armed only while events wait). */
+  flushTimer: ReturnType<typeof setTimeout> | null;
+  /** Pending reconnect timer, so stop() cancels a scheduled retry. */
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
   /** Pending (un-emitted) events. */
   batch: WatchEvent[];
   /** Whether a reconnect has already established the first sync. */
   hadInitialSync: boolean;
+  /** Current reconnect delay; doubles per unhealthy cycle, resets when healthy. */
+  backoffMs: number;
+  /** Timestamp the current connection opened (0 = not connected). */
+  openedAt: number;
   /** Set true by stop() so reconnect loops bail. */
   stopped: boolean;
 }
@@ -169,8 +180,12 @@ function clearActive(): void {
   if (active) {
     active.stopped = true;
     if (active.flushTimer) {
-      clearInterval(active.flushTimer);
+      clearTimeout(active.flushTimer);
       active.flushTimer = null;
+    }
+    if (active.reconnectTimer) {
+      clearTimeout(active.reconnectTimer);
+      active.reconnectTimer = null;
     }
     if (active.controller) {
       try {
@@ -205,8 +220,11 @@ async function startResourceWatch(
   const state: ActiveWatch = {
     controller: null,
     flushTimer: null,
+    reconnectTimer: null,
     batch: [],
     hadInitialSync: false,
+    backoffMs: BACKOFF_BASE_MS,
+    openedAt: 0,
     stopped: false,
   };
   active = state;
@@ -218,15 +236,16 @@ async function startResourceWatch(
   const isCurrent = (): boolean => active === state && !state.stopped;
 
   const flush = (): void => {
+    if (state.flushTimer) {
+      clearTimeout(state.flushTimer);
+      state.flushTimer = null;
+    }
     if (state.batch.length === 0) return;
     const out = state.batch;
     state.batch = [];
     if (!isCurrent()) return;
     ctx.emit(WATCH_CHANNEL, out);
   };
-
-  // Periodic flush so low-rate updates aren't held back (watch.rs flush window).
-  state.flushTimer = setInterval(flush, WATCH_FLUSH_INTERVAL_MS);
 
   const pushEvent = (eventType: 'Applied' | 'Deleted', obj: RawObject): void => {
     if (!isCurrent()) return;
@@ -235,110 +254,157 @@ async function startResourceWatch(
       resource_type: resourceType,
       resource: dynamicToResource(obj, apiVersion, kind),
     });
-    if (state.batch.length >= WATCH_BATCH_SIZE) flush();
+    if (state.batch.length >= WATCH_BATCH_SIZE) {
+      flush();
+    } else if (!state.flushTimer) {
+      // On-demand flush timer (logs.ts pattern) so low-rate updates aren't held
+      // back but an idle watch keeps no interval ticking.
+      state.flushTimer = setTimeout(flush, WATCH_FLUSH_INTERVAL_MS);
+    }
   };
 
   const watch = new Watch(kc());
 
-  // Establish (or re-establish) the watch connection. On stream close the JS
-  // Watch does NOT auto-relist (unlike the kube `watcher` runtime), so we
-  // reconnect ourselves and emit a Resync after the first sync — mirroring
-  // watch.rs's InitDone-on-resync behaviour so the store does a full refresh.
-  const connect = (): void => {
-    if (!isCurrent()) return;
+  // The start invoke resolves/rejects with the FIRST connection attempt only:
+  // resolve when the watch opens, reject if that first open fails. Later
+  // reconnects run in background with backoff and never surface here.
+  let settled = false;
 
-    watch
-      .watch(
-        path,
-        {},
-        (type: string, obj: RawObject) => {
-          if (!isCurrent()) return;
-          switch (type) {
-            case 'ADDED':
-            case 'MODIFIED':
-              pushEvent('Applied', obj);
-              break;
-            case 'DELETED':
-              pushEvent('Deleted', obj);
-              break;
-            // BOOKMARK / ERROR carry no resource delta the store consumes.
-            default:
-              break;
+  return await new Promise<void>((resolve, reject) => {
+    const settleOk = (): void => {
+      if (!settled) {
+        settled = true;
+        resolve();
+      }
+    };
+    const settleErr = (err: unknown): void => {
+      if (!settled) {
+        settled = true;
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    };
+
+    /** Schedule a reconnect with exponential backoff + jitter (0.5x-1x the delay). */
+    const scheduleReconnect = (): void => {
+      if (!isCurrent()) return;
+      const delay = Math.round(state.backoffMs * (0.5 + Math.random() * 0.5));
+      state.backoffMs = Math.min(state.backoffMs * 2, BACKOFF_MAX_MS);
+      state.reconnectTimer = setTimeout(() => {
+        state.reconnectTimer = null;
+        connect();
+      }, delay);
+    };
+
+    // Establish (or re-establish) the watch connection. On stream close the JS
+    // Watch does NOT auto-relist (unlike the kube `watcher` runtime), so we
+    // reconnect ourselves and emit a Resync after the first sync — mirroring
+    // watch.rs's InitDone-on-resync behaviour so the store does a full refresh.
+    const connect = (): void => {
+      if (!isCurrent()) return;
+
+      watch
+        .watch(
+          path,
+          {},
+          (type: string, obj: RawObject) => {
+            if (!isCurrent()) return;
+            switch (type) {
+              case 'ADDED':
+              case 'MODIFIED':
+                pushEvent('Applied', obj);
+                break;
+              case 'DELETED':
+                pushEvent('Deleted', obj);
+                break;
+              // BOOKMARK / ERROR carry no resource delta the store consumes.
+              default:
+                break;
+            }
+          },
+          (err: unknown) => {
+            // Stream ended (close, timeout, or error). Flush pending deltas.
+            if (!isCurrent()) return;
+            // eslint-disable-next-line no-console
+            console.error(
+              `[watch] stream ended for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
+              err instanceof Error ? err.message : err,
+            );
+            flush();
+            state.controller = null;
+
+            // A connection that survived a while is "healthy": reset the
+            // backoff. An unhealthy one (flapping) keeps growing it, and its
+            // close emits NO Resync — the renderer does a full relist per
+            // Resync, so a flapping watch must not relist in a loop.
+            const healthy = state.openedAt > 0 && Date.now() - state.openedAt >= HEALTHY_CONN_MS;
+            state.openedAt = 0;
+            if (healthy) state.backoffMs = BACKOFF_BASE_MS;
+
+            if (state.hadInitialSync) {
+              if (healthy) {
+                // Re-sync after a disconnect: emit a Resync so the store
+                // triggers a full refresh (matches watch.rs InitDone-on-resync).
+                ctx.emit(WATCH_CHANNEL, [
+                  {
+                    event_type: 'Resync',
+                    resource_type: resourceType,
+                    resource: {
+                      api_version: '',
+                      kind: '',
+                      metadata: {},
+                    },
+                  } satisfies WatchEvent,
+                ]);
+              }
+            } else {
+              // First connection's natural close (e.g. the 30s server window)
+              // becomes the boundary after which reconnects count as resyncs.
+              state.hadInitialSync = true;
+            }
+
+            scheduleReconnect();
+          },
+        )
+        .then((controller: AbortController) => {
+          if (!isCurrent()) {
+            // We were stopped/replaced while the request was being set up.
+            try {
+              controller.abort();
+            } catch {
+              // ignore
+            }
+            return;
           }
-        },
-        (err: unknown) => {
-          // Stream ended (close, timeout, or error). Flush pending deltas.
-          if (!isCurrent()) return;
+          state.controller = controller;
+          state.openedAt = Date.now();
+          settleOk();
+        })
+        .catch((err: unknown) => {
           // eslint-disable-next-line no-console
           console.error(
-            `[watch] stream ended for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
+            `[watch] failed to open watch for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
             err instanceof Error ? err.message : err,
           );
-          flush();
-          state.controller = null;
-
-          if (state.hadInitialSync) {
-            // Re-sync after a disconnect: emit a Resync so the store triggers a
-            // full refresh (matches watch.rs InitDone-on-resync), then reconnect.
-            if (isCurrent()) {
-              ctx.emit(WATCH_CHANNEL, [
-                {
-                  event_type: 'Resync',
-                  resource_type: resourceType,
-                  resource: {
-                    api_version: '',
-                    kind: '',
-                    metadata: {},
-                  },
-                } satisfies WatchEvent,
-              ]);
-            }
-          } else {
-            // First connection's natural close (e.g. the 30s server window)
-            // becomes the boundary after which reconnects count as resyncs.
-            state.hadInitialSync = true;
+          // Failed to OPEN the watch. If this is the first attempt, tear down
+          // and reject the start invoke; otherwise keep the loop alive with
+          // backoff so a transient open failure (e.g. a token refresh) doesn't
+          // strand the list empty until the next user action.
+          if (isCurrent() && !settled) {
+            clearActive();
+            settleErr(err);
+            return;
           }
-          void err; // surfaced via Resync + reconnect; nothing to throw here.
+          scheduleReconnect();
+        });
+    };
 
-          // Reconnect on the next tick unless we've been stopped/replaced.
-          if (isCurrent()) {
-            setTimeout(connect, 0);
-          }
-        },
-      )
-      .then((controller: AbortController) => {
-        if (!isCurrent()) {
-          // We were stopped/replaced while the request was being set up.
-          try {
-            controller.abort();
-          } catch {
-            // ignore
-          }
-          return;
-        }
-        state.controller = controller;
-      })
-      .catch((err: unknown) => {
-        // eslint-disable-next-line no-console
-        console.error(
-          `[watch] failed to open watch for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
-          err instanceof Error ? err.message : err,
-        );
-        // Failed to OPEN the watch. Reject the start promise only if this is the
-        // active, never-synced watch; otherwise keep the loop alive by retrying,
-        // so a transient open failure (e.g. a token refresh) doesn't strand the
-        // list empty until the next user action.
-        if (isCurrent() && !state.hadInitialSync) {
-          clearActive();
-          throw err instanceof Error ? err : new Error(String(err));
-        }
-        if (isCurrent()) {
-          setTimeout(connect, 1000);
-        }
-      });
-  };
+    connect();
+  });
+}
 
-  connect();
+/** Stop the active watch (renderer reload/crash cleanup — main.ts hooks). */
+export function stopAllWatches(): void {
+  clearActive();
 }
 
 export function register(handlers: HandlerMap, ctx: HandlerCtx): void {

@@ -74,10 +74,19 @@ interface SpawnResult {
   stdout: string;
   stderr: string;
   spawnError: boolean;
+  timedOut: boolean;
 }
 
-/** Run a binary, capturing stdout/stderr/exit. Never rejects. */
-function runCommand(cmd: string, args: string[]): Promise<SpawnResult> {
+/** Default kill-switch for scanner shell-outs (grype has no --timeout flag). */
+const RUN_COMMAND_TIMEOUT_MS = 120_000; // 120s
+
+/** Run a binary, capturing stdout/stderr/exit. Never rejects. Kills the
+ *  process if it exceeds `timeoutMs` (default 120s). */
+function runCommand(
+  cmd: string,
+  args: string[],
+  timeoutMs: number = RUN_COMMAND_TIMEOUT_MS,
+): Promise<SpawnResult> {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -85,9 +94,22 @@ function runCommand(cmd: string, args: string[]): Promise<SpawnResult> {
     try {
       child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     } catch {
-      resolve({ code: null, stdout: '', stderr: '', spawnError: true });
+      resolve({ code: null, stdout: '', stderr: '', spawnError: true, timedOut: false });
       return;
     }
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGKILL');
+      resolve({
+        code: null,
+        stdout,
+        stderr: stderr || `${cmd} timed out after ${Math.round(timeoutMs / 1000)}s`,
+        spawnError: false,
+        timedOut: true,
+      });
+    }, timeoutMs);
     child.stdout.on('data', (d: Buffer) => {
       stdout += d.toString();
     });
@@ -95,25 +117,45 @@ function runCommand(cmd: string, args: string[]): Promise<SpawnResult> {
       stderr += d.toString();
     });
     child.on('error', () => {
-      resolve({ code: null, stdout, stderr, spawnError: true });
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code: null, stdout, stderr, spawnError: true, timedOut: false });
     });
     child.on('close', (code) => {
-      resolve({ code, stdout, stderr, spawnError: false });
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr, spawnError: false, timedOut: false });
     });
   });
 }
 
-/** Mirror Rust detect_scanner(): probe `trivy --version`, then `grype version`. */
+// Scanner-detection cache — probing `trivy --version` / `grype version` on
+// every call is wasteful; a long TTL still picks up new installs without a
+// restart.
+const SCANNER_CACHE_TTL_MS = 600_000; // 10 min
+
+let scannerCache: { scanner: Scanner; expiresAt: number } | null = null;
+
+/** Mirror Rust detect_scanner(): probe `trivy --version`, then `grype version`.
+ *  The result is cached for SCANNER_CACHE_TTL_MS. */
 async function detectScanner(): Promise<Scanner> {
+  if (scannerCache && scannerCache.expiresAt > Date.now()) {
+    return scannerCache.scanner;
+  }
+  let scanner: Scanner = 'none';
   const trivy = await runCommand('trivy', ['--version']);
   if (!trivy.spawnError && trivy.code === 0) {
-    return 'trivy';
+    scanner = 'trivy';
+  } else {
+    const grype = await runCommand('grype', ['version']);
+    if (!grype.spawnError && grype.code === 0) {
+      scanner = 'grype';
+    }
   }
-  const grype = await runCommand('grype', ['version']);
-  if (!grype.spawnError && grype.code === 0) {
-    return 'grype';
-  }
-  return 'none';
+  scannerCache = { scanner, expiresAt: Date.now() + SCANNER_CACHE_TTL_MS };
+  return scanner;
 }
 
 function emptyCounts(): VulnerabilityCounts {
@@ -204,17 +246,47 @@ async function scanImage(scanner: Scanner, image: string): Promise<Vulnerability
 }
 
 // ---------------------------------------------------------------------------
-// Scan cache — mirror Rust SCAN_CACHE (process-global, 5 min TTL).
+// Scan cache — process-global, per-image TTL (a scan of one image stays fresh
+// for IMAGE_CACHE_TTL_MS independently of when other images were scanned).
 // ---------------------------------------------------------------------------
 
-const CACHE_TTL_MS = 300_000; // 5 min
+const IMAGE_CACHE_TTL_MS = 1_800_000; // 30 min per scanned image
+const IMAGE_CACHE_MAX_ENTRIES = 512;
+const SCAN_CONCURRENCY = 4;
 
-interface ScanCache {
-  results: Map<string, ImageScanResult>;
+interface CachedScan {
+  result: ImageScanResult;
   expiresAt: number; // epoch ms
 }
 
-let scanCache: ScanCache | null = null;
+const scanCache = new Map<string, CachedScan>();
+
+function getCachedScan(image: string): ImageScanResult | undefined {
+  const entry = scanCache.get(image);
+  if (!entry) return undefined;
+  if (entry.expiresAt <= Date.now()) {
+    scanCache.delete(image);
+    return undefined;
+  }
+  return entry.result;
+}
+
+function putCachedScan(result: ImageScanResult): void {
+  // Refresh insertion order so eviction drops the least-recently-written key.
+  scanCache.delete(result.image);
+  scanCache.set(result.image, { result, expiresAt: Date.now() + IMAGE_CACHE_TTL_MS });
+  // Bound the cache: drop expired entries first, then oldest until under cap.
+  if (scanCache.size > IMAGE_CACHE_MAX_ENTRIES) {
+    const now = Date.now();
+    for (const [key, entry] of scanCache) {
+      if (entry.expiresAt <= now) scanCache.delete(key);
+    }
+    for (const key of scanCache.keys()) {
+      if (scanCache.size <= IMAGE_CACHE_MAX_ENTRIES) break;
+      scanCache.delete(key);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Pod image extraction — mirror get_pod_images().
@@ -285,33 +357,39 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
   const imageResults = new Map<string, ImageScanResult>();
   const now = new Date().toISOString();
 
-  // Reuse cached scans that are still fresh.
-  if (scanCache && scanCache.expiresAt > Date.now()) {
-    for (const img of uniqueImages) {
-      const cached = scanCache.results.get(img);
-      if (cached) imageResults.set(img, cached);
-    }
+  // Reuse per-image cached scans that are still fresh.
+  for (const img of uniqueImages) {
+    const cached = getCachedScan(img);
+    if (cached) imageResults.set(img, cached);
   }
 
-  // Scan images not in cache (sequential, mirroring the Rust loop).
+  // Scan images not in cache with a bounded-concurrency worker pool.
   if (scanner !== 'none') {
-    for (const img of uniqueImages) {
-      if (imageResults.has(img)) continue;
-      try {
-        const vulns = await scanImage(scanner, img);
-        imageResults.set(img, { image: img, vulns, scanned_at: now });
-      } catch {
-        // Failed scan -> empty result (faithful to Rust).
-        imageResults.set(img, { image: img, vulns: emptyCounts(), scanned_at: now });
+    const pending = uniqueImages.filter((img) => !imageResults.has(img));
+    let cursor = 0;
+    async function worker(): Promise<void> {
+      for (;;) {
+        const i = cursor++;
+        if (i >= pending.length) return;
+        const img = pending[i];
+        let result: ImageScanResult;
+        try {
+          const vulns = await scanImage(scanner, img);
+          result = { image: img, vulns, scanned_at: now };
+        } catch {
+          // Failed scan -> empty result (faithful to Rust).
+          result = { image: img, vulns: emptyCounts(), scanned_at: now };
+        }
+        imageResults.set(img, result);
+        putCachedScan(result);
       }
     }
+    const workers = Array.from(
+      { length: Math.min(SCAN_CONCURRENCY, pending.length) },
+      () => worker(),
+    );
+    await Promise.all(workers);
   }
-
-  // Update cache.
-  scanCache = {
-    results: new Map(imageResults),
-    expiresAt: Date.now() + CACHE_TTL_MS,
-  };
 
   // Per-pod posture.
   const pods: PodSecurityInfo[] = [];

@@ -32,7 +32,7 @@ import {
 } from '@kubernetes/client-node';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
-import { makeApiClient } from '../k8s/client';
+import { getActiveContextName, makeApiClient } from '../k8s/client';
 import type { RawObject, Resource } from '../k8s/resource-types';
 import { dynamicToResource } from '../k8s/resource-mapping';
 
@@ -168,6 +168,59 @@ async function discoverCrds(): Promise<CrdGroup[]> {
   groups.sort((a, b) => (a.group < b.group ? -1 : a.group > b.group ? 1 : 0));
 
   return groups;
+}
+
+// ---------------------------------------------------------------------------
+// TTL caches. The sidebar re-invokes discover_crds on every refresh and
+// list_crd_resources re-reads the CRD definition (columns) on every listing —
+// both are effectively static, so cache them briefly. Keys embed the active
+// kubeconfig context name, so a context switch never serves stale data; the
+// TTL bounds staleness within a context (there is no context-change hook to
+// invalidate on).
+// ---------------------------------------------------------------------------
+
+const CRD_CACHE_TTL_MS = 30_000;
+
+interface CacheEntry<T> {
+  at: number;
+  promise: Promise<T>;
+}
+
+function contextKey(): string {
+  return getActiveContextName() ?? '';
+}
+
+function cacheGet<T>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string,
+  fetch: () => Promise<T>,
+): Promise<T> {
+  const now = Date.now();
+  const hit = cache.get(key);
+  if (hit && now - hit.at < CRD_CACHE_TTL_MS) return hit.promise;
+  const promise = fetch();
+  cache.set(key, { at: now, promise });
+  // Never cache failures — the next call retries.
+  promise.catch(() => {
+    if (cache.get(key)?.promise === promise) cache.delete(key);
+  });
+  return promise;
+}
+
+const discoveryCache = new Map<string, CacheEntry<CrdGroup[]>>();
+const columnsCache = new Map<string, CacheEntry<CrdColumn[]>>();
+
+function discoverCrdsCached(): Promise<CrdGroup[]> {
+  return cacheGet(discoveryCache, contextKey(), discoverCrds);
+}
+
+function getCrdColumnsCached(
+  group: string,
+  version: string,
+  plural: string,
+): Promise<CrdColumn[]> {
+  const key = `${contextKey()}|${group}|${version}|${plural}`;
+  return cacheGet(columnsCache, key, () => getCrdColumns(group, version, plural));
 }
 
 // ===========================================================================
@@ -312,50 +365,54 @@ async function listCrdResources(
 
   const useNamespaced = scope !== 'Cluster' && namespace !== undefined && namespace.length > 0;
 
-  const items: Resource[] = [];
-  let continueToken: string | undefined;
+  const listItems = async (): Promise<Resource[]> => {
+    const items: Resource[] = [];
+    let continueToken: string | undefined;
 
-  for (;;) {
-    let list: RawCustomObjectList;
-    if (useNamespaced) {
-      list = (await custom.listNamespacedCustomObject({
-        group,
-        version,
-        namespace: namespace as string,
-        plural,
-        limit: 500,
-        _continue: continueToken,
-      })) as RawCustomObjectList;
-    } else {
-      list = (await custom.listClusterCustomObject({
-        group,
-        version,
-        plural,
-        limit: 500,
-        _continue: continueToken,
-      })) as RawCustomObjectList;
+    for (;;) {
+      let list: RawCustomObjectList;
+      if (useNamespaced) {
+        list = (await custom.listNamespacedCustomObject({
+          group,
+          version,
+          namespace: namespace as string,
+          plural,
+          limit: 500,
+          _continue: continueToken,
+        })) as RawCustomObjectList;
+      } else {
+        list = (await custom.listClusterCustomObject({
+          group,
+          version,
+          plural,
+          limit: 500,
+          _continue: continueToken,
+        })) as RawCustomObjectList;
+      }
+
+      for (const obj of list.items ?? []) {
+        items.push(dynamicToResource(obj, apiVersion, kind));
+      }
+
+      const token = list.metadata?.continue;
+      if (token && token.length > 0) {
+        continueToken = token;
+      } else {
+        break;
+      }
     }
 
-    for (const obj of list.items ?? []) {
-      items.push(dynamicToResource(obj, apiVersion, kind));
-    }
+    return items;
+  };
 
-    const token = list.metadata?.continue;
-    if (token && token.length > 0) {
-      continueToken = token;
-    } else {
-      break;
-    }
-  }
+  // Listing and column resolution are independent — run them concurrently.
+  const [items, printerCols] = await Promise.all([
+    listItems(),
+    getCrdColumnsCached(group, version, plural).catch(() => [] as CrdColumn[]),
+  ]);
 
   // additionalPrinterColumns first; fall back to heuristics.
-  let columns: CrdColumn[] = [];
-  try {
-    const cols = await getCrdColumns(group, version, plural);
-    columns = cols.length > 0 ? cols : extractHeuristicColumns(items, 8);
-  } catch {
-    columns = extractHeuristicColumns(items, 8);
-  }
+  const columns = printerCols.length > 0 ? printerCols : extractHeuristicColumns(items, 8);
 
   return { items, columns };
 }
@@ -520,7 +577,7 @@ function asResource(value: unknown): Resource {
 
 export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
   handlers.set('discover_crds', async () => {
-    return discoverCrds();
+    return discoverCrdsCached();
   });
 
   handlers.set('list_crd_resources', async (args) => {

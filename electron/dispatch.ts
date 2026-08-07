@@ -8,6 +8,8 @@
 
 import type { BrowserWindow } from 'electron';
 
+import { describeInvokeError } from './k8s/errors.js';
+
 /**
  * Context handed to every handler. `emit` pushes an event to the renderer over
  * one of the 5 event channels (terminal-output, terminal-exit, log-lines,
@@ -56,7 +58,14 @@ export function buildDispatcher(modules: HandlerModule[], ctx: HandlerCtx): {
     if (!handler) {
       throw new Error(`Unknown command: ${cmd}`);
     }
-    return handler(args ?? {}, ctx);
+    try {
+      return await handler(args ?? {}, ctx);
+    } catch (err) {
+      // Rethrow with an actionable message: only Error.message crosses the
+      // IPC boundary, so opaque network failures ("fetch failed") must be
+      // translated here or the renderer can never explain them.
+      throw new Error(describeInvokeError(err));
+    }
   }
 
   return { handlers, dispatch };

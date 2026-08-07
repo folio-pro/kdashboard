@@ -86,7 +86,7 @@ interface Session {
 let session: Session | null = null;
 
 /** Tear down the active session if any. `notify` emits terminal-exit when true. */
-function endSession(notify: boolean, ctx: HandlerCtx): void {
+function endSession(notify: boolean, ctx: HandlerCtx | null): void {
   const current = session;
   if (!current) return;
   session = null;
@@ -102,9 +102,14 @@ function endSession(notify: boolean, ctx: HandlerCtx): void {
     /* ignore */
   }
 
-  if (notify) {
+  if (notify && ctx) {
     ctx.emit(TERMINAL_EXIT, null);
   }
+}
+
+/** End the active session without notifying (renderer reload/crash — main.ts hooks). */
+export function stopAllTerminalSessions(): void {
+  endSession(false, null);
 }
 
 export function register(handlers: HandlerMap, ctx: HandlerCtx): void {

@@ -123,8 +123,14 @@ function rsImages(rs: V1ReplicaSet): string[] {
 
 /**
  * Fetch ReplicaSets owned by the given Deployment, sorted by revision descending
- * (newest first). Matches by the Deployment's UID (not name) so orphaned
- * ReplicaSets from a previously deleted Deployment of the same name are excluded.
+ * (newest first). The ReplicaSet list is server-side filtered by the
+ * Deployment's spec.selector.matchLabels (Deployment-owned ReplicaSets always
+ * carry the selector labels, plus pod-template-hash), so we never download the
+ * whole namespace's ReplicaSets. The deployment read must complete first — the
+ * selector comes from it — so the two calls cannot run in parallel.
+ * Matching by the Deployment's UID (not name) is kept as a safeguard so
+ * orphaned ReplicaSets from a previously deleted Deployment of the same name
+ * (or unrelated ReplicaSets that happen to share the labels) are excluded.
  */
 async function fetchSortedRevisions(name: string, namespace: string): Promise<V1ReplicaSet[]> {
   const api = appsApi();
@@ -134,7 +140,15 @@ async function fetchSortedRevisions(name: string, namespace: string): Promise<V1
     throw new Error(`Deployment ${name} has no UID`);
   }
 
-  const rsList = await api.listNamespacedReplicaSet({ namespace });
+  const matchLabels = deployment.spec?.selector?.matchLabels ?? {};
+  const labelSelector = Object.entries(matchLabels)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(',');
+
+  const rsList = await api.listNamespacedReplicaSet({
+    namespace,
+    ...(labelSelector.length > 0 ? { labelSelector } : {}),
+  });
   const owned = rsList.items.filter((rs) =>
     (rs.metadata?.ownerReferences ?? []).some(
       (ref) => ref.controller === true && ref.uid === deploymentUid,

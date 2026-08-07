@@ -27,6 +27,27 @@ export function metaFrom(m: RawObjectMeta | undefined): ResourceMetadata {
   };
 }
 
+// kubectl stores the full applied manifest here — on list rows it duplicates
+// the entire spec per item, so LIST projections prune it (detail/YAML keep it).
+const LAST_APPLIED_ANNOTATION = 'kubectl.kubernetes.io/last-applied-configuration';
+
+/**
+ * metaFrom for LIST projections: identical to metaFrom, except the
+ * `kubectl.kubernetes.io/last-applied-configuration` annotation is dropped
+ * (it embeds the whole spec and bloats every row shipped over IPC). Detail
+ * paths (get_resource / get_resource_yaml) must keep using metaFrom so the
+ * full object stays intact.
+ */
+export function listMetaFrom(m: RawObjectMeta | undefined): ResourceMetadata {
+  const meta = metaFrom(m);
+  const ann = meta.annotations;
+  if (ann && LAST_APPLIED_ANNOTATION in ann) {
+    const { [LAST_APPLIED_ANNOTATION]: _dropped, ...rest } = ann;
+    meta.annotations = rest;
+  }
+  return meta;
+}
+
 /** Drop a value if it is null/undefined (Rust's `.filter(|v| !v.is_null())`). */
 export function presentOrUndefined<T>(v: T | null | undefined): T | undefined {
   return v === null || v === undefined ? undefined : v;

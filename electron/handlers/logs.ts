@@ -290,6 +290,11 @@ function stopLogStream(): null {
   return null;
 }
 
+/** Stop the active log stream(s) (renderer reload/crash cleanup — main.ts hooks). */
+export function stopAllLogStreams(): void {
+  stopActive();
+}
+
 export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
   handlers.set('stream_pod_logs', (args, ctx) => streamPodLogs(args, ctx));
   handlers.set('stream_multi_pod_logs', (args, ctx) => streamMultiPodLogs(args, ctx));

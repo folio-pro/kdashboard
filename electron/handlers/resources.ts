@@ -34,7 +34,7 @@ import type {
   ResourceList,
   ResourceMetadata,
 } from '../k8s/resource-types';
-import { metaFrom } from '../k8s/resource-mapping';
+import { metaFrom, listMetaFrom } from '../k8s/resource-mapping';
 import { apiVersionOf, resolveKindOrThrow } from '../k8s/kinds';
 import type { Handler, HandlerMap } from '../dispatch';
 
@@ -287,7 +287,7 @@ function projectGeneric(
   const res: Resource = {
     api_version: apiVersion,
     kind,
-    metadata: metaFrom(obj.metadata),
+    metadata: listMetaFrom(obj.metadata),
   };
   if (fields.spec) {
     const v = presentOrUndefined(obj.spec);
@@ -433,7 +433,7 @@ function projectPod(obj: RawObject): Resource {
   const res: Resource = {
     api_version: 'v1',
     kind: 'Pod',
-    metadata: metaFrom(obj.metadata),
+    metadata: listMetaFrom(obj.metadata),
   };
   if (spec !== undefined) res.spec = spec;
   if (status !== undefined) res.status = status;
@@ -458,7 +458,7 @@ function projectSecret(obj: RawObject): Resource {
   const res: Resource = {
     api_version: 'v1',
     kind: 'Secret',
-    metadata: metaFrom(obj.metadata),
+    metadata: listMetaFrom(obj.metadata),
   };
   if (data !== undefined) res.data = data;
   if (obj.type !== undefined) res.type = obj.type;
@@ -473,7 +473,7 @@ function projectBinding(obj: RawObject, kind: string): Resource {
   return {
     api_version: 'rbac.authorization.k8s.io/v1',
     kind,
-    metadata: metaFrom(obj.metadata),
+    metadata: listMetaFrom(obj.metadata),
     spec,
   };
 }
@@ -483,7 +483,7 @@ function projectVpa(obj: RawObject): Resource {
   const res: Resource = {
     api_version: 'autoscaling.k8s.io/v1',
     kind: 'VerticalPodAutoscaler',
-    metadata: metaFrom(obj.metadata),
+    metadata: listMetaFrom(obj.metadata),
   };
   const spec = presentOrUndefined(obj.spec);
   const status = presentOrUndefined(obj.status);
@@ -509,17 +509,16 @@ async function listResources(resourceType: string, namespace?: string): Promise<
   if (resourceType === 'secrets') {
     const ar = apiResourceForType('secrets');
     if (!ar) throw new Error(`Unknown resource type: ${resourceType}`);
-    // Rust uses a single (non-paginated) list for secrets.
-    const raw = await listRaw({ ar, namespace, paginate: false });
+    const raw = await listRaw({ ar, namespace });
     return { items: raw.map(projectSecret) };
   }
 
-  // RBAC bindings: synthetic spec. Rust does a single list here.
+  // RBAC bindings: synthetic spec.
   if (resourceType === 'rolebindings' || resourceType === 'clusterrolebindings') {
     const ar = apiResourceForType(resourceType);
     if (!ar) throw new Error(`Unknown resource type: ${resourceType}`);
     const kind = resourceType === 'rolebindings' ? 'RoleBinding' : 'ClusterRoleBinding';
-    const raw = await listRaw({ ar, namespace, paginate: false });
+    const raw = await listRaw({ ar, namespace });
     return { items: raw.map((o) => projectBinding(o, kind)) };
   }
 
@@ -527,7 +526,7 @@ async function listResources(resourceType: string, namespace?: string): Promise<
   if (resourceType === 'vpa') {
     const ar = apiResourceForType('vpa');
     if (!ar) throw new Error(`Unknown resource type: ${resourceType}`);
-    const raw = await listRaw({ ar, namespace, paginate: false });
+    const raw = await listRaw({ ar, namespace });
     return { items: raw.map(projectVpa) };
   }
 
@@ -562,7 +561,7 @@ async function listPodsBySelector(namespace: string, selector: string): Promise<
     const res: Resource = {
       api_version: 'v1',
       kind: 'Pod',
-      metadata: metaFrom(obj.metadata),
+      metadata: listMetaFrom(obj.metadata),
     };
     const spec = presentOrUndefined(obj.spec);
     const status = presentOrUndefined(obj.status);
@@ -606,32 +605,36 @@ async function getResourceYaml(kind: string, name: string, namespace: string): P
 }
 
 // ---------------------------------------------------------------------------
-// Counts — port of counting.rs (metadata-only list, .items.len()).
+// Counts — port of counting.rs.
 //
-// CustomObjects has no list_metadata; we list and count .items. The wire/serde
-// payload differs from the Rust PartialObjectMeta optimization, but the count
-// value is identical, which is all the frontend reads.
+// Same trick as countCrd (crd.ts): ask for a single item and read
+// `metadata.remainingItemCount`, so the apiserver does the counting and we
+// never download (or even paginate) the actual listing. This runs for ~25
+// kinds on every context/namespace switch (sidebar badges), so keeping each
+// request to one tiny page is the dominant navigation win.
 // ---------------------------------------------------------------------------
+
+interface RawCountList {
+  items?: unknown[];
+  metadata?: { remainingItemCount?: number | null };
+}
 
 async function countResourceType(resourceType: string, namespace?: string): Promise<number> {
   const ar = apiResourceForType(resourceType);
   if (!ar) return 0; // Rust returns 0 for unknown/unsupported types.
-  // Fast path: metadata-only list (no spec/status/managedFields). This runs for
-  // ~25 kinds on every context/namespace switch (sidebar badges), so shrinking
-  // each payload from full bodies to bare metadata is the dominant navigation win.
   try {
-    const items = await listRaw({ ar, namespace, accept: META_ACCEPT });
-    return items.length;
+    const list = await apiGet<RawCountList>(
+      resourcePath(ar, namespace),
+      { limit: '1' },
+      META_ACCEPT,
+    );
+    const itemsLen = list.items?.length ?? 0;
+    const remaining = list.metadata?.remainingItemCount;
+    return remaining !== undefined && remaining !== null ? remaining + itemsLen : itemsLen;
   } catch {
-    // The kind doesn't support metadata negotiation (some CRDs 406) — fall back
-    // to a full-body list so the count stays correct rather than wrongly 0.
-    try {
-      const items = await listRaw({ ar, namespace });
-      return items.length;
-    } catch {
-      // VPA CRD (and any flaky kind) -> 0, matching the Rust unwrap_or(0) path.
-      return 0;
-    }
+    // 404 (e.g. the VPA CRD is not installed) or any other failure -> 0,
+    // matching the Rust unwrap_or(0) path. No full-body retry.
+    return 0;
   }
 }
 
@@ -667,16 +670,22 @@ function eventFrom(e: RawEvent): EventItem {
   return item;
 }
 
+// Cap event listings — busy clusters can hold tens of thousands of events, and
+// the UI never renders anywhere near that many.
+const EVENTS_LIMIT = 1000;
+
 async function getEvents(namespace?: string, fieldSelector?: string): Promise<EventItem[]> {
   const core = getCoreV1Api();
   let list: RawEventList;
   if (namespace === undefined || namespace === null) {
-    list = (await core.listEventForAllNamespaces(
-      fieldSelector ? { fieldSelector } : {},
-    )) as RawEventList;
+    list = (await core.listEventForAllNamespaces({
+      limit: EVENTS_LIMIT,
+      ...(fieldSelector ? { fieldSelector } : {}),
+    })) as RawEventList;
   } else {
     list = (await core.listNamespacedEvent({
       namespace,
+      limit: EVENTS_LIMIT,
       ...(fieldSelector ? { fieldSelector } : {}),
     })) as RawEventList;
   }

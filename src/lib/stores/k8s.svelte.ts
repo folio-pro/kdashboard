@@ -9,6 +9,11 @@ import { unshadowState } from "./_unshadow.js";
 export type { WatchEvent, NavigationEntry } from "./k8s.logic.js";
 export { COUNTABLE_RESOURCE_TYPES } from "./k8s.logic.js";
 
+/** User-facing message from a caught invoke() rejection (no "Error:" prefix). */
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 class K8sStore extends K8sStoreLogic {
   // Override all state properties with $state runes for Svelte 5 reactivity
   override contexts = $state<string[]>([]);
@@ -98,7 +103,7 @@ class K8sStore extends K8sStoreLogic {
       }
       this.connectionStatus = "connected";
     } catch (err) {
-      const message = `Failed to load contexts: ${err}`;
+      const message = `Failed to load contexts: ${errMsg(err)}`;
       this.contextsLoadError = message;
       this.error = message;
       this.connectionStatus = "error";
@@ -114,7 +119,7 @@ class K8sStore extends K8sStoreLogic {
       this.namespaces = result;
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
-      const message = `Failed to load namespaces: ${err}`;
+      const message = `Failed to load namespaces: ${errMsg(err)}`;
       this.namespacesLoadError = message;
       this.error = message;
     }
@@ -152,7 +157,7 @@ class K8sStore extends K8sStoreLogic {
       void this.loadAllResourceCounts(scopeGeneration);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
-      this.error = `Failed to switch context: ${err}`;
+      this.error = `Failed to switch context: ${errMsg(err)}`;
       this.connectionStatus = "error";
     } finally {
       if (scopeGeneration === this._scopeGeneration) {
@@ -177,7 +182,7 @@ class K8sStore extends K8sStoreLogic {
       void this.loadAllResourceCounts(scopeGeneration);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
-      this.error = `Failed to switch namespace: ${err}`;
+      this.error = `Failed to switch namespace: ${errMsg(err)}`;
     }
   }
 
@@ -195,7 +200,7 @@ class K8sStore extends K8sStoreLogic {
       this._startWatch(resourceType, this.currentNamespace);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
-      this.error = `Failed to load resources: ${err}`;
+      this.error = `Failed to load resources: ${errMsg(err)}`;
       this.resources = { items: [], resource_type: resourceType };
     } finally {
       clearTimeout(timer);
@@ -362,7 +367,7 @@ class K8sStore extends K8sStoreLogic {
         this.currentNamespace = namespace;
       }
     } catch (err) {
-      this.error = `Failed to restore connection: ${err}`;
+      this.error = `Failed to restore connection: ${errMsg(err)}`;
       this.connectionStatus = "error";
     }
   }
@@ -560,7 +565,7 @@ class K8sStore extends K8sStoreLogic {
         { ...info, local_port: result.local_port, session_id: result.session_id },
       ];
     } catch (err) {
-      this.error = `Failed to start port forward: ${err}`;
+      this.error = `Failed to start port forward: ${errMsg(err)}`;
     }
   }
 

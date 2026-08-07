@@ -12,7 +12,7 @@
 import * as fs from 'node:fs';
 import * as tls from 'node:tls';
 
-import { Agent, setGlobalDispatcher } from 'undici';
+import { Agent, setGlobalDispatcher, type Dispatcher } from 'undici';
 
 import {
   KubeConfig,
@@ -38,12 +38,35 @@ let activeContextOverride: string | null = null;
 let cachedConfig: KubeConfig | null = null;
 
 /**
+ * Listeners fired whenever the cached config is invalidated (kubeconfig path or
+ * active-context change). Handlers use this to drop per-cluster caches (e.g.
+ * cost.ts node/overview caches) so a context switch never serves stale data.
+ */
+const configChangeListeners = new Set<() => void>();
+
+/** Register a callback invoked on every kubeconfig path / context change. */
+export function onConfigChange(listener: () => void): void {
+  configChangeListeners.add(listener);
+}
+
+function invalidateConfig(): void {
+  cachedConfig = null;
+  for (const listener of configChangeListeners) {
+    try {
+      listener();
+    } catch {
+      // a broken listener must not break context switching
+    }
+  }
+}
+
+/**
  * Set (or clear) the kubeconfig file path override. Pass null to fall back to
  * the default loader. Invalidates the cached config so the next kc() reloads.
  */
 export function setKubeconfigPath(path: string | null): void {
   kubeconfigPathOverride = path && path.trim().length > 0 ? path : null;
-  cachedConfig = null;
+  invalidateConfig();
 }
 
 /** Current kubeconfig path override, or null if using the default loader. */
@@ -62,7 +85,7 @@ export function setActiveContext(contextName: string): void {
     throw new Error(`Context not found: ${contextName}`);
   }
   activeContextOverride = contextName;
-  cachedConfig = null;
+  invalidateConfig();
 }
 
 /** Name of the context that will be used for Api calls. */
@@ -111,22 +134,60 @@ function pemFromDataOrFile(data?: string, file?: string): string | undefined {
   return undefined;
 }
 
+/** undici Agent carrying the active cluster's TLS options. Closed on rebuild. */
+let clusterAgent: Agent | null = null;
+
+/** Origin (`https://host:port`) of the active apiserver, or null when none. */
+let apiserverOrigin: string | null = null;
+
+/** Origin of the active apiserver, for error messages. Null before first use. */
+export function getApiserverOrigin(): string | null {
+  return apiserverOrigin;
+}
+
+/** True once the composed global dispatcher has been installed. */
+let dispatcherInstalled = false;
+
+/** Normalize a request/cluster origin for comparison; null when unparseable. */
+function originOf(value: string | URL | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(String(value)).origin;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Install a global undici dispatcher whose TLS context trusts the active
- * cluster's CA (appended to the system roots, so non-cluster fetches such as
- * the cost pricing CDN still verify) and presents the client cert/key when the
- * user authenticates via mTLS.
+ * Install a global undici dispatcher that applies the active cluster's TLS
+ * options (custom CA, mTLS client cert/key, skipTLSVerify) ONLY to requests
+ * whose origin is the apiserver itself; every other origin (pricing CDN,
+ * update checks, ...) keeps the default undici Agent with system roots.
  *
- * WHY THIS EXISTS: @kubernetes/client-node 1.x applies the kubeconfig CA to a
- * Node `https.Agent` via `opts.agent` (see node_modules/.../config.js:157). The
- * native `fetch` (undici) used by Electron's main process IGNORES `agent` —
- * that is a node-fetch option; undici honors `dispatcher`. Without this bridge
- * every API request fails TLS verification with UNABLE_TO_VERIFY_LEAF_SIGNATURE.
+ * WHY THIS EXISTS: the @kubernetes/client-node 1.x generated Api classes do
+ * their own TLS — they call node-fetch with an `https.Agent` built from the
+ * kubeconfig (see node_modules/.../dist/config.js:157 and gen/http/http.js
+ * setAgent) — but our raw REST path (resources.ts apiGet) uses the NATIVE
+ * `fetch` (undici), which ignores the node-fetch `agent` option and only honors
+ * a dispatcher. client-node offers no per-request undici dispatcher hook, so we
+ * bridge via the global dispatcher — restricted by origin so the cluster's
+ * `rejectUnauthorized:false` / client cert never leak to non-apiserver hosts.
+ *
+ * The composed dispatcher is installed ONCE and routes through module state, so
+ * config rebuilds only swap `clusterAgent` (closing the previous one to avoid
+ * leaking sockets/TLS contexts).
  *
  * Re-runs automatically whenever the cached config is rebuilt (kubeconfig path
  * or active-context change both null the cache).
  */
 function installTlsDispatcher(cfg: KubeConfig): void {
+  // Retire the previous cluster agent (graceful: lets in-flight requests end).
+  if (clusterAgent !== null) {
+    void clusterAgent.close();
+    clusterAgent = null;
+  }
+  apiserverOrigin = null;
+
   const cluster = cfg.getCurrentCluster();
   if (!cluster) return;
 
@@ -148,7 +209,24 @@ function installTlsDispatcher(cfg: KubeConfig): void {
 
   if (cluster.skipTLSVerify) connect.rejectUnauthorized = false;
 
-  setGlobalDispatcher(new Agent({ connect }));
+  apiserverOrigin = originOf(cluster.server);
+  clusterAgent = new Agent({ connect });
+
+  if (!dispatcherInstalled) {
+    const routeToApiserver: Dispatcher.DispatcherComposeInterceptor =
+      (dispatch) => (opts, handler) => {
+        if (
+          clusterAgent !== null &&
+          apiserverOrigin !== null &&
+          originOf(opts.origin) === apiserverOrigin
+        ) {
+          return clusterAgent.dispatch(opts, handler);
+        }
+        return dispatch(opts, handler);
+      };
+    setGlobalDispatcher(new Agent().compose(routeToApiserver));
+    dispatcherInstalled = true;
+  }
 }
 
 /**

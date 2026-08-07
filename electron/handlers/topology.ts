@@ -20,6 +20,7 @@ import { AutoscalingV2Api } from '@kubernetes/client-node';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
 import {
+  getActiveContextName,
   getCoreV1Api,
   getAppsV1Api,
   getBatchV1Api,
@@ -480,9 +481,39 @@ function extractPodClusters(
 
 // ---------------------------------------------------------------------------
 // queries.rs::get_namespace_topology
+//
+// The full namespace graph (12 list calls) is cached briefly per
+// context+namespace: opening a resource detail calls get_resource_topology,
+// which only needs to extract a subgraph — without the cache every detail
+// open re-issued all 12 lists. TTL-based invalidation is enough here; the key
+// embeds the active context so a context switch never serves stale data.
 // ---------------------------------------------------------------------------
 
+const TOPOLOGY_CACHE_TTL_MS = 15_000;
+
+interface TopologyCacheEntry {
+  at: number;
+  promise: Promise<TopologyGraph>;
+}
+
+const topologyCache = new Map<string, TopologyCacheEntry>();
+
 async function getNamespaceTopology(namespace: string | null): Promise<TopologyGraph> {
+  const key = `${getActiveContextName() ?? ''}|${namespace ?? ''}`;
+  const now = Date.now();
+  const hit = topologyCache.get(key);
+  if (hit && now - hit.at < TOPOLOGY_CACHE_TTL_MS) return hit.promise;
+
+  const promise = fetchNamespaceTopology(namespace);
+  topologyCache.set(key, { at: now, promise });
+  // Never cache failures — the next call retries.
+  promise.catch(() => {
+    if (topologyCache.get(key)?.promise === promise) topologyCache.delete(key);
+  });
+  return promise;
+}
+
+async function fetchNamespaceTopology(namespace: string | null): Promise<TopologyGraph> {
   const core = getCoreV1Api();
   const apps = getAppsV1Api();
   const batch = getBatchV1Api();

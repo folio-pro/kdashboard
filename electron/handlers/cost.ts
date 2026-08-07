@@ -28,7 +28,7 @@ import {
 } from '@kubernetes/client-node';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
-import { getCoreV1Api, kc } from '../k8s/client';
+import { getCoreV1Api, kc, onConfigChange } from '../k8s/client';
 
 // ---------------------------------------------------------------------------
 // Public wire types (match src/lib/types/cost.ts + the Rust serde structs).
@@ -225,7 +225,31 @@ function detectProvider(labels: Record<string, string>, instanceType: string): s
   return 'unknown';
 }
 
-async function getNodeInfo(): Promise<NodeInfo[]> {
+const NODE_INFO_TTL_MS = 30_000; // 30 seconds
+
+/**
+ * Memoized node listing shared by get_cost_overview / get_node_costs /
+ * get_node_metrics — each used to issue its own full `listNode`. The promise is
+ * cached (concurrent callers coalesce into one request); failures are evicted
+ * immediately so the next call retries. Invalidated on context switch.
+ */
+let nodeInfoCache: { promise: Promise<NodeInfo[]>; expiresAt: number } | null = null;
+
+function getNodeInfo(): Promise<NodeInfo[]> {
+  if (nodeInfoCache !== null && nodeInfoCache.expiresAt > Date.now()) {
+    return nodeInfoCache.promise;
+  }
+  const promise = fetchNodeInfo();
+  const entry = { promise, expiresAt: Date.now() + NODE_INFO_TTL_MS };
+  nodeInfoCache = entry;
+  promise.catch(() => {
+    // Don't cache failures.
+    if (nodeInfoCache === entry) nodeInfoCache = null;
+  });
+  return promise;
+}
+
+async function fetchNodeInfo(): Promise<NodeInfo[]> {
   const core = getCoreV1Api();
   const list = await core.listNode();
 
@@ -608,10 +632,8 @@ async function resolvePricing(nodes: NodeInfo[]): Promise<Map<string, number> | 
 
   if (providers.length === 0) return null;
 
-  const loadedOk = new Set<string>();
-  for (const provider of providers) {
-    if (await ensureDatasetLoaded(provider)) loadedOk.add(provider);
-  }
+  const loaded = await Promise.all(providers.map((p) => ensureDatasetLoaded(p)));
+  const loadedOk = new Set(providers.filter((_, i) => loaded[i]));
   if (loadedOk.size === 0) return null;
 
   const cache = datasetCache;
@@ -642,7 +664,15 @@ interface CostCacheEntry {
   expiresAt: number; // epoch ms
 }
 
-let costCache: CostCacheEntry | null = null;
+/**
+ * Overview cache keyed by namespace ('__all__' for the cluster-wide view) so a
+ * namespace switch inside the TTL never serves another namespace's data.
+ * Bounded: beyond COST_CACHE_MAX_ENTRIES the oldest entry is evicted (Map
+ * preserves insertion order). Invalidated on context switch.
+ */
+const COST_CACHE_ALL_KEY = '__all__';
+const COST_CACHE_MAX_ENTRIES = 20;
+const costCache = new Map<string, CostCacheEntry>();
 
 async function buildCostFromMetrics(namespace: string | undefined): Promise<CostOverview> {
   // Fetch in parallel: pod metrics + node info.
@@ -764,19 +794,27 @@ async function buildCostFromMetrics(namespace: string | undefined): Promise<Cost
 }
 
 async function getCostOverview(namespace: string | null | undefined): Promise<CostOverview> {
-  // Cache check.
-  if (costCache !== null && costCache.expiresAt > Date.now()) {
-    return costCache.data;
-  }
-
   const ns =
     namespace && namespace !== 'All Namespaces' && namespace.length > 0
       ? namespace
       : undefined;
+  const cacheKey = ns ?? COST_CACHE_ALL_KEY;
+
+  // Cache check (per-namespace entry, 5 min TTL).
+  const hit = costCache.get(cacheKey);
+  if (hit !== undefined && hit.expiresAt > Date.now()) {
+    return hit.data;
+  }
 
   const result = await buildCostFromMetrics(ns);
 
-  costCache = { data: result, expiresAt: Date.now() + COST_CACHE_TTL_MS };
+  // Re-insert so the entry moves to the back of the eviction order.
+  costCache.delete(cacheKey);
+  costCache.set(cacheKey, { data: result, expiresAt: Date.now() + COST_CACHE_TTL_MS });
+  if (costCache.size > COST_CACHE_MAX_ENTRIES) {
+    const oldest = costCache.keys().next().value;
+    if (oldest !== undefined) costCache.delete(oldest);
+  }
   return result;
 }
 
@@ -859,7 +897,7 @@ function refreshPricing(): void {
   // Force-clear the in-memory pricing cache and the cost overview cache. Disk
   // state is left in place — the next call refetches conditionally (cheap 304).
   datasetCache = null;
-  costCache = null;
+  costCache.clear();
 }
 
 /**
@@ -893,6 +931,12 @@ export function startPeriodicRefresh(): () => void {
 // ---------------------------------------------------------------------------
 
 export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
+  // Cluster-scoped caches must not survive a kubeconfig/context switch.
+  onConfigChange(() => {
+    costCache.clear();
+    nodeInfoCache = null;
+  });
+
   handlers.set('get_cost_overview', async (args) => {
     const namespace =
       typeof args['namespace'] === 'string'

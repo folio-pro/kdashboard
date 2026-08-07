@@ -54,7 +54,7 @@ function toPort(value: unknown, label: string): number {
  * but suppress the emit (the renderer initiated it); on unexpected death we emit
  * so the UI can removeBySessionId.
  */
-function finalizeSession(sessionId: string, ctx: HandlerCtx, emit: boolean): void {
+function finalizeSession(sessionId: string, ctx: HandlerCtx | null, emit: boolean): void {
   const session = sessions.get(sessionId);
   if (!session) return;
   sessions.delete(sessionId);
@@ -70,9 +70,17 @@ function finalizeSession(sessionId: string, ctx: HandlerCtx, emit: boolean): voi
     // already closed — ignore
   }
 
-  if (emit && !session.emitted) {
+  if (emit && ctx && !session.emitted) {
     session.emitted = true;
     ctx.emit(CLOSED_CHANNEL, sessionId);
+  }
+}
+
+/** Tear down every session without emitting (renderer reload/crash — main.ts hooks). */
+export function stopAllPortForwards(): void {
+  for (const [sessionId, session] of sessions) {
+    session.closing = true;
+    finalizeSession(sessionId, null, false);
   }
 }
 
@@ -120,7 +128,10 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
         sockets.delete(socket);
         output.destroy();
         errStream.destroy();
-        input.destroy();
+        // end(), not destroy(): client-node only closes the apiserver WebSocket
+        // on stdin's 'end' event (web-socket-handler.js handleStandardInput);
+        // destroy() skips 'end' and leaks the WS.
+        input.end();
       };
 
       socket.on('error', cleanupConnection);
@@ -143,19 +154,6 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
     const session: Session = { server, sockets, closing: false, emitted: false };
     sessions.set(sessionId, session);
 
-    // If the listener itself dies unexpectedly (and we are not the ones closing
-    // it), treat the session as ended and notify the renderer.
-    server.on('close', () => {
-      if (!session.closing) {
-        finalizeSession(sessionId, ctx, true);
-      }
-    });
-    server.on('error', () => {
-      if (!session.closing) {
-        finalizeSession(sessionId, ctx, true);
-      }
-    });
-
     // Bind. localPort 0 => OS picks a free port; we echo back the actual port.
     const actualPort = await new Promise<number>((resolve, reject) => {
       const onError = (err: Error): void => {
@@ -172,6 +170,22 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
           reject(new Error('Failed to determine bound local port'));
         }
       });
+    });
+
+    // If the listener dies unexpectedly (and we are not the ones closing it),
+    // treat the session as ended and notify the renderer. Registered only AFTER
+    // a successful bind — otherwise a bind failure (e.g. EADDRINUSE) would also
+    // hit these and emit a spurious `port-forward-closed` for a session that
+    // never started.
+    server.on('close', () => {
+      if (!session.closing) {
+        finalizeSession(sessionId, ctx, true);
+      }
+    });
+    server.on('error', () => {
+      if (!session.closing) {
+        finalizeSession(sessionId, ctx, true);
+      }
     });
 
     // Same shape as Rust PortForwardResult: snake_case keys.

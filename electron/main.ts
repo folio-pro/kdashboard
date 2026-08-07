@@ -52,6 +52,23 @@ let splashWindow: BrowserWindow | null = null;
 let splashClosed = false;
 
 // ---------------------------------------------------------------------------
+// Streaming cleanup
+// ---------------------------------------------------------------------------
+
+/**
+ * Stop every streaming subsystem. Called when the renderer reloads (Cmd+R) or
+ * its process dies: the renderer loses all sessionIds, so any live log stream,
+ * terminal, watch or port-forward would be orphaned (and forwarded local ports
+ * would stay bound until app exit).
+ */
+function stopStreamingSubsystems(): void {
+  logs.stopAllLogStreams();
+  terminal.stopAllTerminalSessions();
+  portforward.stopAllPortForwards();
+  watch.stopAllWatches();
+}
+
+// ---------------------------------------------------------------------------
 // Windows
 // ---------------------------------------------------------------------------
 
@@ -82,6 +99,31 @@ function createMainWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: false, // preload needs require('electron'); handlers run in main
     },
+  });
+
+  // Orphaned-stream cleanup: main-frame navigations (reload included; not
+  // in-page ones) and renderer death invalidate every sessionId the renderer
+  // held, so tear the streams down with it.
+  win.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) stopStreamingSubsystems();
+  });
+  win.webContents.on('render-process-gone', () => {
+    stopStreamingSubsystems();
+  });
+
+  // Never navigate the app window to external content; the renderer is a local
+  // SPA (dev server or bundled file).
+  win.webContents.on('will-navigate', (event, url) => {
+    const allowed = RENDERER_URL ? url.startsWith(RENDERER_URL) : url.startsWith('file://');
+    if (!allowed) event.preventDefault();
+  });
+
+  // No child windows: external http(s) links open in the system browser.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
   });
 
   if (RENDERER_URL) {
@@ -242,6 +284,27 @@ function buildHandlerModules(): HandlerModule[] {
 // Bootstrap
 // ---------------------------------------------------------------------------
 
+/** Create splash + main windows and arm the reveal timers. Re-runs on macOS
+ * `activate` after all windows were closed — everything here must be safe to
+ * repeat (unlike the one-time setup in bootstrap()). */
+function createWindows(): void {
+  splashClosed = false;
+  splashWindow = createSplashWindow();
+  mainWindow = createMainWindow();
+
+  // Reveal once the renderer's DOM is ready, capped by a 5s safety timeout
+  // (matches the Rust splash force-close behaviour).
+  mainWindow.webContents.once('did-finish-load', () => {
+    // Renderer also calls close_splashscreen() from initApp(); this is a
+    // fallback so we never strand the splash if that call is skipped.
+    setTimeout(revealMainWindow, 250);
+  });
+  setTimeout(revealMainWindow, 5000);
+}
+
+/** One-time app setup: menu, dispatcher, IPC handler, timers. Must run exactly
+ * once — ipcMain.handle throws on double registration and the periodic refresh
+ * would duplicate. Window (re)creation lives in createWindows(). */
 function bootstrap(): void {
   buildApplicationMenu();
 
@@ -269,7 +332,12 @@ function bootstrap(): void {
 
   // ONE channel for every renderer invoke(). Errors propagate as rejected
   // promises in the renderer (the shim leaves them unwrapped).
-  ipcMain.handle('k8s:invoke', async (_e, cmd: string, args: Record<string, unknown>) => {
+  ipcMain.handle('k8s:invoke', async (event, cmd: string, args: Record<string, unknown>) => {
+    // Only the main frame of OUR window may drive the backend — rejects
+    // iframes/child frames and any other webContents.
+    if (!mainWindow || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      throw new Error('k8s:invoke: rejected sender (not the main frame of the app window)');
+    }
     return dispatch(cmd, args);
   });
 
@@ -277,17 +345,7 @@ function bootstrap(): void {
   // the Rust spawn_periodic_refresh in setup()).
   cost.startPeriodicRefresh();
 
-  splashWindow = createSplashWindow();
-  mainWindow = createMainWindow();
-
-  // Reveal once the renderer's DOM is ready, capped by a 5s safety timeout
-  // (matches the Rust splash force-close behaviour).
-  mainWindow.webContents.once('did-finish-load', () => {
-    // Renderer also calls close_splashscreen() from initApp(); this is a
-    // fallback so we never strand the splash if that call is skipped.
-    setTimeout(revealMainWindow, 250);
-  });
-  setTimeout(revealMainWindow, 5000);
+  createWindows();
 }
 
 // App name drives the macOS menu-bar title + about panel. Must be set before
@@ -357,17 +415,36 @@ function buildApplicationMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// Adopt the login shell's PATH so GUI launches can find kubectl / trivy / grype
-// / cloud auth plugins (macOS/Linux GUI apps don't inherit it). Synchronous and
-// must run before any handler spawns a process.
-fixPathEnv();
+// Single-instance: a second launch quits itself; the running instance restores
+// and focuses its window instead.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
 
-app.whenReady().then(bootstrap);
+  // Adopt the login shell's PATH so GUI launches can find kubectl / trivy / grype
+  // / cloud auth plugins (macOS/Linux GUI apps don't inherit it). Synchronous and
+  // must run before any handler spawns a process.
+  fixPathEnv();
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  app.whenReady().then(bootstrap);
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) bootstrap();
-});
+  app.on('window-all-closed', () => {
+    // On macOS the app stays alive without windows; stop the streams so a
+    // closed window doesn't keep pulling from the cluster (watch reconnect
+    // loop, log streams, bound local ports).
+    stopStreamingSubsystems();
+    if (process.platform !== 'darwin') app.quit();
+  });
+
+  // macOS dock re-activation: recreate windows only — bootstrap() (IPC handler,
+  // timers) already ran and must not run twice.
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindows();
+  });
+}
