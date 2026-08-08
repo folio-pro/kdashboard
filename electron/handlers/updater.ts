@@ -23,13 +23,28 @@ import type { HandlerCtx, HandlerMap } from '../dispatch';
 
 /**
  * UpdateInfo as the renderer expects it (src/lib/types/settings.ts). `body` and
- * `date` are nullable; `version` is always a string.
+ * `date` are nullable; `version` is always a string. `manualInstall` tells the
+ * renderer that in-app install is unavailable and the user must update through
+ * Homebrew instead (see MANUAL_INSTALL below).
  */
 interface UpdateInfo {
   version: string;
   body: string | null;
   date: string | null;
+  manualInstall: boolean;
 }
+
+/**
+ * macOS builds are not signed with an Apple Developer ID certificate, and
+ * Squirrel.Mac refuses to install updates into an unsigned app — so on macOS
+ * the update channel is Homebrew (`brew upgrade --cask kdashboard`, cask in
+ * folio-pro/homebrew-tap). The check still works (it only reads
+ * latest-mac.yml), so we surface the banner but tell the renderer to show
+ * brew instructions instead of the in-app install button.
+ * If Apple signing is ever added (see .github/workflows/build.yml), set this
+ * back to false on darwin.
+ */
+const MANUAL_INSTALL = process.platform === 'darwin';
 
 /**
  * Download-lifecycle event pushed to the renderer over UPDATER_DOWNLOAD_CHANNEL.
@@ -134,6 +149,7 @@ function toRendererInfo(info: ElectronUpdateInfo): UpdateInfo {
     version: info.version,
     body: notesToBody(info.releaseNotes),
     date: info.releaseDate ?? null,
+    manualInstall: MANUAL_INSTALL,
   };
 }
 
@@ -192,6 +208,12 @@ export function checkAndNotify(ctx: HandlerCtx): void {
  * single finally via removeAllListeners on the channels we touched.
  */
 async function runDownloadAndInstall(ctx: HandlerCtx): Promise<null> {
+  if (MANUAL_INSTALL) {
+    // The renderer shows brew instructions instead of calling this on macOS;
+    // fail clearly if it ever does (Squirrel would otherwise error cryptically
+    // against the unsigned app).
+    throw new Error('In-app install is unavailable on macOS; update with: brew upgrade --cask kdashboard');
+  }
   const au = getAutoUpdater();
   if (!au) {
     // Nothing to download in dev — report instant completion. The renderer

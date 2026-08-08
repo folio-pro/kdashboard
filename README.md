@@ -57,6 +57,26 @@ inspect, debug, and act on workloads.
 
 ## Installation
 
+### macOS — Homebrew (recommended)
+
+```bash
+brew install folio-pro/tap/kdashboard
+```
+
+Update later with:
+
+```bash
+brew upgrade --cask kdashboard
+```
+
+Because macOS builds are not signed with an Apple Developer ID, the in-app
+auto-updater cannot install updates on macOS — Homebrew is the update channel
+there. The app still notifies you when a new version is available. (Windows
+and Linux use the in-app auto-updater.)
+
+Gatekeeper will still warn on first launch because the build is unsigned —
+see the unsigned-builds note below for the `xattr` workaround.
+
 ### Pre-built binaries
 
 Grab the [latest release](https://github.com/folio-pro/kdashboard/releases/latest)
@@ -64,8 +84,8 @@ for your platform (see all past builds on the
 [Releases page](https://github.com/folio-pro/kdashboard/releases)):
 
 - **macOS** — `.dmg` (Apple Silicon and Intel)
-- **Linux** — `.AppImage`, `.deb`, `.rpm`
-- **Windows** — `.msi`, `.exe`
+- **Linux** — `.AppImage`
+- **Windows** — `.exe` (NSIS installer)
 
 > **macOS note — unsigned builds.** Releases are not yet signed with an
 > Apple Developer ID, so Gatekeeper will block the app on first launch

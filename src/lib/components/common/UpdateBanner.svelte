@@ -4,10 +4,10 @@
   import { listen } from "$lib/ipc/event";
   import { onMount } from "svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
-  import { ArrowDownToLine, X } from "lucide-svelte";
+  import { ArrowDownToLine, Copy, X } from "lucide-svelte";
   import { fly } from "svelte/transition";
   import type { UpdateInfo } from "$lib/types";
-  import { isVisible as _isVisible, computeProgress } from "./update-banner";
+  import { isVisible as _isVisible, computeProgress, BREW_UPGRADE_COMMAND } from "./update-banner";
 
   let updateInfo: UpdateInfo | null = $state(null);
   let dismissed = $state(false);
@@ -79,6 +79,15 @@
   function dismiss() {
     dismissed = true;
   }
+
+  async function copyBrewCommand() {
+    try {
+      await navigator.clipboard.writeText(BREW_UPGRADE_COMMAND);
+      toastStore.success("Copied", "Run it in a terminal to update");
+    } catch (err) {
+      toastStore.error("Copy failed", String(err));
+    }
+  }
 </script>
 
 {#if visible}
@@ -107,6 +116,29 @@
           </div>
           <span class="text-[11px] tabular-nums text-[var(--text-muted)]">{progress}%</span>
         </div>
+      {:else if updateInfo?.manualInstall}
+        <!-- Unsigned macOS builds can't self-install; Homebrew is the update channel. -->
+        <code
+          class="rounded bg-[var(--bg-tertiary)] px-2 py-1 text-[11px] text-[var(--text-primary)]"
+        >
+          {BREW_UPGRADE_COMMAND}
+        </code>
+
+        <button
+          class="flex items-center gap-1 rounded px-2.5 py-1 text-[11px] font-medium text-white bg-[var(--accent)] hover:opacity-90 transition-opacity"
+          onclick={copyBrewCommand}
+        >
+          <Copy class="h-3 w-3" />
+          Copy
+        </button>
+
+        <button
+          class="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          onclick={dismiss}
+          aria-label="Dismiss update"
+        >
+          <X class="h-3.5 w-3.5" />
+        </button>
       {:else}
         <button
           class="rounded px-2.5 py-1 text-[11px] font-medium text-white bg-[var(--accent)] hover:opacity-90 transition-opacity"
@@ -118,6 +150,7 @@
         <button
           class="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
           onclick={dismiss}
+          aria-label="Dismiss update"
         >
           <X class="h-3.5 w-3.5" />
         </button>

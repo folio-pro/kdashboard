@@ -1,0 +1,96 @@
+name: Update Homebrew Tap
+
+# Regenerates Casks/kdashboard.rb in folio-pro/homebrew-tap whenever a release
+# is published (drafts don't trigger this — publish the draft created by
+# build.yml and this runs). macOS users update with `brew upgrade --cask
+# kdashboard` since unsigned builds can't use electron-updater's in-app
+# install (see electron/handlers/updater.ts).
+#
+# Requires the HOMEBREW_TAP_TOKEN secret: a fine-grained PAT with
+# Contents: read+write on folio-pro/homebrew-tap.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish to the tap (e.g. v0.2.0)"
+        required: true
+
+jobs:
+  bump-cask:
+    # Skip non-app releases (e.g. the rolling pricing-data release).
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download macOS artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Passed via env (not interpolated into the script) so a crafted
+          # workflow_dispatch input can't inject shell commands.
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          TAG="$RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[[:alnum:]._-]+$ ]]; then
+            echo "Invalid release tag: $TAG" >&2
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "*.dmg"
+          ls -l ./*.dmg
+
+      - name: Compute checksums
+        run: |
+          ARM_SHA=$(sha256sum "kdashboard-${VERSION}-arm64.dmg" | cut -d' ' -f1)
+          INTEL_SHA=$(sha256sum "kdashboard-${VERSION}-x64.dmg" | cut -d' ' -f1)
+          echo "ARM_SHA=$ARM_SHA" >> "$GITHUB_ENV"
+          echo "INTEL_SHA=$INTEL_SHA" >> "$GITHUB_ENV"
+
+      - name: Update cask in folio-pro/homebrew-tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/folio-pro/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          cat > tap/Casks/kdashboard.rb <<EOF
+          cask "kdashboard" do
+            arch arm: "arm64", intel: "x64"
+
+            version "${VERSION}"
+            sha256 arm: "${ARM_SHA}", intel: "${INTEL_SHA}"
+
+            url "https://github.com/folio-pro/kdashboard/releases/download/v#{version}/kdashboard-#{version}-#{arch}.dmg"
+            name "kdashboard"
+            desc "Kubernetes dashboard desktop app"
+            homepage "https://github.com/folio-pro/kdashboard"
+
+            livecheck do
+              url :url
+              strategy :github_latest
+            end
+
+            auto_updates false
+
+            app "kdashboard.app"
+
+            zap trash: [
+              "~/Library/Application Support/kdashboard",
+              "~/Library/Preferences/com.kdashboard.app.plist",
+              "~/Library/Saved Application State/com.kdashboard.app.savedState",
+            ]
+          end
+          EOF
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/kdashboard.rb
+          if git diff --cached --quiet; then
+            echo "Cask already up to date"
+            exit 0
+          fi
+          git commit -m "kdashboard ${VERSION}"
+          git push origin HEAD
