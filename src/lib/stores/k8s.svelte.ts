@@ -51,6 +51,7 @@ class K8sStore extends K8sStoreLogic {
   // wholesale, never field-mutated, so raw is both faster and correct.
   override crdResources = $state.raw<CrdResourceList>({ items: [], columns: [] });
   override crdLoading = $state<boolean>(false);
+  override crdDiscovered = $state<boolean>(false);
   override crdError = $state<string | null>(null);
   override crdCounts = $state<Record<string, number>>({});
   override selectedCrd = $state<CrdInfo | null>(null);
@@ -615,13 +616,11 @@ class K8sStore extends K8sStoreLogic {
       const groups = await invoke<CrdGroup[]>("discover_crds");
       if (scopeGeneration !== this._scopeGeneration) return;
       this.crdGroups = groups;
+      this.crdDiscovered = true;
     } catch (e) {
       if (scopeGeneration !== this._scopeGeneration) return;
       this.crdError = String(e);
-      // Only reassign if non-empty — a new `[]` reference would invalidate
-      // reactive readers (e.g. Sidebar's discovery effect) and retrigger
-      // discoverCrds, producing an infinite loop when the API keeps failing.
-      if (this.crdGroups.length > 0) this.crdGroups = [];
+      this.crdGroups = [];
     } finally {
       this.crdLoading = false;
     }

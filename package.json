@@ -67,9 +67,6 @@
     "typescript": "^6.0.3",
     "vite": "^7.3.6"
   },
-  "overrides": {
-    "@codemirror/view": "^6.43.0"
-  },
   "build": {
     "appId": "com.kdashboard.app",
     "productName": "kdashboard",
