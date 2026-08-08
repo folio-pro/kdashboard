@@ -112,14 +112,7 @@
     },
   ];
 
-  function getItemCount(type: string): number | undefined {
-    if (type === "portforwards") return k8sStore.portForwards.length;
-    if (type === "topology" || type === "cost" || type === "security") return undefined;
-    return k8sStore.resourceCounts[type];
-  }
-
   function isItemActive(type: string): boolean {
-    if (type === "overview") return uiStore.activeView === "overview";
     if (type === "portforwards") return uiStore.activeView === "portforwards";
     if (type === "topology") return uiStore.activeView === "topology";
     if (type === "cost") return uiStore.activeView === "cost";
@@ -130,11 +123,6 @@
   }
 
   function handleItemClick(resourceType: string) {
-    if (resourceType === "overview") {
-      k8sStore.setResourceType("");
-      uiStore.showOverview();
-      return;
-    }
     if (resourceType === "portforwards") {
       uiStore.showPortForwards();
       return;
@@ -248,24 +236,8 @@
 
         <ScrollArea class="flex-1 w-full">
           <div class="flex flex-col items-center">
-            <!-- Overview (collapsed) -->
-            <Tooltip>
-              <TooltipTrigger>
-                <SidebarItem
-                  name="Overview"
-                  resourceType="overview"
-                  active={isItemActive("overview")}
-                  collapsed={true}
-                  onclick={() => handleItemClick("overview")}
-                />
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <p>Overview</p>
-              </TooltipContent>
-            </Tooltip>
-
             {#each sections as section}
-              <div class="flex w-full flex-col items-center gap-[3px] border-t border-[var(--sidebar-hover)] py-[5px] mt-[5px]">
+              <div class="flex w-full flex-col items-center gap-[3px] border-t border-[var(--sidebar-hover)] py-[5px] mt-[5px] first:mt-0 first:border-t-0">
                 <div class="flex h-4 w-[30px] items-center justify-center font-mono text-[7.5px] font-medium tracking-[0.06em] text-[var(--text-dimmed)]">
                   {section.abbr}
                 </div>
@@ -311,8 +283,8 @@
               style={`background: ${statusColor}; box-shadow: 0 0 0 3px color-mix(in srgb, ${statusColor} 16%, transparent);`}
             ></span>
             <div class="flex min-w-0 flex-1 flex-col">
-              <span class="truncate text-[13px] font-semibold leading-tight text-[var(--text-primary)]" title={k8sStore.currentContext}>{k8sStore.currentContext}</span>
-              <span class="truncate font-mono text-[10.5px] text-[var(--text-muted)]">{clusterSubline}</span>
+              <span class="truncate text-[12.5px] font-semibold leading-tight text-[var(--text-primary)]" title={k8sStore.currentContext}>{k8sStore.currentContext}</span>
+              <span class="truncate font-mono text-[10px] text-[var(--text-muted)]">{clusterSubline}</span>
             </div>
           </div>
         {/if}
@@ -324,24 +296,13 @@
         <!-- Flat list: one scroll for the whole tree, section headers stick
              to the top (plain overflow container so position:sticky works). -->
         <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-3.5">
-          <!-- Overview (always first) -->
-          <div class="pt-1">
-            <SidebarItem
-              name="Overview"
-              resourceType="overview"
-              active={isItemActive("overview")}
-              collapsed={false}
-              onclick={() => handleItemClick("overview")}
-            />
-          </div>
-
           {#if settingsStore.pinnedResources.length > 0}
             <SidebarSection title="Pinned">
               {#each settingsStore.pinnedResources as pin}
                 <div class="group flex w-full items-center border-l-2 border-transparent pr-[13px] transition-colors hover:bg-[var(--sidebar-hover)]">
                   <button
                     class={cn(
-                      "flex min-w-0 flex-1 items-center gap-2.5 py-2 pl-[13px] text-left text-[13.5px] transition-colors",
+                      "flex min-w-0 flex-1 items-center gap-2.5 py-[6px] pl-[13px] text-left text-[12.5px] transition-colors",
                       "text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]"
                     )}
                     onclick={async () => {
@@ -378,7 +339,6 @@
                   name={item.name}
                   resourceType={item.type}
                   short={item.short}
-                  count={getItemCount(item.type)}
                   active={isItemActive(item.type)}
                   collapsed={false}
                   onclick={() => handleItemClick(item.type)}
@@ -406,7 +366,6 @@
                     name={crd.kind}
                     resourceType={`crd:${crd.group}/${crd.kind}`}
                     short={crd.short_names[0]}
-                    count={k8sStore.crdCounts[k8sStore.crdKey(crd)]}
                     active={k8sStore.selectedCrd?.kind === crd.kind && k8sStore.selectedCrd?.group === crd.group && uiStore.activeView === "crd-table"}
                     collapsed={false}
                     onclick={() => handleCrdClick(crd)}

@@ -31,6 +31,7 @@ import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
 import {
+  getAuthorizationV1Api,
   getCoreV1Api,
   getKubeconfigPath,
   setActiveContext,
@@ -170,9 +171,40 @@ function setContext(context: string): void {
 async function listNamespaces(): Promise<NameList> {
   const core = getCoreV1Api();
   const res = await core.listNamespace();
-  return res.items
+  const names = res.items
     .map((ns) => ns.metadata?.name)
     .filter((n): n is string => typeof n === 'string');
+  return filterNamespacesByAccess(names);
+}
+
+/**
+ * Keep only namespaces the current user can actually work in, probed with a
+ * SelfSubjectAccessReview for `list pods` per namespace (the minimal verb the
+ * dashboard needs everywhere). Fail-open on any review error and when the
+ * filter would leave nothing — hiding real namespaces is worse than showing
+ * one that later 403s.
+ */
+async function filterNamespacesByAccess(names: string[]): Promise<string[]> {
+  if (names.length === 0) return names;
+  const auth = getAuthorizationV1Api();
+  const allowed = await Promise.all(
+    names.map(async (namespace) => {
+      try {
+        const review = await auth.createSelfSubjectAccessReview({
+          body: {
+            spec: {
+              resourceAttributes: { namespace, verb: 'list', resource: 'pods' },
+            },
+          },
+        });
+        return review.status?.allowed ? namespace : null;
+      } catch {
+        return namespace;
+      }
+    }),
+  );
+  const visible = allowed.filter((n): n is string => n !== null);
+  return visible.length > 0 ? visible : names;
 }
 
 // ---------------------------------------------------------------------------

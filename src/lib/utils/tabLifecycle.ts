@@ -91,10 +91,10 @@ function restoreIncomingSelection(
   // No cache: a resource tab restored from a previous session (cachedResource
   // is ephemeral, never persisted). Without a re-fetch its view stays empty
   // forever — App.initApp only hydrates the tab that was ACTIVE at boot.
+  // (Fresh opens don't reach here: openResourceDetail seeds the new tab's
+  // cachedResource before the switch, handled above.)
   //
-  // Fresh open (openResourceDetail): the selection was assigned right before
-  // this hook fired and the tab's cachedResource is set right after — the
-  // store already holds this tab's resource, so adopt it instead of
+  // If the store already holds this tab's resource, adopt it instead of
   // clearing + re-fetching.
   const sel = k8s.selectedResource;
   if (

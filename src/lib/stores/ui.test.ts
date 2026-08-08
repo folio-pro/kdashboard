@@ -96,37 +96,37 @@ describe("UiStore", () => {
     test("showDetails switches to details and saves previousView", () => {
       store.showDetails();
       expect(store.activeView).toBe("details");
-      expect(store.previousView).toBe("overview");
+      expect(store.previousView).toBe("table");
     });
 
     test("showLogs switches to logs", () => {
       store.showLogs();
       expect(store.activeView).toBe("logs");
-      expect(store.previousView).toBe("overview");
+      expect(store.previousView).toBe("table");
     });
 
     test("showTerminal switches to terminal", () => {
       store.showTerminal();
       expect(store.activeView).toBe("terminal");
-      expect(store.previousView).toBe("overview");
+      expect(store.previousView).toBe("table");
     });
 
     test("showYamlEditor switches to yaml", () => {
       store.showYamlEditor();
       expect(store.activeView).toBe("yaml");
-      expect(store.previousView).toBe("overview");
+      expect(store.previousView).toBe("table");
     });
 
     test("showSettings switches to settings", () => {
       store.showSettings();
       expect(store.activeView).toBe("settings");
-      expect(store.previousView).toBe("overview");
+      expect(store.previousView).toBe("table");
     });
 
     test("showPortForwards switches to portforwards", () => {
       store.showPortForwards();
       expect(store.activeView).toBe("portforwards");
-      expect(store.previousView).toBe("overview");
+      expect(store.previousView).toBe("table");
     });
 
     test("new tab starts with empty filter (per-tab state)", () => {
@@ -141,7 +141,7 @@ describe("UiStore", () => {
       // showLogs from a non-details view opens a dedicated logs tab.
       store.showLogs();
       expect(store.activeView).toBe("logs");
-      expect(store.previousView).toBe("overview");
+      expect(store.previousView).toBe("table");
       store.backToPrevious();
       // closing logs tab activates the nearest remaining tab
       expect(store.activeView).not.toBe("logs");
@@ -162,10 +162,11 @@ describe("UiStore", () => {
       expect(store.detailSubtab).toBe("yaml");
     });
 
-    test("backToPrevious from overview reopens overview (only tab)", () => {
-      // overview is the only tab, closing it re-creates overview
+    test("backToPrevious from the default pods tab reopens it (only tab)", () => {
+      // the pods table is the only tab, closing it re-creates it
       store.backToPrevious();
-      expect(store.activeView).toBe("overview");
+      expect(store.activeView).toBe("table");
+      expect(store.activeTab?.id).toBe("tab-pods");
     });
 
     test("backToPrevious goes to nearest tab (filter is per-tab)", () => {
@@ -173,7 +174,7 @@ describe("UiStore", () => {
       store.setFilter("test");
       expect(store.filter).toBe("test");
       store.backToPrevious();
-      // details tab closed; activeTab is now the overview tab, which never had a filter set
+      // details tab closed; activeTab is now the pods tab, which never had a filter set
       expect(store.filter).toBe("");
     });
 
@@ -194,10 +195,10 @@ describe("UiStore", () => {
       expect(store.activeView).toBe("table");
     });
 
-    test("toggleSettings from overview goes to settings", () => {
+    test("toggleSettings from the default tab goes to settings", () => {
       store.toggleSettings();
       expect(store.activeView).toBe("settings");
-      expect(store.previousView).toBe("overview");
+      expect(store.previousView).toBe("table");
     });
 
     test("toggleSettings from settings goes back", () => {
@@ -242,9 +243,10 @@ describe("UiStore", () => {
   });
 
   describe("tab system", () => {
-    test("starts with overview tab active", () => {
+    test("starts with the pods table tab active", () => {
       expect(store.tabs.length).toBe(1);
-      expect(store.activeTab?.type).toBe("overview");
+      expect(store.activeTab?.type).toBe("table");
+      expect(store.activeTab?.resourceType).toBe("pods");
     });
 
     test("openTab adds a new tab and activates it", () => {
@@ -255,8 +257,8 @@ describe("UiStore", () => {
 
     test("singleton views reuse existing tab", () => {
       store.openTab("settings");
+      store.openTab("topology");
       const tabCount = store.tabs.length;
-      store.openTab("overview"); // go back to overview
       store.openTab("settings"); // should reuse, not add
       expect(store.tabs.length).toBe(tabCount);
       expect(store.activeView).toBe("settings");
@@ -270,12 +272,13 @@ describe("UiStore", () => {
       expect(store.tabs.find((t) => t.id === tabId)).toBeUndefined();
     });
 
-    test("closeAllTabs resets to overview", () => {
-      store.openTab("table", { label: "Pods" });
+    test("closeAllTabs resets to the pods table", () => {
+      store.openTab("table", { label: "Deployments" });
       store.openTab("settings");
       store.closeAllTabs();
       expect(store.tabs.length).toBe(1);
-      expect(store.activeView).toBe("overview");
+      expect(store.activeView).toBe("table");
+      expect(store.activeTab?.id).toBe("tab-pods");
     });
 
     test("moveTab swaps tab positions", () => {
@@ -285,6 +288,30 @@ describe("UiStore", () => {
       store.moveTab(secondId, "left");
       expect(store.tabs[0].id).toBe(secondId);
       expect(store.tabs[1].id).toBe(firstId);
+    });
+
+    test("openTab seeds cachedResource on the new tab (regression: opening a related resource must not poison the outgoing tab's cache)", () => {
+      const vpa = { kind: "VerticalPodAutoscaler", metadata: { name: "vpa-a", uid: "u1" } } as never;
+      const deploy = { kind: "Deployment", metadata: { name: "dep-a", uid: "u2" } } as never;
+      store.openTab("details", { label: "vpa-a", resourceName: "vpa-a", resourceType: "vpa", resource: vpa });
+      const vpaTab = store.activeTab!;
+      expect(vpaTab.cachedResource).toBe(vpa);
+
+      store.openTab("details", { label: "dep-a", resourceName: "dep-a", resourceType: "deployments", resource: deploy });
+      expect(store.activeTab!.cachedResource).toBe(deploy);
+      // the VPA tab keeps ITS resource
+      expect(vpaTab.cachedResource).toBe(vpa);
+    });
+
+    test("openTab refreshes cachedResource when reusing an existing resource tab", () => {
+      const v1 = { kind: "Deployment", metadata: { name: "dep-a", uid: "u1" } } as never;
+      const v2 = { kind: "Deployment", metadata: { name: "dep-a", uid: "u1" } } as never;
+      store.openTab("details", { label: "dep-a", resourceName: "dep-a", resourceType: "deployments", resource: v1 });
+      const tabId = store.activeTabId;
+      store.openTab("settings");
+      store.openTab("details", { label: "dep-a", resourceName: "dep-a", resourceType: "deployments", resource: v2 });
+      expect(store.activeTabId).toBe(tabId);
+      expect(store.activeTab!.cachedResource).toBe(v2);
     });
 
     test("closeOtherTabs keeps only specified tab", () => {
@@ -341,12 +368,12 @@ describe("UiStore", () => {
 
       expect(store.commandPaletteOpen).toBe(false);
       // Per-tab state is implicitly reset: resetForContextChange() recreates
-      // the tabs array with a fresh overview tab, so all per-tab fields
+      // the tabs array with a fresh pods tab, so all per-tab fields
       // fall back to their getter defaults.
       expect(store.filter).toBe("");
       expect(store.sortColumn).toBe("name");
       expect(store.sortDirection as "asc" | "desc").toBe("asc");
-      expect(store.activeView).toBe("overview");
+      expect(store.activeView).toBe("table");
       expect(store.previousView).toBeNull();
       expect(store.selectedRowIndex).toBe(-1);
       expect(store.selectedCount).toBe(0);
@@ -456,7 +483,7 @@ describe("UiStore", () => {
       const podsId = store.activeTabId;
 
       store.closeTab(podsId);
-      // now on overview, which has no filter
+      // now on the default pods tab, which has no filter
       expect(store.filter).toBe("");
     });
 
@@ -521,7 +548,7 @@ describe("UiStore", () => {
 
   describe("tab persistence (serialization)", () => {
     test("serializeTabs strips ephemeral fields", () => {
-      store.openTab("table", { label: "Pods", resourceType: "pods" });
+      store.openTab("table", { label: "Deployments", resourceType: "deployments" });
       store.setFilter("nginx");
       store.setSort("cpu");
       store.selectAllRows(["uid-1", "uid-2"]);
@@ -533,12 +560,12 @@ describe("UiStore", () => {
       tab.count = 42;
 
       const snap = serializeTabs(store.tabs, store.activeTabId);
-      const persistedPods = snap.tabs.find((t) => t.label === "Pods")!;
+      const persistedPods = snap.tabs.find((t) => t.label === "Deployments")!;
 
       // Saved:
       expect(persistedPods.filter).toBe("nginx");
       expect(persistedPods.sortColumn).toBe("cpu");
-      expect(persistedPods.resourceType).toBe("pods");
+      expect(persistedPods.resourceType).toBe("deployments");
 
       // NOT saved (not present on SerializableTab at all):
       expect("cachedItems" in persistedPods).toBe(false);
@@ -551,17 +578,17 @@ describe("UiStore", () => {
     });
 
     test("serializeTabs omits defaults to keep payload small", () => {
-      // overview tab with no filter/sort/statFilter set
+      // default pods tab with no filter/sort/statFilter set
       const snap = serializeTabs(store.tabs, store.activeTabId);
-      const overview = snap.tabs[0];
-      expect("filter" in overview).toBe(false);
-      expect("sortColumn" in overview).toBe(false);
-      expect("sortDirection" in overview).toBe(false);
-      expect("statFilter" in overview).toBe(false);
+      const first = snap.tabs[0];
+      expect("filter" in first).toBe(false);
+      expect("sortColumn" in first).toBe(false);
+      expect("sortDirection" in first).toBe(false);
+      expect("statFilter" in first).toBe(false);
     });
 
     test("serialize + deserialize round-trip", () => {
-      store.openTab("table", { label: "Pods", resourceType: "pods", namespace: "default" });
+      store.openTab("table", { label: "Deployments", resourceType: "deployments", namespace: "default" });
       store.setFilter("nginx");
       store.setSort("cpu");
       store.setSort("cpu"); // toggle to desc
@@ -576,12 +603,12 @@ describe("UiStore", () => {
       expect(parsed!.tabs.length).toBe(store.tabs.length);
 
       const restored = parsed!.tabs.map(restoreTab);
-      const podsRestored = restored.find((t) => t.label === "Pods")!;
+      const podsRestored = restored.find((t) => t.label === "Deployments")!;
       expect(podsRestored.filter).toBe("nginx");
       expect(podsRestored.sortColumn).toBe("cpu");
       expect(podsRestored.sortDirection).toBe("desc");
       expect(podsRestored.statFilter).toBe("running");
-      expect(podsRestored.resourceType).toBe("pods");
+      expect(podsRestored.resourceType).toBe("deployments");
       expect(podsRestored.namespace).toBe("default");
     });
 
@@ -607,13 +634,13 @@ describe("UiStore", () => {
     test("deserializeTabs rejects wrong version", () => {
       const bad = JSON.stringify({
         version: 999,
-        tabs: [{ id: "tab-overview", type: "overview", label: "Overview", closable: true }],
-        activeTabId: "tab-overview",
+        tabs: [{ id: "tab-pods", type: "table", label: "Pods", closable: true }],
+        activeTabId: "tab-pods",
       });
       expect(deserializeTabs(bad)).toBeNull();
     });
 
-    test("deserializeTabs rejects unknown tab type", () => {
+    test("deserializeTabs returns null when every tab type is unknown", () => {
       const bad = JSON.stringify({
         version: TABS_STORAGE_VERSION,
         tabs: [{ id: "tab-1", type: "does-not-exist", label: "?", closable: true }],
@@ -622,29 +649,48 @@ describe("UiStore", () => {
       expect(deserializeTabs(bad)).toBeNull();
     });
 
-    test("deserializeTabs rejects payload with dangling activeTabId", () => {
-      const bad = JSON.stringify({
+    test("deserializeTabs drops unknown tab types (e.g. legacy overview) but keeps the rest", () => {
+      const mixed = JSON.stringify({
         version: TABS_STORAGE_VERSION,
-        tabs: [{ id: "tab-overview", type: "overview", label: "Overview", closable: true }],
+        tabs: [
+          { id: "tab-overview", type: "overview", label: "Overview", closable: true },
+          { id: "tab-1", type: "table", label: "Pods", closable: true, resourceType: "pods" },
+        ],
+        activeTabId: "tab-overview",
+      });
+      const parsed = deserializeTabs(mixed);
+      expect(parsed).not.toBeNull();
+      expect(parsed!.tabs.length).toBe(1);
+      expect(parsed!.tabs[0].id).toBe("tab-1");
+      // active tab was dropped: falls back to the first surviving tab
+      expect(parsed!.activeTabId).toBe("tab-1");
+    });
+
+    test("deserializeTabs falls back to the first tab on dangling activeTabId", () => {
+      const payload = JSON.stringify({
+        version: TABS_STORAGE_VERSION,
+        tabs: [{ id: "tab-pods", type: "table", label: "Pods", closable: true }],
         activeTabId: "tab-missing",
       });
-      expect(deserializeTabs(bad)).toBeNull();
+      const parsed = deserializeTabs(payload);
+      expect(parsed).not.toBeNull();
+      expect(parsed!.activeTabId).toBe("tab-pods");
     });
 
     test("deserializeTabs rejects empty tabs array", () => {
       const bad = JSON.stringify({
         version: TABS_STORAGE_VERSION,
         tabs: [],
-        activeTabId: "tab-overview",
+        activeTabId: "tab-pods",
       });
       expect(deserializeTabs(bad)).toBeNull();
     });
 
     test("maxTabIdSuffix finds highest numeric suffix", () => {
       expect(maxTabIdSuffix([])).toBe(0);
-      expect(maxTabIdSuffix([{ id: "tab-overview" }])).toBe(0);
+      expect(maxTabIdSuffix([{ id: "tab-pods" }])).toBe(0);
       expect(maxTabIdSuffix([
-        { id: "tab-overview" },
+        { id: "tab-pods" },
         { id: "tab-1" },
         { id: "tab-7" },
         { id: "tab-3" },
@@ -670,7 +716,6 @@ describe("UiStore", () => {
   describe("viewShowsTitleBar", () => {
     test("hides TitleBar for views that render their own header", () => {
       const hidden: ActiveView[] = [
-        "overview",
         "details",
         "logs",
         "terminal",

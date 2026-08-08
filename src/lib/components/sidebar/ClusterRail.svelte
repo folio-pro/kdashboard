@@ -9,15 +9,10 @@
   import { getIconById } from "$lib/utils/context-icons";
   import { getContextColor } from "$lib/utils/context-colors";
   import DeviconIcon from "$lib/components/common/DeviconIcon.svelte";
+  import { switchContext } from "$lib/actions/navigation";
 
   async function retryLoadContexts() {
     await k8sStore.loadContexts();
-  }
-
-  async function switchContext(ctx: string) {
-    uiStore.resetForContextChange();
-    await extensions.emit({ type: "context-changed", contextName: ctx });
-    await k8sStore.switchContext(ctx);
   }
 </script>
 

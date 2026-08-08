@@ -1,6 +1,6 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
-  import { Loader2 } from "lucide-svelte";
+  import { Loader2, Unplug } from "lucide-svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
@@ -94,6 +94,22 @@
       <span>{k8sStore.selectedResourceType.charAt(0).toUpperCase() + k8sStore.selectedResourceType.slice(1)}</span>
       <span class="text-[var(--text-secondary)]">{k8sStore.resources.items.length}</span>
     </div>
+
+    <span class="h-3 w-px bg-[var(--border-color)]"></span>
+
+    <!-- Port forwards: count + jump to the view -->
+    <button
+      class={cn(
+        "flex items-center gap-1 transition-colors hover:text-[var(--text-primary)]",
+        uiStore.activeView === "portforwards" && "text-[var(--accent)]",
+        k8sStore.portForwards.length > 0 && uiStore.activeView !== "portforwards" && "text-[var(--text-secondary)]"
+      )}
+      title="Port forwards"
+      onclick={() => uiStore.showPortForwards()}
+    >
+      <Unplug class="h-3 w-3" />
+      <span>{k8sStore.portForwards.length}</span>
+    </button>
 
     {#if k8sStore.isLoading}
       <span class="h-3 w-px bg-[var(--border-color)]"></span>

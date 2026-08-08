@@ -2,8 +2,8 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "IBM Plex Sans", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
 /* Prevent white flash while app loads */
@@ -11,7 +11,7 @@ html, body {
   margin: 0;
   background: var(--bg-primary, #0C0C0C);
   color: var(--text-primary, #E5E5E5);
-  font-family: "IBM Plex Sans", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   /* Make the packaged macOS WKWebView paint native scrollbars and window
      chrome in dark mode by default. Without this, the production build
      defaults to light and renders white scrollbars/titlebar. Overridden
