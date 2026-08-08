@@ -76,7 +76,10 @@ interface AutoUpdaterLike {
   autoInstallOnAppQuit: boolean;
   on(event: string, cb: (...args: unknown[]) => void): unknown;
   removeAllListeners(event?: string): void;
-  checkForUpdates(): Promise<{ updateInfo?: ElectronUpdateInfo } | null>;
+  checkForUpdates(): Promise<{
+    isUpdateAvailable?: boolean;
+    updateInfo?: ElectronUpdateInfo;
+  } | null>;
   downloadUpdate(): Promise<unknown>;
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
 }
@@ -168,7 +171,13 @@ async function runCheck(): Promise<UpdateInfo | null> {
   if (!au) return null;
   try {
     const result = await au.checkForUpdates();
-    const info = result?.updateInfo;
+    // Unlike the Tauri updater, checkForUpdates() resolves with the latest
+    // release's updateInfo even when the app is already up to date — the real
+    // signal is isUpdateAvailable (electron-updater's own semver comparison
+    // against app.getVersion()). Without this check the banner offers the
+    // running version as an "update".
+    if (result?.isUpdateAvailable !== true) return null;
+    const info = result.updateInfo;
     if (!info || !info.version) return null;
     return toRendererInfo(info);
   } catch (err) {
