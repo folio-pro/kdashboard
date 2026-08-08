@@ -222,10 +222,13 @@ export class UiStoreLogic {
       }
     }
 
-    // Resource tabs: focus existing tab for same resource
+    // Resource tabs: focus existing tab for same resource. Namespace is part
+    // of the identity — same name+type in two namespaces are different
+    // resources and must not share a tab.
     if (opts?.resourceName && opts?.resourceType) {
       const existing = this.tabs.find(
-        (t) => t.type === type && t.resourceName === opts.resourceName && t.resourceType === opts.resourceType
+        (t) => t.type === type && t.resourceName === opts.resourceName &&
+          t.resourceType === opts.resourceType && t.namespace === opts.namespace
       );
       if (existing) {
         if (opts.resource) existing.cachedResource = opts.resource;

@@ -303,6 +303,14 @@ describe("UiStore", () => {
       expect(vpaTab.cachedResource).toBe(vpa);
     });
 
+    test("openTab does not share a tab across namespaces (same name + type)", () => {
+      store.openTab("details", { label: "api", resourceName: "api", resourceType: "deployments", namespace: "ns-a" });
+      const tabA = store.activeTabId;
+      store.openTab("details", { label: "api", resourceName: "api", resourceType: "deployments", namespace: "ns-b" });
+      expect(store.activeTabId).not.toBe(tabA);
+      expect(store.activeTab!.namespace).toBe("ns-b");
+    });
+
     test("openTab refreshes cachedResource when reusing an existing resource tab", () => {
       const v1 = { kind: "Deployment", metadata: { name: "dep-a", uid: "u1" } } as never;
       const v2 = { kind: "Deployment", metadata: { name: "dep-a", uid: "u1" } } as never;
