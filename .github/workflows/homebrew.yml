@@ -28,8 +28,15 @@ jobs:
       - name: Download macOS artifacts
         env:
           GH_TOKEN: ${{ github.token }}
+          # Passed via env (not interpolated into the script) so a crafted
+          # workflow_dispatch input can't inject shell commands.
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          TAG="$RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[[:alnum:]._-]+$ ]]; then
+            echo "Invalid release tag: $TAG" >&2
+            exit 1
+          fi
           VERSION="${TAG#v}"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"

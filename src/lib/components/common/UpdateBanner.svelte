@@ -135,6 +135,7 @@
         <button
           class="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
           onclick={dismiss}
+          aria-label="Dismiss update"
         >
           <X class="h-3.5 w-3.5" />
         </button>
@@ -149,6 +150,7 @@
         <button
           class="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
           onclick={dismiss}
+          aria-label="Dismiss update"
         >
           <X class="h-3.5 w-3.5" />
         </button>

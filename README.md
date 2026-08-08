@@ -74,9 +74,8 @@ auto-updater cannot install updates on macOS — Homebrew is the update channel
 there. The app still notifies you when a new version is available. (Windows
 and Linux use the in-app auto-updater.)
 
-To skip Gatekeeper's first-launch warning entirely, install with
-`brew install --no-quarantine folio-pro/tap/kdashboard`; otherwise see the
-unsigned-builds note below.
+Gatekeeper will still warn on first launch because the build is unsigned —
+see the unsigned-builds note below for the `xattr` workaround.
 
 ### Pre-built binaries
 
