@@ -136,7 +136,14 @@
       const modules = cm;
       requestAnimationFrame(() => {
         if (!editorView && editorContainer) {
-          initEditor(modules);
+          // Surface failures — an uncaught throw here (e.g. mismatched
+          // CodeMirror package instances) would otherwise leave a silently
+          // blank panel.
+          try {
+            initEditor(modules);
+          } catch (err) {
+            cmLoadError = `Failed to initialize editor: ${err}`;
+          }
         }
       });
     }
@@ -151,7 +158,11 @@
         ? yamlHistory[selectedHistoryIndex + 1].yaml
         : originalYaml;
       requestAnimationFrame(() => {
-        initHistoryDiffView(modules, compareWith, entry.yaml);
+        try {
+          initHistoryDiffView(modules, compareWith, entry.yaml);
+        } catch (err) {
+          cmLoadError = `Failed to initialize editor: ${err}`;
+        }
       });
     }
   });

@@ -57,6 +57,10 @@ export class K8sStoreLogic {
   crdGroups: CrdGroup[] = [];
   crdResources: CrdResourceList = { items: [], columns: [] };
   crdLoading: boolean = false;
+  /** True once discover_crds has completed successfully for the current scope.
+   *  Distinguishes "not discovered yet" from "cluster has zero CRDs" — deriving
+   *  that from crdGroups.length re-triggers discovery forever on empty clusters. */
+  crdDiscovered: boolean = false;
   crdError: string | null = null;
   crdCounts: Record<string, number> = {};
   /** Currently selected CRD type (e.g., "datadoghq.com/WatermarkPodAutoscaler") */
@@ -101,6 +105,7 @@ export class K8sStoreLogic {
     this.crdResources = { items: [], columns: [] };
     this.crdCounts = {};
     this.selectedCrd = null;
+    this.crdDiscovered = false;
     this.crdError = null;
 
     if (options?.clearContexts) {

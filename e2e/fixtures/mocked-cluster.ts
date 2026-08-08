@@ -72,3 +72,23 @@ export const test = base.extend<Fixtures>({
     await use(install);
   },
 });
+
+/**
+ * Compose a mock handler that answers the app's boot-sequence commands
+ * (contexts, namespaces, counts, bench config) and delegates everything else
+ * to `extraSource`. Like all mockInvoke handlers, `extraSource` must be a
+ * self-contained function-source string — it is serialized into the page.
+ * Return `undefined` from it for commands you don't care about (mapped to
+ * null, the "unhandled command" convention of these mocks).
+ */
+export function clusterBootMock(extraSource = "() => undefined"): string {
+  return `(cmd, args) => {
+    if (cmd === "get_contexts") return ["bench"];
+    if (cmd === "get_current_context") return "bench";
+    if (cmd === "get_namespaces") return ["default"];
+    if (cmd === "get_resource_counts") return {};
+    if (cmd === "bench_config") return { enabled: false };
+    const result = (${extraSource})(cmd, args);
+    return result === undefined ? null : result;
+  }`;
+}

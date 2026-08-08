@@ -194,14 +194,14 @@
     return parts.join(" · ");
   });
 
-  // Total CRD count for collapse threshold.
-  // Guard on crdLoading/crdError so a failing discover_crds call doesn't
-  // retrigger itself (the catch path used to reset crdGroups = [], which
-  // together with this effect produced an infinite loop).
+  // Guard on crdDiscovered (not crdGroups.length — a cluster with zero CRDs
+  // legitimately keeps that at 0, which retriggered discovery in a loop) and
+  // on crdLoading/crdError so a failing discover_crds call doesn't
+  // retrigger itself either.
   $effect(() => {
     if (
       k8sStore.connectionStatus === "connected" &&
-      k8sStore.crdGroups.length === 0 &&
+      !k8sStore.crdDiscovered &&
       !k8sStore.crdLoading &&
       !k8sStore.crdError
     ) {

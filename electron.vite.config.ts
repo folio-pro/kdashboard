@@ -2,6 +2,7 @@ import { defineConfig } from "electron-vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
+import { rendererAlias, codemirrorDedupe, vendorChunks } from "./vite.shared";
 
 // electron-vite drives dev (renderer HMR + main/preload watch & auto-restart)
 // and the production bundle. The standalone vite.config.ts is kept for the
@@ -33,9 +34,8 @@ export default defineConfig({
     root: ".",
     plugins: [svelte(), tailwindcss()],
     resolve: {
-      alias: {
-        $lib: path.resolve("src/lib"),
-      },
+      alias: rendererAlias,
+      dedupe: codemirrorDedupe,
     },
     build: {
       chunkSizeWarningLimit: 1500,
@@ -45,23 +45,7 @@ export default defineConfig({
           splashscreen: path.resolve("splashscreen.html"),
         },
         output: {
-          manualChunks(id: string) {
-            if (
-              id.includes("/node_modules/codemirror/") ||
-              id.includes("/node_modules/@codemirror/")
-            ) {
-              return "vendor-codemirror";
-            }
-            if (id.includes("/node_modules/@xterm/")) {
-              return "vendor-xterm";
-            }
-            if (
-              id.includes("/node_modules/bits-ui/") ||
-              id.includes("/node_modules/@floating-ui/")
-            ) {
-              return "vendor-bits-ui";
-            }
-          },
+          manualChunks: vendorChunks,
         },
       },
     },
