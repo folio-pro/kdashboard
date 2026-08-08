@@ -19,7 +19,7 @@ test("boot with zero CRDs does not loop discovery forever", async ({ page, mockI
   await page.goto("/", { waitUntil: "domcontentloaded", timeout: 15_000 });
   await expect(page.locator("body")).toBeVisible();
 
+  await expect.poll(() => page.evaluate("window.__discoverCalls ?? 0")).toBe(1);
   await page.waitForTimeout(1_000);
-  const calls = await page.evaluate("window.__discoverCalls");
-  expect(calls).toBeLessThanOrEqual(1);
+  await expect.poll(() => page.evaluate("window.__discoverCalls ?? 0")).toBe(1);
 });

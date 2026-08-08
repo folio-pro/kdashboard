@@ -31,7 +31,9 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
+    // Never reuse: a server already on this port may belong to another
+    // checkout/worktree, which would run the suite against the wrong build.
+    reuseExistingServer: false,
     timeout: 120000,
   },
 });
