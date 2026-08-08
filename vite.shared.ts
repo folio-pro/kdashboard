@@ -7,6 +7,10 @@ export const rendererAlias = {
   $lib: path.resolve("src/lib"),
 };
 
+// Multiple worktrees of this repo are often active at once and each dev server
+// binds strictPort — allow overriding so parallel checkouts don't collide.
+export const rendererPort = Number(process.env.RENDERER_PORT ?? 1420);
+
 // CodeMirror extensions break with "Unrecognized extension value" if two
 // copies of these packages end up in the bundle — force a single instance.
 export const codemirrorDedupe = [

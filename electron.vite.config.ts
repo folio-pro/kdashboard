@@ -2,7 +2,7 @@ import { defineConfig } from "electron-vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
-import { rendererAlias, codemirrorDedupe, vendorChunks } from "./vite.shared";
+import { rendererAlias, codemirrorDedupe, vendorChunks, rendererPort } from "./vite.shared";
 
 // electron-vite drives dev (renderer HMR + main/preload watch & auto-restart)
 // and the production bundle. The standalone vite.config.ts is kept for the
@@ -50,7 +50,7 @@ export default defineConfig({
       },
     },
     server: {
-      port: 1420,
+      port: rendererPort,
       strictPort: true,
     },
   },

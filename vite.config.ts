@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
-import { rendererAlias, codemirrorDedupe, vendorChunks } from "./vite.shared";
+import { rendererAlias, codemirrorDedupe, vendorChunks, rendererPort } from "./vite.shared";
 
 export default defineConfig(async () => ({
   plugins: [svelte(), tailwindcss()],
@@ -19,7 +19,7 @@ export default defineConfig(async () => ({
     },
   },
   server: {
-    port: 1420,
+    port: rendererPort,
     strictPort: true,
   },
 }));
