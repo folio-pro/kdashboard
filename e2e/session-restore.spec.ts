@@ -9,7 +9,7 @@
  * via k8sStore.selectResourceByRef() (get_resource by Kind, falling back to a
  * list+find by plural type).
  */
-import { test, expect } from "./fixtures/mocked-cluster";
+import { test, expect, clusterBootMock } from "./fixtures/mocked-cluster";
 
 const POD_NAME = "restored-pod-7f9c2";
 
@@ -29,12 +29,7 @@ const SEED_TABS = {
   activeTabId: "tab-detail-1",
 };
 
-const MOCK = `(cmd, args) => {
-  if (cmd === "get_contexts") return ["bench"];
-  if (cmd === "get_current_context") return "bench";
-  if (cmd === "get_namespaces") return ["default"];
-  if (cmd === "get_resource_counts") return {};
-  if (cmd === "bench_config") return { enabled: false };
+const MOCK = clusterBootMock(`(cmd, args) => {
   if (cmd === "get_resource") {
     return {
       kind: "Pod",
@@ -57,8 +52,7 @@ const MOCK = `(cmd, args) => {
       },
     };
   }
-  return null;
-}`;
+}`);
 
 test.describe("session restore", () => {
   test("restored pod detail tab is hydrated, not blank, on cold boot", async ({ page, mockInvoke }) => {

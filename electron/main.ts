@@ -416,8 +416,10 @@ function buildApplicationMenu(): void {
 }
 
 // Single-instance: a second launch quits itself; the running instance restores
-// and focuses its window instead.
-if (!app.requestSingleInstanceLock()) {
+// and focuses its window instead. Dev builds skip the lock — parallel worktrees
+// share the same userData dir, and the lock would silently quit every dev
+// launch after the first.
+if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
