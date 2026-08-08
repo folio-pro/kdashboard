@@ -64,7 +64,7 @@ jobs:
             sha256 arm: "${ARM_SHA}", intel: "${INTEL_SHA}"
 
             url "https://github.com/folio-pro/kdashboard/releases/download/v#{version}/kdashboard-#{version}-#{arch}.dmg"
-            name "kdashboard"
+            name "Kdashboard"
             desc "Kubernetes dashboard desktop app"
             homepage "https://github.com/folio-pro/kdashboard"
 
@@ -75,7 +75,10 @@ jobs:
 
             auto_updates false
 
-            app "kdashboard.app"
+            # Bundle name follows electron-builder's productName ("Kdashboard");
+            # the .dmg filenames stay lowercase via the mac artifactName in
+            # package.json, so the url above keeps working across versions.
+            app "Kdashboard.app"
 
             zap trash: [
               "~/Library/Application Support/kdashboard",

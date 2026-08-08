@@ -1,7 +1,7 @@
 {
   "name": "kdashboard",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Nicolás Mengual",
   "type": "module",
   "main": "out/main/index.js",
@@ -80,7 +80,7 @@
     "mac": {
       "target": ["dmg", "zip"],
       "icon": "build/icon.icns",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "kdashboard-${version}-${arch}.${ext}"
     },
     "publish": {
       "provider": "github",
