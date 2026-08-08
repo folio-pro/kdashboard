@@ -80,6 +80,15 @@ jobs:
             # package.json, so the url above keeps working across versions.
             app "Kdashboard.app"
 
+            # The app is ad-hoc signed but not notarized (no Apple Developer ID),
+            # so macOS blocks the first launch of a quarantined copy and the user
+            # has to allow it under Privacy & Security. Drop the quarantine flag
+            # here instead, the same tradeoff as installing with --no-quarantine.
+            postflight do
+              system_command "/usr/bin/xattr",
+                             args: ["-dr", "com.apple.quarantine", "#{appdir}/Kdashboard.app"]
+            end
+
             zap trash: [
               "~/Library/Application Support/kdashboard",
               "~/Library/Preferences/com.kdashboard.app.plist",

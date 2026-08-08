@@ -1,7 +1,7 @@
 {
   "name": "kdashboard",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": "Nicolás Mengual",
   "type": "module",
   "main": "out/main/index.js",
@@ -80,8 +80,10 @@
     "mac": {
       "target": ["dmg", "zip"],
       "icon": "build/icon.icns",
-      "artifactName": "kdashboard-${version}-${arch}.${ext}"
+      "artifactName": "kdashboard-${version}-${arch}.${ext}",
+      "identity": null
     },
+    "afterPack": "./scripts/sign-adhoc.mjs",
     "publish": {
       "provider": "github",
       "owner": "folio-pro",
