@@ -1,5 +1,9 @@
 import type { UpdateInfo } from "$lib/types";
 
+/** Update command shown on macOS, where unsigned builds can't self-install
+ *  and the update channel is the folio-pro/homebrew-tap cask. */
+export const BREW_UPGRADE_COMMAND = "brew upgrade --cask kdashboard";
+
 export interface UpdateBannerState {
   updateInfo: UpdateInfo | null;
   dismissed: boolean;

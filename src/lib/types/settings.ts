@@ -1,8 +1,11 @@
-/** Payload emitted by Rust when an app update is available. */
+/** Payload emitted by the main process when an app update is available. */
 export interface UpdateInfo {
   version: string;
   body: string | null;
   date: string | null;
+  /** True when in-app install is unavailable (unsigned macOS builds) and the
+   *  user must update via Homebrew: `brew upgrade --cask kdashboard`. */
+  manualInstall?: boolean;
 }
 
 export interface ContextCustomization {

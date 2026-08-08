@@ -31,6 +31,8 @@ export type DownloadEvent =
 /** Mirror of Tauri's Update handle (only the bits UpdateBanner.svelte uses). */
 export interface Update {
   version: string;
+  /** In-app install unavailable (unsigned macOS build) — update via brew. */
+  manualInstall: boolean;
   downloadAndInstall(onEvent?: (event: DownloadEvent) => void): Promise<void>;
 }
 
@@ -39,6 +41,7 @@ interface BackendUpdateInfo {
   version: string;
   body: string | null;
   date: string | null;
+  manualInstall?: boolean;
 }
 
 /** Channel the backend emits download lifecycle events on. */
@@ -55,6 +58,7 @@ type BackendDownloadEvent = DownloadEvent | { event: 'Error'; data: { message: s
 function makeUpdate(info: BackendUpdateInfo): Update {
   return {
     version: info.version,
+    manualInstall: info.manualInstall === true,
     downloadAndInstall(onEvent?: (event: DownloadEvent) => void): Promise<void> {
       return new Promise<void>((resolve, reject) => {
         const listener = (_e: unknown, payload: unknown): void => {
