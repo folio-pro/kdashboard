@@ -48,6 +48,8 @@ export const KINDS: Record<string, KindEntry> = {
   hpa: e('autoscaling', 'v2', 'horizontalpodautoscalers', 'HorizontalPodAutoscaler', false),
   verticalpodautoscaler: e('autoscaling.k8s.io', 'v1', 'verticalpodautoscalers', 'VerticalPodAutoscaler', false),
   vpa: e('autoscaling.k8s.io', 'v1', 'verticalpodautoscalers', 'VerticalPodAutoscaler', false),
+  watermarkpodautoscaler: e('datadoghq.com', 'v1alpha1', 'watermarkpodautoscalers', 'WatermarkPodAutoscaler', false),
+  wpa: e('datadoghq.com', 'v1alpha1', 'watermarkpodautoscalers', 'WatermarkPodAutoscaler', false),
   event: e('', 'v1', 'events', 'Event', false),
   networkpolicy: e('networking.k8s.io', 'v1', 'networkpolicies', 'NetworkPolicy', false),
   persistentvolume: e('', 'v1', 'persistentvolumes', 'PersistentVolume', true),

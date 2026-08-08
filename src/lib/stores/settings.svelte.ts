@@ -1,10 +1,6 @@
 import { invoke } from "$lib/ipc/core";
 import type { AppSettings } from "../types/index.js";
-import {
-  SettingsStoreLogic,
-  DEFAULT_SETTINGS,
-  COLLAPSED_SECTIONS_MIGRATION_KEY,
-} from "./settings.logic.js";
+import { SettingsStoreLogic, DEFAULT_SETTINGS } from "./settings.logic.js";
 import { unshadowState } from "./_unshadow.js";
 
 export type { AppSettings, ContextCustomization, PinnedResource } from "./settings.logic.js";
@@ -20,13 +16,7 @@ class SettingsStore extends SettingsStoreLogic {
   async loadSettings(): Promise<void> {
     try {
       const result = await invoke<AppSettings>("get_settings");
-      const migrated = localStorage.getItem(COLLAPSED_SECTIONS_MIGRATION_KEY) === "1";
-      const shouldApplyMigration = this.applyLoadedSettings(result, migrated);
-
-      if (shouldApplyMigration) {
-        localStorage.setItem(COLLAPSED_SECTIONS_MIGRATION_KEY, "1");
-        this.saveSettings();
-      }
+      this.applyLoadedSettings(result);
     } catch {
       this.applyLoadError();
     }

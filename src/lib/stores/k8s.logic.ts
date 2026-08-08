@@ -22,7 +22,7 @@ export interface NavigationEntry {
 export const COUNTABLE_RESOURCE_TYPES = [
   "pods", "deployments", "replicasets", "statefulsets", "daemonsets",
   "jobs", "cronjobs", "services", "ingresses", "configmaps", "secrets",
-  "hpa", "vpa", "nodes", "namespaces", "persistentvolumes", "persistentvolumeclaims",
+  "hpa", "vpa", "wpa", "nodes", "namespaces", "persistentvolumes", "persistentvolumeclaims",
   "storageclasses", "roles", "rolebindings", "clusterroles", "clusterrolebindings",
   "networkpolicies", "resourcequotas", "limitranges", "poddisruptionbudgets",
 ] as const;

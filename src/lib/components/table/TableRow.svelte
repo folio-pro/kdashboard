@@ -180,6 +180,18 @@
         if (data && typeof data === "object") return Object.keys(data).length.toString();
         return "0";
       }
+      case "vpaTarget": {
+        // VPA uses spec.targetRef; WPA (Datadog) uses spec.scaleTargetRef.
+        const ref = (spec.targetRef ?? spec.scaleTargetRef) as
+          | { kind?: string; name?: string }
+          | undefined;
+        if (!ref?.name) return "-";
+        return ref.kind ? `${ref.kind}/${ref.name}` : ref.name;
+      }
+      case "vpaUpdateMode": {
+        const policy = spec.updatePolicy as { updateMode?: string } | undefined;
+        return policy?.updateMode ?? "-";
+      }
       default:
         return "-";
     }

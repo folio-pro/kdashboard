@@ -32,7 +32,6 @@ describe("SettingsStore", () => {
       expect(store.settings.namespace).toBe("default");
       expect(store.settings.theme_mode).toBe("kdashboard");
       expect(store.settings.kubeconfig_path).toBe("");
-      expect(store.settings.collapsed_sections).toEqual(["storage", "rbac", "scaling"]);
       expect(store.settings.table_density).toBe("comfortable");
       expect(store.settings.context_customizations).toEqual({});
     });
@@ -44,7 +43,7 @@ describe("SettingsStore", () => {
         context: "prod-cluster",
         namespace: "production",
         theme_mode: "gruvbox",
-      }, true);
+      });
 
       expect(store.settings.context).toBe("prod-cluster");
       expect(store.settings.namespace).toBe("production");
@@ -53,32 +52,8 @@ describe("SettingsStore", () => {
       expect(store.appliedTheme).toBe("gruvbox");
     });
 
-    test("applies migration when collapsed_sections is empty and not yet migrated", () => {
-      store.applyLoadedSettings({
-        collapsed_sections: [],
-      }, false);
-
-      expect(store.settings.collapsed_sections).toEqual(["storage", "rbac", "scaling"]);
-    });
-
-    test("does not apply migration when already migrated", () => {
-      store.applyLoadedSettings({
-        collapsed_sections: [],
-      }, true);
-
-      expect(store.settings.collapsed_sections).toEqual([]);
-    });
-
-    test("preserves existing collapsed_sections when not empty", () => {
-      store.applyLoadedSettings({
-        collapsed_sections: ["workloads"],
-      }, false);
-
-      expect(store.settings.collapsed_sections).toEqual(["workloads"]);
-    });
-
     test("defaults context_customizations to empty object", () => {
-      store.applyLoadedSettings({}, true);
+      store.applyLoadedSettings({});
       expect(store.settings.context_customizations).toEqual({});
     });
 
@@ -86,7 +61,7 @@ describe("SettingsStore", () => {
       const customs = { "my-ctx": { icon: "star", label: "Prod" } };
       store.applyLoadedSettings({
         context_customizations: customs,
-      }, true);
+      });
       expect(store.settings.context_customizations).toEqual(customs);
     });
   });
@@ -137,40 +112,6 @@ describe("SettingsStore", () => {
       expect(store.settings.context).toBe("my-cluster");
       expect(store.settings.namespace).toBe("prod");
       expect(store.saveCallCount).toBe(1);
-    });
-  });
-
-  describe("toggleCollapsedSection", () => {
-    test("collapses a section that is expanded", () => {
-      store.toggleCollapsedSection("workloads");
-      expect(store.settings.collapsed_sections).toContain("workloads");
-      expect(store.saveCallCount).toBe(1);
-    });
-
-    test("expands a section that is collapsed", () => {
-      expect(store.settings.collapsed_sections).toContain("storage");
-      store.toggleCollapsedSection("storage");
-      expect(store.settings.collapsed_sections).not.toContain("storage");
-      expect(store.saveCallCount).toBe(1);
-    });
-
-    test("toggle twice returns to original set of sections", () => {
-      const original = new Set(store.settings.collapsed_sections);
-      store.toggleCollapsedSection("storage");
-      store.toggleCollapsedSection("storage");
-      expect(new Set(store.settings.collapsed_sections)).toEqual(original);
-    });
-  });
-
-  describe("isSectionCollapsed", () => {
-    test("returns true for collapsed sections", () => {
-      expect(store.isSectionCollapsed("storage")).toBe(true);
-      expect(store.isSectionCollapsed("rbac")).toBe(true);
-      expect(store.isSectionCollapsed("scaling")).toBe(true);
-    });
-
-    test("returns false for non-collapsed sections", () => {
-      expect(store.isSectionCollapsed("workloads")).toBe(false);
     });
   });
 

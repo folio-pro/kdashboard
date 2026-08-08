@@ -108,6 +108,12 @@ export const columnsByType: Record<string, Column[]> = {
     { key: "vpaUpdateMode", label: "Update Mode", sortable: false, width: "120px" },
     { key: "age", label: "Age", sortable: true, width: "80px" },
   ],
+  wpa: [
+    { key: "name", label: "Name", sortable: true },
+    { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
+    { key: "vpaTarget", label: "Target", sortable: false },
+    { key: "age", label: "Age", sortable: true, width: "80px" },
+  ],
   nodes: [
     { key: "name", label: "Name", sortable: true },
     { key: "status", label: "Status", sortable: true, width: "100px" },

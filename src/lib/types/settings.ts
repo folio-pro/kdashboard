@@ -26,7 +26,6 @@ export interface AppSettings {
   namespace: string;
   theme_mode: string;
   kubeconfig_path: string;
-  collapsed_sections: string[];
   table_density: "comfortable" | "compact";
   context_customizations: Record<string, ContextCustomization>;
   pinned_resources?: PinnedResource[];

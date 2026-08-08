@@ -47,7 +47,6 @@ interface AppSettings {
   namespace?: string | null;
   theme_mode?: string | null;
   kubeconfig_path?: string | null;
-  collapsed_sections?: string[] | null;
   table_density?: string | null;
   context_customizations?: Record<string, ContextCustomization> | null;
   // Extra renderer-only keys (e.g. pinned_resources) are preserved verbatim.

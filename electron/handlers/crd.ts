@@ -35,6 +35,7 @@ import type { HandlerCtx, HandlerMap } from '../dispatch';
 import { getActiveContextName, makeApiClient } from '../k8s/client';
 import type { RawObject, Resource } from '../k8s/resource-types';
 import { dynamicToResource } from '../k8s/resource-mapping';
+import { apiGet } from './resources';
 
 // ===========================================================================
 // Result types — mirror the serde wire-casing of the Rust crd/types.rs structs.
@@ -130,44 +131,145 @@ function preferredVersion(crd: V1CustomResourceDefinition): string | undefined {
   return versions[0]?.name;
 }
 
-async function discoverCrds(): Promise<CrdGroup[]> {
-  const apiext = makeApiClient(ApiextensionsV1Api);
-  const list = await apiext.listCustomResourceDefinition();
+// Built-in API groups excluded from discovery-based CRD listing (mirror of the
+// Rust discovery.rs deny-list). Only used by the discovery fallback — the CRD
+// object path is by definition user-defined groups.
+const BUILTIN_GROUPS = new Set([
+  '',
+  'apps',
+  'batch',
+  'autoscaling',
+  'networking.k8s.io',
+  'policy',
+  'rbac.authorization.k8s.io',
+  'storage.k8s.io',
+  'coordination.k8s.io',
+  'discovery.k8s.io',
+  'events.k8s.io',
+  'flowcontrol.apiserver.k8s.io',
+  'node.k8s.io',
+  'scheduling.k8s.io',
+  'certificates.k8s.io',
+  'admissionregistration.k8s.io',
+  'apiextensions.k8s.io',
+  'apiregistration.k8s.io',
+  'authentication.k8s.io',
+  'authorization.k8s.io',
+  'internal.apiserver.k8s.io',
+  // Aggregated metrics APIs — served by metrics-server / custom adapters, not
+  // user CRDs. Listing them often returns 403/404/500 on managed clusters.
+  'metrics.k8s.io',
+  'external.metrics.k8s.io',
+  'custom.metrics.k8s.io',
+]);
+
+interface DiscoveryGroupList {
+  groups?: Array<{
+    name: string;
+    preferredVersion?: { version?: string };
+    versions?: Array<{ version: string }>;
+  }>;
+}
+
+interface DiscoveryResourceList {
+  resources?: Array<{
+    name: string;
+    kind: string;
+    namespaced?: boolean;
+    verbs?: string[];
+    shortNames?: string[];
+  }>;
+}
+
+/**
+ * Fallback: enumerate groups via the discovery API (`/apis`) like the Rust
+ * kube::discovery::Discovery did. Needs no RBAC beyond API-server access, so
+ * it works for users who cannot list CRD objects at cluster scope (e.g. GKE
+ * without container.customResourceDefinitions.list).
+ */
+async function discoverCrdsViaDiscovery(): Promise<CrdGroup[]> {
+  const groupList = await apiGet<DiscoveryGroupList>('/apis');
+  const candidates = (groupList.groups ?? []).filter((g) => !BUILTIN_GROUPS.has(g.name));
 
   const groupsMap = new Map<string, CrdInfo[]>();
+  await Promise.all(
+    candidates.map(async (g) => {
+      const version = g.preferredVersion?.version ?? g.versions?.[0]?.version;
+      if (!version) return;
+      let res: DiscoveryResourceList;
+      try {
+        res = await apiGet<DiscoveryResourceList>(`/apis/${g.name}/${version}`);
+      } catch {
+        // Aggregated API not serving / forbidden — skip the group, keep the rest.
+        return;
+      }
+      const infos: CrdInfo[] = [];
+      for (const r of res.resources ?? []) {
+        if (r.name.includes('/')) continue; // subresources (status, scale, …)
+        if (!(r.verbs ?? []).includes('list')) continue;
+        infos.push({
+          group: g.name,
+          version,
+          kind: r.kind,
+          plural: r.name,
+          scope: r.namespaced ? 'Namespaced' : 'Cluster',
+          short_names: r.shortNames ?? [],
+        });
+      }
+      if (infos.length > 0) groupsMap.set(g.name, infos);
+    }),
+  );
 
-  for (const crd of list.items) {
-    const spec = crd.spec;
-    if (!spec) continue;
-    const group = spec.group;
-    const version = preferredVersion(crd);
-    if (!version) continue;
-    const names = spec.names;
-    const scope = spec.scope === 'Cluster' ? 'Cluster' : 'Namespaced';
+  return toSortedGroups(groupsMap);
+}
 
-    const info: CrdInfo = {
-      group,
-      version,
-      kind: names.kind,
-      plural: names.plural,
-      scope,
-      // Rust left short_names empty (Discovery API didn't surface them); we keep
-      // parity with the original wire output by emitting [].
-      short_names: [],
-    };
-
-    const arr = groupsMap.get(group);
-    if (arr) arr.push(info);
-    else groupsMap.set(group, [info]);
-  }
-
+/** group -> CrdInfo[] map to the wire shape: kinds sorted within each group, groups sorted by name. */
+function toSortedGroups(groupsMap: Map<string, CrdInfo[]>): CrdGroup[] {
   const groups: CrdGroup[] = [...groupsMap.entries()].map(([group, resources]) => {
     resources.sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
     return { group, resources };
   });
   groups.sort((a, b) => (a.group < b.group ? -1 : a.group > b.group ? 1 : 0));
-
   return groups;
+}
+
+/** Project CRD objects (apiextensions listing) into the grouped wire shape. */
+function groupCrdObjects(items: V1CustomResourceDefinition[]): CrdGroup[] {
+  const groupsMap = new Map<string, CrdInfo[]>();
+
+  for (const crd of items) {
+    const spec = crd.spec;
+    if (!spec) continue;
+    const version = preferredVersion(crd);
+    if (!version) continue;
+
+    const info: CrdInfo = {
+      group: spec.group,
+      version,
+      kind: spec.names.kind,
+      plural: spec.names.plural,
+      scope: spec.scope === 'Cluster' ? 'Cluster' : 'Namespaced',
+      short_names: spec.names.shortNames ?? [],
+    };
+
+    const arr = groupsMap.get(spec.group);
+    if (arr) arr.push(info);
+    else groupsMap.set(spec.group, [info]);
+  }
+
+  return toSortedGroups(groupsMap);
+}
+
+async function discoverCrds(): Promise<CrdGroup[]> {
+  try {
+    const apiext = makeApiClient(ApiextensionsV1Api);
+    return groupCrdObjects((await apiext.listCustomResourceDefinition()).items);
+  } catch {
+    // Listing CRD objects needs cluster-scope RBAC many users lack. The Tauri
+    // build used the discovery API and therefore worked for them — keep that
+    // behavior as the fallback path.
+    return discoverCrdsViaDiscovery();
+  }
 }
 
 // ---------------------------------------------------------------------------

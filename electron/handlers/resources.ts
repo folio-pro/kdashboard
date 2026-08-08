@@ -117,6 +117,7 @@ function apiResourceForType(resourceType: string): ApiResource | undefined {
     namespaces: ['', 'v1', 'namespaces', true],
     hpa: ['autoscaling', 'v2', 'horizontalpodautoscalers', false],
     vpa: ['autoscaling.k8s.io', 'v1', 'verticalpodautoscalers', false],
+    wpa: ['datadoghq.com', 'v1alpha1', 'watermarkpodautoscalers', false],
     networkpolicies: ['networking.k8s.io', 'v1', 'networkpolicies', false],
     persistentvolumes: ['', 'v1', 'persistentvolumes', true],
     persistentvolumeclaims: ['', 'v1', 'persistentvolumeclaims', false],
@@ -204,7 +205,7 @@ function resourcePath(ar: ApiResource, namespace?: string): string {
 }
 
 /** Issue an authenticated GET against the active cluster, returning parsed JSON. */
-async function apiGet<T>(
+export async function apiGet<T>(
   path: string,
   query?: Record<string, string>,
   accept?: string,
@@ -323,6 +324,7 @@ const GENERIC_KIND_TABLE: Record<
   nodes: { apiVersion: 'v1', kind: 'Node', fields: { spec: true, status: true, data: false } },
   namespaces: { apiVersion: 'v1', kind: 'Namespace', fields: { spec: true, status: true, data: false } },
   hpa: { apiVersion: 'autoscaling/v2', kind: 'HorizontalPodAutoscaler', fields: { spec: true, status: true, data: false } },
+  wpa: { apiVersion: 'datadoghq.com/v1alpha1', kind: 'WatermarkPodAutoscaler', fields: { spec: true, status: true, data: false } },
   networkpolicies: { apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy', fields: { spec: true, status: false, data: false } },
   persistentvolumes: { apiVersion: 'v1', kind: 'PersistentVolume', fields: { spec: true, status: true, data: false } },
   persistentvolumeclaims: { apiVersion: 'v1', kind: 'PersistentVolumeClaim', fields: { spec: true, status: true, data: false } },
