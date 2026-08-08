@@ -1,5 +1,7 @@
 node_modules/
 dist/
+test-results/
+playwright-report/
 dist-electron/
 release/
 src-tauri/target/

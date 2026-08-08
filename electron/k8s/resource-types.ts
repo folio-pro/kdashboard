@@ -33,6 +33,10 @@ export interface Resource {
 
 export interface ResourceList {
   items: Resource[];
+  /** Echo of the requested plural resource type (the renderer stores it). */
+  resource_type?: string;
+  /** List's resourceVersion — lets the watch resume without replaying the list. */
+  resource_version?: string;
 }
 
 export interface RawObjectMeta {
@@ -64,5 +68,5 @@ export interface RawObject {
 
 export interface RawList {
   items?: RawObject[];
-  metadata?: { continue?: string };
+  metadata?: { continue?: string; resourceVersion?: string };
 }

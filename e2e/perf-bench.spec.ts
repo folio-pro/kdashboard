@@ -289,4 +289,84 @@ test.describe("frontend perf bench", () => {
     console.log("\n__NAV_BENCH__" + JSON.stringify(r, null, 2));
     expect(r.navMedianMs).toBeGreaterThan(0);
   });
+
+  test("crd table: mount + scroll stay virtualized at 10k items", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.addInitScript(`
+      Object.defineProperty(window, "electronAPI", {
+        value: { invoke: async () => null, on: () => {}, off: () => {}, openExternal: async () => {} },
+        writable: true, configurable: true,
+      });
+    `);
+    await page.goto("/");
+    await page.waitForFunction(() => !!(window as any).__kdash?.k8sStore, null, { timeout: 15_000 });
+
+    const r = await page.evaluate(async () => {
+      const { k8sStore, uiStore } = (window as any).__kdash;
+      const raf2 = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const N = 10_000;
+      const items = Array.from({ length: N }, (_, i) => ({
+        kind: "Widget", api_version: "example.com/v1",
+        metadata: {
+          name: "widget-" + String(i).padStart(5, "0"),
+          namespace: ["default", "prod", "staging"][i % 3],
+          uid: "crd-uid-" + i,
+          creation_timestamp: new Date(Date.now() - (i % 400) * 3600000).toISOString(),
+        },
+        spec: { size: i % 9, mode: i % 2 ? "active" : "passive" },
+        status: { ready: i % 4 !== 0 },
+      }));
+      const columns = [
+        { name: "Size", json_path: ".spec.size", type: "integer", description: "" },
+        { name: "Mode", json_path: ".spec.mode", type: "string", description: "" },
+        { name: "Ready", json_path: ".status.ready", type: "boolean", description: "" },
+      ];
+
+      k8sStore.connectionStatus = "connected";
+      k8sStore.selectedCrd = { group: "example.com", version: "v1", kind: "Widget", plural: "widgets", scope: "Namespaced" };
+      uiStore.activeView = "crd-table";
+      await raf2();
+
+      const t0 = performance.now();
+      k8sStore.crdResources = { items, columns };
+      // Lazy view + first paint.
+      for (let k = 0; k < 240; k++) {
+        if (document.querySelector("tbody tr")) break;
+        await new Promise((res) => requestAnimationFrame(res));
+      }
+      await raf2();
+      const mountMs = performance.now() - t0;
+      const renderedRows = document.querySelectorAll("tbody tr").length;
+
+      // Scroll through the list, measuring per-frame main-thread cost.
+      const el = Array.from(document.querySelectorAll("div")).find(
+        (d) => d.scrollHeight > d.clientHeight * 5 && d.querySelector("tbody"),
+      ) as HTMLElement | undefined;
+      let scrollP95 = -1;
+      if (el) {
+        const frames: number[] = [];
+        const maxScroll = el.scrollHeight - el.clientHeight;
+        for (let i = 1; i <= 100; i++) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => {
+            const t = performance.now();
+            el.scrollTop = (maxScroll / 100) * i;
+            void el.offsetHeight;
+            frames.push(performance.now() - t);
+            resolve();
+          }));
+        }
+        frames.sort((a, b) => a - b);
+        scrollP95 = frames[Math.floor(frames.length * 0.95)];
+      }
+
+      const rnd = (n: number) => Math.round(n * 100) / 100;
+      return { mountMs: rnd(mountMs), renderedRows, total: N, scrollP95: rnd(scrollP95) };
+    });
+
+    // eslint-disable-next-line no-console
+    console.log("\n__CRD_BENCH__" + JSON.stringify(r, null, 2));
+    // Virtualization invariant: the DOM must hold a window of rows, not the list.
+    expect(r.renderedRows).toBeGreaterThan(0);
+    expect(r.renderedRows).toBeLessThan(200);
+  });
 });

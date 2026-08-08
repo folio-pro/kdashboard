@@ -23,9 +23,10 @@
 // only reads resource.metadata.uid, but we project the full struct faithfully so
 // the upsert replaces the list item with the same shape list_resources produced.
 //
-// PROJECTION NOTE: watch.rs uses the GENERIC dynamic_to_resource projection —
-// spec/status/data are taken VERBATIM from the object body for every kind (NOT
-// the lean per-kind pod projection used by list_resources). We mirror that here.
+// PROJECTION NOTE: watch events use the SAME per-kind lean projection as
+// list_resources (listProjectionFor) — a watch event replaces a list row
+// wholesale in the store, so anything fatter than the list shape only bloats
+// IPC payloads and renderer-resident memory as the cluster churns.
 //
 // TYPE TRANSLATION: the kube `watcher` runtime the Rust used emits desired-state
 // events (Apply/Delete) and skips the initial list. The JS Watch is a RAW watch
@@ -38,7 +39,7 @@ import { Watch } from '@kubernetes/client-node';
 
 import { kc } from '../k8s/client';
 import type { RawObject, Resource } from '../k8s/resource-types';
-import { dynamicToResource } from '../k8s/resource-mapping';
+import { dynamicToResource, listProjectionFor } from '../k8s/resource-mapping';
 import type { Handler, HandlerCtx, HandlerMap } from '../dispatch';
 
 const WATCH_CHANNEL = 'resource-watch-event';
@@ -117,6 +118,8 @@ function apiResourceForType(resourceType: string): ApiResource | undefined {
     resourcequotas: ['', 'v1', 'ResourceQuota', 'resourcequotas', false],
     limitranges: ['', 'v1', 'LimitRange', 'limitranges', false],
     poddisruptionbudgets: ['policy', 'v1', 'PodDisruptionBudget', 'poddisruptionbudgets', false],
+    vpa: ['autoscaling.k8s.io', 'v1', 'VerticalPodAutoscaler', 'verticalpodautoscalers', false],
+    wpa: ['datadoghq.com', 'v1alpha1', 'WatermarkPodAutoscaler', 'watermarkpodautoscalers', false],
   };
   const row = table[resourceType];
   if (!row) return undefined;
@@ -143,10 +146,9 @@ function watchPath(ar: ApiResource, namespace?: string): string {
 // Projection — port of helpers.rs meta_from + watch.rs dynamic_to_resource.
 // ---------------------------------------------------------------------------
 
-// dynamic_to_resource + meta_from now live in electron/k8s/resource-mapping.ts
-// (shared with the resources and CRD paths). watch.rs uses the GENERIC
-// projection — spec/status/data taken verbatim for every kind — which is
-// exactly what the shared dynamicToResource does.
+// Projections live in electron/k8s/resource-mapping.ts (shared with the
+// resources and CRD paths): listProjectionFor gives the per-kind lean list
+// shape; dynamicToResource is the verbatim fallback for unknown kinds.
 
 // ---------------------------------------------------------------------------
 // Single active watch slot (mirrors watch.rs WATCHER_ABORT / WATCHER_RUNNING).
@@ -169,6 +171,14 @@ interface ActiveWatch {
   openedAt: number;
   /** Set true by stop() so reconnect loops bail. */
   stopped: boolean;
+  /**
+   * Last resourceVersion seen (seeded from the list, advanced by every event +
+   * bookmark). While set, (re)connects resume from it — the server sends only
+   * NEW deltas instead of replaying the whole list as ADDED, and no Resync
+   * (full renderer relist) is needed. Cleared on 410 Gone (history expired),
+   * which forces the classic replay + Resync path once.
+   */
+  lastRV: string | undefined;
 }
 
 // Identity of the live ActiveWatch is the generation token: callbacks captured
@@ -207,6 +217,7 @@ function clearActive(): void {
 async function startResourceWatch(
   resourceType: string,
   namespace: string | undefined,
+  listResourceVersion: string | undefined,
   ctx: HandlerCtx,
 ): Promise<void> {
   // Stop any existing watcher first (single active slot, like watch.rs).
@@ -222,16 +233,23 @@ async function startResourceWatch(
     flushTimer: null,
     reconnectTimer: null,
     batch: [],
-    hadInitialSync: false,
+    // With a list RV the initial sync IS the list the renderer just loaded.
+    hadInitialSync: !!listResourceVersion,
     backoffMs: BACKOFF_BASE_MS,
     openedAt: 0,
     stopped: false,
+    lastRV: listResourceVersion,
   };
   active = state;
 
   const path = watchPath(ar, namespace);
-  const apiVersion = ar.apiVersion;
-  const kind = ar.kind;
+  // Same lean projection as list_resources, resolved once for the whole watch:
+  // the renderer replaces the list row wholesale, so shipping more than the
+  // list shape only bloats IPC and renderer memory. Fallback keeps unknown
+  // types on the generic verbatim shape.
+  const project =
+    listProjectionFor(resourceType) ??
+    ((obj: RawObject) => dynamicToResource(obj, ar.apiVersion, ar.kind));
 
   const isCurrent = (): boolean => active === state && !state.stopped;
 
@@ -252,7 +270,7 @@ async function startResourceWatch(
     state.batch.push({
       event_type: eventType,
       resource_type: resourceType,
-      resource: dynamicToResource(obj, apiVersion, kind),
+      resource: project(obj),
     });
     if (state.batch.length >= WATCH_BATCH_SIZE) {
       flush();
@@ -269,6 +287,11 @@ async function startResourceWatch(
   // resolve when the watch opens, reject if that first open fails. Later
   // reconnects run in background with backoff and never surface here.
   let settled = false;
+
+  // Set when the server reports 410 Gone (RV expired): the next close must
+  // emit a Resync even if the connection was short-lived, because the
+  // no-RV reconnect's replay cannot cover deletes missed during the gap.
+  let rvExpired = false;
 
   return await new Promise<void>((resolve, reject) => {
     const settleOk = (): void => {
@@ -302,21 +325,47 @@ async function startResourceWatch(
     const connect = (): void => {
       if (!isCurrent()) return;
 
+      // Resume from the last seen RV when we have one: the server then sends
+      // only deltas newer than the list/previous stream — no ADDED replay of
+      // the entire list on every (re)connect. Bookmarks keep lastRV fresh even
+      // when the resource is quiet, so a resume stays possible after the
+      // server's periodic stream close.
+      const query: Record<string, string | number | boolean | undefined> = {
+        allowWatchBookmarks: true,
+      };
+      if (state.lastRV) query.resourceVersion = state.lastRV;
+
       watch
         .watch(
           path,
-          {},
+          query,
           (type: string, obj: RawObject) => {
             if (!isCurrent()) return;
+            const rv = obj?.metadata?.resourceVersion;
             switch (type) {
               case 'ADDED':
               case 'MODIFIED':
+                if (rv) state.lastRV = rv;
                 pushEvent('Applied', obj);
                 break;
               case 'DELETED':
+                if (rv) state.lastRV = rv;
                 pushEvent('Deleted', obj);
                 break;
-              // BOOKMARK / ERROR carry no resource delta the store consumes.
+              case 'BOOKMARK':
+                if (rv) state.lastRV = rv;
+                break;
+              case 'ERROR': {
+                // Status object; 410 Gone = our RV expired from watch history.
+                // Clear it so the next reconnect does a fresh replay + Resync
+                // (the relist covers any deletes we missed).
+                const code = (obj as { code?: number } | undefined)?.code;
+                if (code === 410) {
+                  state.lastRV = undefined;
+                  rvExpired = true;
+                }
+                break;
+              }
               default:
                 break;
             }
@@ -341,9 +390,16 @@ async function startResourceWatch(
             if (healthy) state.backoffMs = BACKOFF_BASE_MS;
 
             if (state.hadInitialSync) {
-              if (healthy) {
-                // Re-sync after a disconnect: emit a Resync so the store
-                // triggers a full refresh (matches watch.rs InitDone-on-resync).
+              // A resumable close (lastRV still valid) leaves NO gap: the
+              // reconnect picks up exactly where the stream ended, so no
+              // Resync — the renderer never has to do a full relist for the
+              // server's routine stream closes. A Resync (full refresh, since
+              // missed deletes can't be replayed) is only needed when the RV
+              // expired (410) or a healthy stream closed without one. Flapping
+              // non-410 closes keep the healthy gate so a broken watch can't
+              // relist in a loop.
+              if (!state.lastRV && (healthy || rvExpired)) {
+                rvExpired = false;
                 ctx.emit(WATCH_CHANNEL, [
                   {
                     event_type: 'Resync',
@@ -385,6 +441,13 @@ async function startResourceWatch(
             `[watch] failed to open watch for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
             err instanceof Error ? err.message : err,
           );
+          // A 410 at open means our resume RV already expired: drop it so the
+          // retry does a fresh replay, and force a Resync on the next close.
+          const status = (err as { code?: number; statusCode?: number } | undefined);
+          if (status?.code === 410 || status?.statusCode === 410) {
+            state.lastRV = undefined;
+            rvExpired = true;
+          }
           // Failed to OPEN the watch. If this is the first attempt, tear down
           // and reject the start invoke; otherwise keep the loop alive with
           // backoff so a transient open failure (e.g. a token refresh) doesn't
@@ -414,7 +477,13 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
     // or null for cluster-wide. Treat empty/missing as "all namespaces".
     const namespace =
       typeof args.namespace === 'string' && args.namespace.length > 0 ? args.namespace : undefined;
-    await startResourceWatch(resourceType, namespace, ctx);
+    // Optional: the resourceVersion of the list the renderer just rendered.
+    // When present the watch resumes from it instead of replaying the list.
+    const resourceVersion =
+      typeof args.resourceVersion === 'string' && args.resourceVersion.length > 0
+        ? args.resourceVersion
+        : undefined;
+    await startResourceWatch(resourceType, namespace, resourceVersion, ctx);
     return null;
   };
 

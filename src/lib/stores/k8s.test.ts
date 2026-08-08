@@ -176,6 +176,67 @@ describe("K8sStore", () => {
     });
   });
 
+  describe("viewLoaded", () => {
+    test("false initially (boot must show loading, not empty)", () => {
+      expect(store.viewLoaded).toBe(false);
+    });
+
+    test("restoreResourcesSync marks the view loaded", () => {
+      store.restoreResourcesSync("pods", []);
+      expect(store.viewLoaded).toBe(true);
+    });
+
+    test("switching resource type resets it; same type keeps it", () => {
+      store.restoreResourcesSync("pods", []);
+      store.setResourceType("deployments");
+      expect(store.viewLoaded).toBe(false);
+      store.restoreResourcesSync("deployments", []);
+      store.setResourceType("deployments");
+      expect(store.viewLoaded).toBe(true);
+    });
+
+    test("_resetVisibleState resets it", () => {
+      store.restoreResourcesSync("pods", []);
+      store._resetVisibleState();
+      expect(store.viewLoaded).toBe(false);
+    });
+  });
+
+  describe("restoreNamespace", () => {
+    test("adopts a candidate that exists in the cluster", () => {
+      store.namespaces = ["default", "prod"];
+      store.restoreNamespace("prod");
+      expect(store.currentNamespace).toBe("prod");
+    });
+
+    test("trusts the candidate when no namespace list is loaded", () => {
+      store.namespaces = [];
+      store.restoreNamespace("prod");
+      expect(store.currentNamespace).toBe("prod");
+    });
+
+    test("rejects empty candidate (cluster-scope listing) and keeps a valid current", () => {
+      store.namespaces = ["default", "prod"];
+      store.currentNamespace = "prod";
+      store.restoreNamespace("");
+      expect(store.currentNamespace).toBe("prod");
+    });
+
+    test("snaps an invalid current namespace to default", () => {
+      store.namespaces = ["default", "prod"];
+      store.currentNamespace = "gone-namespace";
+      store.restoreNamespace();
+      expect(store.currentNamespace).toBe("default");
+    });
+
+    test("snaps to the first namespace when default is absent", () => {
+      store.namespaces = ["alpha", "beta"];
+      store.currentNamespace = "gone-namespace";
+      store.restoreNamespace("also-gone");
+      expect(store.currentNamespace).toBe("alpha");
+    });
+  });
+
   describe("_beginScopeChange", () => {
     test("increments scope and count generations", () => {
       const gen1 = store._beginScopeChange();

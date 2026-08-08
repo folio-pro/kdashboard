@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
-  import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { cn } from "$lib/utils";
   import { formatAge } from "$lib/utils/age";
   import { resolveJsonPath } from "$lib/utils/k8s-helpers";
@@ -10,6 +11,38 @@
 
   let selectedResource = $state<Resource | null>(null);
   let showDetail = $state(false);
+
+  // Virtualized rows (same pattern as ResourceTable): CRD listings are
+  // arbitrary user data and can hold thousands of items — rendering them all
+  // makes the DOM (and every reactive update) scale with the dataset.
+  const ROW_HEIGHT = 29;
+  let scrollRef: HTMLDivElement | undefined = $state();
+
+  const virtualizer = createVirtualizer<HTMLDivElement, Element>({
+    count: 0,
+    getScrollElement: () => scrollRef ?? null,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  });
+
+  // Gate on scrollRef so the virtualizer acquires its scroll element on remount.
+  // setOptions notifies the virtualizer store; untrack breaks the self-retrigger.
+  $effect(() => {
+    if (!scrollRef) return;
+    const count = k8sStore.crdResources.items.length;
+    untrack(() => {
+      $virtualizer.setOptions({ count });
+    });
+  });
+
+  let virtualItems = $derived($virtualizer.getVirtualItems());
+  let paddingTop = $derived(virtualItems.length > 0 ? virtualItems[0].start : 0);
+  let paddingBottom = $derived(
+    virtualItems.length > 0
+      ? $virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
+      : 0,
+  );
+  let colspan = $derived(k8sStore.crdResources.columns.length + 3);
 
   function handleRowClick(resource: Resource) {
     selectedResource = resource;
@@ -54,9 +87,9 @@
         </span>
       </div>
     {:else}
-      <ScrollArea class="flex-1">
+      <div class="flex-1 overflow-auto" bind:this={scrollRef}>
         <table class="w-full text-xs">
-          <thead>
+          <thead class="sticky top-0 z-10">
             <tr class="border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
               <th class="px-3 py-2 text-left font-medium text-[var(--text-secondary)]">Name</th>
               <th class="px-3 py-2 text-left font-medium text-[var(--text-secondary)]">Namespace</th>
@@ -69,30 +102,39 @@
             </tr>
           </thead>
           <tbody>
-            {#each k8sStore.crdResources.items as resource}
-              <tr
-                class={cn(
-                  "cursor-pointer border-b border-[var(--table-border)] transition-colors",
-                  "hover:bg-[var(--table-row-hover)]",
-                  selectedResource?.metadata?.uid === resource.metadata?.uid && "bg-[var(--table-row-selected)]"
-                )}
-                onclick={() => handleRowClick(resource)}
-              >
-                <td class="px-3 py-1.5 text-[var(--text-primary)]">{resource.metadata.name}</td>
-                <td class="px-3 py-1.5 text-[var(--text-secondary)]">{resource.metadata.namespace ?? "—"}</td>
-                {#each k8sStore.crdResources.columns as col}
-                  <td class="px-3 py-1.5 text-[var(--text-secondary)]">
-                    {resolveJsonPath(resource, col.json_path) || "—"}
+            {#if paddingTop > 0}
+              <tr><td {colspan} style="height: {paddingTop}px; padding: 0; border: none;"></td></tr>
+            {/if}
+            {#each virtualItems as vi (vi.index)}
+              {@const resource = k8sStore.crdResources.items[vi.index]}
+              {#if resource}
+                <tr
+                  class={cn(
+                    "cursor-pointer border-b border-[var(--table-border)] transition-colors",
+                    "hover:bg-[var(--table-row-hover)]",
+                    selectedResource?.metadata?.uid === resource.metadata?.uid && "bg-[var(--table-row-selected)]"
+                  )}
+                  onclick={() => handleRowClick(resource)}
+                >
+                  <td class="px-3 py-1.5 text-[var(--text-primary)]">{resource.metadata.name}</td>
+                  <td class="px-3 py-1.5 text-[var(--text-secondary)]">{resource.metadata.namespace ?? "—"}</td>
+                  {#each k8sStore.crdResources.columns as col}
+                    <td class="px-3 py-1.5 text-[var(--text-secondary)]">
+                      {resolveJsonPath(resource, col.json_path) || "—"}
+                    </td>
+                  {/each}
+                  <td class="px-3 py-1.5 text-right text-[var(--text-muted)]">
+                    {resource.metadata.creation_timestamp ? formatAge(resource.metadata.creation_timestamp) : "—"}
                   </td>
-                {/each}
-                <td class="px-3 py-1.5 text-right text-[var(--text-muted)]">
-                  {resource.metadata.creation_timestamp ? formatAge(resource.metadata.creation_timestamp) : "—"}
-                </td>
-              </tr>
+                </tr>
+              {/if}
             {/each}
+            {#if paddingBottom > 0}
+              <tr><td {colspan} style="height: {paddingBottom}px; padding: 0; border: none;"></td></tr>
+            {/if}
           </tbody>
         </table>
-      </ScrollArea>
+      </div>
     {/if}
   </div>
 {/if}

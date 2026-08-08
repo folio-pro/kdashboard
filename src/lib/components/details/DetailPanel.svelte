@@ -153,7 +153,7 @@
 </script>
 
 {#if resource}
-  <div class="flex h-full flex-col bg-[var(--bg-primary)]">
+  <div data-testid="detail-panel" class="flex h-full flex-col bg-[var(--bg-primary)]">
     <!-- Header -->
     <div class="flex h-[68px] items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-6">
       <!-- Left: Breadcrumbs + Info -->
@@ -320,5 +320,16 @@
         </ScrollArea>
       {/if}
     </div>
+  </div>
+{:else}
+  <!-- No resource: a restored tab whose object is gone (e.g. the pod was
+       replaced while the app was closed) or a hydration still in flight.
+       Never render a silent blank panel. -->
+  <div data-testid="detail-panel-empty" class="flex h-full flex-col items-center justify-center gap-2 bg-[var(--bg-primary)]">
+    <span class="text-sm text-[var(--text-muted)]">Resource not available</span>
+    <span class="max-w-[360px] text-center text-xs text-[var(--text-dimmed)]">
+      It may have been deleted or replaced while the app was closed. Close this
+      tab, or open the resource again from its table.
+    </span>
   </div>
 {/if}

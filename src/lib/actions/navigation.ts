@@ -7,7 +7,11 @@ import { uiStore } from "$lib/stores/ui.svelte";
  */
 export function openResourceDetail(resource: Resource, resourceType?: string): void {
   k8sStore.selectedResource = resource;
-  uiStore.showDetails(resource.metadata.name, resourceType ?? resource.kind);
+  uiStore.showDetails(
+    resource.metadata.name,
+    resourceType ?? resource.kind,
+    resource.metadata.namespace ?? undefined,
+  );
   const tab = uiStore.activeTab;
   if (tab) tab.cachedResource = resource;
 }

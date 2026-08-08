@@ -363,7 +363,7 @@ export class UiStoreLogic {
     }
   }
 
-  protected _switchView(view: ActiveView, opts?: { label?: string; resourceName?: string; resourceType?: string }): void {
+  protected _switchView(view: ActiveView, opts?: { label?: string; resourceName?: string; resourceType?: string; namespace?: string }): void {
     this.previousView = this.activeView;
     this.openTab(view, opts);
   }
@@ -376,11 +376,15 @@ export class UiStoreLogic {
     this._switchView("settings");
   }
 
-  showDetails(resourceName?: string, resourceType?: string): void {
+  showDetails(resourceName?: string, resourceType?: string, namespace?: string): void {
     this._switchView("details", {
       label: resourceName ?? "Detail",
       resourceName,
       resourceType,
+      // Persisted with the tab: session restore re-fetches by (type, name,
+      // namespace) — without the namespace a targeted get degrades to a
+      // cluster-scope get (RBAC-fragile) or a wrong-namespace list.
+      namespace,
     });
   }
 
@@ -653,7 +657,11 @@ export function restoreTab(st: SerializableTab): Tab {
     closable: st.closable,
     resourceName: st.resourceName,
     resourceType: st.resourceType,
-    namespace: st.namespace,
+    // "" is never a deliberate namespace (the picker has no all-namespaces
+    // option) — it leaked from a context switch whose namespace list failed
+    // to load. Restoring it would list at cluster scope (403 under
+    // restrictive RBAC), so treat it as unset.
+    namespace: st.namespace || undefined,
     filter: st.filter,
     _debouncedFilter: st.filter,
     sortColumn: st.sortColumn,

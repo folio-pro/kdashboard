@@ -585,6 +585,18 @@ describe("UiStore", () => {
       expect(podsRestored.namespace).toBe("default");
     });
 
+    test("restoreTab drops an empty-string namespace (never restore cluster-scope)", () => {
+      const restored = restoreTab({
+        id: "tab-9",
+        type: "table",
+        label: "Pods",
+        closable: true,
+        resourceType: "pods",
+        namespace: "",
+      });
+      expect(restored.namespace).toBeUndefined();
+    });
+
     test("deserializeTabs rejects null / empty / invalid JSON", () => {
       expect(deserializeTabs(null)).toBeNull();
       expect(deserializeTabs("")).toBeNull();

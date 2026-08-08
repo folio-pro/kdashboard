@@ -85,6 +85,12 @@
 
   // Step 2: Sort (depends on filteredItems, sortColumn, sortDirection — NOT ageTick)
   let filteredResources = $derived(sortResources(filteredItems, uiStore.sortColumn, uiStore.sortDirection as "asc" | "desc"));
+  // Also skeleton while the view has never completed a list: isLoading is
+  // deliberately delayed 200ms, which would flash the empty state on boot.
+  let showLoadingSkeleton = $derived(
+    k8sStore.isLoading ||
+      (!k8sStore.viewLoaded && !k8sStore.error && filteredResources.length === 0),
+  );
 
   // Virtual scrolling
   const ROW_HEIGHT: Record<string, number> = { compact: 32, comfortable: 44 };
@@ -465,7 +471,7 @@
   <div class="relative flex-1 overflow-hidden">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="virtual-scroll-container h-full overflow-auto border-t border-[var(--border-color)] bg-[var(--bg-primary)]" bind:this={scrollRef} oncontextmenu={handleTableContextMenu} role="region" aria-label="{resourceTypeLabel} resources">
-    {#if k8sStore.isLoading}
+    {#if showLoadingSkeleton}
       <TableEmptyStates
         state="loading"
         {columns}
