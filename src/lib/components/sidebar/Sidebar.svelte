@@ -15,90 +15,97 @@
   import { topologyStore } from "$lib/stores/topology.svelte";
   import { costStore } from "$lib/stores/cost.svelte";
   import { securityStore } from "$lib/stores/security.svelte";
-  import { getContextColor } from "$lib/utils/context-colors";
-  import { getIconById } from "$lib/utils/context-icons";
-  import DeviconIcon from "$lib/components/common/DeviconIcon.svelte";
 
   interface SectionDef {
     name: string;
     key: string;
-    items: Array<{ name: string; type: string; badge?: number }>;
+    abbr: string;
+    items: Array<{ name: string; type: string; short?: string }>;
   }
 
   const sections: SectionDef[] = [
     {
       name: "Workloads",
       key: "workloads",
+      abbr: "WKL",
       items: [
-        { name: "Pods", type: "pods" },
-        { name: "Deployments", type: "deployments" },
-        { name: "Replica Sets", type: "replicasets" },
-        { name: "Stateful Sets", type: "statefulsets" },
-        { name: "Daemon Sets", type: "daemonsets" },
-        { name: "Jobs", type: "jobs" },
-        { name: "Cron Jobs", type: "cronjobs" },
+        { name: "Pods", type: "pods", short: "po" },
+        { name: "Deployments", type: "deployments", short: "deploy" },
+        { name: "Replica Sets", type: "replicasets", short: "rs" },
+        { name: "Stateful Sets", type: "statefulsets", short: "sts" },
+        { name: "Daemon Sets", type: "daemonsets", short: "ds" },
+        { name: "Jobs", type: "jobs", short: "job" },
+        { name: "Cron Jobs", type: "cronjobs", short: "cj" },
       ],
     },
     {
       name: "Network",
       key: "network",
+      abbr: "NET",
       items: [
-        { name: "Services", type: "services" },
-        { name: "Ingresses", type: "ingresses" },
-        { name: "Port Forwards", type: "portforwards" },
+        { name: "Services", type: "services", short: "svc" },
+        { name: "Ingresses", type: "ingresses", short: "ing" },
+        { name: "Port Forwards", type: "portforwards", short: "pf" },
       ],
     },
     {
       name: "Configuration",
       key: "configuration",
+      abbr: "CFG",
       items: [
-        { name: "Config Maps", type: "configmaps" },
-        { name: "Secrets", type: "secrets" },
+        { name: "Config Maps", type: "configmaps", short: "cm" },
+        { name: "Secrets", type: "secrets", short: "secret" },
       ],
     },
     {
       name: "Scaling",
       key: "scaling",
+      abbr: "SCL",
       items: [
-        { name: "HPA", type: "hpa" },
-        { name: "VPA", type: "vpa" },
+        { name: "HPA", type: "hpa", short: "hpa" },
+        { name: "VPA", type: "vpa", short: "vpa" },
+        { name: "WPA", type: "wpa", short: "wpa" },
       ],
     },
     {
       name: "Storage",
       key: "storage",
+      abbr: "STO",
       items: [
-        { name: "Persistent Volumes", type: "persistentvolumes" },
-        { name: "Persistent Volume Claims", type: "persistentvolumeclaims" },
-        { name: "Storage Classes", type: "storageclasses" },
+        { name: "Persistent Volumes", type: "persistentvolumes", short: "pv" },
+        { name: "Persistent Volume Claims", type: "persistentvolumeclaims", short: "pvc" },
+        { name: "Storage Classes", type: "storageclasses", short: "sc" },
       ],
     },
     {
       name: "RBAC",
       key: "rbac",
+      abbr: "RBAC",
       items: [
-        { name: "Roles", type: "roles" },
-        { name: "Role Bindings", type: "rolebindings" },
-        { name: "Cluster Roles", type: "clusterroles" },
-        { name: "Cluster Role Bindings", type: "clusterrolebindings" },
+        { name: "Roles", type: "roles", short: "role" },
+        { name: "Role Bindings", type: "rolebindings", short: "rb" },
+        { name: "Cluster Roles", type: "clusterroles", short: "clusterrole" },
+        { name: "Cluster Role Bindings", type: "clusterrolebindings", short: "crb" },
       ],
     },
     {
       name: "Policy",
       key: "policy",
+      abbr: "POL",
       items: [
-        { name: "Network Policies", type: "networkpolicies" },
-        { name: "Resource Quotas", type: "resourcequotas" },
-        { name: "Limit Ranges", type: "limitranges" },
-        { name: "Pod Disruption Budgets", type: "poddisruptionbudgets" },
+        { name: "Network Policies", type: "networkpolicies", short: "netpol" },
+        { name: "Resource Quotas", type: "resourcequotas", short: "quota" },
+        { name: "Limit Ranges", type: "limitranges", short: "limits" },
+        { name: "Pod Disruption Budgets", type: "poddisruptionbudgets", short: "pdb" },
       ],
     },
     {
       name: "Cluster",
       key: "cluster",
+      abbr: "CLU",
       items: [
-        { name: "Nodes", type: "nodes" },
-        { name: "Namespaces", type: "namespaces" },
+        { name: "Nodes", type: "nodes", short: "no" },
+        { name: "Namespaces", type: "namespaces", short: "ns" },
         { name: "Topology", type: "topology" },
         { name: "Security", type: "security" },
       ],
@@ -151,13 +158,41 @@
     navigateToResourceTable(item?.name ?? resourceType, resourceType);
   }
 
-  function toggleSection(key: string) {
-    settingsStore.toggleCollapsedSection(key);
-  }
-
   function handleCrdClick(crd: CrdInfo) {
     navigateToCrdTable(crd);
   }
+
+  let statusColor = $derived(
+    k8sStore.connectionStatus === "connected"
+      ? "var(--accent)"
+      : k8sStore.connectionStatus === "connecting"
+        ? "var(--status-pending)"
+        : "var(--status-failed)"
+  );
+
+  // CRDs already surfaced as fixed sidebar items (Scaling): hide them from the
+  // discovered groups so they don't appear twice.
+  const FIXED_CRDS = new Set([
+    "autoscaling.k8s.io/verticalpodautoscalers",
+    "datadoghq.com/watermarkpodautoscalers",
+  ]);
+
+  let visibleCrdGroups = $derived(
+    k8sStore.crdGroups
+      .map((g) => ({
+        ...g,
+        resources: g.resources.filter((c) => !FIXED_CRDS.has(`${c.group}/${c.plural}`)),
+      }))
+      .filter((g) => g.resources.length > 0)
+  );
+
+  let clusterSubline = $derived.by(() => {
+    const parts: string[] = [];
+    const nodes = k8sStore.resourceCounts["nodes"];
+    if (nodes !== undefined) parts.push(`${nodes} nodes`);
+    parts.push(k8sStore.currentNamespace ? `ns/${k8sStore.currentNamespace}` : "all namespaces");
+    return parts.join(" · ");
+  });
 
   // Total CRD count for collapse threshold.
   // Guard on crdLoading/crdError so a failing discover_crds call doesn't
@@ -174,17 +209,15 @@
     }
   });
 
-  // Load counts for expanded CRD groups (only fetch if not already loaded)
+  // Flat list: every CRD group is always visible, so load counts for all of
+  // them (only fetch the ones not already loaded).
   $effect(() => {
-    for (const group of k8sStore.crdGroups) {
-      const sectionKey = `crd-${group.group}`;
-      if (!settingsStore.isSectionCollapsed(sectionKey)) {
-        const missing = group.resources.filter(
-          (crd) => !(k8sStore.crdKey(crd) in k8sStore.crdCounts),
-        );
-        if (missing.length > 0) {
-          k8sStore.loadCrdCounts(missing);
-        }
+    for (const group of visibleCrdGroups) {
+      const missing = group.resources.filter(
+        (crd) => !(k8sStore.crdKey(crd) in k8sStore.crdCounts),
+      );
+      if (missing.length > 0) {
+        k8sStore.loadCrdCounts(missing);
       }
     }
   });
@@ -196,7 +229,7 @@
     class="flex h-full flex-row border-r border-t border-[var(--border-color)] bg-[var(--sidebar-bg)]"
   >
     {#if uiStore.sidebarCollapsed}
-      <!-- Collapsed: single column with icons -->
+      <!-- Collapsed: single column with group labels + icons -->
       <div class="flex h-full w-full flex-col items-center py-2">
         <button
           class={cn(
@@ -214,7 +247,7 @@
         {/each}
 
         <ScrollArea class="flex-1 w-full">
-          <div class="flex flex-col items-center px-1">
+          <div class="flex flex-col items-center">
             <!-- Overview (collapsed) -->
             <Tooltip>
               <TooltipTrigger>
@@ -230,13 +263,12 @@
                 <p>Overview</p>
               </TooltipContent>
             </Tooltip>
-            <div class="my-1.5 h-px w-5 bg-[var(--border-color)]"></div>
 
-            {#each sections as section, sectionIdx}
-              {#if sectionIdx > 0}
-                <div class="my-1.5 h-px w-5 bg-[var(--border-color)]"></div>
-              {/if}
-              <div class="flex w-full flex-col items-center gap-0.5">
+            {#each sections as section}
+              <div class="flex w-full flex-col items-center gap-[3px] border-t border-[var(--sidebar-hover)] py-[5px] mt-[5px]">
+                <div class="flex h-4 w-[30px] items-center justify-center font-mono text-[7.5px] font-medium tracking-[0.06em] text-[var(--text-dimmed)]">
+                  {section.abbr}
+                </div>
                 {#each section.items as item}
                   <Tooltip>
                     <TooltipTrigger>
@@ -267,29 +299,17 @@
       <ClusterRail />
 
       <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <!-- Active cluster header: at-a-glance context + namespace, matching
-             the reference console's cluster block above the nav. -->
+        <!-- Active cluster header: connection dot + context + at-a-glance
+             cluster facts, matching the flat-list reference design. -->
         {#if k8sStore.currentContext}
-          {@const headerCustom = settingsStore.getContextCustomization(k8sStore.currentContext)}
-          {@const headerColor = headerCustom?.color || getContextColor(k8sStore.currentContext)}
-          {@const headerIcon = headerCustom?.icon ? getIconById(headerCustom.icon) : undefined}
-          {@const headerLabel = headerCustom?.label}
-          <div class="flex items-center gap-[9px] border-b border-[var(--border-color)] px-3.5 pt-[13px] pb-[11px]">
+          <div class="flex items-center gap-[9px] border-b border-[var(--border-color)] px-[13px] py-3">
             <span
-              class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-[12px] font-semibold text-white"
-              style={`background-color: var(${headerColor});`}
-            >
-              {#if headerIcon}
-                <DeviconIcon id={headerIcon.id} class="h-4 w-4" />
-              {:else if headerLabel}
-                {headerLabel}
-              {:else}
-                {k8sStore.currentContext.charAt(0).toUpperCase()}
-              {/if}
-            </span>
-            <div class="flex min-w-0 flex-1 flex-col leading-tight">
-              <span class="truncate text-[13px] font-semibold text-[var(--text-primary)]" title={k8sStore.currentContext}>{k8sStore.currentContext}</span>
-              <span class="truncate text-[11px] text-[var(--text-muted)]">{k8sStore.currentNamespace || "all namespaces"}</span>
+              class="h-2 w-2 shrink-0 rounded-full"
+              style={`background: ${statusColor}; box-shadow: 0 0 0 3px color-mix(in srgb, ${statusColor} 16%, transparent);`}
+            ></span>
+            <div class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate text-[13px] font-semibold leading-tight text-[var(--text-primary)]" title={k8sStore.currentContext}>{k8sStore.currentContext}</span>
+              <span class="truncate font-mono text-[10.5px] text-[var(--text-muted)]">{clusterSubline}</span>
             </div>
           </div>
         {/if}
@@ -298,104 +318,103 @@
           <mount.component />
         {/each}
 
-        <ScrollArea class="flex-1 px-1 py-2">
-          <div class="flex flex-col gap-1.5">
-            <!-- Overview (always first) -->
-            <div class="px-2 pb-1">
-              <SidebarItem
-                name="Overview"
-                resourceType="overview"
-                active={isItemActive("overview")}
-                collapsed={false}
-                onclick={() => handleItemClick("overview")}
-              />
-            </div>
+        <!-- Flat list: one scroll for the whole tree, section headers stick
+             to the top (plain overflow container so position:sticky works). -->
+        <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-3.5">
+          <!-- Overview (always first) -->
+          <div class="pt-1">
+            <SidebarItem
+              name="Overview"
+              resourceType="overview"
+              active={isItemActive("overview")}
+              collapsed={false}
+              onclick={() => handleItemClick("overview")}
+            />
+          </div>
 
-            {#if settingsStore.pinnedResources.length > 0}
-              <SidebarSection
-                title="Pinned"
-                collapsed={settingsStore.isSectionCollapsed("pinned")}
-                sidebarCollapsed={false}
-                ontoggle={() => toggleSection("pinned")}
-              >
-                {#each settingsStore.pinnedResources as pin}
-                  <button
-                    class={cn(
-                      "group flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors",
-                      "text-[var(--text-secondary)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--text-primary)]"
-                    )}
-                    onclick={async () => {
-                      const found = await k8sStore.fetchResource(pin.resourceType, pin.name);
-                      if (found) {
-                        openResourceDetail(found, pin.resourceType);
-                      } else {
-                        uiStore.backToTable();
-                      }
+          {#if settingsStore.pinnedResources.length > 0}
+            <SidebarSection title="Pinned">
+              {#each settingsStore.pinnedResources as pin}
+                <button
+                  class={cn(
+                    "group flex w-full items-center gap-2.5 border-l-2 border-transparent px-[13px] py-2 text-left text-[13.5px] transition-colors",
+                    "text-[var(--text-secondary)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--text-primary)]"
+                  )}
+                  onclick={async () => {
+                    const found = await k8sStore.fetchResource(pin.resourceType, pin.name);
+                    if (found) {
+                      openResourceDetail(found, pin.resourceType);
+                    } else {
+                      uiStore.backToTable();
+                    }
+                  }}
+                >
+                  <Pin class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
+                  <span class="min-w-0 flex-1 truncate">{pin.name}</span>
+                  <span class="shrink-0 font-mono text-[10px] text-[var(--text-dimmed)]">{pin.kind}</span>
+                  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+                  <span
+                    class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[var(--status-failed)]"
+                    role="button"
+                    tabindex="-1"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      settingsStore.unpinResource(pin.kind, pin.name, pin.namespace);
                     }}
+                    title="Unpin"
                   >
-                    <Pin class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
-                    <span class="min-w-0 flex-1 truncate">{pin.name}</span>
-                    <span class="shrink-0 text-[10px] text-[var(--text-dimmed)]">{pin.kind}</span>
-                    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-                    <span
-                      class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[var(--status-failed)]"
-                      role="button"
-                      tabindex="-1"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        settingsStore.unpinResource(pin.kind, pin.name, pin.namespace);
-                      }}
-                      title="Unpin"
-                    >
-                      <X class="h-3 w-3" />
-                    </span>
-                  </button>
-                {/each}
-              </SidebarSection>
-            {/if}
+                    <X class="h-3 w-3" />
+                  </span>
+                </button>
+              {/each}
+            </SidebarSection>
+          {/if}
 
-            {#each sections as section}
-              <SidebarSection
-                title={section.name}
-                collapsed={settingsStore.isSectionCollapsed(section.key)}
-                sidebarCollapsed={false}
-                ontoggle={() => toggleSection(section.key)}
-              >
-                {#each section.items as item}
+          {#each sections as section}
+            <SidebarSection title={section.name}>
+              {#each section.items as item}
+                <SidebarItem
+                  name={item.name}
+                  resourceType={item.type}
+                  short={item.short}
+                  count={getItemCount(item.type)}
+                  active={isItemActive(item.type)}
+                  collapsed={false}
+                  onclick={() => handleItemClick(item.type)}
+                />
+              {/each}
+            </SidebarSection>
+          {/each}
+
+          <!-- CRD Discovery: Custom Resources -->
+          {#if k8sStore.crdError}
+            <SidebarSection title="Custom Resources">
+              <div class="px-[15px] py-2 text-[11.5px] leading-snug text-[var(--text-dimmed)]">
+                {#if k8sStore.crdError.includes("orbidden") || k8sStore.crdError.includes("403")}
+                  No permission to list CRDs in this cluster.
+                {:else}
+                  Failed to discover CRDs.
+                {/if}
+              </div>
+            </SidebarSection>
+          {:else if visibleCrdGroups.length > 0}
+            {#each visibleCrdGroups as group}
+              <SidebarSection title={group.group}>
+                {#each group.resources as crd}
                   <SidebarItem
-                    name={item.name}
-                    resourceType={item.type}
-                    active={isItemActive(item.type)}
+                    name={crd.kind}
+                    resourceType={`crd:${crd.group}/${crd.kind}`}
+                    short={crd.short_names[0]}
+                    count={k8sStore.crdCounts[k8sStore.crdKey(crd)]}
+                    active={k8sStore.selectedCrd?.kind === crd.kind && k8sStore.selectedCrd?.group === crd.group && uiStore.activeView === "crd-table"}
                     collapsed={false}
-                    onclick={() => handleItemClick(item.type)}
+                    onclick={() => handleCrdClick(crd)}
                   />
                 {/each}
               </SidebarSection>
             {/each}
-
-            <!-- CRD Discovery: Custom Resources -->
-            {#if k8sStore.crdGroups.length > 0}
-              {#each k8sStore.crdGroups as group}
-                <SidebarSection
-                  title={group.group}
-                  collapsed={settingsStore.isSectionCollapsed(`crd-${group.group}`)}
-                  sidebarCollapsed={false}
-                  ontoggle={() => toggleSection(`crd-${group.group}`)}
-                >
-                  {#each group.resources as crd}
-                    <SidebarItem
-                      name={crd.kind}
-                      resourceType={`crd:${crd.group}/${crd.kind}`}
-                      active={k8sStore.selectedCrd?.kind === crd.kind && k8sStore.selectedCrd?.group === crd.group && uiStore.activeView === "crd-table"}
-                      collapsed={false}
-                      onclick={() => handleCrdClick(crd)}
-                    />
-                  {/each}
-                </SidebarSection>
-              {/each}
-            {/if}
-          </div>
-        </ScrollArea>
+          {/if}
+        </div>
       </div>
     {/if}
   </aside>

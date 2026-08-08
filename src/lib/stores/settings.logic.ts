@@ -7,12 +7,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   namespace: "default",
   theme_mode: "kdashboard",
   kubeconfig_path: "",
-  collapsed_sections: ["storage", "rbac", "scaling"],
   table_density: "comfortable",
   context_customizations: {},
 };
-
-export const COLLAPSED_SECTIONS_MIGRATION_KEY = "kdashboard-collapsed-sections-v1-migrated";
 
 export class SettingsStoreLogic {
   settings: AppSettings = { ...DEFAULT_SETTINGS };
@@ -20,26 +17,16 @@ export class SettingsStoreLogic {
   private static readonly EMPTY_PINS: PinnedResource[] = [];
 
   /**
-   * Apply loaded settings from backend, handling the collapsed_sections migration.
-   * This is the pure logic extracted from loadSettings (without invoke/localStorage).
+   * Apply loaded settings from backend. Pure logic extracted from loadSettings
+   * (without invoke).
    */
-  applyLoadedSettings(result: Partial<AppSettings>, migrated: boolean): boolean {
-    const shouldApplyMigration =
-      !migrated &&
-      Array.isArray(result.collapsed_sections) &&
-      result.collapsed_sections.length === 0;
-
+  applyLoadedSettings(result: Partial<AppSettings>): void {
     this.settings = {
       ...DEFAULT_SETTINGS,
       ...result,
-      collapsed_sections: shouldApplyMigration
-        ? [...DEFAULT_SETTINGS.collapsed_sections]
-        : (result.collapsed_sections ?? DEFAULT_SETTINGS.collapsed_sections),
       context_customizations: result.context_customizations ?? {},
     };
     this.applyTheme(this.settings.theme_mode);
-
-    return shouldApplyMigration;
   }
 
   /**
@@ -80,18 +67,6 @@ export class SettingsStoreLogic {
     this.saveSettings();
   }
 
-  toggleCollapsedSection(section: string): void {
-    const idx = this.settings.collapsed_sections.indexOf(section);
-    if (idx >= 0) {
-      this.settings.collapsed_sections = this.settings.collapsed_sections.filter(
-        (s) => s !== section,
-      );
-    } else {
-      this.settings.collapsed_sections = [...this.settings.collapsed_sections, section];
-    }
-    this.saveSettings();
-  }
-
   updateContextCustomization(context: string, customization: ContextCustomization): void {
     this.settings.context_customizations = {
       ...(this.settings.context_customizations ?? {}),
@@ -102,10 +77,6 @@ export class SettingsStoreLogic {
 
   getContextCustomization(context: string): ContextCustomization | undefined {
     return this.settings.context_customizations?.[context];
-  }
-
-  isSectionCollapsed(section: string): boolean {
-    return this.settings.collapsed_sections.includes(section);
   }
 
   get pinnedResources(): PinnedResource[] {

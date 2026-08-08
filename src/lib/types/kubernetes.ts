@@ -47,6 +47,7 @@ export type ResourceType =
   | "secrets"
   | "hpa"
   | "vpa"
+  | "wpa"
   | "nodes"
   | "namespaces"
   | "networkpolicies"
