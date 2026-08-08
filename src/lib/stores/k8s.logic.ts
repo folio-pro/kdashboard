@@ -52,6 +52,13 @@ export class K8sStoreLogic {
   resourceCounts: Record<string, number> = {};
   portForwards: PortForwardInfo[] = [];
   ageTick: number = 0;
+  /**
+   * False until the CURRENT view's first list completes (or cache restores).
+   * Distinguishes "never loaded yet" (show loading) from "loaded, genuinely
+   * empty" (show empty state) — isLoading alone can't: it is deliberately
+   * delayed 200ms to avoid flicker, which flashed "No pods found" on boot.
+   */
+  viewLoaded: boolean = false;
 
   // CRD state
   crdGroups: CrdGroup[] = [];
@@ -81,6 +88,7 @@ export class K8sStoreLogic {
 
   /** Set both resource type states atomically (for non-async transitions) */
   setResourceType(type: string): void {
+    if (type !== this.selectedResourceType) this.viewLoaded = false;
     this.selectedResourceType = type;
     this.pendingResourceType = type;
   }
@@ -93,6 +101,7 @@ export class K8sStoreLogic {
     this.error = null;
     this.contextsLoadError = null;
     this.namespacesLoadError = null;
+    this.viewLoaded = false;
     this.resources = { items: [], resource_type: this.selectedResourceType };
     this.selectedResource = null;
     this.clearNavHistory();
@@ -158,6 +167,26 @@ export class K8sStoreLogic {
     this._setCount(resourceType, items.length);
     this.isLoading = false;
     this.error = null;
+    this.viewLoaded = true;
+  }
+
+  /**
+   * Adopt a restored namespace only if it is usable in THIS cluster, then make
+   * sure currentNamespace itself is real. A candidate is adopted when non-empty
+   * ("" would list at CLUSTER scope — 403 under restrictive RBAC, and the
+   * picker offers no way out) and present in the loaded namespace list (tabs/
+   * settings can carry one from another context — listing there returns empty
+   * forever). With no list loaded, the candidate is trusted as-is.
+   */
+  restoreNamespace(candidate?: string): void {
+    const nss = this.namespaces;
+    if (candidate && (nss.length === 0 || nss.includes(candidate))) {
+      this.currentNamespace = candidate;
+      return;
+    }
+    if (nss.length > 0 && !nss.includes(this.currentNamespace)) {
+      this.currentNamespace = nss.includes("default") ? "default" : nss[0];
+    }
   }
 
   _setCount(resourceType: string, count: number): void {

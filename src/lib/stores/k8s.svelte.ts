@@ -4,6 +4,7 @@ import type { Resource, ResourceList, ConnectionStatus, PortForwardInfo, CrdGrou
 import { settingsStore } from "./settings.svelte";
 import { toastStore } from "./toast.svelte.js";
 import { K8sStoreLogic, COUNTABLE_RESOURCE_TYPES } from "./k8s.logic.js";
+import { resourceTypeForRef } from "$lib/utils/related-resources";
 import { unshadowState } from "./_unshadow.js";
 
 export type { WatchEvent, NavigationEntry } from "./k8s.logic.js";
@@ -41,6 +42,7 @@ class K8sStore extends K8sStoreLogic {
   override resourceCounts = $state<Record<string, number>>({});
   override portForwards = $state<PortForwardInfo[]>([]);
   override ageTick = $state(0);
+  override viewLoaded = $state(false);
 
   // CRD state
   override crdGroups = $state<CrdGroup[]>([]);
@@ -142,11 +144,13 @@ class K8sStore extends K8sStoreLogic {
       await this.loadNamespaces(scopeGeneration);
       if (scopeGeneration !== this._scopeGeneration) return;
 
+      // Never fall back to "" — that lists at CLUSTER scope, which restrictive
+      // RBAC forbids (403 on every list) and the namespace picker can't leave.
       const fallbackNamespace = this.namespaces.includes(this.currentNamespace)
         ? this.currentNamespace
         : this.namespaces.includes("default")
           ? "default"
-          : (this.namespaces[0] ?? "");
+          : (this.namespaces[0] ?? "default");
       this.currentNamespace = fallbackNamespace;
 
       await this.loadResources(this.selectedResourceType, scopeGeneration);
@@ -197,7 +201,7 @@ class K8sStore extends K8sStoreLogic {
       this.selectedResourceType = resourceType;
       this.resources = result;
       this._setCount(resourceType, result.items.length);
-      this._startWatch(resourceType, this.currentNamespace);
+      this._startWatch(resourceType, this.currentNamespace, result.resource_version);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
       this.error = `Failed to load resources: ${errMsg(err)}`;
@@ -206,6 +210,9 @@ class K8sStore extends K8sStoreLogic {
       clearTimeout(timer);
       if (scopeGeneration === this._scopeGeneration) {
         this.isLoading = false;
+        // First list for this view finished (either way): the table may now
+        // legitimately show its empty/error states instead of "loading".
+        this.viewLoaded = true;
       }
     }
   }
@@ -236,29 +243,38 @@ class K8sStore extends K8sStoreLogic {
    * (plural form). Returns true if a resource was selected.
    */
   async selectResourceByRef(typeOrKind: string, name: string, namespace?: string): Promise<boolean> {
+    const found = await this.resolveResourceByRef(typeOrKind, name, namespace);
+    if (found) {
+      this.selectedResource = found;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Fetch a resource by reference WITHOUT touching the selection — callers that
+   * re-hydrate a background tab decide themselves whether the result may become
+   * the visible selectedResource (the user may have switched tabs meanwhile).
+   */
+  async resolveResourceByRef(typeOrKind: string, name: string, namespace?: string): Promise<Resource | null> {
     try {
       const full = await invoke<Resource>("get_resource", {
         kind: typeOrKind,
         name,
         namespace: namespace ?? "",
       });
-      if (full) {
-        this.selectedResource = full;
-        return true;
-      }
+      if (full) return full;
     } catch {
       // Not a Kind alias (e.g. a plural type) or the object is gone — try listing.
     }
     try {
-      const found = await this.fetchResource(typeOrKind, name, namespace);
-      if (found) {
-        this.selectedResource = found;
-        return true;
-      }
+      // The fallback lists by PLURAL type — normalize a Kind ("Deployment")
+      // to its plural ("deployments") or list_resources rejects it outright.
+      return await this.fetchResource(resourceTypeForRef(typeOrKind), name, namespace);
     } catch {
       // Unknown type or list failed — leave selection unset (view shows empty).
     }
-    return false;
+    return null;
   }
 
   /** @deprecated Use openRelatedResourceTab() or openResourceDetail() instead */
@@ -291,7 +307,7 @@ class K8sStore extends K8sStoreLogic {
     this._listResources(entry.resourceType).then((result) => {
       this.resources = result;
       this._setCount(entry.resourceType, result.items.length);
-      this._startWatch(entry.resourceType, this.currentNamespace);
+      this._startWatch(entry.resourceType, this.currentNamespace, result.resource_version);
       // Re-find the resource in case it was updated
       const updated = result.items.find((r) => r.metadata.uid === entry.resource.metadata.uid);
       if (updated) this.selectedResource = updated;
@@ -314,7 +330,7 @@ class K8sStore extends K8sStoreLogic {
       if (this.selectedResourceType !== expectedType) return;
       this.resources = result;
       this._setCount(expectedType, result.items.length);
-      this._startWatch(expectedType, this.currentNamespace);
+      this._startWatch(expectedType, this.currentNamespace, result.resource_version);
       const updated = result.items.find((r) => r.metadata.uid === entry.resource.metadata.uid);
       if (updated) this.selectedResource = updated;
     }).catch(() => {});
@@ -383,7 +399,7 @@ class K8sStore extends K8sStoreLogic {
     });
   }
 
-  private _startWatch(resourceType: string, namespace: string): Promise<void> {
+  private _startWatch(resourceType: string, namespace: string, resourceVersion?: string): Promise<void> {
     // Chain onto the shared op so a stop always completes before the next start
     // runs — no two starts can interleave on the single interval/listener slots.
     this._watchOp = this._watchOp.then(async () => {
@@ -395,10 +411,12 @@ class K8sStore extends K8sStoreLogic {
         this._watchUnlisten = await listen<import("./k8s.logic.js").WatchEvent | import("./k8s.logic.js").WatchEvent[]>("resource-watch-event", (event) => {
           this._handleWatchEvents(event.payload);
         });
-        // Start the backend watcher
+        // Start the backend watcher. Passing the list's resourceVersion lets it
+        // resume from what we just rendered instead of replaying every item.
         await invoke("start_resource_watch", {
           resourceType,
           namespace,
+          resourceVersion: resourceVersion ?? null,
         });
         this._watchActive = true;
       } catch (err) {
@@ -495,6 +513,13 @@ class K8sStore extends K8sStoreLogic {
       if (!uid) continue;
 
       if (event.event_type === "Applied") {
+        // Same resourceVersion = identical object (k8s bumps RV on every
+        // change): the event is a replay (initial watch sync / reconnect),
+        // not a delta. Skipping it avoids re-rendering the whole table once
+        // per replayed batch right after navigation/restore.
+        const prev = byUid.get(uid);
+        const rv = event.resource.metadata?.resource_version;
+        if (prev && rv && prev.metadata?.resource_version === rv) continue;
         byUid.set(uid, event.resource);
         changed = true;
         if (this.selectedResource?.metadata?.uid === uid) {

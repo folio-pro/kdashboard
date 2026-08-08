@@ -31,6 +31,9 @@ export interface Resource {
 export interface ResourceList {
   items: Resource[];
   resource_type: string;
+  /** resourceVersion of the backing list — passed to the watch so it resumes
+   *  from this point instead of replaying every item as an Applied event. */
+  resource_version?: string;
 }
 
 export type ResourceType =

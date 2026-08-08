@@ -47,6 +47,7 @@ function mkStore(overrides: Partial<TabLifecycleK8sStore> = {}): TabLifecycleK8s
     restoreResources: () => {},
     switchNamespace: async () => {},
     loadResources: async () => {},
+    resolveResourceByRef: async () => null,
   };
   return { ...base, ...overrides };
 }
@@ -324,6 +325,64 @@ describe("handleTabSwitch", () => {
     handleTabSwitch(undefined, toTab, k8s);
 
     expect(loadResources).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleTabSwitch — restored resource tab rehydration", () => {
+  const flushMicrotasks = () => new Promise<void>((r) => setTimeout(r, 0));
+
+  test("uncached details tab re-fetches by ref and selects the result", async () => {
+    const pod = mkResource("restored-pod");
+    const resolve = mock(async () => pod);
+    const store = mkStore({ resolveResourceByRef: resolve });
+    const tab = mkTab({ id: "tab-d", type: "details", resourceName: "restored-pod", resourceType: "Pod", namespace: "default" });
+
+    handleTabSwitch(undefined, tab, store, () => true);
+    expect(store.selectedResource).toBeNull(); // cleared while in flight
+    await flushMicrotasks();
+
+    expect(resolve).toHaveBeenCalledWith("Pod", "restored-pod", "default");
+    expect(tab.cachedResource).toBe(pod);
+    expect(store.selectedResource).toBe(pod);
+  });
+
+  test("result is cached but NOT selected when the tab is no longer active", async () => {
+    const pod = mkResource("restored-pod");
+    const store = mkStore({ resolveResourceByRef: async () => pod });
+    const tab = mkTab({ id: "tab-d", type: "details", resourceName: "restored-pod", resourceType: "Pod" });
+
+    handleTabSwitch(undefined, tab, store, () => false);
+    await flushMicrotasks();
+
+    expect(tab.cachedResource).toBe(pod);
+    expect(store.selectedResource).toBeNull();
+  });
+
+  test("fresh open adopts the pre-assigned selection instead of re-fetching", async () => {
+    const pod = mkResource("fresh-pod");
+    const resolve = mock(async () => null);
+    const store = mkStore({ selectedResource: pod, resolveResourceByRef: resolve });
+    const tab = mkTab({ id: "tab-d", type: "details", resourceName: "fresh-pod", resourceType: "Pod", namespace: "default" });
+
+    handleTabSwitch(undefined, tab, store, () => true);
+    await flushMicrotasks();
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(tab.cachedResource).toBe(pod);
+    expect(store.selectedResource).toBe(pod);
+  });
+
+  test("cached resource tab restores from cache without fetching", async () => {
+    const pod = mkResource("cached-pod");
+    const resolve = mock(async () => null);
+    const store = mkStore({ resolveResourceByRef: resolve });
+    const tab = mkTab({ id: "tab-d", type: "details", resourceName: "cached-pod", resourceType: "Pod", cachedResource: pod });
+
+    handleTabSwitch(undefined, tab, store, () => true);
+    await flushMicrotasks();
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(store.selectedResource).toBe(pod);
   });
 });
 

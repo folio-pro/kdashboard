@@ -41,6 +41,17 @@ export function kindToResourceType(kind: string): string {
   return KIND_TO_RESOURCE_TYPE[kind] ?? kind.toLowerCase() + "s";
 }
 
+/**
+ * Normalize a "type or Kind" reference (as stored in restored tabs: "Pod" when
+ * opened from the table, "pods" from related-resource nav) to the plural
+ * resource type list_resources expects. Unlike kindToResourceType, an input
+ * that is not a known Kind passes through VERBATIM — it is already a plural
+ * ("pods" must not become "podss").
+ */
+export function resourceTypeForRef(typeOrKind: string): string {
+  return KIND_TO_RESOURCE_TYPE[typeOrKind] ?? typeOrKind;
+}
+
 function rel(kind: string, name: string): RelatedResource | null {
   const resourceType = KIND_TO_RESOURCE_TYPE[kind];
   if (!resourceType) return null;

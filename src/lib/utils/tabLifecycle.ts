@@ -19,6 +19,7 @@ export interface TabLifecycleK8sStore {
   restoreResources(resourceType: string, items: Resource[]): void;
   switchNamespace(namespace: string): Promise<void>;
   loadResources(resourceType: string): Promise<void>;
+  resolveResourceByRef(typeOrKind: string, name: string, namespace?: string): Promise<Resource | null>;
 }
 
 type TableTabType = Extract<Tab["type"], "table" | "crd-table">;
@@ -40,9 +41,10 @@ export function handleTabSwitch(
   fromTab: Tab | undefined,
   toTab: Tab,
   k8s: TabLifecycleK8sStore,
+  isTabActive: (tabId: string) => boolean = () => true,
 ): void {
   saveOutgoingTabState(fromTab, k8s);
-  restoreIncomingSelection(toTab, k8s);
+  restoreIncomingSelection(toTab, k8s, isTabActive);
 
   if (!isTableTab(toTab) || !toTab.resourceType) return;
 
@@ -73,10 +75,48 @@ function saveOutgoingTabState(
   }
 }
 
-function restoreIncomingSelection(toTab: Tab, k8s: TabLifecycleK8sStore): void {
-  if (RESOURCE_TAB_TYPES.has(toTab.type) && toTab.cachedResource) {
+function restoreIncomingSelection(
+  toTab: Tab,
+  k8s: TabLifecycleK8sStore,
+  isTabActive: (tabId: string) => boolean,
+): void {
+  if (!RESOURCE_TAB_TYPES.has(toTab.type)) return;
+
+  if (toTab.cachedResource) {
     k8s.selectResource(toTab.cachedResource);
+    return;
   }
+  if (!toTab.resourceName || !toTab.resourceType) return;
+
+  // No cache: a resource tab restored from a previous session (cachedResource
+  // is ephemeral, never persisted). Without a re-fetch its view stays empty
+  // forever — App.initApp only hydrates the tab that was ACTIVE at boot.
+  //
+  // Fresh open (openResourceDetail): the selection was assigned right before
+  // this hook fired and the tab's cachedResource is set right after — the
+  // store already holds this tab's resource, so adopt it instead of
+  // clearing + re-fetching.
+  const sel = k8s.selectedResource;
+  if (
+    sel &&
+    sel.metadata?.name === toTab.resourceName &&
+    (!toTab.namespace || sel.metadata?.namespace === toTab.namespace)
+  ) {
+    toTab.cachedResource = sel;
+    return;
+  }
+
+  // Clear the outgoing tab's resource so the view never shows a stale,
+  // unrelated object while the fetch is in flight; publish the result as the
+  // visible selection only if the tab is still the active one.
+  k8s.selectResource(null);
+  void k8s
+    .resolveResourceByRef(toTab.resourceType, toTab.resourceName, toTab.namespace)
+    .then((found) => {
+      if (!found) return;
+      toTab.cachedResource = found;
+      if (isTabActive(toTab.id)) k8s.selectResource(found);
+    });
 }
 
 function restoreFromCache(toTab: Tab, k8s: TabLifecycleK8sStore): void {

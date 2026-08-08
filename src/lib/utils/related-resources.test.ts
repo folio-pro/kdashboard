@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { kindToResourceType, displayKind, getRelatedResources } from "./related-resources";
+import { kindToResourceType, resourceTypeForRef, displayKind, getRelatedResources } from "./related-resources";
 import type { Resource } from "$lib/types";
 
 function makeResource(overrides: Partial<Resource> = {}): Resource {
@@ -33,6 +33,20 @@ describe("kindToResourceType", () => {
   test("falls back to lowercase+s for unknown kinds", () => {
     expect(kindToResourceType("Widget")).toBe("widgets");
     expect(kindToResourceType("FooBar")).toBe("foobars");
+  });
+});
+
+describe("resourceTypeForRef", () => {
+  test("maps Kinds to plural resource types", () => {
+    expect(resourceTypeForRef("Deployment")).toBe("deployments");
+    expect(resourceTypeForRef("Pod")).toBe("pods");
+    expect(resourceTypeForRef("HorizontalPodAutoscaler")).toBe("hpa");
+  });
+
+  test("passes plurals through verbatim (never 'podss')", () => {
+    expect(resourceTypeForRef("pods")).toBe("pods");
+    expect(resourceTypeForRef("deployments")).toBe("deployments");
+    expect(resourceTypeForRef("hpa")).toBe("hpa");
   });
 });
 

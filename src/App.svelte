@@ -31,7 +31,7 @@
   // (prevents empty state flash). Implementation lives in tabLifecycle
   // util so the race-guard + namespace sync logic is unit-testable.
   uiStore.onBeforeTabSwitch = (fromTab, toTab) => {
-    handleTabSwitch(fromTab, toTab, k8sStore);
+    handleTabSwitch(fromTab, toTab, k8sStore, (tabId) => uiStore.activeTabId === tabId);
   };
 
   // When namespace changes, save it to the active tab and invalidate cache.
@@ -121,6 +121,10 @@
       return;
     }
 
+    // The restored namespace may not exist in THIS cluster — snap to a real
+    // one now that the cluster's namespace list is known.
+    k8sStore.restoreNamespace();
+
     // Re-hydrate the restored active tab so it isn't blank on cold boot. The
     // selected resource and visible list are ephemeral (never persisted), so a
     // details/logs/yaml or table tab restored from a previous session has no
@@ -147,9 +151,8 @@
     const tab = uiStore.activeTab;
     if (!tab) return;
 
-    if (tab.namespace !== undefined && tab.namespace !== k8sStore.currentNamespace) {
-      k8sStore.currentNamespace = tab.namespace;
-    }
+    // Adopt the tab's namespace only when it is usable in this cluster.
+    k8sStore.restoreNamespace(tab.namespace);
 
     if (tab.type === "table" && tab.resourceType) {
       await k8sStore.loadResources(tab.resourceType);
