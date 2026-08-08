@@ -305,6 +305,9 @@
           <div class="flex items-center gap-[9px] border-b border-[var(--border-color)] px-[13px] py-3">
             <span
               class="h-2 w-2 shrink-0 rounded-full"
+              role="img"
+              aria-label={`Connection ${k8sStore.connectionStatus}`}
+              title={`Connection ${k8sStore.connectionStatus}`}
               style={`background: ${statusColor}; box-shadow: 0 0 0 3px color-mix(in srgb, ${statusColor} 16%, transparent);`}
             ></span>
             <div class="flex min-w-0 flex-1 flex-col">
@@ -335,37 +338,35 @@
           {#if settingsStore.pinnedResources.length > 0}
             <SidebarSection title="Pinned">
               {#each settingsStore.pinnedResources as pin}
-                <button
-                  class={cn(
-                    "group flex w-full items-center gap-2.5 border-l-2 border-transparent px-[13px] py-2 text-left text-[13.5px] transition-colors",
-                    "text-[var(--text-secondary)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--text-primary)]"
-                  )}
-                  onclick={async () => {
-                    const found = await k8sStore.fetchResource(pin.resourceType, pin.name);
-                    if (found) {
-                      openResourceDetail(found, pin.resourceType);
-                    } else {
-                      uiStore.backToTable();
-                    }
-                  }}
-                >
-                  <Pin class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-                  <span class="min-w-0 flex-1 truncate">{pin.name}</span>
-                  <span class="shrink-0 font-mono text-[10px] text-[var(--text-dimmed)]">{pin.kind}</span>
-                  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-                  <span
-                    class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[var(--status-failed)]"
-                    role="button"
-                    tabindex="-1"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      settingsStore.unpinResource(pin.kind, pin.name, pin.namespace);
+                <div class="group flex w-full items-center border-l-2 border-transparent pr-[13px] transition-colors hover:bg-[var(--sidebar-hover)]">
+                  <button
+                    class={cn(
+                      "flex min-w-0 flex-1 items-center gap-2.5 py-2 pl-[13px] text-left text-[13.5px] transition-colors",
+                      "text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]"
+                    )}
+                    onclick={async () => {
+                      const found = await k8sStore.fetchResource(pin.resourceType, pin.name);
+                      if (found) {
+                        openResourceDetail(found, pin.resourceType);
+                      } else {
+                        uiStore.backToTable();
+                      }
                     }}
+                  >
+                    <Pin class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
+                    <span class="min-w-0 flex-1 truncate">{pin.name}</span>
+                    <span class="shrink-0 font-mono text-[10px] text-[var(--text-dimmed)]">{pin.kind}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="shrink-0 pl-2 opacity-0 transition-opacity text-[var(--text-muted)] hover:text-[var(--status-failed)] focus-visible:opacity-100 group-hover:opacity-100"
+                    onclick={() => settingsStore.unpinResource(pin.kind, pin.name, pin.namespace)}
                     title="Unpin"
+                    aria-label={`Unpin ${pin.name}`}
                   >
                     <X class="h-3 w-3" />
-                  </span>
-                </button>
+                  </button>
+                </div>
               {/each}
             </SidebarSection>
           {/if}
