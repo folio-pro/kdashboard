@@ -63,7 +63,7 @@ describe("handleTabSwitch", () => {
 
   test("saves selected resource on outgoing resource tab", () => {
     const fromTab = mkTab({ id: "from", type: "details" });
-    const toTab = mkTab({ id: "to", type: "overview" });
+    const toTab = mkTab({ id: "to", type: "settings" });
     const resource = mkResource("pod-a");
     const k8s = mkStore({ selectedResource: resource });
 
@@ -75,7 +75,7 @@ describe("handleTabSwitch", () => {
   test("saves items on outgoing table tab when resource_type matches", () => {
     const items = [mkResource("a"), mkResource("b")];
     const fromTab = mkTab({ id: "from", type: "table", resourceType: "pods" });
-    const toTab = mkTab({ id: "to", type: "overview" });
+    const toTab = mkTab({ id: "to", type: "settings" });
     const k8s = mkStore({ resources: { items, resource_type: "pods" } });
 
     handleTabSwitch(fromTab, toTab, k8s);
@@ -87,7 +87,7 @@ describe("handleTabSwitch", () => {
 
   test("skips save when store holds a different resource_type (in-flight)", () => {
     const fromTab = mkTab({ id: "from", type: "table", resourceType: "pods" });
-    const toTab = mkTab({ id: "to", type: "overview" });
+    const toTab = mkTab({ id: "to", type: "settings" });
     const k8s = mkStore({
       resources: { items: [mkResource("wrong")], resource_type: "services" },
     });
@@ -101,7 +101,7 @@ describe("handleTabSwitch", () => {
   // --- Incoming tab restoration ---
 
   test("restores cachedResource onto store for incoming detail tab", () => {
-    const fromTab = mkTab({ id: "from", type: "overview" });
+    const fromTab = mkTab({ id: "from", type: "settings" });
     const cached = mkResource("pod-b");
     const toTab = mkTab({ id: "to", type: "details", cachedResource: cached });
     const k8s = mkStore();
@@ -318,7 +318,7 @@ describe("handleTabSwitch", () => {
   // --- No-op branches ---
 
   test("non-table incoming tab with no resourceType does nothing to store", () => {
-    const toTab = mkTab({ id: "to", type: "overview", resourceType: undefined });
+    const toTab = mkTab({ id: "to", type: "settings", resourceType: undefined });
     const loadResources = mock(async (_type: string) => {});
     const k8s = mkStore({ loadResources });
 

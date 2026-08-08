@@ -1,6 +1,6 @@
 import type { SortDirection, Resource } from "../types/index.js";
 
-export type ActiveView = "overview" | "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "crd-table";
+export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "crd-table";
 
 /**
  *                    ┌───────────────────────────────────────┐
@@ -84,7 +84,7 @@ export function ensureTabCounterAbove(n: number): void {
 }
 
 /** View types that should only have one tab open at a time */
-const SINGLETON_VIEWS = new Set<ActiveView>(["overview", "settings", "topology", "cost", "security", "portforwards"]);
+const SINGLETON_VIEWS = new Set<ActiveView>(["settings", "topology", "cost", "security", "portforwards"]);
 
 /** View types tied to a specific resource (cache selectedResource on tab switch) */
 export const RESOURCE_TAB_TYPES = new Set<ActiveView>(["details", "logs", "yaml", "terminal"]);
@@ -95,7 +95,6 @@ export const RESOURCE_TAB_TYPES = new Set<ActiveView>(["details", "logs", "yaml"
  * default to having a title bar (fail safe — surface > hide).
  */
 const VIEWS_WITHOUT_TITLE_BAR = new Set<ActiveView>([
-  "overview",
   "details",
   "logs",
   "terminal",
@@ -109,15 +108,21 @@ export function viewShowsTitleBar(view: ActiveView): boolean {
 
 /** Canonical display labels for each view type */
 export const VIEW_LABELS: Record<ActiveView, string> = {
-  overview: "Overview", table: "Resources", details: "Detail",
+  table: "Resources", details: "Detail",
   logs: "Logs", terminal: "Terminal", portforwards: "Port Forwards",
   yaml: "YAML", settings: "Settings",
   topology: "Topology", cost: "Cost", security: "Security",
   "crd-table": "CRDs",
 };
 
-function mkOverviewTab(): Tab {
-  return { id: "tab-overview", type: "overview", label: "Overview", closable: true };
+/** Fixed id (not "tab-N") so restored sessions and the tab counter never
+ *  collide with the default tab. */
+export const DEFAULT_TAB_ID = "tab-pods";
+export const DEFAULT_RESOURCE_TYPE = "pods";
+
+/** Default tab: the Pods table. */
+export function mkPodsTab(): Tab {
+  return { id: DEFAULT_TAB_ID, type: "table", label: "Pods", resourceType: DEFAULT_RESOURCE_TYPE, closable: true };
 }
 
 export type DetailSubtab = "overview" | "logs" | "shell" | "yaml" | "events";
@@ -125,7 +130,7 @@ export type DetailSubtab = "overview" | "logs" | "shell" | "yaml" | "events";
 export class UiStoreLogic {
   sidebarCollapsed = false;
   commandPaletteOpen = false;
-  activeView: ActiveView = "overview";
+  activeView: ActiveView = "table";
   previousView: ActiveView | null = null;
 
   // Active sub-tab inside the resource DetailPanel (Overview/Logs/Shell/YAML/
@@ -134,8 +139,8 @@ export class UiStoreLogic {
   detailSubtab: DetailSubtab = "overview";
 
   // Tab system
-  tabs: Tab[] = [mkOverviewTab()];
-  activeTabId = "tab-overview";
+  tabs: Tab[] = [mkPodsTab()];
+  activeTabId = "tab-pods";
 
   // Debounce timer lives on the store (single shared handle), but each
   // setFilter call captures its target tab in the closure so a fast
@@ -207,7 +212,7 @@ export class UiStoreLogic {
     if (t) t.selectedRowIndex = v;
   }
 
-  openTab(type: ActiveView, opts?: { label?: string; resourceName?: string; resourceType?: string; namespace?: string }): void {
+  openTab(type: ActiveView, opts?: { label?: string; resourceName?: string; resourceType?: string; namespace?: string; resource?: Resource }): void {
     // Singleton views: focus existing tab if open
     if (SINGLETON_VIEWS.has(type)) {
       const existing = this.tabs.find((t) => t.type === type);
@@ -217,12 +222,16 @@ export class UiStoreLogic {
       }
     }
 
-    // Resource tabs: focus existing tab for same resource
+    // Resource tabs: focus existing tab for same resource. Namespace is part
+    // of the identity — same name+type in two namespaces are different
+    // resources and must not share a tab.
     if (opts?.resourceName && opts?.resourceType) {
       const existing = this.tabs.find(
-        (t) => t.type === type && t.resourceName === opts.resourceName && t.resourceType === opts.resourceType
+        (t) => t.type === type && t.resourceName === opts.resourceName &&
+          t.resourceType === opts.resourceType && t.namespace === opts.namespace
       );
       if (existing) {
+        if (opts.resource) existing.cachedResource = opts.resource;
         this.activateTab(existing.id);
         return;
       }
@@ -237,6 +246,10 @@ export class UiStoreLogic {
       resourceName: opts?.resourceName,
       resourceType: opts?.resourceType,
       namespace: opts?.namespace,
+      // Seeded before activateTab so the tab-switch hook restores it into the
+      // global selection instead of overwriting the OUTGOING tab's cache —
+      // setting the selection before the switch poisoned the previous tab.
+      cachedResource: opts?.resource,
     };
     this.tabs = [...this.tabs, tab];
     this.activateTab(tab.id);
@@ -266,10 +279,10 @@ export class UiStoreLogic {
     if (!tab || !tab.closable) return;
     const idx = this.tabs.indexOf(tab);
     this.tabs = this.tabs.filter((t) => t.id !== tabId);
-    // If no tabs left, reopen overview
+    // If no tabs left, reopen the default Pods table
     if (this.tabs.length === 0) {
-      this.tabs = [mkOverviewTab()];
-      this.activateTab("tab-overview");
+      this.tabs = [mkPodsTab()];
+      this.activateTab(DEFAULT_TAB_ID);
       return;
     }
     // If closing the active tab, activate the nearest one
@@ -303,8 +316,8 @@ export class UiStoreLogic {
   }
 
   closeAllTabs(): void {
-    this.tabs = [mkOverviewTab()];
-    this.activateTab("tab-overview");
+    this.tabs = [mkPodsTab()];
+    this.activateTab(DEFAULT_TAB_ID);
   }
 
   moveTab(tabId: string, direction: "left" | "right"): void {
@@ -363,20 +376,16 @@ export class UiStoreLogic {
     }
   }
 
-  protected _switchView(view: ActiveView, opts?: { label?: string; resourceName?: string; resourceType?: string; namespace?: string }): void {
+  protected _switchView(view: ActiveView, opts?: { label?: string; resourceName?: string; resourceType?: string; namespace?: string; resource?: Resource }): void {
     this.previousView = this.activeView;
     this.openTab(view, opts);
-  }
-
-  showOverview(): void {
-    this._switchView("overview");
   }
 
   showSettings(): void {
     this._switchView("settings");
   }
 
-  showDetails(resourceName?: string, resourceType?: string, namespace?: string): void {
+  showDetails(resourceName?: string, resourceType?: string, namespace?: string, resource?: Resource): void {
     this._switchView("details", {
       label: resourceName ?? "Detail",
       resourceName,
@@ -385,6 +394,7 @@ export class UiStoreLogic {
       // namespace) — without the namespace a targeted get degrades to a
       // cluster-scope get (RBAC-fragile) or a wrong-namespace list.
       namespace,
+      resource,
     });
   }
 
@@ -534,9 +544,9 @@ export class UiStoreLogic {
     this._flushDebounce();
     // Per-tab state is implicitly cleared by recreating the tabs array —
     // no need to touch filter/sort/statFilter/selectedRows individually.
-    this.tabs = [mkOverviewTab()];
-    this.activeTabId = "tab-overview";
-    this.activeView = "overview";
+    this.tabs = [mkPodsTab()];
+    this.activeTabId = DEFAULT_TAB_ID;
+    this.activeView = "table";
     this.previousView = null;
     this._onResetContextChange();
   }
@@ -556,7 +566,7 @@ export const TABS_STORAGE_KEY = "kdashboard-tabs-v1";
 export const TABS_STORAGE_VERSION = 1;
 
 const VALID_VIEW_TYPES = new Set<ActiveView>([
-  "overview", "table", "details", "logs", "terminal", "portforwards",
+  "table", "details", "logs", "terminal", "portforwards",
   "yaml", "settings", "topology", "cost", "security", "crd-table",
 ]);
 
@@ -625,7 +635,9 @@ export function deserializeTabs(raw: string | null): SerializedTabsState | null 
     const r = item as Record<string, unknown>;
     if (typeof r.id !== "string" || typeof r.type !== "string" ||
         typeof r.label !== "string" || typeof r.closable !== "boolean") return null;
-    if (!VALID_VIEW_TYPES.has(r.type as ActiveView)) return null;
+    // Unknown view types (e.g. the removed "overview") are dropped, not fatal —
+    // sessions saved by older versions keep their remaining tabs.
+    if (!VALID_VIEW_TYPES.has(r.type as ActiveView)) continue;
     const st: SerializableTab = {
       id: r.id, type: r.type as ActiveView, label: r.label, closable: r.closable,
     };
@@ -639,10 +651,16 @@ export function deserializeTabs(raw: string | null): SerializedTabsState | null 
     tabs.push(st);
   }
 
-  // activeTabId must reference an existing tab
-  if (!tabs.some((t) => t.id === obj.activeTabId)) return null;
+  // Dropping unknown-type tabs may leave nothing to restore.
+  if (tabs.length === 0) return null;
 
-  return { version: TABS_STORAGE_VERSION, tabs, activeTabId: obj.activeTabId };
+  // activeTabId must reference a surviving tab; if it pointed at a dropped
+  // one, fall back to the first tab rather than discarding the session.
+  const activeTabId = tabs.some((t) => t.id === obj.activeTabId)
+    ? (obj.activeTabId as string)
+    : tabs[0].id;
+
+  return { version: TABS_STORAGE_VERSION, tabs, activeTabId };
 }
 
 /**
@@ -672,7 +690,7 @@ export function restoreTab(st: SerializableTab): Tab {
 
 /**
  * Highest numeric suffix in a set of tab ids like "tab-7". Ignores the
- * fixed "tab-overview" id. Used to bump the module-level counter so newly
+ * fixed "tab-pods" id. Used to bump the module-level counter so newly
  * opened tabs never collide with restored ones.
  */
 export function maxTabIdSuffix(tabs: { id: string }[]): number {

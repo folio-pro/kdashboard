@@ -2,7 +2,7 @@
   import { cn } from "$lib/utils";
   import {
     Box, Layers, GitBranch, Database, Copy, Play, Clock,
-    Globe, Network, FileText, Lock, TrendingUp, Server, FolderOpen, Unplug, Activity,
+    Globe, Network, FileText, Lock, TrendingUp, Server, FolderOpen, Unplug,
     HardDrive, HardDriveDownload, Archive, Key, Link, KeyRound, Users,
     Shield, ShieldCheck, ShieldAlert, PieChart, SlidersHorizontal, Share2
   } from "lucide-svelte";
@@ -11,17 +11,15 @@
     name: string;
     resourceType: string;
     short?: string;
-    count?: number;
     active: boolean;
     collapsed: boolean;
     onclick: () => void;
   }
 
-  let { name, resourceType, short, count, active, collapsed, onclick }: Props = $props();
+  let { name, resourceType, short, active, collapsed, onclick }: Props = $props();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const iconMap: Record<string, any> = {
-    overview: Activity,
     pods: Box,
     deployments: Layers,
     replicasets: GitBranch,
@@ -73,7 +71,7 @@
 {:else}
   <button
     class={cn(
-      "flex w-full min-w-0 items-center gap-2.5 border-l-2 px-[13px] py-2 text-[13.5px] transition-colors",
+      "flex w-full min-w-0 items-center gap-2.5 border-l-2 px-[13px] py-[6px] text-[12.5px] transition-colors",
       active
         ? "border-[var(--accent)] bg-[var(--sidebar-hover)] text-[var(--text-primary)]"
         : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--text-primary)]"
@@ -89,13 +87,7 @@
     />
     <span class="flex-1 truncate text-left">{name}</span>
     {#if short}
-      <span class="shrink-0 font-mono text-[10px] text-[var(--text-dimmed)]">{short}</span>
-    {/if}
-    {#if count !== undefined && count > 0}
-      <span class={cn(
-        "min-w-[26px] shrink-0 text-right font-mono tabular-nums text-[11px]",
-        active ? "text-[var(--text-secondary)]" : "text-[var(--text-dimmed)]"
-      )}>{count}</span>
+      <span class="shrink-0 font-mono text-[9.5px] text-[var(--text-dimmed)]">{short}</span>
     {/if}
   </button>
 {/if}

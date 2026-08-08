@@ -8,6 +8,9 @@ import {
   RESOURCE_TAB_TYPES,
   VIEW_LABELS,
   viewShowsTitleBar,
+  mkPodsTab,
+  DEFAULT_TAB_ID,
+  DEFAULT_RESOURCE_TYPE,
   serializeTabs,
   deserializeTabs,
   restoreTab,
@@ -17,7 +20,7 @@ import {
 } from "./ui.logic.js";
 
 export type { ActiveView, Tab };
-export { RESOURCE_TAB_TYPES, VIEW_LABELS, viewShowsTitleBar };
+export { RESOURCE_TAB_TYPES, VIEW_LABELS, viewShowsTitleBar, DEFAULT_TAB_ID, DEFAULT_RESOURCE_TYPE };
 
 const SAVE_DEBOUNCE_MS = 250;
 
@@ -28,13 +31,13 @@ class UiStore extends UiStoreLogic {
   // on `tabs` makes nested tab fields reactive automatically.
   override sidebarCollapsed = $state<boolean>(false);
   override commandPaletteOpen = $state<boolean>(false);
-  override activeView = $state<ActiveView>("overview");
+  override activeView = $state<ActiveView>("table");
   override previousView = $state<ActiveView | null>(null);
   override detailSubtab = $state<DetailSubtab>("overview");
 
   // Tab system
-  override tabs = $state<Tab[]>([{ id: "tab-overview", type: "overview", label: "Overview", closable: true }]);
-  override activeTabId = $state<string>("tab-overview");
+  override tabs = $state<Tab[]>([mkPodsTab()]);
+  override activeTabId = $state<string>(DEFAULT_TAB_ID);
 
   private _saveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -48,7 +51,7 @@ class UiStore extends UiStoreLogic {
 
   /**
    * Restore tabs and active-tab selection from localStorage. Silent on any
-   * failure — corrupt/missing data falls back to the default overview tab
+   * failure — corrupt/missing data falls back to the default Pods tab
    * already seeded by the $state declaration.
    */
   private _hydrateFromStorage(): void {

@@ -16,12 +16,14 @@
   class={cn("relative overflow-hidden", className)}
   {...restProps}
 >
+  <!-- No scrollbar hiding here: the overflow-* classes pick up the global
+       thin show-on-hover scrollbar styling, same as every plain scroll
+       container (e.g. the sidebar). -->
   <div
     class={cn(
       "h-full w-full",
       orientation === "horizontal" ? "overflow-x-auto overflow-y-hidden" : "overflow-y-auto overflow-x-hidden"
     )}
-    style="scrollbar-width: none; -ms-overflow-style: none;"
   >
     {#if children}{@render children()}{/if}
   </div>

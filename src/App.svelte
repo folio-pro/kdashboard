@@ -203,12 +203,7 @@
 
       <!-- Content Area: one view at a time -->
       <div class="min-h-0 flex-1">
-        {#if uiStore.activeView === "overview"}
-          <LazyView
-            loader={() => import("$lib/components/overview/OverviewDashboard.svelte")}
-            name="overview"
-          />
-        {:else if uiStore.activeView === "table"}
+        {#if uiStore.activeView === "table"}
           <ResourceTable />
         {:else if uiStore.activeView === "details"}
           <LazyView

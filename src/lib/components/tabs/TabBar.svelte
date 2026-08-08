@@ -1,15 +1,14 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
-  import { uiStore, RESOURCE_TAB_TYPES, VIEW_LABELS, type Tab } from "$lib/stores/ui.svelte";
+  import { uiStore, RESOURCE_TAB_TYPES, VIEW_LABELS, DEFAULT_TAB_ID, type Tab } from "$lib/stores/ui.svelte";
   import {
-    Activity, Box, Layers, FileText, Terminal, Unplug, Settings,
+    Box, Layers, FileText, Terminal, Unplug, Settings,
     ScrollText, Network as TopologyIcon, DollarSign, Shield, Globe, X,
     Pencil, Database,
   } from "lucide-svelte";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const iconMap: Record<string, any> = {
-    overview: Activity,
     table: Box,
     details: FileText,
     logs: ScrollText,
@@ -67,7 +66,9 @@
   let ctxTabObj = $derived(ctxIdx >= 0 ? uiStore.tabs[ctxIdx] : undefined);
 </script>
 
-{#if uiStore.tabs.length > 1 || (uiStore.tabs.length === 1 && uiStore.tabs[0].type !== "overview")}
+<!-- Hidden while only the default Pods tab is open — same clean-start rule the
+     old default Overview tab had. -->
+{#if uiStore.tabs.length > 1 || (uiStore.tabs.length === 1 && uiStore.tabs[0].id !== DEFAULT_TAB_ID)}
   <div
     class="flex h-[34px] shrink-0 items-stretch gap-0 overflow-x-auto bg-[var(--bg-primary)] px-2 pt-1"
     role="tablist"

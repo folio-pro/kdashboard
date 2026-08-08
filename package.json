@@ -69,7 +69,7 @@
   },
   "build": {
     "appId": "com.kdashboard.app",
-    "productName": "kdashboard",
+    "productName": "Kdashboard",
     "files": [
       "out/**/*",
       "package.json"

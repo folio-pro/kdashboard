@@ -351,17 +351,21 @@ function bootstrap(): void {
 // App name drives the macOS menu-bar title + about panel. Must be set before
 // the default application menu is built. (Packaged builds also get this from
 // electron-builder productName -> CFBundleName.)
-app.setName('kdashboard');
+app.setName('Kdashboard');
+// setName also moves the default userData dir ("Kdashboard"); keep the
+// historical lowercase path so existing installs (case-sensitive Linux)
+// don't lose their state.
+app.setPath('userData', path.join(app.getPath('appData'), 'kdashboard'));
 
 // Explicitly name the macOS About panel — otherwise it falls back to the
 // running bundle (which is "Electron" in dev).
 app.setAboutPanelOptions({
-  applicationName: 'kdashboard',
+  applicationName: 'Kdashboard',
   applicationVersion: app.getVersion(),
 });
 
 /**
- * Build the macOS application menu so the app submenu reads "kdashboard" (not
+ * Build the macOS application menu so the app submenu reads "Kdashboard" (not
  * "Electron") and the standard shortcuts (Cmd+Q/C/V/W, fullscreen, devtools)
  * work in a frameless window. No-op on Windows/Linux (the default menu is fine
  * and there is no global app-name menu item there).
@@ -370,7 +374,7 @@ function buildApplicationMenu(): void {
   if (process.platform !== 'darwin') return;
   const template: MenuItemConstructorOptions[] = [
     {
-      label: 'kdashboard',
+      label: 'Kdashboard',
       submenu: [
         { role: 'about' },
         { type: 'separator' },

@@ -20,6 +20,7 @@ import {
   AppsV1Api,
   CustomObjectsApi,
   ApiextensionsV1Api,
+  AuthorizationV1Api,
   BatchV1Api,
   NetworkingV1Api,
   RbacAuthorizationV1Api,
@@ -265,6 +266,10 @@ export function getNetworkingV1Api(): NetworkingV1Api {
 
 export function getRbacAuthorizationV1Api(): RbacAuthorizationV1Api {
   return kc().makeApiClient(RbacAuthorizationV1Api);
+}
+
+export function getAuthorizationV1Api(): AuthorizationV1Api {
+  return kc().makeApiClient(AuthorizationV1Api);
 }
 
 export function getVersionApi(): VersionApi {

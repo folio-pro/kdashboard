@@ -19,7 +19,7 @@
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { extensions } from "$lib/extensions";
   import { restartWorkload, rollbackDeployment, SCALABLE_TYPES, RESTARTABLE_TYPES } from "$lib/actions/registry";
-  import { navigateToResourceTable, navigateToCrdTable } from "$lib/actions/navigation";
+  import { navigateToResourceTable, navigateToCrdTable, switchContext } from "$lib/actions/navigation";
   import { toastStore } from "$lib/stores/toast.svelte";
   import type { CommandPaletteItem } from "$lib/types";
   import {
@@ -259,11 +259,7 @@
         description: "Switch context",
         category: "Contexts",
         action: () => {
-          void (async () => {
-            uiStore.resetForContextChange();
-            await extensions.emit({ type: "context-changed", contextName: ctx });
-            await k8sStore.switchContext(ctx);
-          })();
+          void switchContext(ctx);
           close();
         },
       });
