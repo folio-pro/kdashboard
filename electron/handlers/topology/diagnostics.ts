@@ -6,6 +6,7 @@
 // src/lib/types/cluster.ts depend on exactly these names.
 
 import { getCoreV1Api, getAppsV1Api, getBatchV1Api } from '../../k8s/client';
+import { RESOURCE_TYPES } from '../../k8s/kinds';
 
 import {
   asObject,
@@ -298,33 +299,10 @@ interface MinimalEvent {
   count?: number;
 }
 
-const RESOURCE_TYPE_TO_KIND: Record<string, string> = {
-  pods: 'Pod',
-  deployments: 'Deployment',
-  services: 'Service',
-  statefulsets: 'StatefulSet',
-  daemonsets: 'DaemonSet',
-  jobs: 'Job',
-  cronjobs: 'CronJob',
-  replicasets: 'ReplicaSet',
-  configmaps: 'ConfigMap',
-  secrets: 'Secret',
-  ingresses: 'Ingress',
-  nodes: 'Node',
-  namespaces: 'Namespace',
-  hpa: 'HorizontalPodAutoscaler',
-  networkpolicies: 'NetworkPolicy',
-  persistentvolumes: 'PersistentVolume',
-  persistentvolumeclaims: 'PersistentVolumeClaim',
-  storageclasses: 'StorageClass',
-  roles: 'Role',
-  rolebindings: 'RoleBinding',
-  clusterroles: 'ClusterRole',
-  clusterrolebindings: 'ClusterRoleBinding',
-  resourcequotas: 'ResourceQuota',
-  limitranges: 'LimitRange',
-  poddisruptionbudgets: 'PodDisruptionBudget',
-};
+/** resource_type -> involvedObject.kind, straight off the shared registry. */
+const RESOURCE_TYPE_TO_KIND: Record<string, string> = Object.fromEntries(
+  Object.values(RESOURCE_TYPES).map((e) => [e.type, e.kind]),
+);
 
 async function getResourceEvents(
   resourceType: string,

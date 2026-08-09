@@ -12,6 +12,7 @@
   import KvField from "./KvField.svelte";
   import RelCard from "./RelCard.svelte";
   import PodContainerCards from "./PodContainerCards.svelte";
+  import PodUsageCard from "./PodUsageCard.svelte";
   import SmartAnnotationsCard from "./SmartAnnotationsCard.svelte";
   import ProbesCard from "./ProbesCard.svelte";
   import InitContainersCard from "./InitContainersCard.svelte";
@@ -143,6 +144,8 @@
       <KvField label="DNS Policy" value={(spec.dnsPolicy as string) ?? "—"} mono={false} />
     </KvGrid>
   </DetailSection>
+
+  <PodUsageCard {resource} />
 
   <PodContainerCards {containerStatuses} {specContainerMap} />
 

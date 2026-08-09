@@ -16,6 +16,7 @@
   import { Checkbox } from "$lib/components/ui/checkbox";
   import { isInputElement } from "$lib/utils/keyboard";
   import { costStore } from "$lib/stores/cost.svelte";
+  import { metricsStore, POD_METRICS_TTL_MS } from "$lib/stores/metrics.svelte";
   import { contextMenuStore } from "$lib/stores/context-menu.svelte";
   import WorkloadStats from "$lib/components/common/WorkloadStats.svelte";
   import { computeWorkloadStats, matchesStatFilter, isPodNeedingAttention } from "$lib/utils/workload-stats";
@@ -37,6 +38,7 @@
     const ns = k8sStore.currentNamespace;
     if (prevCtx && (ctx !== prevCtx || ns !== prevNs)) {
       costStore.reset();
+      metricsStore.reset();
       uiStore.clearStatFilter();
     }
     prevCtx = ctx;
@@ -49,6 +51,19 @@
       costStore.loadNodeCosts();
       costStore.loadNodeMetrics();
     }
+  });
+
+  // Pod usage: fetch on entry to the pods table, then keep it fresh while the
+  // view stays open. metrics-server only rescrapes every ~60s, so a poll at the
+  // store's TTL is enough — the store itself throttles redundant calls.
+  $effect(() => {
+    if (k8sStore.selectedResourceType !== "pods") return;
+    const ns = k8sStore.currentNamespace;
+    void metricsStore.loadPodMetrics(ns);
+    const timer = setInterval(() => {
+      void metricsStore.loadPodMetrics(ns);
+    }, POD_METRICS_TTL_MS);
+    return () => clearInterval(timer);
   });
 
   // Track resized column widths per resource type: { [resourceType]: { [colKey]: widthPx } }

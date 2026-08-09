@@ -55,16 +55,50 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
+      # Two nodes: the drain tests need a worker they can empty without taking
+      # the control plane's own workloads down with it.
+      - name: Write Kind config
+        run: |
+          cat > /tmp/kind-config.yaml <<'EOF'
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+            - role: control-plane
+            - role: worker
+          EOF
+
       - name: Create Kind cluster
         uses: helm/kind-action@v1
         with:
           cluster_name: kdash-integration
+          config: /tmp/kind-config.yaml
           wait: 60s
 
       - name: Seed test resources
         run: |
           kubectl apply -f electron/integration/fixtures/seed.yaml
           kubectl rollout status deployment/test-nginx -n kdash-test --timeout=120s
+          kubectl rollout status deployment/guarded -n kdash-test --timeout=120s
+
+      # metrics-server backs get_pod_metrics; kubelet certs are self-signed in
+      # Kind, hence --kubelet-insecure-tls. Without it the metrics suite skips.
+      - name: Install metrics-server
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+          kubectl -n kube-system patch deployment metrics-server --type=json \
+            -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+          kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s
+
+      # A real release, so the Helm suite reads Secrets helm itself wrote
+      # (two revisions, to cover history and per-revision fetches).
+      - name: Install a Helm release
+        run: |
+          helm repo add podinfo https://stefanprodan.github.io/podinfo
+          helm repo update
+          helm install podinfo podinfo/podinfo -n kdash-test \
+            --set replicaCount=2 --wait --timeout 5m
+          helm upgrade podinfo podinfo/podinfo -n kdash-test \
+            --set replicaCount=3 --wait --timeout 5m
 
       - name: Run integration tests
         env:

@@ -29,6 +29,7 @@ import {
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
 import { getCoreV1Api, kc, onConfigChange } from '../k8s/client';
+import { parseCpu, parseMemory } from '../k8s/quantity';
 
 // ---------------------------------------------------------------------------
 // Public wire types (match src/lib/types/cost.ts + the Rust serde structs).
@@ -115,45 +116,6 @@ const HOURS_PER_MONTH = 730.0;
 const FALLBACK_CPU_RATE = 0.0325; // $/core/hr
 const FALLBACK_MEM_RATE = 0.0044; // $/GB/hr
 const COST_CACHE_TTL_MS = 300_000; // 5 minutes
-
-// ---------------------------------------------------------------------------
-// Quantity parsing (port of metrics.rs parse_cpu / parse_memory)
-// ---------------------------------------------------------------------------
-
-function parseCpu(cpuStr: string): number {
-  if (cpuStr.endsWith('n')) {
-    return (Number.parseFloat(cpuStr.slice(0, -1)) || 0) / 1_000_000_000.0;
-  }
-  if (cpuStr.endsWith('u')) {
-    return (Number.parseFloat(cpuStr.slice(0, -1)) || 0) / 1_000_000.0;
-  }
-  if (cpuStr.endsWith('m')) {
-    return (Number.parseFloat(cpuStr.slice(0, -1)) || 0) / 1000.0;
-  }
-  return Number.parseFloat(cpuStr) || 0;
-}
-
-function parseMemory(memStr: string): number {
-  if (memStr.endsWith('Ki')) {
-    return (Number.parseFloat(memStr.slice(0, -2)) || 0) * 1024.0;
-  }
-  if (memStr.endsWith('Mi')) {
-    return (Number.parseFloat(memStr.slice(0, -2)) || 0) * 1024.0 * 1024.0;
-  }
-  if (memStr.endsWith('Gi')) {
-    return (Number.parseFloat(memStr.slice(0, -2)) || 0) * 1024.0 * 1024.0 * 1024.0;
-  }
-  if (memStr.endsWith('k')) {
-    return (Number.parseFloat(memStr.slice(0, -1)) || 0) * 1000.0;
-  }
-  if (memStr.endsWith('M')) {
-    return (Number.parseFloat(memStr.slice(0, -1)) || 0) * 1_000_000.0;
-  }
-  if (memStr.endsWith('G')) {
-    return (Number.parseFloat(memStr.slice(0, -1)) || 0) * 1_000_000_000.0;
-  }
-  return Number.parseFloat(memStr) || 0;
-}
 
 // ---------------------------------------------------------------------------
 // metrics-availability backoff (port of metrics_availability.rs)

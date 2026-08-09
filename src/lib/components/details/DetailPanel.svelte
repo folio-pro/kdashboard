@@ -3,12 +3,13 @@
   import type { Resource } from "$lib/types";
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Pencil, Terminal, Trash2, Scale, RotateCcw, History, ChevronRight, Info, ScrollText, FileCode, Bell } from "lucide-svelte";
+  import { Pencil, Terminal, Trash2, Scale, RotateCcw, History, ChevronRight, Info, ScrollText, FileCode, Bell, Ban, CircleCheck, Droplets } from "lucide-svelte";
   import type { IconComponent } from "$lib/actions/types";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
   import { restartWorkload, rollbackDeployment } from "$lib/actions/registry";
+  import { isCordoned, setNodeSchedulable } from "$lib/actions/node-ops";
   import { extensions } from "$lib/extensions";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { cn } from "$lib/utils";
@@ -115,6 +116,7 @@
 
   let restartLoading = $state(false);
   let rollbackLoading = $state(false);
+  let cordonLoading = $state(false);
 
   let resourceType = $derived(deriveResourceType(kind));
   let isScalable = $derived(deriveIsScalable(resourceType));
@@ -131,6 +133,18 @@
       toastStore.error("Restart failed", String(err));
     } finally {
       restartLoading = false;
+    }
+  }
+
+  async function doToggleCordon() {
+    if (!resource) return;
+    cordonLoading = true;
+    try {
+      await setNodeSchedulable(resource.metadata.name, isCordoned(resource));
+    } catch (err) {
+      toastStore.error("Cordon failed", String(err));
+    } finally {
+      cordonLoading = false;
     }
   }
 
@@ -227,6 +241,34 @@
           <Button variant="outline" size="sm" class="gap-2" onclick={doRollback} disabled={rollbackLoading} title="Rollback">
             <History class="h-3.5 w-3.5" />
             {rollbackLoading ? "Rolling back..." : "Rollback"}
+          </Button>
+        {/if}
+        {#if kind === "node" && resource}
+          {@const cordoned = isCordoned(resource)}
+          <Button
+            variant="outline"
+            size="sm"
+            class="gap-2"
+            onclick={doToggleCordon}
+            disabled={cordonLoading}
+            title={cordoned ? "Allow scheduling on this node" : "Stop scheduling new pods on this node"}
+          >
+            {#if cordoned}
+              <CircleCheck class="h-3.5 w-3.5" />
+            {:else}
+              <Ban class="h-3.5 w-3.5" />
+            {/if}
+            {cordonLoading ? "Working..." : cordoned ? "Uncordon" : "Cordon"}
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            class="gap-2"
+            onclick={() => resource && dialogStore.openDrain(resource.metadata.name)}
+            title="Evict every pod off this node"
+          >
+            <Droplets class="h-3.5 w-3.5" />
+            Drain
           </Button>
         {/if}
         {#each extensions.mountsFor("detail-panel-actions") as mount (mount.id)}

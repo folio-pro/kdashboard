@@ -40,6 +40,7 @@ import { Watch } from '@kubernetes/client-node';
 import { kc } from '../k8s/client';
 import type { RawObject, Resource } from '../k8s/resource-types';
 import { dynamicToResource, listProjectionFor } from '../k8s/resource-mapping';
+import { apiVersionOf, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerCtx, HandlerMap } from '../dispatch';
 
 const WATCH_CHANNEL = 'resource-watch-event';
@@ -66,8 +67,8 @@ interface WatchEvent {
 }
 
 // ---------------------------------------------------------------------------
-// ApiResource resolution — port of watch.rs api_resource_for_type. Note this is
-// the watch-specific table (it lacks `vpa`, matching watch.rs exactly).
+// ApiResource resolution — reads the shared registry in k8s/kinds.ts, so a
+// watchable resource_type is exactly a listable one.
 // ---------------------------------------------------------------------------
 
 interface ApiResource {
@@ -79,51 +80,11 @@ interface ApiResource {
   clusterScoped: boolean;
 }
 
-function apiVersionOf(group: string, version: string): string {
-  return group === '' ? version : `${group}/${version}`;
-}
-
 /** Resolve (group, version, kind, plural, scope) for a watch resource_type. */
 function apiResourceForType(resourceType: string): ApiResource | undefined {
-  // [group, version, kind, plural, clusterScoped]
-  const table: Record<string, [string, string, string, string, boolean]> = {
-    pods: ['', 'v1', 'Pod', 'pods', false],
-    deployments: ['apps', 'v1', 'Deployment', 'deployments', false],
-    services: ['', 'v1', 'Service', 'services', false],
-    configmaps: ['', 'v1', 'ConfigMap', 'configmaps', false],
-    secrets: ['', 'v1', 'Secret', 'secrets', false],
-    ingresses: ['networking.k8s.io', 'v1', 'Ingress', 'ingresses', false],
-    statefulsets: ['apps', 'v1', 'StatefulSet', 'statefulsets', false],
-    daemonsets: ['apps', 'v1', 'DaemonSet', 'daemonsets', false],
-    jobs: ['batch', 'v1', 'Job', 'jobs', false],
-    cronjobs: ['batch', 'v1', 'CronJob', 'cronjobs', false],
-    replicasets: ['apps', 'v1', 'ReplicaSet', 'replicasets', false],
-    nodes: ['', 'v1', 'Node', 'nodes', true],
-    namespaces: ['', 'v1', 'Namespace', 'namespaces', true],
-    hpa: ['autoscaling', 'v2', 'HorizontalPodAutoscaler', 'horizontalpodautoscalers', false],
-    networkpolicies: ['networking.k8s.io', 'v1', 'NetworkPolicy', 'networkpolicies', false],
-    persistentvolumes: ['', 'v1', 'PersistentVolume', 'persistentvolumes', true],
-    persistentvolumeclaims: ['', 'v1', 'PersistentVolumeClaim', 'persistentvolumeclaims', false],
-    storageclasses: ['storage.k8s.io', 'v1', 'StorageClass', 'storageclasses', true],
-    roles: ['rbac.authorization.k8s.io', 'v1', 'Role', 'roles', false],
-    rolebindings: ['rbac.authorization.k8s.io', 'v1', 'RoleBinding', 'rolebindings', false],
-    clusterroles: ['rbac.authorization.k8s.io', 'v1', 'ClusterRole', 'clusterroles', true],
-    clusterrolebindings: [
-      'rbac.authorization.k8s.io',
-      'v1',
-      'ClusterRoleBinding',
-      'clusterrolebindings',
-      true,
-    ],
-    resourcequotas: ['', 'v1', 'ResourceQuota', 'resourcequotas', false],
-    limitranges: ['', 'v1', 'LimitRange', 'limitranges', false],
-    poddisruptionbudgets: ['policy', 'v1', 'PodDisruptionBudget', 'poddisruptionbudgets', false],
-    vpa: ['autoscaling.k8s.io', 'v1', 'VerticalPodAutoscaler', 'verticalpodautoscalers', false],
-    wpa: ['datadoghq.com', 'v1alpha1', 'WatermarkPodAutoscaler', 'watermarkpodautoscalers', false],
-  };
-  const row = table[resourceType];
-  if (!row) return undefined;
-  const [group, version, kind, plural, clusterScoped] = row;
+  const entry = resolveResourceType(resourceType);
+  if (!entry) return undefined;
+  const { group, version, kind, plural, clusterScoped } = entry;
   return { group, version, apiVersion: apiVersionOf(group, version), kind, plural, clusterScoped };
 }
 

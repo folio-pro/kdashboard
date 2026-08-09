@@ -38,11 +38,24 @@ inspect, debug, and act on workloads.
   cannot read.
 - **Flat sidebar** — the whole resource tree in one scroll with sticky
   section headers, `kubectl` short names (`po`, `deploy`, `svc`, …), live
-  counts, and a 44px collapsed rail.
+  counts, and a 44px collapsed rail. Beyond the usual workloads: ServiceAccounts,
+  Endpoints/EndpointSlices, IngressClasses, CSIDrivers, VolumeAttachments,
+  PriorityClasses, RuntimeClasses, Leases, and admission webhook configurations.
 - **Resource topology** — interactive graph of Deployments, Services,
   Ingresses, Pods, and their relationships.
 - **Pod lifecycle tools** — streaming logs with regex filtering, exec via
   embedded xterm.js, and port-forwarding with one click.
+- **Node lifecycle tools** — cordon, uncordon, and drain. The drain evicts
+  through the `policy/v1` Eviction API, so PodDisruptionBudgets are honoured;
+  static and DaemonSet pods are skipped, and unmanaged or `emptyDir` pods only
+  go if you explicitly opt in.
+- **Live usage** — CPU and memory per pod from `metrics.k8s.io`, shown against
+  each pod's request, plus an hour of history in the detail panel when you
+  point Settings → Kubernetes at a Prometheus.
+- **Helm releases** — every release read straight from its `sh.helm.release.v1`
+  Secret: values, rendered manifest, `NOTES.txt`, and full revision history.
+  No `helm` binary and no extra RBAC. Read-only — installs and rollbacks stay
+  in your pipeline.
 - **Cost visibility** — per-namespace and per-workload cost estimates, with
   cloud pricing data refreshed by a scheduled job.
 - **Security overview** — RBAC, NetworkPolicy, PodSecurity, and image

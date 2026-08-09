@@ -35,7 +35,7 @@ import type {
   ResourceMetadata,
 } from '../k8s/resource-types';
 import { metaFrom, listMetaFrom, listProjectionFor } from '../k8s/resource-mapping';
-import { apiVersionOf, resolveKindOrThrow } from '../k8s/kinds';
+import { apiVersionOf, resolveKindOrThrow, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerMap } from '../dispatch';
 
 // ---------------------------------------------------------------------------
@@ -94,45 +94,13 @@ const LIST_PAGE_SIZE = 500;
 
 /**
  * Resolve the (group, version, plural, scope) for a PLURAL resource_type as used
- * by list_resources / get_resource_counts. Mirrors the listing.rs match. This is
- * keyed by the frontend's plural resourceType (pods, deployments, hpa, vpa, …) —
- * a distinct key space from the singular kind registry, so it stays local.
- * `undefined` for unknown types (the caller decides how to error).
+ * by list_resources / get_resource_counts, from the shared registry in
+ * k8s/kinds.ts. `undefined` for unknown types (the caller decides how to error).
  */
 function apiResourceForType(resourceType: string): ApiResource | undefined {
-  // [group, version, plural, clusterScoped]
-  const table: Record<string, [string, string, string, boolean]> = {
-    pods: ['', 'v1', 'pods', false],
-    deployments: ['apps', 'v1', 'deployments', false],
-    services: ['', 'v1', 'services', false],
-    configmaps: ['', 'v1', 'configmaps', false],
-    secrets: ['', 'v1', 'secrets', false],
-    ingresses: ['networking.k8s.io', 'v1', 'ingresses', false],
-    statefulsets: ['apps', 'v1', 'statefulsets', false],
-    daemonsets: ['apps', 'v1', 'daemonsets', false],
-    jobs: ['batch', 'v1', 'jobs', false],
-    cronjobs: ['batch', 'v1', 'cronjobs', false],
-    replicasets: ['apps', 'v1', 'replicasets', false],
-    nodes: ['', 'v1', 'nodes', true],
-    namespaces: ['', 'v1', 'namespaces', true],
-    hpa: ['autoscaling', 'v2', 'horizontalpodautoscalers', false],
-    vpa: ['autoscaling.k8s.io', 'v1', 'verticalpodautoscalers', false],
-    wpa: ['datadoghq.com', 'v1alpha1', 'watermarkpodautoscalers', false],
-    networkpolicies: ['networking.k8s.io', 'v1', 'networkpolicies', false],
-    persistentvolumes: ['', 'v1', 'persistentvolumes', true],
-    persistentvolumeclaims: ['', 'v1', 'persistentvolumeclaims', false],
-    storageclasses: ['storage.k8s.io', 'v1', 'storageclasses', true],
-    roles: ['rbac.authorization.k8s.io', 'v1', 'roles', false],
-    rolebindings: ['rbac.authorization.k8s.io', 'v1', 'rolebindings', false],
-    clusterroles: ['rbac.authorization.k8s.io', 'v1', 'clusterroles', true],
-    clusterrolebindings: ['rbac.authorization.k8s.io', 'v1', 'clusterrolebindings', true],
-    resourcequotas: ['', 'v1', 'resourcequotas', false],
-    limitranges: ['', 'v1', 'limitranges', false],
-    poddisruptionbudgets: ['policy', 'v1', 'poddisruptionbudgets', false],
-  };
-  const row = table[resourceType];
-  if (!row) return undefined;
-  const [group, version, plural, clusterScoped] = row;
+  const entry = resolveResourceType(resourceType);
+  if (!entry) return undefined;
+  const { group, version, plural, clusterScoped } = entry;
   return { group, version, apiVersion: apiVersionOf(group, version), plural, clusterScoped };
 }
 
@@ -226,7 +194,25 @@ export async function apiGet<T>(
   if (accept) {
     // Content negotiation (e.g. PartialObjectMetadataList for counts) — far
     // smaller payloads, much faster to transfer + JSON.parse.
-    opts.headers = { ...(opts.headers as Record<string, string> | undefined), Accept: accept };
+    //
+    // applyToFetchOptions hands back a Headers INSTANCE, whose entries live
+    // behind a symbol key: spreading it produced `{[Symbol(map)]: …}`, which
+    // fetch rejects ("Key Symbol(map) … cannot be converted to a ByteString").
+    // Every counted request threw and get_resource_counts swallowed it as 0,
+    // so the sidebar counts were silently always zero. Go through Headers.
+    const merged: Record<string, string> = {};
+    const existing: unknown = opts.headers;
+    if (existing instanceof Headers) {
+      existing.forEach((value, key) => {
+        merged[key] = value;
+      });
+    } else if (existing && typeof existing === 'object') {
+      for (const [key, value] of Object.entries(existing as Record<string, string>)) {
+        merged[key] = String(value);
+      }
+    }
+    merged.Accept = accept;
+    opts.headers = merged;
   }
 
   const resp = await fetch(url.toString(), opts as RequestInit);

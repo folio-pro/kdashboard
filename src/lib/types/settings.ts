@@ -29,4 +29,6 @@ export interface AppSettings {
   table_density: "comfortable" | "compact";
   context_customizations: Record<string, ContextCustomization>;
   pinned_resources?: PinnedResource[];
+  /** Base URL of a Prometheus reachable from this machine. Empty = disabled. */
+  prometheus_url?: string;
 }
