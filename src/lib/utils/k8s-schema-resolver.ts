@@ -5,21 +5,25 @@
 
 import type { SchemaField } from "./k8s-schema-fields.js";
 import { K8S_SCHEMAS } from "./k8s-schema-resources.js";
+import type { PathSegment } from "./yaml-ast.js";
 
 /**
  * Resolve the schema fields at a given YAML path for a resource kind.
- * Path is an array of keys like ["spec", "containers", "0", "ports"].
+ * Path is an array of keys and array indices like ["spec", "containers", 0, "ports"].
  */
-export function resolveSchemaAtPath(kind: string, path: string[]): Record<string, SchemaField> | null {
+export function resolveSchemaAtPath(
+  kind: string,
+  path: PathSegment[],
+): Record<string, SchemaField> | null {
   const schema = K8S_SCHEMAS[kind];
   if (!schema) return null;
 
   let current: Record<string, SchemaField> = schema;
 
   for (const segment of path) {
-    // Skip numeric indices (array items)
-    if (/^\d+$/.test(segment)) {
-      // Find parent array field and resolve its items
+    // Array indices carry no schema of their own: descending into the array
+    // field already moved `current` to its item shape, so the index is a no-op.
+    if (typeof segment === "number" || /^\d+$/.test(segment)) {
       continue;
     }
 
@@ -41,7 +45,7 @@ export function resolveSchemaAtPath(kind: string, path: string[]): Record<string
 /**
  * Get the schema field info for a specific key at a path.
  */
-export function getFieldInfo(kind: string, path: string[], key: string): SchemaField | null {
+export function getFieldInfo(kind: string, path: PathSegment[], key: string): SchemaField | null {
   const fields = resolveSchemaAtPath(kind, path);
   if (!fields) return null;
   return fields[key] ?? null;

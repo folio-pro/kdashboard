@@ -38,12 +38,20 @@ const MOCK = clusterBootMock(`(cmd, args) => {
   if (cmd === "get_events" || cmd === "get_resource_events") return [];
   if (cmd === "list_resources") return { resource_type: args.resourceType, items: [${POD}] };
   if (cmd === "get_resource") return ${POD};
+  // No cluster schema here, so the editor exercises its static-schema fallback.
+  if (cmd === "get_openapi_schema") {
+    return { available: false, root: null, schemas: {}, reason: "mocked" };
+  }
   if (cmd === "get_resource_yaml") {
     return "apiVersion: v1\\nkind: " + args.kind + "\\nmetadata:\\n  name: " + args.name + "\\n";
   }
 }`);
 
-test("YAML sub-tab mounts the CodeMirror editor with the fetched YAML", async ({ page, mockInvoke }) => {
+/** Open the Pod's YAML sub-tab and wait for CodeMirror to mount. */
+async function openYamlTab(
+  page: import("@playwright/test").Page,
+  mockInvoke: (mock: string) => Promise<void>,
+) {
   await mockInvoke(MOCK);
   await page.addInitScript(
     `window.localStorage.setItem("kdashboard-tabs-v1", '${JSON.stringify(SEED_TABS)}');`,
@@ -58,5 +66,68 @@ test("YAML sub-tab mounts the CodeMirror editor with the fetched YAML", async ({
   await expect(yamlTab).toBeVisible({ timeout: 5_000 });
   await yamlTab.click();
 
-  await expect(page.locator(".cm-content").first()).toContainText("kind: Pod", { timeout: 10_000 });
+  const content = page.locator(".cm-content").first();
+  await expect(content).toContainText("kind: Pod", { timeout: 10_000 });
+  return content;
+}
+
+test("YAML sub-tab mounts the CodeMirror editor with the fetched YAML", async ({ page, mockInvoke }) => {
+  await openYamlTab(page, mockInvoke);
+});
+
+/**
+ * The mocked Pod has no `spec`, which the schema marks required. Seeing the
+ * warning proves the whole diagnostic path is wired: parse -> schema lookup ->
+ * CodeMirror lint state -> gutter and header.
+ */
+test("schema diagnostics surface in the gutter and the header", async ({ page, mockInvoke }) => {
+  await openYamlTab(page, mockInvoke);
+
+  await expect(page.locator(".cm-gutter-lint .cm-lint-marker").first()).toBeVisible({
+    timeout: 10_000,
+  });
+
+  const chip = page.getByRole("button", { name: /Show problems/ }).first();
+  await expect(chip).toBeVisible({ timeout: 10_000 });
+});
+
+test("the problem chip opens the lint panel", async ({ page, mockInvoke }) => {
+  await openYamlTab(page, mockInvoke);
+
+  const chip = page.getByRole("button", { name: /Show problems/ }).first();
+  await expect(chip).toBeVisible({ timeout: 10_000 });
+  await chip.click();
+
+  const panel = page.locator(".cm-panel-lint");
+  await expect(panel).toBeVisible({ timeout: 5_000 });
+  await expect(panel).toContainText(/spec/i);
+});
+
+/**
+ * An invalid enum must be underlined on the value the user wrote. This is the
+ * end-to-end form of the anchoring regression covered in yaml-lint.test.ts.
+ */
+test("an invalid enum value is underlined inline", async ({ page, mockInvoke }) => {
+  const content = await openYamlTab(page, mockInvoke);
+
+  await content.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("spec:\n");
+  // The editor auto-indents after a mapping key, so the container list lines up.
+  await page.keyboard.type("restartPolicy: Sometimes\n");
+
+  await expect(page.locator(".cm-lintRange-warning").first()).toBeVisible({ timeout: 10_000 });
+});
+
+test("Ctrl+Space offers schema-driven completions", async ({ page, mockInvoke }) => {
+  const content = await openYamlTab(page, mockInvoke);
+
+  await content.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("spe");
+  await page.keyboard.press("Control+Space");
+
+  const popup = page.locator(".cm-tooltip-autocomplete");
+  await expect(popup).toBeVisible({ timeout: 10_000 });
+  await expect(popup).toContainText("spec");
 });

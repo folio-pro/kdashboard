@@ -3,6 +3,7 @@ import type { Extension } from "@codemirror/state";
 import type { EditorView as EditorViewType } from "@codemirror/view";
 import { buildEditorTheme } from "./codemirror-theme";
 import { dirtyDiff, dirtyDiffCompartment } from "./diff-tracking";
+import { k8sIndentGuides, k8sSemanticHighlight } from "./yaml-decorations";
 
 /** Build the syntax highlight style list using CSS variable colors. */
 export function buildHighlightStyles(modules: CodeMirrorModules) {
@@ -48,12 +49,18 @@ export function yamlNewline(view: EditorViewType): boolean {
 /**
  * Compose all CodeMirror extensions for the YAML editor.
  * When `readOnly` is true the dirty-diff gutter, autocompletion, and linting are omitted.
+ *
+ * `namespace` scopes the cluster-backed value suggestions (which ConfigMaps and
+ * Secrets exist); it is fixed per editor because YamlEditor destroys and
+ * recreates the view whenever the selected resource changes.
  */
 export function getExtensions(
   modules: CodeMirrorModules,
   originalYaml: string,
   onDocChange: (content: string) => void,
   readOnly = false,
+  namespace = "",
+  onDiagnostics?: (errors: number, warnings: number) => void,
 ): Extension[] {
   const editorTheme = buildEditorTheme(modules);
   const highlightStyles = buildHighlightStyles(modules);
@@ -87,17 +94,40 @@ export function getExtensions(
       if (update.docChanged) {
         onDocChange(update.state.doc.toString());
       }
+      if (onDiagnostics) {
+        // Linting is debounced, so diagnostics arrive in a later transaction
+        // than the edit that produced them — recount on every update, not only
+        // on docChanged. There are only ever a handful, so this is cheap.
+        let errors = 0;
+        let warnings = 0;
+        modules.forEachDiagnostic(update.state, (d) => {
+          if (d.severity === "error") errors++;
+          else if (d.severity === "warning") warnings++;
+        });
+        onDiagnostics(errors, warnings);
+      }
     }),
   ];
   if (!readOnly) {
     exts.push(
       dirtyDiffCompartment!.of(dirtyDiff(modules, originalYaml)),
-      modules.k8sAutocompletion(),
+      modules.k8sAutocompletion(namespace),
       modules.k8sLinter(),
       modules.lintGutter(),
+      modules.k8sHoverDocs(),
       modules.closeBrackets(),
+      // F8 walks the problem list, matching the convention in most editors.
+      modules.keymap.of([{ key: "F8", run: modules.openLintPanel }]),
     );
   }
+
+  // Read-only views get the semantic layer too: a history diff is easier to read
+  // with the same structure cues as the editor.
+  exts.push(
+    k8sSemanticHighlight(modules),
+    k8sIndentGuides(modules),
+    modules.highlightSelectionMatches(),
+  );
   if (readOnly) {
     exts.push(modules.EditorState.readOnly.of(true));
   }

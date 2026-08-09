@@ -10,6 +10,7 @@ export interface CodeMirrorModules {
   Compartment: typeof import("@codemirror/state").Compartment;
   StateField: typeof import("@codemirror/state").StateField;
   Text: typeof import("@codemirror/state").Text;
+  RangeSetBuilder: typeof import("@codemirror/state").RangeSetBuilder;
 
   // @codemirror/view
   EditorView: typeof import("@codemirror/view").EditorView;
@@ -19,6 +20,8 @@ export interface CodeMirrorModules {
   highlightActiveLineGutter: typeof import("@codemirror/view").highlightActiveLineGutter;
   gutter: typeof import("@codemirror/view").gutter;
   GutterMarker: typeof import("@codemirror/view").GutterMarker;
+  Decoration: typeof import("@codemirror/view").Decoration;
+  ViewPlugin: typeof import("@codemirror/view").ViewPlugin;
 
   // @codemirror/lang-yaml
   yaml: typeof import("@codemirror/lang-yaml").yaml;
@@ -46,6 +49,7 @@ export interface CodeMirrorModules {
   search: typeof import("@codemirror/search").search;
   searchKeymap: typeof import("@codemirror/search").searchKeymap;
   openSearchPanel: typeof import("@codemirror/search").openSearchPanel;
+  highlightSelectionMatches: typeof import("@codemirror/search").highlightSelectionMatches;
 
   // @codemirror/merge
   MergeView: typeof import("@codemirror/merge").MergeView;
@@ -58,10 +62,13 @@ export interface CodeMirrorModules {
 
   // @codemirror/lint
   lintGutter: typeof import("@codemirror/lint").lintGutter;
+  openLintPanel: typeof import("@codemirror/lint").openLintPanel;
+  forEachDiagnostic: typeof import("@codemirror/lint").forEachDiagnostic;
 
   // yaml-intellisense (also pulls in CodeMirror types)
   k8sAutocompletion: typeof import("$lib/utils/yaml-intellisense").k8sAutocompletion;
   k8sLinter: typeof import("$lib/utils/yaml-intellisense").k8sLinter;
+  k8sHoverDocs: typeof import("$lib/utils/yaml-intellisense").k8sHoverDocs;
 }
 
 let cached: CodeMirrorModules | null = null;
@@ -89,6 +96,7 @@ export async function loadCodeMirror(): Promise<CodeMirrorModules> {
     Compartment: state.Compartment,
     StateField: state.StateField,
     Text: state.Text,
+    RangeSetBuilder: state.RangeSetBuilder,
 
     EditorView: view.EditorView,
     keymap: view.keymap,
@@ -97,6 +105,8 @@ export async function loadCodeMirror(): Promise<CodeMirrorModules> {
     highlightActiveLineGutter: view.highlightActiveLineGutter,
     gutter: view.gutter,
     GutterMarker: view.GutterMarker,
+    Decoration: view.Decoration,
+    ViewPlugin: view.ViewPlugin,
 
     yaml: langYaml.yaml,
 
@@ -119,6 +129,7 @@ export async function loadCodeMirror(): Promise<CodeMirrorModules> {
     search: searchMod.search,
     searchKeymap: searchMod.searchKeymap,
     openSearchPanel: searchMod.openSearchPanel,
+    highlightSelectionMatches: searchMod.highlightSelectionMatches,
 
     MergeView: merge.MergeView,
     computeCharDiff: merge.diff,
@@ -128,9 +139,12 @@ export async function loadCodeMirror(): Promise<CodeMirrorModules> {
     startCompletion: autocomplete.startCompletion,
 
     lintGutter: lint.lintGutter,
+    openLintPanel: lint.openLintPanel,
+    forEachDiagnostic: lint.forEachDiagnostic,
 
     k8sAutocompletion: intellisense.k8sAutocompletion,
     k8sLinter: intellisense.k8sLinter,
+    k8sHoverDocs: intellisense.k8sHoverDocs,
   };
 
   return cached;

@@ -12,6 +12,8 @@
     History,
     Code,
     Search,
+    CircleAlert,
+    TriangleAlert,
   } from "lucide-svelte";
   import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -66,13 +68,24 @@
   let currentContent = $state<string>("");
   let isModified = $derived(currentContent !== originalYaml);
 
+  // Live diagnostic counts, fed by the editor's update listener.
+  let errorCount = $state<number>(0);
+  let warningCount = $state<number>(0);
+
   function initEditor(modules: CodeMirrorModules) {
     if (!editorContainer || editorView) return;
 
     editorView = new modules.EditorView({
       state: modules.EditorState.create({
         doc: originalYaml,
-        extensions: getExtensions(modules, originalYaml, (c) => { currentContent = c; }, false),
+        extensions: getExtensions(
+          modules,
+          originalYaml,
+          (c) => { currentContent = c; },
+          false,
+          resource?.metadata.namespace ?? "",
+          (errors, warnings) => { errorCount = errors; warningCount = warnings; },
+        ),
       }),
       parent: editorContainer,
     });
@@ -177,6 +190,10 @@
     activeTab = "editor";
     yamlHistory = [];
     selectedHistoryIndex = null;
+    // Counts belong to the destroyed view; leaving them set would keep Apply
+    // disabled for the next resource until its first lint pass lands.
+    errorCount = 0;
+    warningCount = 0;
 
     try {
       const result = await invoke<string>("get_resource_yaml", {
@@ -265,6 +282,10 @@
     if (editorView && cm) cm.openSearchPanel(editorView);
   }
 
+  function handleShowProblems() {
+    if (editorView && cm) cm.openLintPanel(editorView);
+  }
+
   async function copyToClipboard() {
     try {
       await navigator.clipboard.writeText(currentContent);
@@ -313,6 +334,28 @@
           {/if}
           {#if saveSuccess}
             <span class="rounded bg-[var(--status-running)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-running)]">SAVED</span>
+          {/if}
+          {#if activeTab === "editor" && errorCount > 0}
+            <button
+              class="flex items-center gap-1 rounded bg-[var(--status-failed)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-failed)] transition-opacity hover:opacity-80"
+              onclick={handleShowProblems}
+              title="Show problems (F8)"
+              aria-label="Show problems: {errorCount} error{errorCount === 1 ? '' : 's'}"
+            >
+              <CircleAlert class="h-2.5 w-2.5" />
+              {errorCount}
+            </button>
+          {/if}
+          {#if activeTab === "editor" && warningCount > 0}
+            <button
+              class="flex items-center gap-1 rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-warning)] transition-opacity hover:opacity-80"
+              onclick={handleShowProblems}
+              title="Show problems (F8)"
+              aria-label="Show problems: {warningCount} warning{warningCount === 1 ? '' : 's'}"
+            >
+              <TriangleAlert class="h-2.5 w-2.5" />
+              {warningCount}
+            </button>
           {/if}
         </div>
         <span class="font-mono text-[11px] text-[var(--text-muted)]">{resource.kind}/{resource.metadata.name}{resource.metadata.namespace ? ` (${resource.metadata.namespace})` : ""}</span>
@@ -373,7 +416,10 @@
               : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-muted)]"
           )}
           onclick={saveYaml}
-          disabled={isSaving || !isModified}
+          disabled={isSaving || !isModified || errorCount > 0}
+          title={errorCount > 0
+            ? "Fix the YAML errors before applying"
+            : "Apply to cluster"}
         >
           {#if isSaving}
             <Loader2 class="h-3.5 w-3.5 animate-spin" />
