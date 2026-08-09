@@ -19,7 +19,9 @@ function pod(name: string, extra: Partial<V1Pod> = {}): V1Pod {
 }
 
 const ownedBy = (kind: string) => ({
-  metadata: { ownerReferences: [{ kind, name: 'owner', apiVersion: 'apps/v1', uid: 'u' }] },
+  metadata: {
+    ownerReferences: [{ kind, name: 'owner', apiVersion: 'apps/v1', uid: 'u', controller: true }],
+  },
 });
 
 describe('classifyPods', () => {
@@ -56,6 +58,32 @@ describe('classifyPods', () => {
     const strict = classifyPods([ds], { ...DEFAULTS, ignoreDaemonSets: false });
     expect(strict.evictable).toEqual([]);
     expect(strict.blockers[0]).toContain('DaemonSet-managed');
+  });
+
+  test('only the controlling owner reference counts', () => {
+    // A pod can carry references that do not control it. Reading the first one
+    // blindly would have let this DaemonSet pod through as "unmanaged".
+    const ds = pod('node-exporter', {
+      metadata: {
+        ownerReferences: [
+          { kind: 'ReplicaSet', name: 'decoy', apiVersion: 'apps/v1', uid: 'u1', controller: false },
+          { kind: 'DaemonSet', name: 'owner', apiVersion: 'apps/v1', uid: 'u2', controller: true },
+        ],
+      },
+    } as Partial<V1Pod>);
+    expect(classifyPods([ds], DEFAULTS).skipped[0]!.reason).toBe('DaemonSet-managed');
+    expect(classifyPods([ds], DEFAULTS).evictable).toEqual([]);
+  });
+
+  test('a pod owned only by non-controlling references counts as unmanaged', () => {
+    const orphan = pod('adopted', {
+      metadata: {
+        ownerReferences: [
+          { kind: 'ReplicaSet', name: 'decoy', apiVersion: 'apps/v1', uid: 'u1', controller: false },
+        ],
+      },
+    } as Partial<V1Pod>);
+    expect(classifyPods([orphan], DEFAULTS).blockers[0]).toContain('no controller');
   });
 
   test('an unmanaged pod blocks the drain unless force is set', () => {

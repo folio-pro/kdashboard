@@ -65,8 +65,19 @@ describe("quantity parsing", () => {
   test("memory suffixes resolve to bytes, binary and decimal", () => {
     expect(parseMemoryQuantity("128Mi")).toBe(128 * 1024 * 1024);
     expect(parseMemoryQuantity("1Gi")).toBe(1024 ** 3);
+    expect(parseMemoryQuantity("1Pi")).toBe(1024 ** 5);
     expect(parseMemoryQuantity("512M")).toBe(512e6);
+    expect(parseMemoryQuantity("1T")).toBe(1e12);
     expect(parseMemoryQuantity("2048")).toBe(2048);
+  });
+
+  test("a binary suffix is not mistaken for its decimal prefix", () => {
+    expect(parseMemoryQuantity("1Mi")).toBe(1024 ** 2);
+    expect(parseMemoryQuantity("1M")).toBe(1e6);
+  });
+
+  test("milli is legal on memory quantities", () => {
+    expect(parseMemoryQuantity("400m")).toBeCloseTo(0.4);
   });
 });
 

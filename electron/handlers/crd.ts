@@ -35,7 +35,7 @@ import type { HandlerCtx, HandlerMap } from '../dispatch';
 import { getActiveContextName, makeApiClient } from '../k8s/client';
 import type { RawObject, Resource } from '../k8s/resource-types';
 import { dynamicToResource } from '../k8s/resource-mapping';
-import { apiGet } from './resources';
+import { apiGet } from '../k8s/api';
 
 // ===========================================================================
 // Result types — mirror the serde wire-casing of the Rust crd/types.rs structs.

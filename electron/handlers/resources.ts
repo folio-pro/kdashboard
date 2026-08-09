@@ -25,7 +25,8 @@
 
 import * as YAML from 'yaml';
 
-import { getCoreV1Api, kc } from '../k8s/client';
+import { getCoreV1Api } from '../k8s/client';
+import { apiGet, META_ACCEPT } from '../k8s/api';
 import type {
   RawList,
   RawObject,
@@ -148,12 +149,6 @@ interface ListOpts {
   accept?: string; // optional content negotiation (e.g. metadata-only for counts)
 }
 
-// Metadata-only content negotiation: the apiserver returns a
-// PartialObjectMetadataList (just metadata, no spec/status/managedFields) for
-// any resource that supports it — a fraction of the full-body payload, which is
-// all counting needs. Falls back to a normal list for the rare kind that 406s.
-const META_ACCEPT = 'application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1,application/json';
-
 /**
  * Build the REST base path for a resource. Core-group resources (group="")
  * live under /api/v1/...; grouped resources under /apis/{group}/{version}/...
@@ -170,57 +165,6 @@ function resourcePath(ar: ApiResource, namespace?: string): string {
       ? `${base}/namespaces/${encodeURIComponent(namespace)}/${ar.plural}`
       : `${base}/${ar.plural}`;
   return scoped;
-}
-
-/** Issue an authenticated GET against the active cluster, returning parsed JSON. */
-export async function apiGet<T>(
-  path: string,
-  query?: Record<string, string>,
-  accept?: string,
-): Promise<T> {
-  const cfg = kc();
-  const cluster = cfg.getCurrentCluster();
-  if (!cluster) {
-    throw new Error('No active cluster in kubeconfig');
-  }
-  const url = new URL(cluster.server.replace(/\/$/, '') + path);
-  if (query) {
-    for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
-  }
-
-  // applyToFetchOptions injects auth headers + the TLS agent (client certs/CA).
-  const opts = await cfg.applyToFetchOptions({});
-  opts.method = 'GET';
-  if (accept) {
-    // Content negotiation (e.g. PartialObjectMetadataList for counts) — far
-    // smaller payloads, much faster to transfer + JSON.parse.
-    //
-    // applyToFetchOptions hands back a Headers INSTANCE, whose entries live
-    // behind a symbol key: spreading it produced `{[Symbol(map)]: …}`, which
-    // fetch rejects ("Key Symbol(map) … cannot be converted to a ByteString").
-    // Every counted request threw and get_resource_counts swallowed it as 0,
-    // so the sidebar counts were silently always zero. Go through Headers.
-    const merged: Record<string, string> = {};
-    const existing: unknown = opts.headers;
-    if (existing instanceof Headers) {
-      existing.forEach((value, key) => {
-        merged[key] = value;
-      });
-    } else if (existing && typeof existing === 'object') {
-      for (const [key, value] of Object.entries(existing as Record<string, string>)) {
-        merged[key] = String(value);
-      }
-    }
-    merged.Accept = accept;
-    opts.headers = merged;
-  }
-
-  const resp = await fetch(url.toString(), opts as RequestInit);
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`${resp.status} ${resp.statusText}${body ? `: ${body}` : ''}`);
-  }
-  return (await resp.json()) as T;
 }
 
 async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVersion?: string }> {

@@ -59,7 +59,9 @@
   $effect(() => {
     if (k8sStore.selectedResourceType !== "pods") return;
     const ns = k8sStore.currentNamespace;
-    void metricsStore.loadPodMetrics(ns);
+    // force: the namespace just changed, so whatever is cached describes the
+    // previous one and must not be treated as fresh.
+    void metricsStore.loadPodMetrics(ns, true);
     const timer = setInterval(() => {
       void metricsStore.loadPodMetrics(ns);
     }, POD_METRICS_TTL_MS);

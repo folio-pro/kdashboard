@@ -52,25 +52,41 @@ export function formatBytes(bytes: number): string {
   return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
 }
 
-/** CPU quantity string ("250m", "2") -> cores. Mirrors the backend parser. */
-export function parseCpuQuantity(q: string): number {
-  if (q.endsWith("n")) return (Number.parseFloat(q) || 0) / 1_000_000_000;
-  if (q.endsWith("u")) return (Number.parseFloat(q) || 0) / 1_000_000;
-  if (q.endsWith("m")) return (Number.parseFloat(q) || 0) / 1000;
+// resource.Quantity suffixes. Mirrors electron/k8s/quantity.ts — the renderer
+// and the main process cannot share a module, so the two tables must agree.
+const BINARY: Record<string, number> = {
+  Ki: KIBI,
+  Mi: KIBI ** 2,
+  Gi: KIBI ** 3,
+  Ti: KIBI ** 4,
+  Pi: KIBI ** 5,
+  Ei: KIBI ** 6,
+};
+
+/** `m` is milli — legal on memory quantities, and one thousandth of a byte. */
+const DECIMAL: Record<string, number> = { m: 1e-3, k: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15, E: 1e18 };
+
+function parseQuantity(q: string): number {
+  // Two-character binary suffixes first: "Mi" also ends with "M".
+  for (const [suffix, factor] of Object.entries(BINARY)) {
+    if (q.endsWith(suffix)) return (Number.parseFloat(q.slice(0, -suffix.length)) || 0) * factor;
+  }
+  for (const [suffix, factor] of Object.entries(DECIMAL)) {
+    if (q.endsWith(suffix)) return (Number.parseFloat(q.slice(0, -suffix.length)) || 0) * factor;
+  }
   return Number.parseFloat(q) || 0;
 }
 
-/** Memory quantity string ("128Mi", "1Gi", "512M") -> bytes. */
+/** CPU quantity string ("250m", "2", "1500u") -> cores. */
+export function parseCpuQuantity(q: string): number {
+  if (q.endsWith("n")) return (Number.parseFloat(q) || 0) / 1e9;
+  if (q.endsWith("u")) return (Number.parseFloat(q) || 0) / 1e6;
+  return parseQuantity(q);
+}
+
+/** Memory quantity string ("128Mi", "1Gi", "512M", "1Pi") -> bytes. */
 export function parseMemoryQuantity(q: string): number {
-  const binary: Record<string, number> = { Ki: KIBI, Mi: KIBI ** 2, Gi: KIBI ** 3, Ti: KIBI ** 4 };
-  for (const [suffix, factor] of Object.entries(binary)) {
-    if (q.endsWith(suffix)) return (Number.parseFloat(q) || 0) * factor;
-  }
-  const decimal: Record<string, number> = { k: 1e3, M: 1e6, G: 1e9, T: 1e12 };
-  for (const [suffix, factor] of Object.entries(decimal)) {
-    if (q.endsWith(suffix)) return (Number.parseFloat(q) || 0) * factor;
-  }
-  return Number.parseFloat(q) || 0;
+  return parseQuantity(q);
 }
 
 interface ContainerSpec {
@@ -157,6 +173,8 @@ export class MetricsStoreLogic {
   unavailableReason = "";
   _loading = false;
   _fetchedAt = 0;
+  /** Monotonic id of the newest in-flight fetch; older responses are dropped. */
+  _requestId = 0;
 
   getPodUsage(namespace: string | undefined | null, name: string): PodUsageInfo | undefined {
     return this.podUsage[podKey(namespace, name)];
@@ -180,5 +198,8 @@ export class MetricsStoreLogic {
     this.unavailableReason = "";
     this._loading = false;
     this._fetchedAt = 0;
+    // Bumping the id invalidates any response still in flight for the cluster
+    // or namespace we just left.
+    this._requestId += 1;
   }
 }

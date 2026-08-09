@@ -156,12 +156,19 @@
               {#each helmStore.history as rev}
                 <tr
                   class={cn(
-                    "cursor-pointer border-b border-[var(--border-color)] hover:bg-[var(--table-row-hover)]",
+                    "border-b border-[var(--border-color)] hover:bg-[var(--table-row-hover)]",
                     rev.revision === release.revision && "bg-[var(--accent)]/10",
                   )}
-                  onclick={() => helmStore.selectRelease(rev.namespace, rev.name, rev.revision)}
                 >
-                  <td class="px-4 py-2 font-mono tabular-nums text-[var(--text-primary)]">{rev.revision}</td>
+                  <!-- The button, not the row, carries the interaction: a click
+                       handler on <tr> is unreachable by keyboard. -->
+                  <td class="px-4 py-2">
+                    <button
+                      class="w-full text-left font-mono tabular-nums text-[var(--text-primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
+                      onclick={() => helmStore.selectRelease(rev.namespace, rev.name, rev.revision)}
+                      aria-label={`Show revision ${rev.revision}`}
+                    >{rev.revision}</button>
+                  </td>
                   <td class="px-4 py-2 font-mono" style="color: {healthColor(rev.status)}">{rev.status}</td>
                   <td class="px-4 py-2 font-mono text-[var(--text-secondary)]">{rev.chart_version}</td>
                   <td class="px-4 py-2 font-mono text-[var(--text-secondary)]">{rev.app_version}</td>
@@ -190,11 +197,14 @@
         </thead>
         <tbody>
           {#each visible as release}
-            <tr
-              class="cursor-pointer border-b border-[var(--border-color)] hover:bg-[var(--table-row-hover)]"
-              onclick={() => helmStore.selectRelease(release.namespace, release.name)}
-            >
-              <td class="px-4 py-2 font-medium text-[var(--text-primary)]">{release.name}</td>
+            <tr class="border-b border-[var(--border-color)] hover:bg-[var(--table-row-hover)]">
+              <td class="px-4 py-2">
+                <button
+                  class="w-full text-left font-medium text-[var(--text-primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
+                  onclick={() => helmStore.selectRelease(release.namespace, release.name)}
+                  aria-label={`Open Helm release ${release.name}`}
+                >{release.name}</button>
+              </td>
               <td class="px-4 py-2 text-[var(--text-muted)]">{release.namespace}</td>
               <td class="px-4 py-2 font-mono text-[var(--text-secondary)]">{release.chart}-{release.chart_version}</td>
               <td class="px-4 py-2 font-mono text-[var(--text-secondary)]">{release.app_version || "—"}</td>

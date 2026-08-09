@@ -182,10 +182,19 @@ metadata:
   labels:
     app: kdash-integration
 webhooks:
+  # This fixture exists only to be LISTED, never called. It is cluster-scoped,
+  # so without a namespaceSelector it would sit in the admission path of every
+  # pod creation in the cluster — including kube-system and the pods the drain
+  # tests reschedule — and the apiserver would wait out the (10s default)
+  # timeout on each one before failurePolicy: Ignore let it through.
   - name: validate.kdash.example.com
     admissionReviewVersions: ["v1"]
     sideEffects: None
     failurePolicy: Ignore
+    timeoutSeconds: 1
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kdash-nonexistent
     clientConfig:
       url: "https://example.com/validate"
     rules:

@@ -25,6 +25,8 @@ const DRAIN_CHANNEL = 'node-drain-progress';
 
 /** Delay between eviction retries when a PDB blocks the eviction (429). */
 const EVICT_RETRY_MS = 2_000;
+/** Poll interval while waiting for an evicted pod to actually disappear. */
+const DELETION_POLL_MS = 1_000;
 /** How many pods to evict at once (kubectl uses an unbounded fan-out). */
 const EVICT_CONCURRENCY = 10;
 /** Default overall drain budget. */
@@ -140,9 +142,15 @@ interface DrainOptions {
   timeoutSeconds: number;
 }
 
-function ownerKind(pod: V1Pod): string | undefined {
+/**
+ * Kind of the pod's MANAGING owner. Kubernetes marks it with
+ * `controller: true`; a pod can carry other, non-controlling references, and
+ * taking the first one blindly would let a DaemonSet pod through the checks
+ * whenever another reference happens to be listed ahead of it.
+ */
+export function controllerKind(pod: V1Pod): string | undefined {
   const refs = pod.metadata?.ownerReferences ?? [];
-  return refs.length > 0 ? refs[0]!.kind : undefined;
+  return refs.find((ref) => ref.controller === true)?.kind;
 }
 
 function hasEmptyDir(pod: V1Pod): boolean {
@@ -190,7 +198,7 @@ export function classifyPods(pods: V1Pod[], opts: DrainOptions): Classified {
       continue;
     }
 
-    const kind = ownerKind(pod);
+    const kind = controllerKind(pod);
     if (kind === 'DaemonSet') {
       if (opts.ignoreDaemonSets) {
         skipped.push({ pod: name, namespace, reason: 'DaemonSet-managed' });
@@ -231,6 +239,41 @@ class DrainTimeout extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'DrainTimeout';
+  }
+}
+
+/** True once the pod object is gone from the apiserver. */
+async function isDeleted(namespace: string, name: string): Promise<boolean> {
+  try {
+    await core().readNamespacedPod({ name, namespace });
+    return false;
+  } catch (err) {
+    if (statusOf(err) === 404) return true;
+    throw new Error(k8sErrorMessage(err));
+  }
+}
+
+/**
+ * Wait for an accepted eviction to finish. The API only ACKNOWLEDGES the
+ * request: the pod keeps running through its termination grace period, so a
+ * drain that returned here would report a node as empty while workloads are
+ * still on it.
+ */
+async function waitForDeletion(
+  pod: V1Pod,
+  deadline: number,
+  onWait: () => void,
+): Promise<void> {
+  const name = pod.metadata?.name ?? '';
+  const namespace = pod.metadata?.namespace ?? '';
+
+  for (;;) {
+    if (await isDeleted(namespace, name)) return;
+    if (Date.now() >= deadline) {
+      throw new DrainTimeout('still terminating when the drain timed out');
+    }
+    onWait();
+    await sleep(DELETION_POLL_MS);
   }
 }
 
@@ -330,6 +373,9 @@ async function drainNode(args: Record<string, unknown>, ctx: HandlerCtx): Promis
 
       try {
         await evictPod(pod, opts, deadline);
+        await waitForDeletion(pod, deadline, () =>
+          progress({ phase: 'waiting', evicted: evicted.length, total: evictable.length, pod: podName }),
+        );
         evicted.push(podName);
       } catch (err) {
         if (err instanceof DrainTimeout) timedOut = true;

@@ -18,6 +18,7 @@
 import { gunzipSync } from 'node:zlib';
 
 import { getCoreV1Api } from '../k8s/client.js';
+import { apiGet, META_ACCEPT } from '../k8s/api.js';
 import { k8sErrorMessage } from '../k8s/errors.js';
 import type { HandlerMap } from '../dispatch.js';
 
@@ -151,44 +152,56 @@ function reqStr(args: Record<string, unknown>, key: string): string {
   return v;
 }
 
+interface SecretMetaList {
+  items?: Array<{ metadata?: { name?: string; namespace?: string; labels?: Record<string, string> } }>;
+}
+
 /**
- * List the release Secrets' METADATA only. Helm's labels carry the release name
- * and revision, so the whole index is built without pulling a single (large)
- * release payload over the wire.
+ * List the release Secrets' METADATA only — helm's own labels carry the release
+ * name and revision, so the index is built without pulling a single release
+ * payload. That matters: a cluster with a handful of charts still has dozens of
+ * revision Secrets, each holding a gzipped copy of the whole rendered release,
+ * and the caller only decodes the revisions it actually shows.
  */
 async function listReleaseSecrets(
   namespace: string | undefined,
   releaseName?: string,
 ): Promise<SecretMeta[]> {
-  const labelSelector = releaseName
-    ? `${HELM_OWNER_SELECTOR},name=${releaseName}`
-    : HELM_OWNER_SELECTOR;
-  const opts = { labelSelector, fieldSelector: `type=${HELM_SECRET_TYPE}` };
+  const path =
+    namespace !== undefined
+      ? `/api/v1/namespaces/${encodeURIComponent(namespace)}/secrets`
+      : '/api/v1/secrets';
+  const query = {
+    labelSelector: releaseName
+      ? `${HELM_OWNER_SELECTOR},name=${releaseName}`
+      : HELM_OWNER_SELECTOR,
+    fieldSelector: `type=${HELM_SECRET_TYPE}`,
+  };
 
-  const core = getCoreV1Api();
   try {
-    const list =
-      namespace !== undefined
-        ? await core.listNamespacedSecret({ namespace, ...opts })
-        : await core.listSecretForAllNamespaces(opts);
-
-    const out: SecretMeta[] = [];
-    for (const s of list.items ?? []) {
-      const labels = s.metadata?.labels ?? {};
-      const release = labels['name'];
-      const version = Number.parseInt(labels['version'] ?? '', 10);
-      if (!release || Number.isNaN(version)) continue;
-      out.push({
-        name: s.metadata?.name ?? '',
-        namespace: s.metadata?.namespace ?? '',
-        release,
-        revision: version,
-      });
-    }
-    return out;
+    const list = await apiGet<SecretMetaList>(path, query, META_ACCEPT);
+    return secretMetasFrom(list);
   } catch (err) {
     throw new Error(k8sErrorMessage(err));
   }
+}
+
+/** Keep only the Secrets whose helm labels name a release and a revision. */
+export function secretMetasFrom(list: SecretMetaList): SecretMeta[] {
+  const out: SecretMeta[] = [];
+  for (const secret of list.items ?? []) {
+    const labels = secret.metadata?.labels ?? {};
+    const release = labels['name'];
+    const revision = Number.parseInt(labels['version'] ?? '', 10);
+    if (!release || Number.isNaN(revision)) continue;
+    out.push({
+      name: secret.metadata?.name ?? '',
+      namespace: secret.metadata?.namespace ?? '',
+      release,
+      revision,
+    });
+  }
+  return out;
 }
 
 /** Fetch and decode one release Secret. */

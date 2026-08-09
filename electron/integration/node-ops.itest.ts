@@ -90,6 +90,17 @@ describe('integration: node ops', { skip: !enabled }, () => {
     return true;
   }
 
+  /**
+   * Register the uncordon for a node as test teardown. Doing it on the last
+   * line of each test only covers the pass path: one failed assertion would
+   * leave the node cordoned and every later test failing for that reason.
+   */
+  function uncordonAfter(t: { after: (fn: () => Promise<void>) => void }, node: string): void {
+    t.after(async () => {
+      await dispatch('cordon_node', { name: node, unschedulable: false });
+    });
+  }
+
   async function createProbe(): Promise<void> {
     await dispatch('apply_yaml', { yaml: probeManifest(target) });
     await waitFor(
@@ -128,6 +139,8 @@ describe('integration: node ops', { skip: !enabled }, () => {
 
   test('cordon marks the node unschedulable, uncordon clears it', async (t) => {
     if (skipWithoutWorker(t)) return;
+    uncordonAfter(t, target);
+
     await dispatch('cordon_node', { name: target, unschedulable: true });
     assert.equal(await isUnschedulable(target), true);
 
@@ -141,6 +154,7 @@ describe('integration: node ops', { skip: !enabled }, () => {
 
   test('a pod with no controller blocks the drain and names itself', async (t) => {
     if (skipWithoutWorker(t)) return;
+    uncordonAfter(t, target);
     await assert.rejects(
       () => dispatch('drain_node', { name: target }),
       (err: Error) => {
@@ -153,18 +167,19 @@ describe('integration: node ops', { skip: !enabled }, () => {
 
     // kubectl leaves the node cordoned after a blocked drain; so do we.
     assert.equal(await isUnschedulable(target), true);
-    await dispatch('cordon_node', { name: target, unschedulable: false });
   });
 
   test('an emptyDir pod blocks until the caller opts into losing the data', async (t) => {
     if (skipWithoutWorker(t)) return;
+    uncordonAfter(t, target);
+
     // force clears the no-controller blocker, leaving emptyDir as the reason.
     await assert.rejects(() => dispatch('drain_node', { name: target, force: true }), /emptyDir/);
-    await dispatch('cordon_node', { name: target, unschedulable: false });
   });
 
   test('drain evicts, skips DaemonSets, and reports progress', async (t) => {
     if (skipWithoutWorker(t)) return;
+    uncordonAfter(t, target);
     const node = target;
     const before = await podsOn(node);
     assert.ok(before.length > 0, 'the node should be running seed pods');
@@ -210,8 +225,6 @@ describe('integration: node ops', { skip: !enabled }, () => {
       },
       { timeoutMs: 60_000, label: 'the drained node to hold only DaemonSet pods' },
     );
-
-    await dispatch('cordon_node', { name: node, unschedulable: false });
   });
 
   test('a PodDisruptionBudget blocks eviction until the drain times out', async (t) => {
@@ -220,6 +233,14 @@ describe('integration: node ops', { skip: !enabled }, () => {
       timeoutMs: 90_000,
       label: 'the guarded pod to be scheduled',
     });
+    // The guarded pod is not pinned, so the scheduler decides where it runs.
+    // Draining the control plane would take the apiserver's own workloads with
+    // it, so only proceed when it landed on a worker.
+    if (!(await workerNames()).includes(node)) {
+      t.skip(`guarded pod runs on ${node}, which is not a worker`);
+      return;
+    }
+    uncordonAfter(t, node);
 
     // minAvailable == replicas, so every eviction gets a 429 and the drain can
     // only give up when its budget runs out.
@@ -233,7 +254,5 @@ describe('integration: node ops', { skip: !enabled }, () => {
     const guarded = result.failed.find((f) => f.pod.startsWith('guarded'));
     assert.ok(guarded, `expected the guarded pod to fail, got ${JSON.stringify(result)}`);
     assert.match(guarded.error, /PodDisruptionBudget|timed out/);
-
-    await dispatch('cordon_node', { name: node, unschedulable: false });
   });
 });
