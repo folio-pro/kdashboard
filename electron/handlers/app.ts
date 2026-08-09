@@ -24,6 +24,7 @@ import { app } from 'electron';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 import { getKubeconfigPath, setKubeconfigPath, getVersionApi } from '../k8s/client.js';
+import { setPrometheusUrl } from '../k8s/runtime-config.js';
 
 // ===========================================================================
 // Settings — shape mirrors src-tauri/src/settings.rs AppSettings (serde
@@ -97,6 +98,7 @@ function currentSettings(): AppSettings {
     if (typeof kp === 'string' && kp.trim().length > 0) {
       setKubeconfigPath(kp);
     }
+    setPrometheusUrl(settingsState.prometheus_url as string | undefined);
   }
   return settingsState;
 }
@@ -360,6 +362,8 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
       cachedK8sVersion = null;
       cachedK8sVersionResolved = false;
     }
+
+    setPrometheusUrl(next.prometheus_url as string | undefined);
 
     persistSettings(next);
     settingsState = next;

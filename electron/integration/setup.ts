@@ -12,6 +12,9 @@ import { buildDispatcher, type HandlerCtx } from '../dispatch';
 import * as connection from '../handlers/connection';
 import * as resources from '../handlers/resources';
 import * as workloadOps from '../handlers/workload-ops';
+import * as nodeOps from '../handlers/node-ops';
+import * as metrics from '../handlers/metrics';
+import * as helm from '../handlers/helm';
 import * as topology from '../handlers/topology';
 import * as security from '../handlers/security';
 import { setActiveContext } from '../k8s/client';
@@ -20,8 +23,13 @@ export const TEST_CONTEXT = process.env.KDASH_TEST_CONTEXT;
 export const TEST_NAMESPACE = process.env.KDASH_TEST_NAMESPACE ?? 'kdash-test';
 export const enabled = Boolean(TEST_CONTEXT);
 
+/** Events the handlers emitted during the run, for assertions on progress. */
+export const emitted: Array<{ channel: string; payload: unknown }> = [];
+
 const ctx: HandlerCtx = {
-  emit() {},
+  emit(channel, payload) {
+    emitted.push({ channel, payload });
+  },
   mainWindow: () => null,
 };
 
@@ -31,7 +39,10 @@ let dispatcher: ((cmd: string, args?: Record<string, unknown>) => Promise<unknow
 export function dispatch<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!dispatcher) {
     setActiveContext(TEST_CONTEXT as string);
-    const built = buildDispatcher([connection, resources, workloadOps, topology, security], ctx);
+    const built = buildDispatcher(
+      [connection, resources, workloadOps, nodeOps, metrics, helm, topology, security],
+      ctx,
+    );
     dispatcher = (c, a) => built.dispatch(c, a);
   }
   return dispatcher(cmd, args) as Promise<T>;

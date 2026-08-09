@@ -9,6 +9,7 @@
 // omitted when absent.
 
 import type { RawObject, RawObjectMeta, Resource, ResourceMetadata } from './resource-types';
+import { apiVersionOf, RESOURCE_TYPES, type ListFields } from './kinds';
 
 /** Map k8s ObjectMeta -> ResourceMetadata (snake_case, null for absent fields). */
 export function metaFrom(m: RawObjectMeta | undefined): ResourceMetadata {
@@ -83,42 +84,23 @@ export function dynamicToResource(obj: RawObject, apiVersion: string, kind: stri
 // keeping it resident in the renderer for the lifetime of the row.
 // ---------------------------------------------------------------------------
 
-interface FieldSel {
-  spec: boolean;
-  status: boolean;
-  data: boolean;
-}
+type FieldSel = ListFields;
 
-// Per resource_type: api_version + kind + which fields project. Mirrors the
-// listing.rs match arms (note kind is the SINGULAR Kind, e.g. "Pod").
-// Entries handled specially (pods, secrets, bindings, vpa) are omitted here.
+/**
+ * Per resource_type: api_version + kind + which fields project, derived from the
+ * shared registry (kind is the SINGULAR Kind, e.g. "Pod"). Types with a
+ * hand-written projection (pods, secrets) are resolved by SPECIAL_PROJECTIONS
+ * first and never reach this table.
+ */
 export const GENERIC_KIND_TABLE: Record<
   string,
   { apiVersion: string; kind: string; fields: FieldSel }
-> = {
-  deployments: { apiVersion: 'apps/v1', kind: 'Deployment', fields: { spec: true, status: true, data: false } },
-  services: { apiVersion: 'v1', kind: 'Service', fields: { spec: true, status: true, data: false } },
-  configmaps: { apiVersion: 'v1', kind: 'ConfigMap', fields: { spec: false, status: false, data: true } },
-  ingresses: { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', fields: { spec: true, status: true, data: false } },
-  statefulsets: { apiVersion: 'apps/v1', kind: 'StatefulSet', fields: { spec: true, status: true, data: false } },
-  daemonsets: { apiVersion: 'apps/v1', kind: 'DaemonSet', fields: { spec: true, status: true, data: false } },
-  jobs: { apiVersion: 'batch/v1', kind: 'Job', fields: { spec: true, status: true, data: false } },
-  cronjobs: { apiVersion: 'batch/v1', kind: 'CronJob', fields: { spec: true, status: true, data: false } },
-  replicasets: { apiVersion: 'apps/v1', kind: 'ReplicaSet', fields: { spec: true, status: true, data: false } },
-  nodes: { apiVersion: 'v1', kind: 'Node', fields: { spec: true, status: true, data: false } },
-  namespaces: { apiVersion: 'v1', kind: 'Namespace', fields: { spec: true, status: true, data: false } },
-  hpa: { apiVersion: 'autoscaling/v2', kind: 'HorizontalPodAutoscaler', fields: { spec: true, status: true, data: false } },
-  wpa: { apiVersion: 'datadoghq.com/v1alpha1', kind: 'WatermarkPodAutoscaler', fields: { spec: true, status: true, data: false } },
-  networkpolicies: { apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy', fields: { spec: true, status: false, data: false } },
-  persistentvolumes: { apiVersion: 'v1', kind: 'PersistentVolume', fields: { spec: true, status: true, data: false } },
-  persistentvolumeclaims: { apiVersion: 'v1', kind: 'PersistentVolumeClaim', fields: { spec: true, status: true, data: false } },
-  storageclasses: { apiVersion: 'storage.k8s.io/v1', kind: 'StorageClass', fields: { spec: false, status: false, data: false } },
-  roles: { apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role', fields: { spec: false, status: false, data: false } },
-  clusterroles: { apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'ClusterRole', fields: { spec: false, status: false, data: false } },
-  resourcequotas: { apiVersion: 'v1', kind: 'ResourceQuota', fields: { spec: true, status: true, data: false } },
-  limitranges: { apiVersion: 'v1', kind: 'LimitRange', fields: { spec: true, status: false, data: false } },
-  poddisruptionbudgets: { apiVersion: 'policy/v1', kind: 'PodDisruptionBudget', fields: { spec: true, status: true, data: false } },
-};
+> = Object.fromEntries(
+  Object.values(RESOURCE_TYPES).map((e) => [
+    e.type,
+    { apiVersion: apiVersionOf(e.group, e.version), kind: e.kind, fields: e.list },
+  ]),
+);
 
 export function projectGeneric(
   obj: RawObject,
@@ -143,6 +125,17 @@ export function projectGeneric(
     const v = presentOrUndefined(obj.data);
     if (v !== undefined) res.data = v;
   }
+  // Top-level fields that live outside spec/status (RoleBinding.roleRef,
+  // ServiceAccount.secrets, …) are lifted into a synthetic spec so the table
+  // and detail panel read them the same way as any other kind.
+  if (fields.synth && fields.synth.length > 0) {
+    const spec: Record<string, unknown> = { ...((res.spec as Record<string, unknown>) ?? {}) };
+    for (const field of fields.synth) {
+      const v = presentOrUndefined(obj[field]);
+      if (v !== undefined) spec[field] = v;
+    }
+    res.spec = spec;
+  }
   return res;
 }
 
@@ -162,6 +155,8 @@ export function projectGeneric(
 interface RawContainer {
   name?: string;
   image?: string;
+  /** requests/limits — kept so the table can show usage as a % of request. */
+  resources?: unknown;
 }
 interface RawCondition {
   type?: string;
@@ -200,7 +195,7 @@ function compact<T extends Record<string, unknown>>(o: T): Partial<T> {
 }
 
 function projectContainer(c: RawContainer): Partial<RawContainer> {
-  return compact({ name: c.name, image: c.image });
+  return compact({ name: c.name, image: c.image, resources: presentOrUndefined(c.resources) });
 }
 
 function projectContainerStatus(cs: RawContainerStatus): Partial<RawContainerStatus> {
@@ -273,40 +268,12 @@ export function projectSecret(obj: RawObject): Resource {
   return res;
 }
 
-/** RoleBinding / ClusterRoleBinding -> synthetic spec { roleRef, subjects }. */
-export function projectBinding(obj: RawObject, kind: string): Resource {
-  const spec: Record<string, unknown> = {};
-  if (obj.roleRef !== undefined) spec.roleRef = obj.roleRef;
-  if (obj.subjects !== undefined) spec.subjects = obj.subjects;
-  return {
-    api_version: 'rbac.authorization.k8s.io/v1',
-    kind,
-    metadata: listMetaFrom(obj.metadata),
-    spec,
-  };
-}
-
-/** VPA (CRD) -> spec/status pulled straight from the object body. */
-export function projectVpa(obj: RawObject): Resource {
-  const res: Resource = {
-    api_version: 'autoscaling.k8s.io/v1',
-    kind: 'VerticalPodAutoscaler',
-    metadata: listMetaFrom(obj.metadata),
-  };
-  const spec = presentOrUndefined(obj.spec);
-  const status = presentOrUndefined(obj.status);
-  if (spec !== undefined) res.spec = spec;
-  if (status !== undefined) res.status = status;
-  return res;
-}
-
-// Types whose list shape is not the generic FieldSel projection.
+// Types whose list shape is not the generic projection. RoleBinding /
+// ClusterRoleBinding (roleRef + subjects) and VPA used to live here; they are
+// now plain registry rows — the bindings via `synth`, VPA via spec+status.
 const SPECIAL_PROJECTIONS: Record<string, (obj: RawObject) => Resource> = {
   pods: projectPod,
   secrets: projectSecret,
-  rolebindings: (obj) => projectBinding(obj, 'RoleBinding'),
-  clusterrolebindings: (obj) => projectBinding(obj, 'ClusterRoleBinding'),
-  vpa: projectVpa,
 };
 
 /**

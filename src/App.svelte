@@ -17,6 +17,7 @@
   import UpdateBanner from "$lib/components/common/UpdateBanner.svelte";
   import ConnectionErrorOverlay from "$lib/components/common/ConnectionErrorOverlay.svelte";
   import ScaleDialog from "$lib/components/details/ScaleDialog.svelte";
+  import DrainDialog from "$lib/components/details/DrainDialog.svelte";
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -250,6 +251,11 @@
             loader={() => import("$lib/components/security/SecurityView.svelte")}
             name="security"
           />
+        {:else if uiStore.activeView === "helm"}
+          <LazyView
+            loader={() => import("$lib/components/helm/HelmView.svelte")}
+            name="Helm releases"
+          />
         {:else if uiStore.activeView === "crd-table"}
           <LazyView
             loader={() => import("$lib/components/crd/CrdTableView.svelte")}
@@ -279,6 +285,10 @@
 <!-- Global dialogs (triggered from context menu, command palette, or detail panel) -->
 {#if dialogStore.scaleOpen && dialogStore.scaleResource}
   <ScaleDialog bind:open={dialogStore.scaleOpen} resource={dialogStore.scaleResource} />
+{/if}
+
+{#if dialogStore.drainOpen && dialogStore.drainNodeName}
+  <DrainDialog bind:open={dialogStore.drainOpen} nodeName={dialogStore.drainNodeName} />
 {/if}
 
 {#if dialogStore.deleteOpen && dialogStore.deleteResource}

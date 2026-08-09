@@ -1,4 +1,5 @@
 import type { Resource } from "$lib/types";
+import { KIND_TO_RESOURCE_TYPE } from "$lib/resource-catalog";
 
 export interface RelatedResource {
   kind: string;
@@ -6,35 +7,8 @@ export interface RelatedResource {
   resourceType: string; // sidebar resource type for navigation
 }
 
-/** Map K8s Kind to sidebar resourceType */
-const KIND_TO_RESOURCE_TYPE: Record<string, string> = {
-  Pod: "pods",
-  Deployment: "deployments",
-  ReplicaSet: "replicasets",
-  StatefulSet: "statefulsets",
-  DaemonSet: "daemonsets",
-  Job: "jobs",
-  CronJob: "cronjobs",
-  Service: "services",
-  Ingress: "ingresses",
-  ConfigMap: "configmaps",
-  Secret: "secrets",
-  Node: "nodes",
-  Namespace: "namespaces",
-  PersistentVolume: "persistentvolumes",
-  PersistentVolumeClaim: "persistentvolumeclaims",
-  StorageClass: "storageclasses",
-  HorizontalPodAutoscaler: "hpa",
-  VerticalPodAutoscaler: "vpa",
-  Role: "roles",
-  RoleBinding: "rolebindings",
-  ClusterRole: "clusterroles",
-  ClusterRoleBinding: "clusterrolebindings",
-  NetworkPolicy: "networkpolicies",
-  ResourceQuota: "resourcequotas",
-  LimitRange: "limitranges",
-  PodDisruptionBudget: "poddisruptionbudgets",
-};
+// Kind -> sidebar resourceType comes from the catalog, so a kind added there is
+// navigable from owner references and related-resource links for free.
 
 /** Convert a K8s Kind to a sidebar resource type string */
 export function kindToResourceType(kind: string): string {

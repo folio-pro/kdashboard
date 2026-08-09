@@ -1,11 +1,6 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
-  import {
-    Box, Layers, GitBranch, Database, Copy, Play, Clock,
-    Globe, Network, FileText, Lock, TrendingUp, Server, FolderOpen, Unplug,
-    HardDrive, HardDriveDownload, Archive, Key, Link, KeyRound, Users,
-    Shield, ShieldCheck, ShieldAlert, PieChart, SlidersHorizontal, Share2
-  } from "lucide-svelte";
+  import { resourceIcon } from "$lib/resource-icons";
 
   interface Props {
     name: string;
@@ -18,41 +13,7 @@
 
   let { name, resourceType, short, active, collapsed, onclick }: Props = $props();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const iconMap: Record<string, any> = {
-    pods: Box,
-    deployments: Layers,
-    replicasets: GitBranch,
-    statefulsets: Database,
-    daemonsets: Copy,
-    jobs: Play,
-    cronjobs: Clock,
-    services: Globe,
-    ingresses: Network,
-    configmaps: FileText,
-    secrets: Lock,
-    hpa: TrendingUp,
-    vpa: TrendingUp,
-    wpa: TrendingUp,
-    nodes: Server,
-    namespaces: FolderOpen,
-    portforwards: Unplug,
-    persistentvolumes: HardDrive,
-    persistentvolumeclaims: HardDriveDownload,
-    storageclasses: Archive,
-    roles: Key,
-    rolebindings: Link,
-    clusterroles: KeyRound,
-    clusterrolebindings: Users,
-    networkpolicies: Shield,
-    resourcequotas: PieChart,
-    limitranges: SlidersHorizontal,
-    poddisruptionbudgets: ShieldAlert,
-    topology: Share2,
-    security: ShieldCheck,
-  };
-
-  let IconComponent = $derived(iconMap[resourceType] ?? Box);
+  let IconComponent = $derived(resourceIcon(resourceType));
 </script>
 
 {#if collapsed}

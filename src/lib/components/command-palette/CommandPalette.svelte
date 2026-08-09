@@ -9,11 +9,12 @@
   import CommandGroup from "$lib/components/ui/command/CommandGroup.svelte";
   import CommandItem from "$lib/components/ui/command/CommandItem.svelte";
   import {
-    Box, Layers, Globe, FileText, Lock, Server, FolderOpen,
-    Network, Database, Copy, Play, Clock, GitBranch, TrendingUp,
+    Server, FolderOpen, GitBranch, TrendingUp,
     Settings as SettingsIcon, Terminal, RefreshCw, ScrollText,
     Trash2, ClipboardCopy, Tag,
   } from "lucide-svelte";
+  import { RESOURCE_ITEMS } from "$lib/resource-catalog";
+  import { resourceIcon } from "$lib/resource-icons";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
@@ -32,66 +33,7 @@
   let query = $state("");
   let selectedIndex = $state(0);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const resourceIconMap: Record<string, any> = {
-    pods: Box,
-    deployments: Layers,
-    services: Globe,
-    configmaps: FileText,
-    secrets: Lock,
-    nodes: Server,
-    namespaces: FolderOpen,
-    ingresses: Network,
-    statefulsets: Database,
-    daemonsets: Copy,
-    jobs: Play,
-    cronjobs: Clock,
-    replicasets: GitBranch,
-    hpa: TrendingUp,
-    vpa: TrendingUp,
-    wpa: TrendingUp,
-    persistentvolumes: Database,
-    persistentvolumeclaims: Database,
-    storageclasses: Database,
-    roles: Lock,
-    rolebindings: Lock,
-    clusterroles: Lock,
-    clusterrolebindings: Lock,
-    networkpolicies: Network,
-    resourcequotas: Tag,
-    limitranges: Tag,
-    poddisruptionbudgets: Tag,
-  };
-
-  const resourceTypes = [
-    { type: "pods", label: "Pods" },
-    { type: "deployments", label: "Deployments" },
-    { type: "replicasets", label: "Replica Sets" },
-    { type: "statefulsets", label: "Stateful Sets" },
-    { type: "daemonsets", label: "Daemon Sets" },
-    { type: "jobs", label: "Jobs" },
-    { type: "cronjobs", label: "Cron Jobs" },
-    { type: "services", label: "Services" },
-    { type: "ingresses", label: "Ingresses" },
-    { type: "configmaps", label: "Config Maps" },
-    { type: "secrets", label: "Secrets" },
-    { type: "hpa", label: "HPA" },
-    { type: "vpa", label: "VPA" },
-    { type: "wpa", label: "WPA" },
-    { type: "nodes", label: "Nodes" },
-    { type: "namespaces", label: "Namespaces" },
-    { type: "persistentvolumes", label: "Persistent Volumes" },
-    { type: "persistentvolumeclaims", label: "Persistent Volume Claims" },
-    { type: "storageclasses", label: "Storage Classes" },
-    { type: "roles", label: "Roles" },
-    { type: "rolebindings", label: "Role Bindings" },
-    { type: "clusterroles", label: "Cluster Roles" },
-    { type: "clusterrolebindings", label: "Cluster Role Bindings" },
-    { type: "networkpolicies", label: "Network Policies" },
-    { type: "resourcequotas", label: "Resource Quotas" },
-    { type: "limitranges", label: "Limit Ranges" },
-    { type: "poddisruptionbudgets", label: "Pod Disruption Budgets" },
-  ];
+  const resourceTypes = RESOURCE_ITEMS.filter((i) => !i.virtual);
 
   const scalableTypes = SCALABLE_TYPES;
   const restartableTypes = RESTARTABLE_TYPES;
@@ -225,11 +167,11 @@
     for (const rt of resourceTypes) {
       items.push({
         id: `resource-${rt.type}`,
-        label: rt.label,
-        description: `View ${rt.label}`,
+        label: rt.name,
+        description: `View ${rt.name}`,
         category: "Resources",
         action: () => {
-          navigateToResourceTable(rt.label, rt.type);
+          navigateToResourceTable(rt.name, rt.type);
           close();
         },
       });
@@ -389,7 +331,7 @@
     if (item.icon) return item.icon;
     if (item.category === "Resources") {
       const type = item.id.replace("resource-", "");
-      return resourceIconMap[type] ?? Box;
+      return resourceIcon(type);
     }
     if (item.category === "Contexts") return Server;
     if (item.category === "Namespaces") return FolderOpen;
@@ -407,7 +349,7 @@
     if (item.id === "action-logs") return ScrollText;
     if (item.id === "action-terminal") return Terminal;
     if (item.id === "action-refresh") return RefreshCw;
-    return Box;
+    return resourceIcon("");
   }
 </script>
 

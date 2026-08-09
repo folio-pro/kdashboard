@@ -7,6 +7,7 @@
   import { toastStore } from "$lib/stores/toast.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { costStore } from "$lib/stores/cost.svelte";
+  import { metricsStore } from "$lib/stores/metrics.svelte";
   import { getIconById, iconsByCategory } from "$lib/utils/context-icons";
   import { getContextColor } from "$lib/utils/context-colors";
   import DeviconIcon from "$lib/components/common/DeviconIcon.svelte";
@@ -14,6 +15,8 @@
   import { COLOR_OPTIONS, ICON_CATEGORIES } from "./settings-constants";
 
   let kubeconfigPath = $state(settingsStore.settings.kubeconfig_path);
+  let prometheusUrl = $state(settingsStore.settings.prometheus_url ?? "");
+  let testingPrometheus = $state(false);
   let editingContext = $state<string | null>(null);
   let refreshingPricing = $state(false);
   let labelDebounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -21,6 +24,31 @@
   function handleKubeconfigSave() {
     settingsStore.updateKubeconfigPath(kubeconfigPath);
     toastStore.success("Kubeconfig path saved");
+  }
+
+  function handlePrometheusSave() {
+    settingsStore.updatePrometheusUrl(prometheusUrl.trim());
+    toastStore.success(
+      prometheusUrl.trim() ? "Prometheus URL saved" : "Prometheus disabled",
+    );
+  }
+
+  /** Save first, then run a trivial query so the test hits what was stored. */
+  async function handlePrometheusTest() {
+    testingPrometheus = true;
+    try {
+      settingsStore.updatePrometheusUrl(prometheusUrl.trim());
+      const result = await metricsStore.queryRange("up", 5);
+      if (!result.configured) {
+        toastStore.error("No Prometheus URL set");
+      } else {
+        toastStore.success("Prometheus reachable", `${result.series.length} series returned for "up"`);
+      }
+    } catch (e) {
+      toastStore.error("Prometheus test failed", String(e));
+    } finally {
+      testingPrometheus = false;
+    }
   }
 
   function setContextIcon(context: string, iconId: string | undefined) {
@@ -212,6 +240,29 @@
     >
       Save
     </Button>
+  </div>
+</section>
+
+<!-- Prometheus -->
+<section>
+  <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">Prometheus</h2>
+  <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+    Optional. metrics-server only reports the latest scrape, so charts over time need a Prometheus.
+    Point this at one reachable from this machine — an ingress URL, or
+    <span class="font-mono">http://localhost:9090</span> while you port-forward it.
+  </p>
+  <div class="mt-4 flex gap-2">
+    <Input
+      type="text"
+      placeholder="http://localhost:9090"
+      value={prometheusUrl}
+      oninput={(e) => { prometheusUrl = (e.target as HTMLInputElement).value; }}
+      class="h-9 flex-1 text-xs"
+    />
+    <Button size="sm" variant="outline" class="h-9" onclick={handlePrometheusTest} disabled={testingPrometheus}>
+      {testingPrometheus ? "Testing..." : "Test"}
+    </Button>
+    <Button size="sm" class="h-9" onclick={handlePrometheusSave}>Save</Button>
   </div>
 </section>
 

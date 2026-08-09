@@ -3,13 +3,23 @@
   import type { Resource, Column } from "$lib/types";
   import StatusBadge from "$lib/components/common/StatusBadge.svelte";
   import { Checkbox } from "$lib/components/ui/checkbox";
-  import { formatAge } from "$lib/utils/age";
   import { Box } from "lucide-svelte";
   import { getContainerIconUrl } from "$lib/utils/container-icon";
-  import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
+  import { k8sStore } from "$lib/stores/k8s.svelte";
   import { costStore } from "$lib/stores/cost.svelte";
+  import { metricsStore } from "$lib/stores/metrics.svelte";
   import { extensions } from "$lib/extensions";
+  import {
+    getCellValue,
+    isContainersColumn,
+    isMonoColumn,
+    isStatusColumn,
+    isTagColumn,
+    isUsageColumn,
+    usageBarColor,
+    usageMeter,
+  } from "./cell-values";
 
   interface Props {
     resource: Resource;
@@ -33,6 +43,15 @@
   );
 
   let rowHeight = $derived(density === "compact" ? "h-8" : "h-11");
+
+  // Everything the cell accessors need from the stores, gathered once per row
+  // so cell-values.ts can stay a pure module.
+  let cellCtx = $derived({
+    ageTick: k8sStore.ageTick,
+    nodeCost: costStore.getNodeCost(resource.metadata.name),
+    nodeMetrics: costStore.getNodeMetrics(resource.metadata.name),
+    podUsage: metricsStore.getPodUsage(resource.metadata.namespace, resource.metadata.name),
+  });
 
   // Precompute the lowercased name once per row instead of re-lowercasing the
   // cell value inline on every render of the name-column filter highlight.
@@ -99,149 +118,9 @@
     failedIcons = next;
   }
 
-  function getCellValue(key: string): string {
-    const meta = resource.metadata;
-    const status = resource.status ?? {};
-    const spec = resource.spec ?? {};
-
-    switch (key) {
-      case "name":
-        return meta.name;
-      case "namespace":
-        return meta.namespace ?? "-";
-      case "age":
-        // Read ageTick to trigger re-render every 30s
-        void k8sStore.ageTick;
-        return formatAge(meta.creation_timestamp);
-      case "status":
-      case "phase":
-        return (status.phase as string) ?? (status.status as string) ?? "-";
-      case "ready": {
-        const cs = status.containerStatuses as Array<{ ready: boolean }> | undefined;
-        if (!cs) return "-";
-        const readyCount = cs.filter((c) => c.ready).length;
-        return `${readyCount}/${cs.length}`;
-      }
-      case "restarts": {
-        const cs2 = status.containerStatuses as Array<{ restartCount: number }> | undefined;
-        if (!cs2) return "0";
-        return cs2.reduce((sum, c) => sum + (c.restartCount ?? 0), 0).toString();
-      }
-      case "node":
-        return (spec.nodeName as string) ?? (status.nodeName as string) ?? "-";
-      case "ip":
-        return (status.podIP as string) ?? "-";
-      case "deployReady": {
-        const desired = (spec.replicas as number) ?? 0;
-        const ready = (status.readyReplicas as number) ?? 0;
-        return `${ready}/${desired}`;
-      }
-      case "upToDate":
-        return ((status.updatedReplicas as number) ?? 0).toString();
-      case "available":
-        return ((status.availableReplicas as number) ?? 0).toString();
-      case "type":
-        return (spec.type as string) ?? "-";
-      case "clusterIP":
-        return (spec.clusterIP as string) ?? "-";
-      case "externalIP": {
-        const lb = status.loadBalancer as Record<string, unknown> | undefined;
-        const ext = lb?.ingress as Array<{ ip: string }> | undefined;
-        if (ext && ext.length > 0) return ext.map((e) => e.ip).join(", ");
-        return (spec.externalIPs as string[])?.join(", ") ?? "-";
-      }
-      case "ports": {
-        const ports = spec.ports as Array<{ port: number; protocol: string; targetPort?: number }> | undefined;
-        if (!ports) return "-";
-        return ports.map((p) => `${p.port}/${p.protocol ?? "TCP"}`).join(", ");
-      }
-      case "roles": {
-        const labels = meta.labels ?? {};
-        const roles = Object.keys(labels)
-          .filter((l) => l.startsWith("node-role.kubernetes.io/"))
-          .map((l) => l.replace("node-role.kubernetes.io/", ""));
-        return roles.length > 0 ? roles.join(", ") : "-";
-      }
-      case "version": {
-        const nodeInfo = status.nodeInfo as Record<string, unknown> | undefined;
-        return (nodeInfo?.kubeletVersion as string) ?? "-";
-      }
-      case "instanceType": {
-        const nc = costStore.getNodeCost(meta.name);
-        return nc ? nc.instance_type : (meta.labels?.["node.kubernetes.io/instance-type"] ?? "-");
-      }
-      case "nodeCost": {
-        const nc2 = costStore.getNodeCost(meta.name);
-        if (!nc2 || nc2.price_per_month <= 0) return "-";
-        return `$${nc2.price_per_month.toFixed(2)}`;
-      }
-      case "data": {
-        const data = resource.data ?? resource.spec?.data ?? resource.status?.data;
-        if (data && typeof data === "object") return Object.keys(data).length.toString();
-        return "0";
-      }
-      case "vpaTarget": {
-        // VPA uses spec.targetRef; WPA (Datadog) uses spec.scaleTargetRef.
-        const ref = (spec.targetRef ?? spec.scaleTargetRef) as
-          | { kind?: string; name?: string }
-          | undefined;
-        if (!ref?.name) return "-";
-        return ref.kind ? `${ref.kind}/${ref.name}` : ref.name;
-      }
-      case "vpaUpdateMode": {
-        const policy = spec.updatePolicy as { updateMode?: string } | undefined;
-        return policy?.updateMode ?? "-";
-      }
-      default:
-        return "-";
-    }
-  }
-
-  function getStatusValue(): string {
-    const status = resource.status ?? {};
-    return (status.phase as string) ?? (status.status as string) ?? "";
-  }
-
-  let isStatusColumn = (key: string) => key === "status" || key === "phase";
-  let isContainersColumn = (key: string) => key === "containers";
-  let isUsageColumn = (key: string) => key === "cpuUsage" || key === "memUsage";
-
-  // Reference console renders numeric / identifier cells in monospace tabular
-  // figures, and type/class/role cells as tag pills.
-  const MONO_COLUMNS = new Set([
-    "age", "ready", "deployReady", "upToDate", "available",
-    "rsDesired", "rsCurrent", "rsReady", "stsReady",
-    "dsDesired", "dsCurrent", "dsReady", "dsAvailable",
-    "jobCompletions", "jobDuration", "cjSchedule", "cjActive", "cjLastSchedule",
-    "clusterIP", "externalIP", "ports", "ingressHosts", "ingressAddress",
-    "data", "hpaReference", "hpaMinPods", "hpaMaxPods", "hpaCurrentReplicas",
-    "vpaTarget", "version", "instanceType", "nodeCost", "ip",
-  ]);
-  const TAG_COLUMNS = new Set(["type", "ingressClass", "roles", "vpaUpdateMode"]);
-  let isMonoColumn = (key: string) => MONO_COLUMNS.has(key);
-  let isTagColumn = (key: string) => TAG_COLUMNS.has(key);
-
-  function getUsageData(key: string): { percent: number; label: string } | null {
-    const m = costStore.getNodeMetrics(resource.metadata.name);
-    if (!m) return null;
-    if (key === "cpuUsage") {
-      const cores = m.cpu_usage < 1 ? `${Math.round(m.cpu_usage * 1000)}m` : m.cpu_usage.toFixed(1);
-      return { percent: m.cpu_percent, label: `${cores} / ${m.cpu_capacity.toFixed(0)}` };
-    }
-    const used = m.memory_usage / (1024 * 1024 * 1024);
-    const cap = m.memory_capacity / (1024 * 1024 * 1024);
-    return { percent: m.memory_percent, label: `${used.toFixed(1)} / ${cap.toFixed(0)} Gi` };
-  }
-
-  function usageBarColor(pct: number): string {
-    if (pct >= 90) return "var(--status-failed)";
-    if (pct >= 70) return "var(--status-pending)";
-    return "var(--status-running)";
-  }
-
   function handleCellDblClick(event: MouseEvent, key: string) {
     event.stopPropagation();
-    const value = getCellValue(key);
+    const value = getCellValue(resource, key, cellCtx);
     if (!value || value === "-" || value === "<none>") return;
 
     const td = (event.target as HTMLElement).closest("td") as HTMLElement | null;
@@ -329,29 +208,43 @@
           {/each}
         </div>
       {:else if isUsageColumn(column.key)}
-        {@const usage = getUsageData(column.key)}
-        {#if usage}
-          <div class="flex items-center gap-2">
-            <div class="h-1.5 flex-1 rounded-full bg-[var(--bg-tertiary)] overflow-hidden" title="{usage.percent}%">
+        {@const usage = usageMeter(resource, column.key, cellCtx)}
+        <!-- Value above, meter below: the meter reads as "how full", the value
+             as "how much", and the denominator says why the meter is that full.
+             The empty track is kept when there is no data so the column does
+             not visually jump between rows. -->
+        <div class="flex w-full flex-col justify-center gap-1" title={usage?.title ?? ""}>
+          <!-- The type size lives on this row, not on each span, so the used
+               value and its denominator can never drift apart; the spans only
+               carry colour. -->
+          <div class="flex items-baseline gap-1.5 overflow-hidden font-mono text-[11.5px] leading-none tabular-nums">
+            {#if usage}
+              <span class="text-[var(--text-primary)]">{usage.label}</span>
+              {#if usage.basisLabel}
+                <span class="truncate text-[var(--text-dimmed)]">/ {usage.basisLabel}</span>
+              {/if}
+            {:else}
+              <span class="text-[var(--text-muted)]">—</span>
+            {/if}
+          </div>
+          <div class="h-[3px] w-full overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
+            {#if usage && usage.percent !== null}
               <div
                 class="h-full rounded-full transition-all duration-300"
-                style="width: {usage.percent}%; background-color: {usageBarColor(usage.percent)}"
+                style="width: {Math.min(usage.percent, 100)}%; background-color: {usageBarColor(usage.percent)}"
               ></div>
-            </div>
-            <span class="shrink-0 text-[10px] tabular-nums text-[var(--text-muted)]">{usage.label}</span>
+            {/if}
           </div>
-        {:else}
-          <span class="text-[var(--text-muted)]">—</span>
-        {/if}
+        </div>
       {:else if isStatusColumn(column.key)}
-        {@const val = getStatusValue()}
-        {#if val}
+        {@const val = getCellValue(resource, "status", cellCtx)}
+        {#if val !== "-"}
           <StatusBadge status={val} />
         {:else}
           <span class="text-[var(--text-muted)]">-</span>
         {/if}
       {:else if column.key === "restarts"}
-        {@const restarts = parseInt(getCellValue("restarts"), 10) || 0}
+        {@const restarts = parseInt(getCellValue(resource, "restarts", cellCtx), 10) || 0}
         <span
           class={cn(
             "font-mono text-[12px] tabular-nums",
@@ -363,14 +256,14 @@
           )}
         >{restarts}</span>
       {:else if isTagColumn(column.key)}
-        {@const tagValue = getCellValue(column.key)}
+        {@const tagValue = getCellValue(resource, column.key, cellCtx)}
         {#if tagValue && tagValue !== "-" && tagValue !== "<none>"}
           <span class="inline-flex max-w-full items-center truncate rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--text-secondary)]" title={tagValue}>{tagValue}</span>
         {:else}
           <span class="text-[var(--text-muted)]">—</span>
         {/if}
       {:else}
-        {@const cellValue = getCellValue(column.key)}
+        {@const cellValue = getCellValue(resource, column.key, cellCtx)}
         <span
           class={cn(
             "block truncate text-[var(--text-secondary)]",

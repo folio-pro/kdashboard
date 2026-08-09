@@ -1,6 +1,6 @@
 import type { SortDirection, Resource } from "../types/index.js";
 
-export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "crd-table";
+export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "helm" | "crd-table";
 
 /**
  *                    ┌───────────────────────────────────────┐
@@ -112,7 +112,7 @@ export const VIEW_LABELS: Record<ActiveView, string> = {
   logs: "Logs", terminal: "Terminal", portforwards: "Port Forwards",
   yaml: "YAML", settings: "Settings",
   topology: "Topology", cost: "Cost", security: "Security",
-  "crd-table": "CRDs",
+  helm: "Helm Releases", "crd-table": "CRDs",
 };
 
 /** Fixed id (not "tab-N") so restored sessions and the tab counter never
@@ -438,6 +438,10 @@ export class UiStoreLogic {
 
   showSecurity(): void {
     this._switchView("security");
+  }
+
+  showHelm(): void {
+    this._switchView("helm");
   }
 
   showView(view: ActiveView): void {

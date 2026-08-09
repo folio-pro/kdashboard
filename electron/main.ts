@@ -30,6 +30,9 @@ import * as appHandlers from './handlers/app';
 import * as connection from './handlers/connection';
 import * as resources from './handlers/resources';
 import * as workloadOps from './handlers/workload-ops';
+import * as nodeOps from './handlers/node-ops';
+import * as metrics from './handlers/metrics';
+import * as helm from './handlers/helm';
 import * as topology from './handlers/topology';
 import * as cost from './handlers/cost';
 import * as security from './handlers/security';
@@ -265,8 +268,11 @@ function buildHandlerModules(): HandlerModule[] {
     connection, // get_contexts, get_current_context, get_namespaces, switch_context, check_connection
     resources, // list_resources, list_pods_by_selector, get_resource_counts, get_resource_yaml, get_resource, get_events, get_resource_events
     workloadOps, // apply_yaml, delete_resource, scale_workload, restart_workload, rollback_deployment, list_deployment_revisions
+    nodeOps, // cordon_node, drain_node
     topology, // get_namespace_topology, get_resource_topology, diagnose_resource
     cost, // get_cost_overview, get_node_costs, get_node_metrics, refresh_pricing
+    metrics, // get_pod_metrics, query_prometheus_range
+    helm, // list_helm_releases, get_helm_release, list_helm_release_history
     security, // get_security_overview, scan_image
     crd, // discover_crds, list_crd_resources, get_crd_counts, get_crd_conditions
     // --- Phase 2: streaming subsystems ---

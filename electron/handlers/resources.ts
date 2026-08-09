@@ -25,7 +25,8 @@
 
 import * as YAML from 'yaml';
 
-import { getCoreV1Api, kc } from '../k8s/client';
+import { getCoreV1Api } from '../k8s/client';
+import { apiGet, META_ACCEPT } from '../k8s/api';
 import type {
   RawList,
   RawObject,
@@ -35,7 +36,7 @@ import type {
   ResourceMetadata,
 } from '../k8s/resource-types';
 import { metaFrom, listMetaFrom, listProjectionFor } from '../k8s/resource-mapping';
-import { apiVersionOf, resolveKindOrThrow } from '../k8s/kinds';
+import { apiVersionOf, resolveKindOrThrow, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerMap } from '../dispatch';
 
 // ---------------------------------------------------------------------------
@@ -94,45 +95,13 @@ const LIST_PAGE_SIZE = 500;
 
 /**
  * Resolve the (group, version, plural, scope) for a PLURAL resource_type as used
- * by list_resources / get_resource_counts. Mirrors the listing.rs match. This is
- * keyed by the frontend's plural resourceType (pods, deployments, hpa, vpa, …) —
- * a distinct key space from the singular kind registry, so it stays local.
- * `undefined` for unknown types (the caller decides how to error).
+ * by list_resources / get_resource_counts, from the shared registry in
+ * k8s/kinds.ts. `undefined` for unknown types (the caller decides how to error).
  */
 function apiResourceForType(resourceType: string): ApiResource | undefined {
-  // [group, version, plural, clusterScoped]
-  const table: Record<string, [string, string, string, boolean]> = {
-    pods: ['', 'v1', 'pods', false],
-    deployments: ['apps', 'v1', 'deployments', false],
-    services: ['', 'v1', 'services', false],
-    configmaps: ['', 'v1', 'configmaps', false],
-    secrets: ['', 'v1', 'secrets', false],
-    ingresses: ['networking.k8s.io', 'v1', 'ingresses', false],
-    statefulsets: ['apps', 'v1', 'statefulsets', false],
-    daemonsets: ['apps', 'v1', 'daemonsets', false],
-    jobs: ['batch', 'v1', 'jobs', false],
-    cronjobs: ['batch', 'v1', 'cronjobs', false],
-    replicasets: ['apps', 'v1', 'replicasets', false],
-    nodes: ['', 'v1', 'nodes', true],
-    namespaces: ['', 'v1', 'namespaces', true],
-    hpa: ['autoscaling', 'v2', 'horizontalpodautoscalers', false],
-    vpa: ['autoscaling.k8s.io', 'v1', 'verticalpodautoscalers', false],
-    wpa: ['datadoghq.com', 'v1alpha1', 'watermarkpodautoscalers', false],
-    networkpolicies: ['networking.k8s.io', 'v1', 'networkpolicies', false],
-    persistentvolumes: ['', 'v1', 'persistentvolumes', true],
-    persistentvolumeclaims: ['', 'v1', 'persistentvolumeclaims', false],
-    storageclasses: ['storage.k8s.io', 'v1', 'storageclasses', true],
-    roles: ['rbac.authorization.k8s.io', 'v1', 'roles', false],
-    rolebindings: ['rbac.authorization.k8s.io', 'v1', 'rolebindings', false],
-    clusterroles: ['rbac.authorization.k8s.io', 'v1', 'clusterroles', true],
-    clusterrolebindings: ['rbac.authorization.k8s.io', 'v1', 'clusterrolebindings', true],
-    resourcequotas: ['', 'v1', 'resourcequotas', false],
-    limitranges: ['', 'v1', 'limitranges', false],
-    poddisruptionbudgets: ['policy', 'v1', 'poddisruptionbudgets', false],
-  };
-  const row = table[resourceType];
-  if (!row) return undefined;
-  const [group, version, plural, clusterScoped] = row;
+  const entry = resolveResourceType(resourceType);
+  if (!entry) return undefined;
+  const { group, version, plural, clusterScoped } = entry;
   return { group, version, apiVersion: apiVersionOf(group, version), plural, clusterScoped };
 }
 
@@ -180,12 +149,6 @@ interface ListOpts {
   accept?: string; // optional content negotiation (e.g. metadata-only for counts)
 }
 
-// Metadata-only content negotiation: the apiserver returns a
-// PartialObjectMetadataList (just metadata, no spec/status/managedFields) for
-// any resource that supports it — a fraction of the full-body payload, which is
-// all counting needs. Falls back to a normal list for the rare kind that 406s.
-const META_ACCEPT = 'application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1,application/json';
-
 /**
  * Build the REST base path for a resource. Core-group resources (group="")
  * live under /api/v1/...; grouped resources under /apis/{group}/{version}/...
@@ -202,39 +165,6 @@ function resourcePath(ar: ApiResource, namespace?: string): string {
       ? `${base}/namespaces/${encodeURIComponent(namespace)}/${ar.plural}`
       : `${base}/${ar.plural}`;
   return scoped;
-}
-
-/** Issue an authenticated GET against the active cluster, returning parsed JSON. */
-export async function apiGet<T>(
-  path: string,
-  query?: Record<string, string>,
-  accept?: string,
-): Promise<T> {
-  const cfg = kc();
-  const cluster = cfg.getCurrentCluster();
-  if (!cluster) {
-    throw new Error('No active cluster in kubeconfig');
-  }
-  const url = new URL(cluster.server.replace(/\/$/, '') + path);
-  if (query) {
-    for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
-  }
-
-  // applyToFetchOptions injects auth headers + the TLS agent (client certs/CA).
-  const opts = await cfg.applyToFetchOptions({});
-  opts.method = 'GET';
-  if (accept) {
-    // Content negotiation (e.g. PartialObjectMetadataList for counts) — far
-    // smaller payloads, much faster to transfer + JSON.parse.
-    opts.headers = { ...(opts.headers as Record<string, string> | undefined), Accept: accept };
-  }
-
-  const resp = await fetch(url.toString(), opts as RequestInit);
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`${resp.status} ${resp.statusText}${body ? `: ${body}` : ''}`);
-  }
-  return (await resp.json()) as T;
 }
 
 async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVersion?: string }> {

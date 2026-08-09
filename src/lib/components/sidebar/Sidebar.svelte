@@ -15,108 +15,17 @@
   import { topologyStore } from "$lib/stores/topology.svelte";
   import { costStore } from "$lib/stores/cost.svelte";
   import { securityStore } from "$lib/stores/security.svelte";
+  import { helmStore } from "$lib/stores/helm.svelte";
+  import { RESOURCE_SECTIONS } from "$lib/resource-catalog";
 
-  interface SectionDef {
-    name: string;
-    key: string;
-    abbr: string;
-    items: Array<{ name: string; type: string; short?: string }>;
-  }
-
-  const sections: SectionDef[] = [
-    {
-      name: "Workloads",
-      key: "workloads",
-      abbr: "WKL",
-      items: [
-        { name: "Pods", type: "pods", short: "po" },
-        { name: "Deployments", type: "deployments", short: "deploy" },
-        { name: "Replica Sets", type: "replicasets", short: "rs" },
-        { name: "Stateful Sets", type: "statefulsets", short: "sts" },
-        { name: "Daemon Sets", type: "daemonsets", short: "ds" },
-        { name: "Jobs", type: "jobs", short: "job" },
-        { name: "Cron Jobs", type: "cronjobs", short: "cj" },
-      ],
-    },
-    {
-      name: "Network",
-      key: "network",
-      abbr: "NET",
-      items: [
-        { name: "Services", type: "services", short: "svc" },
-        { name: "Ingresses", type: "ingresses", short: "ing" },
-        { name: "Port Forwards", type: "portforwards", short: "pf" },
-      ],
-    },
-    {
-      name: "Configuration",
-      key: "configuration",
-      abbr: "CFG",
-      items: [
-        { name: "Config Maps", type: "configmaps", short: "cm" },
-        { name: "Secrets", type: "secrets", short: "secret" },
-      ],
-    },
-    {
-      name: "Scaling",
-      key: "scaling",
-      abbr: "SCL",
-      items: [
-        { name: "HPA", type: "hpa", short: "hpa" },
-        { name: "VPA", type: "vpa", short: "vpa" },
-        { name: "WPA", type: "wpa", short: "wpa" },
-      ],
-    },
-    {
-      name: "Storage",
-      key: "storage",
-      abbr: "STO",
-      items: [
-        { name: "Persistent Volumes", type: "persistentvolumes", short: "pv" },
-        { name: "Persistent Volume Claims", type: "persistentvolumeclaims", short: "pvc" },
-        { name: "Storage Classes", type: "storageclasses", short: "sc" },
-      ],
-    },
-    {
-      name: "RBAC",
-      key: "rbac",
-      abbr: "RBAC",
-      items: [
-        { name: "Roles", type: "roles", short: "role" },
-        { name: "Role Bindings", type: "rolebindings", short: "rb" },
-        { name: "Cluster Roles", type: "clusterroles", short: "clusterrole" },
-        { name: "Cluster Role Bindings", type: "clusterrolebindings", short: "crb" },
-      ],
-    },
-    {
-      name: "Policy",
-      key: "policy",
-      abbr: "POL",
-      items: [
-        { name: "Network Policies", type: "networkpolicies", short: "netpol" },
-        { name: "Resource Quotas", type: "resourcequotas", short: "quota" },
-        { name: "Limit Ranges", type: "limitranges", short: "limits" },
-        { name: "Pod Disruption Budgets", type: "poddisruptionbudgets", short: "pdb" },
-      ],
-    },
-    {
-      name: "Cluster",
-      key: "cluster",
-      abbr: "CLU",
-      items: [
-        { name: "Nodes", type: "nodes", short: "no" },
-        { name: "Namespaces", type: "namespaces", short: "ns" },
-        { name: "Topology", type: "topology" },
-        { name: "Security", type: "security" },
-      ],
-    },
-  ];
+  const sections = RESOURCE_SECTIONS;
 
   function isItemActive(type: string): boolean {
     if (type === "portforwards") return uiStore.activeView === "portforwards";
     if (type === "topology") return uiStore.activeView === "topology";
     if (type === "cost") return uiStore.activeView === "cost";
     if (type === "security") return uiStore.activeView === "security";
+    if (type === "helm") return uiStore.activeView === "helm";
     const view = uiStore.activeView;
     if (view !== "table" && view !== "details" && view !== "logs" && view !== "terminal" && view !== "yaml" && view !== "crd-table") return false;
     return k8sStore.pendingResourceType === type;
@@ -135,6 +44,11 @@
     if (resourceType === "cost") {
       uiStore.showCost();
       costStore.loadCostOverview(k8sStore.currentNamespace);
+      return;
+    }
+    if (resourceType === "helm") {
+      uiStore.showHelm();
+      helmStore.loadReleases(k8sStore.currentNamespace);
       return;
     }
     if (resourceType === "security") {

@@ -7,6 +7,7 @@ import type {
   CrdInfo,
   CrdResourceList,
 } from "../types/index.js";
+import { LISTABLE_RESOURCE_TYPES } from "../resource-catalog.js";
 
 export interface WatchEvent {
   event_type: "Applied" | "Deleted" | "Resync";
@@ -19,13 +20,8 @@ export interface NavigationEntry {
   resource: Resource;
 }
 
-export const COUNTABLE_RESOURCE_TYPES = [
-  "pods", "deployments", "replicasets", "statefulsets", "daemonsets",
-  "jobs", "cronjobs", "services", "ingresses", "configmaps", "secrets",
-  "hpa", "vpa", "wpa", "nodes", "namespaces", "persistentvolumes", "persistentvolumeclaims",
-  "storageclasses", "roles", "rolebindings", "clusterroles", "clusterrolebindings",
-  "networkpolicies", "resourcequotas", "limitranges", "poddisruptionbudgets",
-] as const;
+/** Types the sidebar shows a live count for — every listable catalog entry. */
+export const COUNTABLE_RESOURCE_TYPES: readonly string[] = LISTABLE_RESOURCE_TYPES;
 
 /**
  * Pure logic for K8sStore — no Svelte runes, no Tauri invoke.

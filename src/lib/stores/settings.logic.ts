@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   kubeconfig_path: "",
   table_density: "comfortable",
   context_customizations: {},
+  prometheus_url: "",
 };
 
 export class SettingsStoreLogic {
@@ -53,6 +54,11 @@ export class SettingsStoreLogic {
 
   updateDensity(density: "comfortable" | "compact"): void {
     this.settings.table_density = density;
+    this.saveSettings();
+  }
+
+  updatePrometheusUrl(url: string): void {
+    this.settings.prometheus_url = url;
     this.saveSettings();
   }
 

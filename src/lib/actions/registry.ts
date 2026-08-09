@@ -1,7 +1,7 @@
 import {
   FileText, Terminal, Scale, RotateCcw, History, Trash2,
   ClipboardCopy, GitFork, Pencil, Copy, FileJson,
-  ExternalLink, Pin, PinOff,
+  ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets,
 } from "lucide-svelte";
 import type { ActionDef, BulkActionDef } from "./types";
 import type { Resource } from "$lib/types";
@@ -12,6 +12,7 @@ import { topologyStore } from "$lib/stores/topology.svelte";
 import { settingsStore } from "$lib/stores/settings.svelte";
 import { kindToResourceType } from "$lib/utils/related-resources";
 import { dialogStore } from "$lib/stores/dialogs.svelte";
+import { isCordoned, setNodeSchedulable } from "./node-ops";
 import { extensions } from "$lib/extensions";
 import { invoke } from "$lib/ipc/core";
 import { open as shellOpen } from "$lib/ipc/shell";
@@ -175,6 +176,48 @@ export const resourceActions: ActionDef[] = [
   },
 
   // --- Operations group (continued) ---
+  {
+    id: "cordon-node",
+    label: "Cordon",
+    icon: Ban,
+    tier: "yellow",
+    group: "operations",
+    priority: 32,
+    appliesTo: (rt, resource) => rt === "nodes" && !(resource && isCordoned(resource)),
+    execute: async (resource) => {
+      try {
+        await setNodeSchedulable(resource.metadata.name, false);
+      } catch (err) {
+        toastStore.error("Cordon failed", String(err));
+      }
+    },
+  },
+  {
+    id: "uncordon-node",
+    label: "Uncordon",
+    icon: CircleCheck,
+    tier: "yellow",
+    group: "operations",
+    priority: 32,
+    appliesTo: (rt, resource) => rt === "nodes" && !!resource && isCordoned(resource),
+    execute: async (resource) => {
+      try {
+        await setNodeSchedulable(resource.metadata.name, true);
+      } catch (err) {
+        toastStore.error("Uncordon failed", String(err));
+      }
+    },
+  },
+  {
+    id: "drain-node",
+    label: "Drain...",
+    icon: Droplets,
+    tier: "red",
+    group: "operations",
+    priority: 34,
+    appliesTo: (rt) => rt === "nodes",
+    execute: (resource) => dialogStore.openDrain(resource.metadata.name),
+  },
   {
     id: "open-in-browser",
     label: "Open in Browser",

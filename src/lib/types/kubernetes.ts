@@ -36,35 +36,6 @@ export interface ResourceList {
   resource_version?: string;
 }
 
-export type ResourceType =
-  | "pods"
-  | "deployments"
-  | "replicasets"
-  | "statefulsets"
-  | "daemonsets"
-  | "jobs"
-  | "cronjobs"
-  | "services"
-  | "ingresses"
-  | "configmaps"
-  | "secrets"
-  | "hpa"
-  | "vpa"
-  | "wpa"
-  | "nodes"
-  | "namespaces"
-  | "networkpolicies"
-  | "persistentvolumes"
-  | "persistentvolumeclaims"
-  | "storageclasses"
-  | "roles"
-  | "rolebindings"
-  | "clusterroles"
-  | "clusterrolebindings"
-  | "resourcequotas"
-  | "limitranges"
-  | "poddisruptionbudgets";
-
 export interface Event {
   name?: string;
   namespace?: string;
@@ -149,8 +120,3 @@ export interface DeploymentStatus {
   conditions?: Array<{ type: string; status: string; reason?: string; message?: string }>;
 }
 
-export interface SidebarSection {
-  name: string;
-  resource_types: ResourceType[];
-  collapsed: boolean;
-}

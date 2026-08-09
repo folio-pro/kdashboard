@@ -1,6 +1,6 @@
 import { test, expect, describe } from 'bun:test';
 
-import { metaFrom, dynamicToResource, presentOrUndefined } from './resource-mapping';
+import { metaFrom, dynamicToResource, presentOrUndefined, listProjectionFor } from './resource-mapping';
 
 describe('metaFrom — Rust serde null contract', () => {
   test('absent fields serialize as null, NOT omitted', () => {
@@ -87,6 +87,55 @@ describe('dynamicToResource', () => {
     const r = dynamicToResource({ apiVersion: 'wrong', kind: 'Wrong', metadata: {} }, 'v1', 'Service');
     expect(r.api_version).toBe('v1');
     expect(r.kind).toBe('Service');
+  });
+});
+
+describe('list projections — synthetic spec fields', () => {
+  test('RoleBinding keeps roleRef/subjects under spec (no bespoke projector)', () => {
+    const project = listProjectionFor('rolebindings')!;
+    const r = project({
+      metadata: { name: 'rb', namespace: 'prod' },
+      roleRef: { kind: 'Role', name: 'reader' },
+      subjects: [{ kind: 'ServiceAccount', name: 'app' }],
+    });
+    expect(r.kind).toBe('RoleBinding');
+    expect(r.api_version).toBe('rbac.authorization.k8s.io/v1');
+    expect(r.spec).toEqual({
+      roleRef: { kind: 'Role', name: 'reader' },
+      subjects: [{ kind: 'ServiceAccount', name: 'app' }],
+    });
+  });
+
+  test('ServiceAccount lifts its top-level secrets list into spec', () => {
+    const project = listProjectionFor('serviceaccounts')!;
+    const r = project({
+      metadata: { name: 'default', namespace: 'prod' },
+      secrets: [{ name: 'default-token-abc' }],
+    });
+    expect(r.kind).toBe('ServiceAccount');
+    expect(r.spec).toEqual({ secrets: [{ name: 'default-token-abc' }] });
+  });
+
+  test('absent synthetic fields are simply omitted', () => {
+    const project = listProjectionFor('priorityclasses')!;
+    const r = project({ metadata: { name: 'high' }, value: 1000 });
+    expect(r.spec).toEqual({ value: 1000 });
+  });
+
+  test('VPA still projects spec + status verbatim', () => {
+    const project = listProjectionFor('vpa')!;
+    const r = project({
+      metadata: { name: 'web' },
+      spec: { targetRef: { kind: 'Deployment', name: 'web' } },
+      status: { recommendation: {} },
+    });
+    expect(r.kind).toBe('VerticalPodAutoscaler');
+    expect(r.spec).toEqual({ targetRef: { kind: 'Deployment', name: 'web' } });
+    expect(r.status).toEqual({ recommendation: {} });
+  });
+
+  test('unknown types have no projection', () => {
+    expect(listProjectionFor('widgets')).toBeNull();
   });
 });
 

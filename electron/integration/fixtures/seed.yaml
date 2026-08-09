@@ -96,3 +96,151 @@ spec:
               memory: 32Mi
       restartPolicy: Never
   backoffLimit: 1
+---
+# --- Kinds beyond the original workload set -------------------------------
+# ServiceAccount + RBAC binding: exercises the `synth` projection (secrets,
+# roleRef, subjects live outside spec on the real objects).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kdash-sa
+  namespace: kdash-test
+  labels:
+    app: kdash-integration
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kdash-reader
+  namespace: kdash-test
+  labels:
+    app: kdash-integration
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kdash-reader
+  namespace: kdash-test
+  labels:
+    app: kdash-integration
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kdash-reader
+subjects:
+  - kind: ServiceAccount
+    name: kdash-sa
+    namespace: kdash-test
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: kdash-ingressclass
+  labels:
+    app: kdash-integration
+spec:
+  controller: example.com/ingress-controller
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: kdash-high
+  labels:
+    app: kdash-integration
+value: 1000000
+globalDefault: false
+description: "Priority class fixture for the kdashboard integration suite"
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kdash-runtime
+  labels:
+    app: kdash-integration
+handler: runc
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: kdash.csi.example.com
+  labels:
+    app: kdash-integration
+spec:
+  attachRequired: false
+  podInfoOnMount: true
+  volumeLifecycleModes:
+    - Persistent
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: kdash-validating
+  labels:
+    app: kdash-integration
+webhooks:
+  # This fixture exists only to be LISTED, never called. It is cluster-scoped,
+  # so without a namespaceSelector it would sit in the admission path of every
+  # pod creation in the cluster — including kube-system and the pods the drain
+  # tests reschedule — and the apiserver would wait out the (10s default)
+  # timeout on each one before failurePolicy: Ignore let it through.
+  - name: validate.kdash.example.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Ignore
+    timeoutSeconds: 1
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kdash-nonexistent
+    clientConfig:
+      url: "https://example.com/validate"
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+        scope: "Namespaced"
+---
+# A single-replica workload whose PDB allows zero disruption: draining its node
+# must retry the eviction until the drain's own timeout.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guarded
+  namespace: kdash-test
+  labels:
+    app: kdash-integration
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guarded
+  template:
+    metadata:
+      labels:
+        app: guarded
+    spec:
+      containers:
+        - name: busybox
+          image: busybox:1.37
+          command: ["sh", "-c", "sleep 100000"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: guarded
+  namespace: kdash-test
+  labels:
+    app: kdash-integration
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: guarded

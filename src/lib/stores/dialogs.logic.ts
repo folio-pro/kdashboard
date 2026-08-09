@@ -16,6 +16,10 @@ export class DialogStoreLogic {
   deleteOpen = false;
   deleteResource: Resource | null = null;
 
+  // Drain dialog (nodes)
+  drainOpen = false;
+  drainNodeName: string | null = null;
+
   // Upsell dialog (feature gate)
   upsellOpen = false;
 
@@ -42,6 +46,16 @@ export class DialogStoreLogic {
   closeDelete(): void {
     this.deleteOpen = false;
     this.deleteResource = null;
+  }
+
+  openDrain(nodeName: string): void {
+    this.drainNodeName = nodeName;
+    this.drainOpen = true;
+  }
+
+  closeDrain(): void {
+    this.drainOpen = false;
+    this.drainNodeName = null;
   }
 
   openUpsell(): void {
