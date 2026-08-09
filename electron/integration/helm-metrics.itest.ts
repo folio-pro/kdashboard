@@ -130,12 +130,14 @@ describe('integration: metrics', { skip: !enabled }, () => {
       namespace: TEST_NAMESPACE,
     });
     assert.equal(result.available, true, `metrics unavailable: ${result.reason}`);
-    assert.ok(result.pods.length > 0);
+    assert.ok(result.pods.length > 0, 'expected usage for at least one pod');
 
-    const pod = result.pods.find((p) => p.name.startsWith('podinfo'));
-    assert.ok(pod, 'podinfo pods should report usage');
+    // Any running pod will do. Naming one couples this to what the other
+    // suites happen to be doing to the cluster — the drain suite reschedules
+    // workloads, and a pod that just moved has no scrape yet.
+    const pod = result.pods.find((p) => p.memory_bytes > 0);
+    assert.ok(pod, 'at least one pod should report memory usage');
     assert.equal(pod.namespace, TEST_NAMESPACE);
-    assert.ok(pod.memory_bytes > 0, 'a running pod uses memory');
     assert.ok(pod.cpu_cores >= 0);
     assert.ok(pod.containers.length > 0);
     // Pod totals are the sum of the containers.
