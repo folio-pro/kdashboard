@@ -18,6 +18,16 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * A coalesced watch delta. `reinserted` marks a uid whose pending Deleted was
+ * superseded by an Applied inside the same batch — a replay would have removed
+ * the row and re-appended it, so the flush must move it to the end.
+ */
+interface PendingWatchEvent {
+  event: import("./k8s.logic.js").WatchEvent;
+  reinserted: boolean;
+}
+
 class K8sStore extends K8sStoreLogic {
   // Override all state properties with $state runes for Svelte 5 reactivity
   override contexts = $state<string[]>([]);
@@ -74,10 +84,12 @@ class K8sStore extends K8sStoreLogic {
   // while the renderer's flush is throttled, so an append-only buffer would grow
   // for as long as the window stays hidden and then land as one huge flush.
   //
-  // Map iteration order matches the previous array order (insertion order for
-  // newly-seen uids, position preserved on overwrite), so item order is
-  // unchanged.
-  private _pendingWatchEvents = new Map<string, import("./k8s.logic.js").WatchEvent>();
+  // Ordering: a replay appends a resource at the position of the event that
+  // (re)introduced it, so a uid whose pending Deleted is later superseded by an
+  // Applied must move to the END rather than keep the Deleted's slot.
+  // `reinserted` records that transition and the flush honours it. Every other
+  // case keeps the uid's existing position, matching a replay exactly.
+  private _pendingWatchEvents = new Map<string, PendingWatchEvent>();
   /** Cancels the scheduled flush; null when no flush is pending. */
   private _cancelWatchFlush: (() => void) | null = null;
   // Serializes start/stop so two fire-and-forget callers can't race on the
@@ -507,8 +519,17 @@ class K8sStore extends K8sStoreLogic {
     if (!uid) return;
 
     // Coalesce: the newest event for a uid supersedes any earlier pending one.
-    // set() keeps the existing key's position, so order is stable.
-    this._pendingWatchEvents.set(uid, event);
+    // set() keeps the existing key's position, which is what a replay does for
+    // an in-place update. The exception is Deleted -> Applied: a replay removes
+    // the row and re-appends it, so drop the key first to move it to the end
+    // and flag it so the flush repositions the live row too.
+    const prev = this._pendingWatchEvents.get(uid);
+    const reinserted = prev?.event.event_type === "Deleted" && event.event_type === "Applied";
+    if (reinserted) this._pendingWatchEvents.delete(uid);
+    this._pendingWatchEvents.set(uid, {
+      event,
+      reinserted: reinserted || (prev?.reinserted ?? false),
+    });
 
     if (!this._cancelWatchFlush) {
       // NOT a bare requestAnimationFrame: rAF is paused while the window is
@@ -539,7 +560,7 @@ class K8sStore extends K8sStoreLogic {
     // upsert/delete instead of an O(N) findIndex/splice — turns the worst-case
     // O(N·M) flush (M events over N items) into O(N+M). Map iteration order
     // matches the current array and set() keeps an existing key's position, so
-    // the resulting item order is identical to the previous in-place logic.
+    // an update lands in place; only a `reinserted` uid moves (see below).
     // A fresh array is built at the end (required for $state.raw correctness).
     const byUid = new Map<string, Resource>();
     for (const r of this.resources.items) {
@@ -550,7 +571,7 @@ class K8sStore extends K8sStoreLogic {
     let selectedResourceUpdate: Resource | null | undefined;
     let changed = false;
 
-    for (const [uid, event] of batch) {
+    for (const [uid, { event, reinserted }] of batch) {
       // Double-check scope hasn't changed mid-flush
       if (this._scopeGeneration !== scopeGen) return;
 
@@ -559,9 +580,16 @@ class K8sStore extends K8sStoreLogic {
         // change): the event is a replay (initial watch sync / reconnect),
         // not a delta. Skipping it avoids re-rendering the whole table once
         // per replayed batch right after navigation/restore.
+        //
+        // Not applicable to a reinserted uid: a replay would have deleted and
+        // re-appended the row, so its POSITION changes even when its content
+        // does not, and skipping would leave the row where it was.
         const prev = byUid.get(uid);
         const rv = event.resource.metadata?.resource_version;
-        if (prev && rv && prev.metadata?.resource_version === rv) continue;
+        if (!reinserted && prev && rv && prev.metadata?.resource_version === rv) continue;
+        // Deleted -> Applied within the batch: drop the old key so set() appends
+        // at the end, exactly where a replay would have put it.
+        if (reinserted) byUid.delete(uid);
         byUid.set(uid, event.resource);
         changed = true;
         if (this.selectedResource?.metadata?.uid === uid) {

@@ -8,6 +8,16 @@ export interface WatchEvent {
   resource: Resource;
 }
 
+/**
+ * A coalesced watch delta. `reinserted` marks a uid whose pending Deleted was
+ * superseded by an Applied inside the same batch — a replay would have removed
+ * the row and re-appended it, so the flush must move it to the end.
+ */
+export interface PendingWatchEvent {
+  event: WatchEvent;
+  reinserted: boolean;
+}
+
 // --- 1. Watch event batching ---
 
 /**
@@ -24,7 +34,7 @@ export class WatchBatcher {
   resources: ResourceList = { items: [], resource_type: "pods" };
   selectedResource: Resource | null = null;
   selectedResourceType = "pods";
-  private _pendingEvents = new Map<string, WatchEvent>();
+  private _pendingEvents = new Map<string, PendingWatchEvent>();
   private _flushScheduled = false;
   private _scopeGeneration = 0;
   reactivityTriggerCount = 0;
@@ -45,8 +55,18 @@ export class WatchBatcher {
     const uid = event.resource.metadata?.uid;
     if (!uid) return;
 
-    // Coalesce by uid: the newest event supersedes any earlier pending one.
-    this._pendingEvents.set(uid, event);
+    // Coalesce by uid: the newest event supersedes any earlier pending one and
+    // keeps its slot — which is what a replay does for an in-place update. The
+    // exception is Deleted -> Applied, where a replay removes the row and
+    // re-appends it: drop the key so it moves to the end, and flag it so the
+    // flush repositions the live row too.
+    const prev = this._pendingEvents.get(uid);
+    const reinserted = prev?.event.event_type === "Deleted" && event.event_type === "Applied";
+    if (reinserted) this._pendingEvents.delete(uid);
+    this._pendingEvents.set(uid, {
+      event,
+      reinserted: reinserted || (prev?.reinserted ?? false),
+    });
     if (!this._flushScheduled) {
       this._flushScheduled = true;
       // In real code: scheduleFlush(() => this.flushWatchEvents()) — see
@@ -65,7 +85,7 @@ export class WatchBatcher {
     const items = this.resources.items;
     let selectedUpdate: Resource | null | undefined;
 
-    for (const event of batch) {
+    for (const { event, reinserted } of batch) {
       if (this._scopeGeneration !== scopeGen) return;
 
       const uid = event.resource.metadata?.uid;
@@ -73,9 +93,12 @@ export class WatchBatcher {
 
       if (event.event_type === "Applied") {
         const idx = items.findIndex((r) => r.metadata?.uid === uid);
-        if (idx >= 0) {
+        if (idx >= 0 && !reinserted) {
           items[idx] = event.resource;
         } else {
+          // Reinserted (Deleted -> Applied in one batch): a replay removed the
+          // row and re-appended it, so drop the old slot before pushing.
+          if (idx >= 0) items.splice(idx, 1);
           items.push(event.resource);
         }
         if (this.selectedResource?.metadata?.uid === uid) {

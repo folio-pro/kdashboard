@@ -79,6 +79,17 @@ describe("scheduleFlush", () => {
     expect(calls).toBe(1);
   });
 
+  test("the timeout fallback cancels the queued frame", async () => {
+    const raf = installRaf();
+
+    scheduleFlush(() => {});
+    await sleep(FLUSH_FALLBACK_MS + 30);
+
+    // A hidden window never delivers the frame. Leaving it queued would retain
+    // one closure per flush for as long as the window stays hidden.
+    expect(raf.cancelled.length).toBe(1);
+  });
+
   test("runs exactly once when the fallback fires and the frame arrives late", async () => {
     const raf = installRaf();
     let calls = 0;

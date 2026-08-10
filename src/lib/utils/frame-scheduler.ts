@@ -33,26 +33,40 @@ export const FLUSH_FALLBACK_MS = 100;
  */
 export function scheduleFlush(cb: () => void): () => void {
   let done = false;
+  let raf: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * Drop the queued frame. Critical when the TIMEOUT wins: a hidden window
+   * never delivers that frame, so without this every flush would leave a live
+   * rAF callback (and its closure) queued until the window is shown again —
+   * ~10 per second, a slow leak of exactly the kind this module exists to
+   * prevent. Cancelling an already-fired handle is a no-op.
+   */
+  const cancelFrame = (): void => {
+    if (raf !== undefined && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(raf);
+    }
+    raf = undefined;
+  };
 
   const run = (): void => {
     if (done) return;
     done = true;
     clearTimeout(timer);
+    cancelFrame();
     cb();
   };
 
   // requestAnimationFrame is absent in the bun test environment; the timeout
   // path alone is a correct (if slower) scheduler there.
-  const raf =
-    typeof requestAnimationFrame === "function" ? requestAnimationFrame(run) : undefined;
-  const timer = setTimeout(run, FLUSH_FALLBACK_MS);
+  raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame(run) : undefined;
+  timer = setTimeout(run, FLUSH_FALLBACK_MS);
 
   return () => {
     if (done) return;
     done = true;
     clearTimeout(timer);
-    if (raf !== undefined && typeof cancelAnimationFrame === "function") {
-      cancelAnimationFrame(raf);
-    }
+    cancelFrame();
   };
 }

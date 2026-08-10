@@ -322,17 +322,31 @@ function buildHandlerModules(): HandlerModule[] {
  * all windows were closed — everything here must be safe to repeat (unlike the
  * one-time setup in bootstrap()). */
 function createWindows(): void {
-  mainWindow = createMainWindow();
+  const win = createMainWindow();
+  mainWindow = win;
+
+  // Reveal THIS window, never whatever `mainWindow` happens to point at when
+  // the timer fires. On macOS, closing every window and reactivating runs
+  // createWindows() again, so a timer armed for the previous window would
+  // otherwise show the new one before it had painted.
+  let safetyTimer: ReturnType<typeof setTimeout> | undefined;
+  const reveal = (): void => {
+    clearTimeout(safetyTimer);
+    if (win.isDestroyed() || win.isVisible()) return;
+    win.show();
+    win.focus();
+  };
 
   // `ready-to-show` fires once the renderer has produced its first frame, so
   // the window is never shown mid-paint. This replaces a fixed 250ms delay
   // after did-finish-load: it is both earlier on a fast boot and safer on a
   // slow one.
-  mainWindow.once('ready-to-show', revealMainWindow);
+  win.once('ready-to-show', reveal);
 
   // Safety net: a renderer that never reaches first paint must not leave the
   // user staring at no window at all.
-  setTimeout(revealMainWindow, 5000);
+  safetyTimer = setTimeout(reveal, 5000);
+  win.once('closed', () => clearTimeout(safetyTimer));
 }
 
 /** One-time app setup: menu, dispatcher, IPC handler, timers. Must run exactly
