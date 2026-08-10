@@ -1,4 +1,4 @@
-import { invoke } from "$lib/ipc/core";
+import { invoke, readBootSettings } from "$lib/ipc/core";
 import type { AppSettings } from "../types/index.js";
 import { SettingsStoreLogic, DEFAULT_SETTINGS } from "./settings.logic.js";
 import { unshadowState } from "./_unshadow.js";
@@ -14,6 +14,16 @@ class SettingsStore extends SettingsStoreLogic {
   }
 
   async loadSettings(): Promise<void> {
+    // Prefer the synchronous bridge read: main serves the SAME in-memory object
+    // that get_settings returns, so this is authoritative, and it saves an IPC
+    // round-trip on the boot path. Null under `npm run dev` / Playwright (no
+    // preload), where the async path below still applies.
+    const boot = readBootSettings();
+    if (boot) {
+      this.applyLoadedSettings(boot as Partial<AppSettings>);
+      return;
+    }
+
     try {
       const result = await invoke<AppSettings>("get_settings");
       this.applyLoadedSettings(result);

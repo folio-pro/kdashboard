@@ -27,6 +27,26 @@ function toCloneable(args: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
+ * Persisted settings read synchronously from the preload bridge, or null when
+ * unavailable — which is the normal case for `npm run dev` and the Playwright
+ * e2e suite, where the renderer runs in a plain browser with no preload. Every
+ * caller must keep an async fallback.
+ *
+ * Exists so the boot path can apply the persisted theme before the first paint
+ * instead of one IPC round-trip later.
+ */
+export function readBootSettings(): Record<string, unknown> | null {
+  const api = (window as Partial<Window>).electronAPI;
+  if (!api || typeof api.bootSettings !== 'function') return null;
+  try {
+    const result = api.bootSettings();
+    return result && typeof result === 'object' ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Invoke a backend command. Mirrors Tauri's invoke<T>(cmd, args?) signature:
  * resolves with the handler's result, rejects with its Error message.
  */

@@ -10,6 +10,25 @@ type Listener = (event: IpcRendererEvent, payload: unknown) => void;
 
 const api = {
   /**
+   * Persisted settings, read SYNCHRONOUSLY at boot.
+   *
+   * The renderer needs `theme_mode` before its first paint — an async invoke
+   * would leave the document without a `data-theme` for a full IPC round-trip,
+   * which is a visible flash on every light theme. This is the ONLY sync call
+   * in the bridge; everything else stays async on purpose.
+   *
+   * Returns null if main has not registered the channel or the settings file is
+   * unreadable; callers fall back to the async get_settings path.
+   */
+  bootSettings(): Record<string, unknown> | null {
+    try {
+      return ipcRenderer.sendSync('k8s:boot-settings') as Record<string, unknown> | null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * Invoke a backend command. Returns a promise that resolves with the
    * handler's result or rejects with its Error. `cmd` is the snake_case Tauri
    * command string; `args` is the renderer-supplied arg object.

@@ -27,6 +27,14 @@ export default defineConfig({
       rollupOptions: {
         input: { index: path.resolve("electron/preload.ts") },
         external: ["electron"],
+        // CJS, not the default ESM: a preload running in a SANDBOXED renderer
+        // (webPreferences.sandbox: true in electron/main.ts) cannot be an ES
+        // module. Electron loads sandboxed preloads through its own limited
+        // require() shim, which only understands CommonJS.
+        output: {
+          format: "cjs",
+          entryFileNames: "index.cjs",
+        },
       },
     },
   },
@@ -42,7 +50,6 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: path.resolve("index.html"),
-          splashscreen: path.resolve("splashscreen.html"),
         },
         output: {
           manualChunks: vendorChunks,

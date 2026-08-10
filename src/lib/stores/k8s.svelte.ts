@@ -7,6 +7,7 @@ import { K8sStoreLogic, COUNTABLE_RESOURCE_TYPES } from "./k8s.logic.js";
 import { resourceTypeForRef } from "$lib/utils/related-resources";
 import { clearClusterCompletionCache } from "$lib/utils/cluster-completion-source";
 import { clearOpenApiCache } from "$lib/utils/openapi-schema";
+import { scheduleFlush } from "$lib/utils/frame-scheduler";
 import { unshadowState } from "./_unshadow.js";
 
 export type { WatchEvent, NavigationEntry } from "./k8s.logic.js";
@@ -63,8 +64,22 @@ class K8sStore extends K8sStoreLogic {
   private _watchUnlisten: UnlistenFn | null = null;
   private _watchActive = false;
   private _pfUnlisten: UnlistenFn | null = null;
-  private _pendingWatchEvents: import("./k8s.logic.js").WatchEvent[] = [];
-  private _watchFlushScheduled = false;
+  // Pending watch deltas, COALESCED BY uid. _flushWatchEvents is a last-write-
+  // wins upsert per uid, so keeping only the newest event per resource yields
+  // exactly the same result as replaying every event — while bounding the buffer
+  // to the number of distinct resources instead of the number of events.
+  //
+  // That bound is what makes a backgrounded window safe: the main process keeps
+  // emitting every 50ms (electron/handlers/watch.ts WATCH_FLUSH_INTERVAL_MS)
+  // while the renderer's flush is throttled, so an append-only buffer would grow
+  // for as long as the window stays hidden and then land as one huge flush.
+  //
+  // Map iteration order matches the previous array order (insertion order for
+  // newly-seen uids, position preserved on overwrite), so item order is
+  // unchanged.
+  private _pendingWatchEvents = new Map<string, import("./k8s.logic.js").WatchEvent>();
+  /** Cancels the scheduled flush; null when no flush is pending. */
+  private _cancelWatchFlush: (() => void) | null = null;
   // Serializes start/stop so two fire-and-forget callers can't race on the
   // single _ageInterval/_watchUnlisten/_watchActive slots and orphan a timer
   // or listener (a slow, unbounded leak under rapid type/tab switching).
@@ -447,8 +462,7 @@ class K8sStore extends K8sStoreLogic {
   }
 
   private async _stopWatchInner(): Promise<void> {
-    this._pendingWatchEvents = [];
-    this._watchFlushScheduled = false;
+    this._discardPendingWatchEvents();
     if (this._ageInterval) {
       clearInterval(this._ageInterval);
       this._ageInterval = null;
@@ -482,23 +496,39 @@ class K8sStore extends K8sStoreLogic {
 
     // Resync: watcher reconnected after a gap, do a full refresh
     if (event.event_type === "Resync") {
-      this._pendingWatchEvents = [];
-      this._watchFlushScheduled = false;
+      this._discardPendingWatchEvents();
       this._refreshAfterResync();
       return;
     }
 
-    this._pendingWatchEvents.push(event);
-    if (!this._watchFlushScheduled) {
-      this._watchFlushScheduled = true;
-      requestAnimationFrame(() => this._flushWatchEvents());
+    // Events without a uid can never be applied (the flush keys on it), so drop
+    // them here rather than buffering something the flush would skip anyway.
+    const uid = event.resource.metadata?.uid;
+    if (!uid) return;
+
+    // Coalesce: the newest event for a uid supersedes any earlier pending one.
+    // set() keeps the existing key's position, so order is stable.
+    this._pendingWatchEvents.set(uid, event);
+
+    if (!this._cancelWatchFlush) {
+      // NOT a bare requestAnimationFrame: rAF is paused while the window is
+      // minimized or occluded, which would strand the buffer until refocus.
+      this._cancelWatchFlush = scheduleFlush(() => this._flushWatchEvents());
     }
   }
 
+  /** Drop every buffered delta and cancel any scheduled flush. */
+  private _discardPendingWatchEvents(): void {
+    this._pendingWatchEvents.clear();
+    this._cancelWatchFlush?.();
+    this._cancelWatchFlush = null;
+  }
+
   private _flushWatchEvents(): void {
-    const batch = this._pendingWatchEvents;
-    this._pendingWatchEvents = [];
-    this._watchFlushScheduled = false;
+    // [uid, event] pairs — the uid is the map key, already validated on enqueue.
+    const batch = [...this._pendingWatchEvents];
+    this._pendingWatchEvents.clear();
+    this._cancelWatchFlush = null;
 
     if (batch.length === 0) return;
 
@@ -520,12 +550,9 @@ class K8sStore extends K8sStoreLogic {
     let selectedResourceUpdate: Resource | null | undefined;
     let changed = false;
 
-    for (const event of batch) {
+    for (const [uid, event] of batch) {
       // Double-check scope hasn't changed mid-flush
       if (this._scopeGeneration !== scopeGen) return;
-
-      const uid = event.resource.metadata?.uid;
-      if (!uid) continue;
 
       if (event.event_type === "Applied") {
         // Same resourceVersion = identical object (k8s bumps RV on every

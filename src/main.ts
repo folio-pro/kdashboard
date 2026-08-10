@@ -2,6 +2,23 @@ import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
 import { extensions } from "$lib/extensions";
+import { readBootSettings } from "$lib/ipc/core";
+
+// Apply the persisted theme BEFORE mounting. settingsStore.loadSettings() sets
+// the same attribute, but it runs from App.svelte's onMount — by then the first
+// frame is already on screen with no data-theme, which is a visible flash on
+// every light theme (see the 11 palettes in app.css). The bridge read is
+// synchronous precisely so this can happen ahead of first paint.
+//
+// No-op under `npm run dev` / Playwright (no preload); settingsStore's async
+// path covers those.
+function applyBootTheme(): void {
+  const theme = readBootSettings()?.theme_mode;
+  if (typeof theme === "string" && theme.length > 0) {
+    document.documentElement.setAttribute("data-theme", theme);
+  }
+}
+applyBootTheme();
 
 // No registrations are made in the core bundle. Sealing now guarantees that
 // any accidental attempt to register extensions after mount fails loudly.

@@ -163,6 +163,110 @@ describe("Watch event batching", () => {
 
     expect(batcher.selectedResource).toBeNull();
   });
+
+  // --- Coalescing by uid ---
+  //
+  // The buffer keeps only the newest event per uid so it stays bounded while
+  // the flush is throttled (backgrounded window). These pin down that this is
+  // equivalent to replaying every event, and that row order is unaffected.
+
+  test("repeated events for one uid collapse to a single pending entry", () => {
+    const base = makeResource("pod-1", "uid-1");
+    for (let i = 2; i <= 50; i++) {
+      batcher.handleWatchEvent({
+        event_type: "Applied",
+        resource_type: "pods",
+        resource: { ...base, metadata: { ...base.metadata, resource_version: String(i) } },
+      });
+    }
+
+    // 49 events in, one resource out — this is the bound that keeps a hidden
+    // window from accumulating an unbounded buffer.
+    expect(batcher.pendingCount).toBe(1);
+
+    batcher.flushWatchEvents();
+
+    expect(batcher.resources.items.length).toBe(2);
+    expect(batcher.resources.items[0].metadata.resource_version).toBe("50");
+  });
+
+  test("last event for a uid wins, matching a full replay", () => {
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-3", "uid-3"),
+    });
+    batcher.handleWatchEvent({
+      event_type: "Deleted",
+      resource_type: "pods",
+      resource: makeResource("pod-3", "uid-3"),
+    });
+
+    batcher.flushWatchEvents();
+
+    // Applied-then-Deleted nets out to absent, exactly as replaying both would.
+    expect(batcher.resources.items.map((r) => r.metadata.uid)).toEqual(["uid-1", "uid-2"]);
+  });
+
+  test("a Deleted superseded by a later Applied resurrects the resource", () => {
+    batcher.handleWatchEvent({
+      event_type: "Deleted",
+      resource_type: "pods",
+      resource: makeResource("pod-1", "uid-1"),
+    });
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-1", "uid-1"),
+    });
+
+    batcher.flushWatchEvents();
+
+    expect(batcher.resources.items.map((r) => r.metadata.uid)).toEqual(["uid-1", "uid-2"]);
+  });
+
+  test("row order is preserved: updates keep position, new items append in arrival order", () => {
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-1", "uid-1"),
+    });
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-4", "uid-4"),
+    });
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-3", "uid-3"),
+    });
+    // Re-touching uid-4 must NOT move it behind uid-3.
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-4", "uid-4"),
+    });
+
+    batcher.flushWatchEvents();
+
+    expect(batcher.resources.items.map((r) => r.metadata.uid)).toEqual([
+      "uid-1",
+      "uid-2",
+      "uid-4",
+      "uid-3",
+    ]);
+  });
+
+  test("events without a uid are dropped at enqueue time", () => {
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-x", ""),
+    });
+
+    expect(batcher.pendingCount).toBe(0);
+  });
 });
 
 // --- 2. Debounced filter ---

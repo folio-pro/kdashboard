@@ -12,7 +12,10 @@ export interface WatchEvent {
 
 /**
  * Mirrors the batching logic from k8s.svelte.ts:
- * - Events are queued into _pendingWatchEvents
+ * - Events are coalesced into _pendingEvents, keyed by uid: the flush is a
+ *   last-write-wins upsert per uid, so only the newest event per resource is
+ *   worth keeping — and the buffer stays bounded by the number of distinct
+ *   resources even when the flush is throttled (backgrounded window).
  * - A single flush processes all pending events and triggers reactivity once
  * - Resync clears pending events
  * - Scope generation guard prevents stale flushes
@@ -21,7 +24,7 @@ export class WatchBatcher {
   resources: ResourceList = { items: [], resource_type: "pods" };
   selectedResource: Resource | null = null;
   selectedResourceType = "pods";
-  private _pendingEvents: WatchEvent[] = [];
+  private _pendingEvents = new Map<string, WatchEvent>();
   private _flushScheduled = false;
   private _scopeGeneration = 0;
   reactivityTriggerCount = 0;
@@ -31,23 +34,31 @@ export class WatchBatcher {
     if (event.resource_type !== this.selectedResourceType) return;
 
     if (event.event_type === "Resync") {
-      this._pendingEvents = [];
+      this._pendingEvents.clear();
       this._flushScheduled = false;
       this.resyncTriggered = true;
       return;
     }
 
-    this._pendingEvents.push(event);
+    // Events without a uid can never be applied by the flush, so drop them at
+    // enqueue time rather than buffering something that would be skipped.
+    const uid = event.resource.metadata?.uid;
+    if (!uid) return;
+
+    // Coalesce by uid: the newest event supersedes any earlier pending one.
+    this._pendingEvents.set(uid, event);
     if (!this._flushScheduled) {
       this._flushScheduled = true;
-      // In real code: requestAnimationFrame(() => this.flushWatchEvents())
+      // In real code: scheduleFlush(() => this.flushWatchEvents()) — see
+      // $lib/utils/frame-scheduler, which races rAF against a timeout so a
+      // backgrounded window still drains.
       // In tests: we call flushWatchEvents() manually
     }
   }
 
   flushWatchEvents(): void {
-    const batch = this._pendingEvents;
-    this._pendingEvents = [];
+    const batch = [...this._pendingEvents.values()];
+    this._pendingEvents.clear();
     this._flushScheduled = false;
 
     const scopeGen = this._scopeGeneration;
@@ -91,12 +102,12 @@ export class WatchBatcher {
   }
 
   get pendingCount(): number {
-    return this._pendingEvents.length;
+    return this._pendingEvents.size;
   }
 
   beginScopeChange(): void {
     this._scopeGeneration++;
-    this._pendingEvents = [];
+    this._pendingEvents.clear();
     this._flushScheduled = false;
   }
 }
