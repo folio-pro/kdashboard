@@ -17,6 +17,7 @@ import * as metrics from '../handlers/metrics';
 import * as helm from '../handlers/helm';
 import * as topology from '../handlers/topology';
 import * as security from '../handlers/security';
+import * as openapi from '../handlers/openapi';
 import { setActiveContext } from '../k8s/client';
 
 export const TEST_CONTEXT = process.env.KDASH_TEST_CONTEXT;
@@ -40,7 +41,7 @@ export function dispatch<T = unknown>(cmd: string, args?: Record<string, unknown
   if (!dispatcher) {
     setActiveContext(TEST_CONTEXT as string);
     const built = buildDispatcher(
-      [connection, resources, workloadOps, nodeOps, metrics, helm, topology, security],
+      [connection, resources, workloadOps, nodeOps, metrics, helm, topology, security, openapi],
       ctx,
     );
     dispatcher = (c, a) => built.dispatch(c, a);

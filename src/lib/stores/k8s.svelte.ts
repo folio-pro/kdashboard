@@ -5,6 +5,8 @@ import { settingsStore } from "./settings.svelte";
 import { toastStore } from "./toast.svelte.js";
 import { K8sStoreLogic, COUNTABLE_RESOURCE_TYPES } from "./k8s.logic.js";
 import { resourceTypeForRef } from "$lib/utils/related-resources";
+import { clearClusterCompletionCache } from "$lib/utils/cluster-completion-source";
+import { clearOpenApiCache } from "$lib/utils/openapi-schema";
 import { unshadowState } from "./_unshadow.js";
 
 export type { WatchEvent, NavigationEntry } from "./k8s.logic.js";
@@ -140,6 +142,7 @@ class K8sStore extends K8sStoreLogic {
       await invoke("switch_context", { context });
       if (scopeGeneration !== this._scopeGeneration) return;
 
+      this._clearEditorCaches();
       this._resetVisibleState({ clearNamespaces: true });
       this.currentContext = context;
       await this.loadNamespaces(scopeGeneration);
@@ -377,6 +380,7 @@ class K8sStore extends K8sStoreLogic {
       if (context && this.contexts.includes(context) && context !== this.currentContext) {
         this.connectionStatus = "connecting";
         await invoke("switch_context", { context });
+        this._clearEditorCaches();
         this.currentContext = context;
         this.connectionStatus = "connected";
       }
@@ -387,6 +391,16 @@ class K8sStore extends K8sStoreLogic {
       this.error = `Failed to restore connection: ${errMsg(err)}`;
       this.connectionStatus = "error";
     }
+  }
+
+  /**
+   * Drop the YAML editor's per-cluster caches. Both hold names and schemas that
+   * belong to the previous apiserver: without this they survive until their TTL
+   * expires and the editor suggests objects that do not exist here.
+   */
+  private _clearEditorCaches(): void {
+    clearOpenApiCache();
+    clearClusterCompletionCache();
   }
 
   private _persistSelection(): void {

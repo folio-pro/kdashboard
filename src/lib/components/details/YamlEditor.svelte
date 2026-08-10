@@ -12,6 +12,8 @@
     History,
     Code,
     Search,
+    CircleAlert,
+    TriangleAlert,
   } from "lucide-svelte";
   import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -66,13 +68,24 @@
   let currentContent = $state<string>("");
   let isModified = $derived(currentContent !== originalYaml);
 
+  // Live diagnostic counts, fed by the editor's update listener.
+  let errorCount = $state<number>(0);
+  let warningCount = $state<number>(0);
+
   function initEditor(modules: CodeMirrorModules) {
     if (!editorContainer || editorView) return;
 
     editorView = new modules.EditorView({
       state: modules.EditorState.create({
         doc: originalYaml,
-        extensions: getExtensions(modules, originalYaml, (c) => { currentContent = c; }, false),
+        extensions: getExtensions(
+          modules,
+          originalYaml,
+          (c) => { currentContent = c; },
+          false,
+          resource?.metadata.namespace ?? "",
+          (errors, warnings) => { errorCount = errors; warningCount = warnings; },
+        ),
       }),
       parent: editorContainer,
     });
@@ -177,6 +190,10 @@
     activeTab = "editor";
     yamlHistory = [];
     selectedHistoryIndex = null;
+    // Counts belong to the destroyed view; leaving them set would keep Apply
+    // disabled for the next resource until its first lint pass lands.
+    errorCount = 0;
+    warningCount = 0;
 
     try {
       const result = await invoke<string>("get_resource_yaml", {
@@ -202,6 +219,18 @@
   }
 
   async function saveYaml() {
+    // `errorCount` trails the document by the linter's debounce, so a fast
+    // edit-then-Apply could otherwise slip invalid YAML past the disabled
+    // state. Re-lint exactly what is about to be sent.
+    if (cm) {
+      const blocking = cm.lintYaml(currentContent).filter((d) => d.severity === "error");
+      if (blocking.length > 0) {
+        errorCount = blocking.length;
+        saveError = `Not applied — fix ${blocking.length} error${blocking.length === 1 ? "" : "s"} first: ${blocking[0].message}`;
+        return;
+      }
+    }
+
     isSaving = true;
     saveError = null;
     saveSuccess = false;
@@ -265,6 +294,10 @@
     if (editorView && cm) cm.openSearchPanel(editorView);
   }
 
+  function handleShowProblems() {
+    if (editorView && cm) cm.openLintPanel(editorView);
+  }
+
   async function copyToClipboard() {
     try {
       await navigator.clipboard.writeText(currentContent);
@@ -302,90 +335,6 @@
 
 {#if resource}
   <div class="flex h-full flex-col bg-[var(--bg-primary)]">
-    <!-- Header -->
-    <div class="flex h-[68px] shrink-0 items-center justify-between border-b border-[var(--border-color)] px-6">
-      <!-- Left: Resource Info -->
-      <div class="flex flex-col gap-0.5">
-        <div class="flex items-center gap-2">
-          <span class="font-mono text-base font-semibold text-[var(--text-primary)]">Edit YAML</span>
-          {#if isModified}
-            <span class="rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-warning)]">MODIFIED</span>
-          {/if}
-          {#if saveSuccess}
-            <span class="rounded bg-[var(--status-running)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-running)]">SAVED</span>
-          {/if}
-        </div>
-        <span class="font-mono text-[11px] text-[var(--text-muted)]">{resource.kind}/{resource.metadata.name}{resource.metadata.namespace ? ` (${resource.metadata.namespace})` : ""}</span>
-      </div>
-
-      <!-- Right: Actions -->
-      <div class="flex items-center gap-2">
-        {#if activeTab === "editor"}
-          <button
-            class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-xs text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-            onclick={handleSearch}
-            title="Search (Cmd+F)"
-          >
-            <Search class="h-3.5 w-3.5" />
-          </button>
-          <button
-            class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-xs text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-            onclick={handleUndo}
-            title="Undo (Cmd+Z)"
-          >
-            <Undo2 class="h-3.5 w-3.5" />
-          </button>
-          <button
-            class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-xs text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-            onclick={handleRedo}
-            title="Redo (Cmd+Shift+Z)"
-          >
-            <Redo2 class="h-3.5 w-3.5" />
-          </button>
-        {/if}
-        <button
-          class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-xs text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-          onclick={copyToClipboard}
-        >
-          {#if copied}
-            <Check class="h-3.5 w-3.5 text-[var(--status-running)]" />
-            <span>Copied</span>
-          {:else}
-            <Copy class="h-3.5 w-3.5" />
-            <span>Copy</span>
-          {/if}
-        </button>
-        {#if isModified}
-          <button
-            class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-xs text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-            onclick={resetToOriginal}
-            title="Reset to original"
-          >
-            <RotateCcw class="h-3.5 w-3.5" />
-            <span>Reset</span>
-          </button>
-        {/if}
-        <button
-          class={cn(
-            "flex h-[34px] items-center gap-1.5 rounded px-3.5 font-mono text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-50",
-            isModified
-              ? "bg-[var(--accent)] text-[var(--bg-primary)]"
-              : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-muted)]"
-          )}
-          onclick={saveYaml}
-          disabled={isSaving || !isModified}
-        >
-          {#if isSaving}
-            <Loader2 class="h-3.5 w-3.5 animate-spin" />
-            <span>Applying...</span>
-          {:else}
-            <Save class="h-3.5 w-3.5" />
-            <span>Apply</span>
-          {/if}
-        </button>
-      </div>
-    </div>
-
     {#if saveError}
       <div class="shrink-0 border-b border-[var(--border-color)] bg-[var(--status-failed)]/10 px-4 py-2 text-[11px] text-[var(--status-failed)]">
         {saveError}
@@ -421,6 +370,110 @@
           <span class="ml-0.5 rounded bg-[var(--bg-tertiary)] px-1 text-[9px] text-[var(--text-muted)]">{yamlHistory.length}</span>
         {/if}
       </button>
+
+      <!-- Status and every editor action, sized to sit inside the 36px strip.
+           The resource's identity is not repeated here: DetailPanel already
+           shows the name, kind and namespace directly above this component. -->
+      <div class="ml-auto flex items-center gap-0.5">
+        {#if isModified}
+          <span class="mr-1 rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-warning)]">MODIFIED</span>
+        {/if}
+        {#if saveSuccess}
+          <span class="mr-1 rounded bg-[var(--status-running)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-running)]">SAVED</span>
+        {/if}
+        {#if activeTab === "editor" && errorCount > 0}
+          <button
+            class="mr-1 flex items-center gap-1 rounded bg-[var(--status-failed)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-failed)] transition-opacity hover:opacity-80"
+            onclick={handleShowProblems}
+            title="Show problems (F8)"
+            aria-label="Show problems: {errorCount} error{errorCount === 1 ? '' : 's'}"
+          >
+            <CircleAlert class="h-2.5 w-2.5" />
+            {errorCount}
+          </button>
+        {/if}
+        {#if activeTab === "editor" && warningCount > 0}
+          <button
+            class="mr-1 flex items-center gap-1 rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-warning)] transition-opacity hover:opacity-80"
+            onclick={handleShowProblems}
+            title="Show problems (F8)"
+            aria-label="Show problems: {warningCount} warning{warningCount === 1 ? '' : 's'}"
+          >
+            <TriangleAlert class="h-2.5 w-2.5" />
+            {warningCount}
+          </button>
+        {/if}
+
+        {#if activeTab === "editor"}
+          <button
+            class="flex h-[24px] items-center rounded px-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+            onclick={handleSearch}
+            title="Search (Cmd+F)"
+            aria-label="Search"
+          >
+            <Search class="h-3 w-3" />
+          </button>
+          <button
+            class="flex h-[24px] items-center rounded px-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+            onclick={handleUndo}
+            title="Undo (Cmd+Z)"
+            aria-label="Undo"
+          >
+            <Undo2 class="h-3 w-3" />
+          </button>
+          <button
+            class="flex h-[24px] items-center rounded px-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+            onclick={handleRedo}
+            title="Redo (Cmd+Shift+Z)"
+            aria-label="Redo"
+          >
+            <Redo2 class="h-3 w-3" />
+          </button>
+        {/if}
+        <button
+          class="flex h-[24px] items-center gap-1.5 rounded px-2 text-[11px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+          onclick={copyToClipboard}
+          title="Copy YAML to clipboard"
+        >
+          {#if copied}
+            <Check class="h-3 w-3 text-[var(--status-running)]" />
+            <span>Copied</span>
+          {:else}
+            <Copy class="h-3 w-3" />
+            <span>Copy</span>
+          {/if}
+        </button>
+
+        {#if isModified}
+          <button
+            class="flex h-[24px] items-center gap-1.5 rounded px-2 text-[11px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+            onclick={resetToOriginal}
+            title="Reset to original"
+          >
+            <RotateCcw class="h-3 w-3" />
+            <span>Reset</span>
+          </button>
+        {/if}
+        <button
+          class={cn(
+            "ml-1 flex h-[24px] items-center gap-1.5 rounded px-2.5 text-[11px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-40",
+            isModified && errorCount === 0
+              ? "bg-[var(--accent)] text-[var(--bg-primary)]"
+              : "border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-muted)]"
+          )}
+          onclick={saveYaml}
+          disabled={isSaving || !isModified || errorCount > 0}
+          title={errorCount > 0 ? "Fix the YAML errors before applying" : "Apply to cluster"}
+        >
+          {#if isSaving}
+            <Loader2 class="h-3 w-3 animate-spin" />
+            <span>Applying...</span>
+          {:else}
+            <Save class="h-3 w-3" />
+            <span>Apply</span>
+          {/if}
+        </button>
+      </div>
     </div>
 
     <!-- Content -->

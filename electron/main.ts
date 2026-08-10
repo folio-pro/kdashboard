@@ -37,6 +37,7 @@ import * as topology from './handlers/topology';
 import * as cost from './handlers/cost';
 import * as security from './handlers/security';
 import * as crd from './handlers/crd';
+import * as openapi from './handlers/openapi';
 import * as logs from './handlers/logs';
 import * as terminal from './handlers/terminal';
 import * as portforward from './handlers/portforward';
@@ -275,6 +276,7 @@ function buildHandlerModules(): HandlerModule[] {
     helm, // list_helm_releases, get_helm_release, list_helm_release_history
     security, // get_security_overview, scan_image
     crd, // discover_crds, list_crd_resources, get_crd_counts, get_crd_conditions
+    openapi, // get_openapi_schema (YAML editor autocompletion + validation)
     // --- Phase 2: streaming subsystems ---
     logs, // stream_pod_logs, stream_multi_pod_logs, stop_log_stream
     terminal, // start_terminal_exec, send_terminal_input, resize_terminal, stop_terminal_exec
