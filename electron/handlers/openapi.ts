@@ -28,7 +28,12 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import nodePath from 'node:path';
 
-import { app } from 'electron';
+// Namespace import, not `import { app }`: outside Electron this module resolves
+// to a string (the binary path), and a named import fails at instantiation with
+// "does not provide an export named 'app'" — which made this handler impossible
+// to load from the integration harness, the one place the OpenAPI path can be
+// exercised against a real apiserver.
+import * as electron from 'electron';
 
 import { getApiserverOrigin, kc, onConfigChange } from '../k8s/client.js';
 import {
@@ -92,19 +97,26 @@ function normalizeHeaders(raw: unknown): Record<string, string> {
 async function fetchApiserverJson<T>(
   path: string,
 ): Promise<{ body: T | null; reason: string | null }> {
-  const origin = getApiserverOrigin();
-  if (!origin) return { body: null, reason: 'no active cluster' };
-
   let headers: Record<string, string>;
+  let config: ReturnType<typeof kc>;
   try {
+    // kc() must run BEFORE reading the origin: building the KubeConfig is what
+    // installs the TLS dispatcher, and recording the apiserver origin is a side
+    // effect of that. Reading the origin first returns null whenever this is the
+    // first command issued after a context switch — which is exactly the case
+    // when the user switches context and opens a YAML tab.
+    config = kc();
     // applyToFetchOptions is typed against node-fetch, whose RequestInit is not
     // assignable to undici's. Only the auth headers are wanted here, so take
     // those and leave the rest of the init to the global fetch.
-    const applied = (await kc().applyToFetchOptions({})) as { headers?: unknown };
+    const applied = (await config.applyToFetchOptions({})) as { headers?: unknown };
     headers = normalizeHeaders(applied.headers);
   } catch (err) {
     return { body: null, reason: `auth setup failed: ${(err as Error).message}` };
   }
+
+  const origin = getApiserverOrigin();
+  if (!origin) return { body: null, reason: 'no active cluster' };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -137,10 +149,10 @@ function originKey(): string {
 function cacheDir(): string {
   let base: string;
   try {
-    base = app.getPath('userData');
+    // `app` is absent outside Electron (integration harness, unit tests); fall
+    // back to a working-directory cache so the layer stays exercisable.
+    base = electron.app?.getPath('userData') ?? nodePath.join(process.cwd(), '.cache');
   } catch {
-    // `app` is unavailable outside Electron (unit tests); fall back to a temp
-    // directory so the cache layer stays exercisable.
     base = nodePath.join(process.cwd(), '.cache');
   }
   return nodePath.join(base, 'openapi-cache', originKey());

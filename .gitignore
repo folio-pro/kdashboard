@@ -18,3 +18,7 @@ benchmark-results.json
 
 # electron-vite output
 out/
+
+# OpenAPI schema cache written when handlers run outside Electron (integration
+# harness); inside the app this lives under userData instead.
+.cache/
