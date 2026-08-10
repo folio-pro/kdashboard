@@ -112,11 +112,4 @@ export interface PodStatus {
   conditions?: Array<{ type: string; status: string; reason?: string; message?: string }>;
 }
 
-export interface DeploymentStatus {
-  replicas?: number;
-  readyReplicas?: number;
-  availableReplicas?: number;
-  updatedReplicas?: number;
-  conditions?: Array<{ type: string; status: string; reason?: string; message?: string }>;
-}
 

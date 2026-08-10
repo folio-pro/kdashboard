@@ -22,12 +22,3 @@ export interface PortForwardInfo {
   local_port: number;
 }
 
-// Timeline Types
-
-export interface TimelineEntry {
-  timestamp: string;
-  type: "event" | "condition" | "status";
-  severity: "normal" | "warning" | "error";
-  title: string;
-  detail: string;
-}

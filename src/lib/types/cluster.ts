@@ -1,21 +1,3 @@
-export interface ClusterOverview {
-  nodes: number;
-  namespaces: number;
-  pods: number;
-  deployments: number;
-  services: number;
-  statefulsets: number;
-  daemonsets: number;
-  jobs: number;
-}
-
-export interface ClusterSummary {
-  current_context: string;
-  available_contexts: number;
-  resource_counts: Record<string, number>;
-  cluster_overview: ClusterOverview;
-}
-
 // Topology Types
 
 export interface TopologyNode {

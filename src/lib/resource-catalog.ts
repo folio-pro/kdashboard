@@ -140,15 +140,6 @@ export const LISTABLE_RESOURCE_TYPES: string[] = RESOURCE_ITEMS.filter((i) => !i
   (i) => i.type,
 );
 
-const LABELS: Record<string, string> = Object.fromEntries(
-  RESOURCE_ITEMS.map((i) => [i.type, i.name]),
-);
-
-/** Display label for a resource type; falls back to the type itself. */
-export function resourceLabel(type: string): string {
-  return LABELS[type] ?? type;
-}
-
 /** PascalCase Kind -> resource_type, for navigating from an object reference. */
 export const KIND_TO_RESOURCE_TYPE: Record<string, string> = Object.fromEntries(
   RESOURCE_ITEMS.filter((i) => i.kind).map((i) => [i.kind as string, i.type]),
