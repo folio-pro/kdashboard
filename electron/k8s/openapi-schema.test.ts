@@ -29,6 +29,27 @@ describe('openApiPathFor', () => {
   test('rejects a malformed three-segment version', () => {
     expect(openApiPathFor('a/b/c')).toBeNull();
   });
+
+  // The apiVersion comes from the YAML in the editor, so it is attacker-
+  // influenced whenever someone opens a manifest they were sent. The result is
+  // interpolated into the apiserver path and into a cache filename that escapes
+  // only `/`.
+  test.each([
+    '..\\..\\evil',
+    '../evil',
+    'v1?injected=1',
+    'v1#frag',
+    'v1 v2',
+    '-leading',
+    'v1%2e%2e',
+    'a/b c',
+  ])('rejects the unsafe apiVersion %j', (value: string) => {
+    expect(openApiPathFor(value)).toBeNull();
+  });
+
+  test('still accepts a realistic aggregated group', () => {
+    expect(openApiPathFor('metrics.k8s.io/v1beta1')).toBe('apis/metrics.k8s.io/v1beta1');
+  });
 });
 
 // ---------------------------------------------------------------------------

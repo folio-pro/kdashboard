@@ -244,9 +244,10 @@ export function buildPath(
   let seek = cursorIndent;
 
   // A cursor sitting on its own `- ` belongs to the sequence declared by the
-  // key above it, so start the search above that dash's own indent.
+  // key above it. The `+ 1` matters: YAML allows the dash at the declaring
+  // key's own column, so a bound of exactly the dash indent would skip that key.
   if (cursorIsSequenceItem && lines[lineIdx] !== undefined) {
-    seek = leadingWidth(lines[lineIdx]);
+    seek = leadingWidth(lines[lineIdx]) + 1;
   }
 
   for (let i = lineIdx - 1; i >= docStart; i--) {
@@ -260,9 +261,15 @@ export function buildPath(
     if (isSequenceItem(line)) {
       const contentCol = sequenceContentColumn(line);
       if (contentCol <= seek) {
-        // The cursor lives inside this entry's mapping.
+        // The cursor lives inside this entry's mapping. Search on from one
+        // column past the dash, not from the dash itself: both of these are
+        // valid, and in the second the declaring key shares the dash's column,
+        // so a bound of `ind` would skip it.
+        //
+        //     containers:          containers:
+        //       - name: main       - name: main
         path.unshift(sequenceIndexOf(lines, i, ind));
-        seek = ind;
+        seek = ind + 1;
       }
       continue;
     }

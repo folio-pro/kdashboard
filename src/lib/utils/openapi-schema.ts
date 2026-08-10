@@ -54,6 +54,13 @@ const cache = new Map<string, OpenApiSchemaResult>();
 /** In-flight requests, so opening three tabs of the same kind fetches once. */
 const inFlight = new Map<string, Promise<OpenApiSchemaResult>>();
 
+/**
+ * Bumped by clearOpenApiCache. Captured before each request and re-checked
+ * before the write, so a response already in flight when the user switched
+ * context cannot repopulate the cache with the previous cluster's schema.
+ */
+let cacheGeneration = 0;
+
 function cacheKey(apiVersion: string, kind: string): string {
   return `${apiVersion} ${kind}`;
 }
@@ -76,11 +83,14 @@ export async function fetchOpenApiSchema(
   const pending = inFlight.get(key);
   if (pending) return pending;
 
+  const generation = cacheGeneration;
   const request = invoke<OpenApiSchemaResult>("get_openapi_schema", { apiVersion, kind })
     .catch((): OpenApiSchemaResult => UNAVAILABLE)
     .then((result) => {
       const value = result ?? UNAVAILABLE;
-      cache.set(key, value);
+      // A context switch while this was in flight means the schema describes
+      // the previous cluster; answer this caller but leave the cache empty.
+      if (generation === cacheGeneration) cache.set(key, value);
       inFlight.delete(key);
       return value;
     });
@@ -94,10 +104,11 @@ export function peekOpenApiSchema(apiVersion: string, kind: string): OpenApiSche
   return cache.get(cacheKey(apiVersion, kind)) ?? null;
 }
 
-/** Drop every cached schema. Used on context switch and by tests. */
+/** Drop every cached schema. Called on context switch (see schema-provider). */
 export function clearOpenApiCache(): void {
   cache.clear();
   inFlight.clear();
+  cacheGeneration++;
 }
 
 // ---------------------------------------------------------------------------

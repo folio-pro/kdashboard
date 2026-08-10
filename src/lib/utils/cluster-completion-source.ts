@@ -86,7 +86,7 @@ export async function namespaceNames(): Promise<string[]> {
   return request;
 }
 
-/** Drop every cached list. Used on context switch and by tests. */
+/** Drop every cached list. Called on context switch (see k8s.svelte.ts). */
 export function clearClusterCompletionCache(): void {
   cache.clear();
   inFlight.clear();

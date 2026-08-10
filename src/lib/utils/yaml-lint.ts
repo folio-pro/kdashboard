@@ -50,10 +50,15 @@ const DNS_1123_SUBDOMAIN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*
 const MAX_NAME_LENGTH = 253;
 
 /**
- * Kubernetes resource quantity: a decimal number with an optional binary
- * (Ki, Mi, Gi…) or decimal (n, u, m, k, M, G…) suffix, or scientific notation.
+ * Kubernetes resource quantity: a decimal number with an optional suffix, or
+ * scientific notation.
+ *
+ * The two suffix sets are spelled out rather than folded into one character
+ * class with an optional `i`, because they differ in case: binary suffixes are
+ * `Ki Mi Gi Ti Pi Ei` (capital K) while decimal ones are `n u m k M G T P E`
+ * (lowercase k). Sharing a class silently rejected `512Ki` and accepted `1ki`.
  */
-const QUANTITY = /^[+-]?(\d+(\.\d*)?|\.\d+)(([EPTGMk]i?)|[numkKMGTPE]|([eE][+-]?\d+))?$/;
+const QUANTITY = /^[+-]?(\d+(\.\d*)?|\.\d+)((Ki|Mi|Gi|Ti|Pi|Ei)|[numkMGTPE]|([eE][+-]?\d+))?$/;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(n, max));

@@ -219,6 +219,18 @@
   }
 
   async function saveYaml() {
+    // `errorCount` trails the document by the linter's debounce, so a fast
+    // edit-then-Apply could otherwise slip invalid YAML past the disabled
+    // state. Re-lint exactly what is about to be sent.
+    if (cm) {
+      const blocking = cm.lintYaml(currentContent).filter((d) => d.severity === "error");
+      if (blocking.length > 0) {
+        errorCount = blocking.length;
+        saveError = `Not applied — fix ${blocking.length} error${blocking.length === 1 ? "" : "s"} first: ${blocking[0].message}`;
+        return;
+      }
+    }
+
     isSaving = true;
     saveError = null;
     saveSuccess = false;

@@ -296,6 +296,59 @@ spec:
   });
 });
 
+/**
+ * YAML allows a sequence dash at its declaring key's own column, which is the
+ * style most published manifests use. Every fixture in the block above indents
+ * the dash one level deeper, so this style went untested — and `buildPath`
+ * returned ["spec", 0], dropping the `containers` key entirely.
+ */
+describe("contextAtOffset with a flush sequence dash", () => {
+  const FLUSH = `apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: main
+    image: nginx
+    ports:
+    - containerPort: 80
+  restartPolicy: Always
+`;
+
+  test("keys beside the entry keep the sequence key and index", () => {
+    const { doc, pos } = at(FLUSH.replace("    image: nginx", "    |image: nginx"));
+    expect(contextAtOffset(doc, pos).path).toEqual(["spec", "containers", 0]);
+  });
+
+  test("a nested flush sequence resolves through both levels", () => {
+    const { doc, pos } = at(FLUSH.replace("    - containerPort: 80", "    - |containerPort: 80"));
+    expect(contextAtOffset(doc, pos).path).toEqual(["spec", "containers", 0, "ports"]);
+  });
+
+  test("a fresh flush dash resolves to the owning sequence key", () => {
+    const { doc, pos } = at(FLUSH.replace("  - name: main", "  - name: main\n  - |"));
+    expect(contextAtOffset(doc, pos).path).toEqual(["spec", "containers"]);
+  });
+
+  test("the second flush entry gets index 1", () => {
+    const withSecond = FLUSH.replace(
+      "    image: nginx",
+      "    image: nginx\n  - name: side\n    |image: redis",
+    );
+    const { doc, pos } = at(withSecond);
+    expect(contextAtOffset(doc, pos).path).toEqual(["spec", "containers", 1]);
+  });
+
+  test("a sibling after the sequence returns to the parent mapping", () => {
+    const { doc, pos } = at(FLUSH.replace("  restartPolicy", "  |restartPolicy"));
+    expect(contextAtOffset(doc, pos).path).toEqual(["spec"]);
+  });
+
+  test("a new line at the entry's indent stays inside the entry", () => {
+    const { doc, pos } = at(FLUSH.replace("    image: nginx", "    image: nginx\n    |"));
+    expect(contextAtOffset(doc, pos).path).toEqual(["spec", "containers", 0]);
+  });
+});
+
 describe("contextAtOffset key/value position", () => {
   test("before any colon the cursor is on the key side", () => {
     const { doc, pos } = at("spec:\n  repl|");

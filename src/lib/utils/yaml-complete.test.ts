@@ -229,6 +229,77 @@ spec:
   });
 });
 
+describe("fallback behaviour", () => {
+  test("does not offer root keys at a nested path", async () => {
+    // `apiVersion` and `kind` are valid only at the document root; a schema
+    // that describes nothing deeper must not resurrect them here.
+    const noFields = deps({ provider: async () => EMPTY_PROVIDER });
+    const found = await labelsAt(
+      "apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\nspec:\n  template:\n    spec:\n      |",
+      true,
+      noFields,
+    );
+    expect(found).not.toContain("apiVersion");
+    expect(found).not.toContain("kind");
+  });
+
+  test("still offers root keys at the document root", async () => {
+    const noFields = deps({ provider: async () => EMPTY_PROVIDER });
+    const found = await labelsAt("apiVersion: v1\nkind: Pod\n|", true, noFields);
+    expect(found).toContain("metadata");
+  });
+
+  test("a rejecting provider yields no suggestions instead of throwing", async () => {
+    const broken = deps({
+      provider: async () => {
+        throw new Error("IPC down");
+      },
+    });
+    const { doc, pos } = at("apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\nspec:\n  cont|");
+    expect(await completionsFor(doc, pos, true, broken)).toBeNull();
+  });
+
+  test("a rejecting cluster lookup yields no suggestions instead of throwing", async () => {
+    const broken = deps({
+      clusterValues: async () => {
+        throw new Error("list_resources failed");
+      },
+    });
+    const { doc, pos } = at(
+      "apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\nspec:\n  serviceAccountName: |",
+    );
+    expect(await completionsFor(doc, pos, true, broken)).toBeNull();
+  });
+});
+
+describe("flush sequence style", () => {
+  test("suggests container fields when the dash is at its key's column", async () => {
+    const found = await labelsAt(`apiVersion: v1
+kind: Pod
+metadata:
+  name: p
+spec:
+  containers:
+  - name: main
+    image: nginx:1
+    |`);
+    expect(found).toContain("imagePullPolicy");
+    expect(found).not.toContain("restartPolicy");
+  });
+
+  test("suggests enum values inside a flush sequence entry", async () => {
+    const found = await labelsAt(`apiVersion: v1
+kind: Service
+metadata:
+  name: s
+spec:
+  ports:
+  - port: 80
+    protocol: |`);
+    expect(found).toEqual(["TCP", "UDP", "SCTP"]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Value completions
 // ---------------------------------------------------------------------------

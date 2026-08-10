@@ -38,6 +38,19 @@ export interface GroupDocument {
 }
 
 /**
+ * Characters Kubernetes allows in an API group or version segment.
+ *
+ * This is a security boundary, not tidiness. The apiVersion is read out of the
+ * YAML in the editor, so it is attacker-influenced whenever someone opens a
+ * manifest they were sent, and the result of openApiPathFor is interpolated
+ * both into the apiserver request path and into a cache filename that escapes
+ * only `/`. Without this check `..\..\evil` passes as a single segment and
+ * escapes the cache directory on Windows, and characters such as `?` and `#`
+ * change which apiserver endpoint is requested.
+ */
+const GROUP_SEGMENT = /^[a-zA-Z0-9][a-zA-Z0-9.-]*$/;
+
+/**
  * Map a Kubernetes apiVersion onto its /openapi/v3 sub-path.
  * Core resources live under `api/v1`; everything else under `apis/<group>/<ver>`.
  */
@@ -45,6 +58,7 @@ export function openApiPathFor(apiVersion: string): string | null {
   const trimmed = apiVersion.trim();
   if (trimmed === '') return null;
   const parts = trimmed.split('/');
+  if (!parts.every((part) => GROUP_SEGMENT.test(part))) return null;
   if (parts.length === 1) return `api/${parts[0]}`;
   if (parts.length === 2) return `apis/${parts[0]}/${parts[1]}`;
   return null;

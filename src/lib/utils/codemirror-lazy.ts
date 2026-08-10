@@ -69,6 +69,10 @@ export interface CodeMirrorModules {
   k8sAutocompletion: typeof import("$lib/utils/yaml-intellisense").k8sAutocompletion;
   k8sLinter: typeof import("$lib/utils/yaml-intellisense").k8sLinter;
   k8sHoverDocs: typeof import("$lib/utils/yaml-intellisense").k8sHoverDocs;
+
+  // yaml-lint — exposed directly so Apply can validate the exact current buffer
+  // rather than trusting the debounced diagnostic count.
+  lintYaml: typeof import("$lib/utils/yaml-lint").lintYaml;
 }
 
 let cached: CodeMirrorModules | null = null;
@@ -76,7 +80,7 @@ let cached: CodeMirrorModules | null = null;
 export async function loadCodeMirror(): Promise<CodeMirrorModules> {
   if (cached) return cached;
 
-  const [state, view, langYaml, commands, language, highlight, searchMod, merge, autocomplete, lint, intellisense] =
+  const [state, view, langYaml, commands, language, highlight, searchMod, merge, autocomplete, lint, intellisense, yamlLint] =
     await Promise.all([
       import("@codemirror/state"),
       import("@codemirror/view"),
@@ -89,6 +93,7 @@ export async function loadCodeMirror(): Promise<CodeMirrorModules> {
       import("@codemirror/autocomplete"),
       import("@codemirror/lint"),
       import("$lib/utils/yaml-intellisense"),
+      import("$lib/utils/yaml-lint"),
     ]);
 
   cached = {
@@ -145,6 +150,8 @@ export async function loadCodeMirror(): Promise<CodeMirrorModules> {
     k8sAutocompletion: intellisense.k8sAutocompletion,
     k8sLinter: intellisense.k8sLinter,
     k8sHoverDocs: intellisense.k8sHoverDocs,
+
+    lintYaml: yamlLint.lintYaml,
   };
 
   return cached;

@@ -100,16 +100,33 @@ describe("typeMismatch", () => {
 });
 
 describe("QUANTITY", () => {
-  test.each(["100m", "1", "0.5", "512Mi", "2Gi", "1500M", "1e3", "250n"])(
-    "accepts %s",
+  // Binary suffixes use a capital K (`Ki`) while decimal ones use a lowercase k.
+  // Testing only Mi and Gi hid a regex that rejected every `Ki`.
+  test.each([
+    "100m",
+    "1",
+    "0.5",
+    "512Ki",
+    "512Mi",
+    "2Gi",
+    "4Ti",
+    "1Pi",
+    "1Ei",
+    "1500M",
+    "3k",
+    "1e3",
+    "250n",
+    "10u",
+  ])("accepts %s", (v: string) => {
+    expect(QUANTITY.test(v)).toBe(true);
+  });
+
+  test.each(["1 Gi", "abc", "10Gib", "", "Mi", "1ki", "5KI", "2gi", "1K"])(
+    "rejects %s",
     (v: string) => {
-      expect(QUANTITY.test(v)).toBe(true);
+      expect(QUANTITY.test(v)).toBe(false);
     },
   );
-
-  test.each(["1 Gi", "abc", "10Gib", "", "Mi"])("rejects %s", (v: string) => {
-    expect(QUANTITY.test(v)).toBe(false);
-  });
 });
 
 describe("DNS_1123_SUBDOMAIN", () => {

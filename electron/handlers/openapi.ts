@@ -202,6 +202,18 @@ async function writeDiskCache(gvPath: string, version: string, doc: GroupDocumen
   }
 }
 
+/**
+ * Bumped by resetOpenApiCache. A request captures it before going to the
+ * network and re-checks it before writing, so a response that was already in
+ * flight when the user switched context cannot be stored against the new
+ * cluster — emptying the caches alone does not stop that write.
+ */
+let cacheGeneration = 0;
+
+/** In-flight fetches keyed by gvPath, so two editors opening the same kind at
+ *  once do not each pull the ~1.5 MB group document. */
+const inFlight = new Map<string, Promise<{ doc: GroupDocument | null; reason: string | null }>>();
+
 /** Fetch one API group's OpenAPI document, consulting both cache layers. */
 async function loadGroupDocument(
   gvPath: string,
@@ -209,16 +221,36 @@ async function loadGroupDocument(
   const cached = memoryCache.get(gvPath);
   if (cached) return { doc: cached, reason: null };
 
+  const pending = inFlight.get(gvPath);
+  if (pending) return pending;
+
+  const request = fetchGroupDocument(gvPath).finally(() => {
+    inFlight.delete(gvPath);
+  });
+  inFlight.set(gvPath, request);
+  return request;
+}
+
+async function fetchGroupDocument(
+  gvPath: string,
+): Promise<{ doc: GroupDocument | null; reason: string | null }> {
+  const generation = cacheGeneration;
   const version = await apiserverVersion();
 
   const fromDisk = await readDiskCache(gvPath, version);
   if (fromDisk) {
-    memoryCache.set(gvPath, fromDisk);
+    if (generation === cacheGeneration) memoryCache.set(gvPath, fromDisk);
     return { doc: fromDisk, reason: null };
   }
 
   const { body, reason } = await fetchApiserverJson<GroupDocument>(`openapi/v3/${gvPath}`);
   if (!body) return { doc: null, reason };
+
+  // The context changed while this was in flight: the document describes the
+  // previous apiserver, so answer this caller but do not cache it.
+  if (generation !== cacheGeneration) {
+    return { doc: body, reason: null };
+  }
 
   memoryCache.set(gvPath, body);
   await writeDiskCache(gvPath, version, body);
@@ -253,6 +285,9 @@ async function getOpenApiSchema(args: Record<string, unknown>): Promise<OpenApiS
 export function resetOpenApiCache(): void {
   memoryCache.clear();
   gitVersionCache = null;
+  // Invalidates any request already in flight, which would otherwise write the
+  // old cluster's document into the freshly cleared cache when it resolves.
+  cacheGeneration++;
 }
 
 // Switching context points at a different apiserver with its own version and

@@ -389,7 +389,10 @@ async function keyCompletions(
   const provider = await deps.provider(ctx.kind, ctx.apiVersion);
   const fields = provider.fieldsAt(ctx.path);
   if (!fields || Object.keys(fields).length === 0) {
-    return explicit ? { from, options: rootKeySuggestions() } : null;
+    // Only at the document root: `apiVersion` and `kind` are not valid inside
+    // `spec.template.spec`, so offering them there is worse than offering
+    // nothing at all.
+    return explicit && ctx.path.length === 0 ? { from, options: rootKeySuggestions() } : null;
   }
 
   const existing = siblingKeys(text, pos, ctx.indent);
@@ -478,9 +481,19 @@ export async function completionsFor(
   deps: CompletionDeps = DEFAULT_DEPS,
 ): Promise<SuggestionResult | null> {
   const ctx = contextAtOffset(text, pos);
-  const result = ctx.isKey
-    ? await keyCompletions(text, pos, ctx, deps, explicit)
-    : await valueCompletions(text, pos, ctx, deps);
+
+  // Every lookup below is documented as best-effort, but nothing downstream
+  // guarantees it: a provider that rejects would reject this promise on every
+  // keystroke and surface as an editor exception. No suggestion is the right
+  // failure mode.
+  let result: SuggestionResult | null;
+  try {
+    result = ctx.isKey
+      ? await keyCompletions(text, pos, ctx, deps, explicit)
+      : await valueCompletions(text, pos, ctx, deps);
+  } catch {
+    return null;
+  }
 
   if (!result || result.options.length === 0) return null;
   return result;
