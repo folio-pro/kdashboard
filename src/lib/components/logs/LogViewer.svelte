@@ -4,6 +4,7 @@
   import { listen } from "$lib/ipc/event";
   import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { scheduleFlush } from "$lib/utils/frame-scheduler";
   import type { Resource } from "$lib/types";
   import { onMount, untrack } from "svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
@@ -63,9 +64,22 @@
   function enqueueLogLine(line: LogLine) {
     trackPodName(line.podName);
     pendingLogs.push(line);
+
+    // Cap the pending buffer the same way flushLogs caps `logs`: only the last
+    // `tailLines` can ever be displayed, so anything older is already garbage.
+    // This matters while the window is backgrounded — the flush is throttled but
+    // the backend keeps streaming (electron/handlers/logs.ts emits every 50ms),
+    // so an uncapped buffer would grow for as long as the window stays hidden.
+    // Trim at 2x so the splice is amortised O(1) instead of running per line.
+    if (pendingLogs.length > tailLines * 2) {
+      pendingLogs.splice(0, pendingLogs.length - tailLines);
+    }
+
     if (!flushScheduled) {
       flushScheduled = true;
-      requestAnimationFrame(flushLogs);
+      // NOT a bare requestAnimationFrame: rAF is paused while the window is
+      // minimized or occluded, which would strand the buffer until refocus.
+      scheduleFlush(flushLogs);
     }
   }
 
@@ -87,7 +101,9 @@
     flushScheduled = false;
 
     if (shouldScroll) {
-      requestAnimationFrame(() => {
+      // Same reason as above: a hidden window gets no frames, and the tail must
+      // still be pinned to the bottom by the time it is shown again.
+      scheduleFlush(() => {
         $virtualizer.scrollToIndex(filteredLogs.length - 1, { align: "end" });
       });
     }

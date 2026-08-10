@@ -103,6 +103,24 @@ function currentSettings(): AppSettings {
   return settingsState;
 }
 
+/**
+ * Synchronous read of the persisted settings, for the boot path.
+ *
+ * main.ts serves these over a `sendSync` IPC channel so the renderer can apply
+ * the persisted theme BEFORE its first paint. Going through the normal async
+ * `get_settings` invoke costs a round-trip during startup, and until it
+ * resolves the document carries no `data-theme` — a visible flash on every
+ * light theme (see the 11 palettes in src/app.css).
+ *
+ * Reads disk at most once: currentSettings() memoises into settingsState, which
+ * save_settings keeps current. Calling this before the window exists also
+ * applies the kubeconfig / prometheus overrides earlier than the first invoke
+ * would.
+ */
+export function getSettingsSync(): AppSettings {
+  return currentSettings();
+}
+
 // ===========================================================================
 // App metadata — replicates the cached values from src-tauri/src/lib.rs
 // (hostname + os version never change; k8s version cached, cleared elsewhere

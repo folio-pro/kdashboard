@@ -5,6 +5,7 @@ import {
   DebouncedFilter,
   filterItems,
   sortItems,
+  type WatchEvent,
 } from "./performance.logic";
 
 /**
@@ -163,6 +164,193 @@ describe("Watch event batching", () => {
 
     expect(batcher.selectedResource).toBeNull();
   });
+
+  // --- Coalescing by uid ---
+  //
+  // The buffer keeps only the newest event per uid so it stays bounded while
+  // the flush is throttled (backgrounded window). These pin down that this is
+  // equivalent to replaying every event, and that row order is unaffected.
+
+  test("repeated events for one uid collapse to a single pending entry", () => {
+    const base = makeResource("pod-1", "uid-1");
+    for (let i = 2; i <= 50; i++) {
+      batcher.handleWatchEvent({
+        event_type: "Applied",
+        resource_type: "pods",
+        resource: { ...base, metadata: { ...base.metadata, resource_version: String(i) } },
+      });
+    }
+
+    // 49 events in, one resource out — this is the bound that keeps a hidden
+    // window from accumulating an unbounded buffer.
+    expect(batcher.pendingCount).toBe(1);
+
+    batcher.flushWatchEvents();
+
+    expect(batcher.resources.items.length).toBe(2);
+    expect(batcher.resources.items[0].metadata.resource_version).toBe("50");
+  });
+
+  test("last event for a uid wins, matching a full replay", () => {
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-3", "uid-3"),
+    });
+    batcher.handleWatchEvent({
+      event_type: "Deleted",
+      resource_type: "pods",
+      resource: makeResource("pod-3", "uid-3"),
+    });
+
+    batcher.flushWatchEvents();
+
+    // Applied-then-Deleted nets out to absent, exactly as replaying both would.
+    expect(batcher.resources.items.map((r) => r.metadata.uid)).toEqual(["uid-1", "uid-2"]);
+  });
+
+  test("a Deleted superseded by a later Applied re-appends the resource", () => {
+    batcher.handleWatchEvent({
+      event_type: "Deleted",
+      resource_type: "pods",
+      resource: makeResource("pod-1", "uid-1"),
+    });
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-1", "uid-1"),
+    });
+
+    batcher.flushWatchEvents();
+
+    // uid-1 moves to the END: a replay deletes the row and then re-adds it, so
+    // coalescing must not smuggle it back into its original slot.
+    expect(batcher.resources.items.map((r) => r.metadata.uid)).toEqual(["uid-2", "uid-1"]);
+  });
+
+  test("row order is preserved: updates keep position, new items append in arrival order", () => {
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-1", "uid-1"),
+    });
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-4", "uid-4"),
+    });
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-3", "uid-3"),
+    });
+    // Re-touching uid-4 must NOT move it behind uid-3.
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-4", "uid-4"),
+    });
+
+    batcher.flushWatchEvents();
+
+    expect(batcher.resources.items.map((r) => r.metadata.uid)).toEqual([
+      "uid-1",
+      "uid-2",
+      "uid-4",
+      "uid-3",
+    ]);
+  });
+
+  test("events without a uid are dropped at enqueue time", () => {
+    batcher.handleWatchEvent({
+      event_type: "Applied",
+      resource_type: "pods",
+      resource: makeResource("pod-x", ""),
+    });
+
+    expect(batcher.pendingCount).toBe(0);
+  });
+
+  // --- Replay equivalence ---
+  //
+  // Coalescing is only safe because it produces the SAME list as replaying
+  // every event one by one. Asserting hand-written expectations cannot prove
+  // that — it just restates whatever the implementation happens to do. These
+  // compute the replay result independently and compare.
+
+  /** Ground truth: apply every event in order, as an un-coalesced flush would. */
+  function replay(start: Resource[], events: WatchEvent[]): string[] {
+    const byUid = new Map<string, Resource>();
+    for (const r of start) byUid.set(r.metadata.uid, r);
+    for (const e of events) {
+      const uid = e.resource.metadata?.uid;
+      if (!uid) continue;
+      if (e.event_type === "Applied") byUid.set(uid, e.resource);
+      else if (e.event_type === "Deleted") byUid.delete(uid);
+    }
+    return [...byUid.keys()];
+  }
+
+  function coalesce(start: Resource[], events: WatchEvent[]): string[] {
+    const b = new WatchBatcher();
+    b.resources = { items: [...start], resource_type: "pods" };
+    for (const e of events) b.handleWatchEvent(e);
+    b.flushWatchEvents();
+    return b.resources.items.map((r) => r.metadata.uid);
+  }
+
+  const applied = (uid: string): WatchEvent => ({
+    event_type: "Applied",
+    resource_type: "pods",
+    resource: makeResource(`pod-${uid}`, uid),
+  });
+  const deleted = (uid: string): WatchEvent => ({
+    event_type: "Deleted",
+    resource_type: "pods",
+    resource: makeResource(`pod-${uid}`, uid),
+  });
+
+  const SCENARIOS: Array<{ name: string; start: string[]; events: WatchEvent[] }> = [
+    {
+      name: "in-place updates keep their slot",
+      start: ["uid-1", "uid-2"],
+      events: [applied("uid-1"), applied("uid-3")],
+    },
+    {
+      name: "Deleted then Applied on a present uid",
+      start: ["uid-1", "uid-2"],
+      events: [deleted("uid-1"), applied("uid-1")],
+    },
+    {
+      name: "Deleted on an absent uid, another uid applied in between",
+      start: ["uid-1"],
+      events: [deleted("uid-4"), applied("uid-3"), applied("uid-4")],
+    },
+    {
+      name: "Applied then Deleted on a new uid",
+      start: ["uid-1"],
+      events: [applied("uid-5"), deleted("uid-5")],
+    },
+    {
+      name: "interleaved churn across several uids",
+      start: ["uid-1", "uid-2"],
+      events: [
+        applied("uid-3"),
+        deleted("uid-2"),
+        applied("uid-2"),
+        deleted("uid-3"),
+        applied("uid-4"),
+        applied("uid-1"),
+      ],
+    },
+  ];
+
+  for (const { name, start, events } of SCENARIOS) {
+    test(`replay equivalence: ${name}`, () => {
+      const items = start.map((uid) => makeResource(`pod-${uid}`, uid));
+      expect(coalesce(items, events)).toEqual(replay(items, events));
+    });
+  }
 });
 
 // --- 2. Debounced filter ---

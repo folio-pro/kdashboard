@@ -1,15 +1,21 @@
 // Electron main process — the Tauri `run()` equivalent.
 //
 // Responsibilities:
-//   1. Create the main window (hidden, 1280x800, min 900x600) + a frameless
-//      centered splash (400x300) loading /splashscreen.html.
+//   1. Create the main window (hidden, 1280x800, min 900x600), painted in the
+//      persisted theme's background colour so the reveal has no flash.
 //   2. Register ONE ipcMain.handle('k8s:invoke', dispatch) that routes every
 //      renderer invoke() through the dispatcher.
 //   3. Register the internal window/shell/process/updater bridge commands the
 //      Tauri shims call (__window_show, __shell_open, …).
 //   4. Import + register all handler modules that currently exist (the Wire
 //      phase extends the marked block below).
-//   5. After ~5s (or when the renderer signals ready) show main + close splash.
+//   5. Reveal the window when the renderer is ready, capped by a 5s safety net.
+//
+// There is deliberately NO splash window. A splash is a second Chromium
+// renderer process spawned exactly while the main renderer is booting, so it
+// competes for CPU at the worst moment. The only thing it bought us was hiding
+// the pre-paint flash — and `show: false` plus a theme-correct backgroundColor
+// (see THEME_CHROME) already does that for free.
 
 import {
   app,
@@ -44,6 +50,44 @@ import * as portforward from './handlers/portforward';
 import * as watch from './handlers/watch';
 import * as updater from './handlers/updater';
 
+// ---------------------------------------------------------------------------
+// Theme chrome
+// ---------------------------------------------------------------------------
+
+/**
+ * Window chrome colour per theme. MUST stay in sync with the `[data-theme=…]`
+ * palettes in src/app.css (--bg-primary) and their `color-scheme` grouping.
+ *
+ * The window is painted before the renderer has produced a single pixel, so a
+ * hardcoded dark background flashes on every light theme. Reading the persisted
+ * theme here means the frame starts in the right colour and the reveal is
+ * seamless — which is what makes a separate splash window unnecessary.
+ */
+const THEME_CHROME: Record<string, { bg: string; symbol: string }> = {
+  'kdashboard': { bg: '#0C0C0C', symbol: '#E5E5E5' },
+  'gruvbox-dark': { bg: '#2C2521', symbol: '#E5E5E5' },
+  'solarized-dark': { bg: '#003C4D', symbol: '#E5E5E5' },
+  'everforest-dark': { bg: '#262C28', symbol: '#E5E5E5' },
+  'dracula-dark': { bg: '#272935', symbol: '#E5E5E5' },
+  'monokai-dark': { bg: '#1D1D1B', symbol: '#E5E5E5' },
+  'gruvbox-light': { bg: '#F9F5EB', symbol: '#3C3836' },
+  'solarized-light': { bg: '#FDF6E2', symbol: '#586E75' },
+  'everforest-light': { bg: '#F2F7EE', symbol: '#5C6A72' },
+  'rosepine-dawn': { bg: '#F8F3ED', symbol: '#575279' },
+  'github-light': { bg: '#F5F7FA', symbol: '#1F2328' },
+};
+
+/** Chrome colours for the persisted theme, falling back to the default theme. */
+function themeChrome(): { bg: string; symbol: string } {
+  let mode: unknown;
+  try {
+    mode = appHandlers.getSettingsSync().theme_mode;
+  } catch {
+    // Unreadable settings must never block window creation.
+  }
+  return (typeof mode === 'string' ? THEME_CHROME[mode] : undefined) ?? THEME_CHROME.kdashboard;
+}
+
 const isDev = !app.isPackaged;
 // electron-vite sets this to the dev-server URL during `electron-vite dev`. It
 // is undefined for `electron-vite preview` and packaged builds, which load the
@@ -52,8 +96,6 @@ const isDev = !app.isPackaged;
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
 
 let mainWindow: BrowserWindow | null = null;
-let splashWindow: BrowserWindow | null = null;
-let splashClosed = false;
 
 // ---------------------------------------------------------------------------
 // Streaming cleanup
@@ -78,6 +120,7 @@ function stopStreamingSubsystems(): void {
 
 function createMainWindow(): BrowserWindow {
   const isMac = process.platform === 'darwin';
+  const chrome = themeChrome();
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -94,14 +137,22 @@ function createMainWindow(): BrowserWindow {
     ...(isMac ? { trafficLightPosition: { x: 13, y: 10 } } : {}),
     // Windows/Linux have no traffic lights — overlay native window controls so
     // min/max/close stay reachable (the app draws no custom buttons).
-    ...(isMac ? {} : { titleBarOverlay: { color: '#0c0c0c', symbolColor: '#e5e5e5', height: 35 } }),
-    // Avoid a white flash before the renderer paints the themed bar.
-    backgroundColor: '#0c0c0c',
+    ...(isMac
+      ? {}
+      : { titleBarOverlay: { color: chrome.bg, symbolColor: chrome.symbol, height: 35 } }),
+    // Paint the persisted theme's background before the renderer draws, so the
+    // window never flashes a colour the user did not choose.
+    backgroundColor: chrome.bg,
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.mjs'),
+      // .cjs, not .mjs: sandboxed preloads must be CommonJS (see the preload
+      // output config in electron.vite.config.ts).
+      preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false, // preload needs require('electron'); handlers run in main
+      // The renderer runs sandboxed. electron/preload.ts only uses contextBridge
+      // and ipcRenderer, both of which Electron provides to sandboxed preloads —
+      // all Node work happens in main, behind the k8s:invoke dispatcher.
+      sandbox: true,
     },
   });
 
@@ -143,39 +194,11 @@ function createMainWindow(): BrowserWindow {
   return win;
 }
 
-function createSplashWindow(): BrowserWindow {
-  const win = new BrowserWindow({
-    width: 400,
-    height: 300,
-    frame: false, // decorations: false
-    resizable: false,
-    center: true,
-    title: '',
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  if (RENDERER_URL) {
-    void win.loadURL(`${RENDERER_URL}/splashscreen.html`);
-  } else {
-    void win.loadFile(path.join(__dirname, '../renderer/splashscreen.html'));
-  }
-
-  win.on('closed', () => {
-    splashWindow = null;
-  });
-
-  return win;
-}
-
-/** Show main + close splash. Idempotent — safe to call from timeout and signal. */
+/**
+ * Show the main window. Idempotent — called from `ready-to-show`, from the
+ * renderer's close_splashscreen(), and from the safety timeout.
+ */
 function revealMainWindow(): void {
-  if (splashWindow && !splashClosed) {
-    splashClosed = true;
-    splashWindow.close();
-  }
   if (mainWindow && !mainWindow.isVisible()) {
     mainWindow.show();
     mainWindow.focus();
@@ -203,7 +226,10 @@ const ctx: HandlerCtx = {
  */
 const internalModule: HandlerModule = {
   register(handlers): void {
-    // --- splash (genuine Tauri command) ---
+    // --- reveal (genuine Tauri command, kept for the renderer's initApp) ---
+    // Named for the splash window it used to close. There is no splash any
+    // more, but App.svelte still calls it to say "I am ready to be seen", which
+    // is a useful signal alongside ready-to-show.
     handlers.set('close_splashscreen', () => {
       revealMainWindow();
       return null;
@@ -292,22 +318,35 @@ function buildHandlerModules(): HandlerModule[] {
 // Bootstrap
 // ---------------------------------------------------------------------------
 
-/** Create splash + main windows and arm the reveal timers. Re-runs on macOS
- * `activate` after all windows were closed — everything here must be safe to
- * repeat (unlike the one-time setup in bootstrap()). */
+/** Create the main window and arm the reveal. Re-runs on macOS `activate` after
+ * all windows were closed — everything here must be safe to repeat (unlike the
+ * one-time setup in bootstrap()). */
 function createWindows(): void {
-  splashClosed = false;
-  splashWindow = createSplashWindow();
-  mainWindow = createMainWindow();
+  const win = createMainWindow();
+  mainWindow = win;
 
-  // Reveal once the renderer's DOM is ready, capped by a 5s safety timeout
-  // (matches the Rust splash force-close behaviour).
-  mainWindow.webContents.once('did-finish-load', () => {
-    // Renderer also calls close_splashscreen() from initApp(); this is a
-    // fallback so we never strand the splash if that call is skipped.
-    setTimeout(revealMainWindow, 250);
-  });
-  setTimeout(revealMainWindow, 5000);
+  // Reveal THIS window, never whatever `mainWindow` happens to point at when
+  // the timer fires. On macOS, closing every window and reactivating runs
+  // createWindows() again, so a timer armed for the previous window would
+  // otherwise show the new one before it had painted.
+  let safetyTimer: ReturnType<typeof setTimeout> | undefined;
+  const reveal = (): void => {
+    clearTimeout(safetyTimer);
+    if (win.isDestroyed() || win.isVisible()) return;
+    win.show();
+    win.focus();
+  };
+
+  // `ready-to-show` fires once the renderer has produced its first frame, so
+  // the window is never shown mid-paint. This replaces a fixed 250ms delay
+  // after did-finish-load: it is both earlier on a fast boot and safer on a
+  // slow one.
+  win.once('ready-to-show', reveal);
+
+  // Safety net: a renderer that never reaches first paint must not leave the
+  // user staring at no window at all.
+  safetyTimer = setTimeout(reveal, 5000);
+  win.once('closed', () => clearTimeout(safetyTimer));
 }
 
 /** One-time app setup: menu, dispatcher, IPC handler, timers. Must run exactly
@@ -335,6 +374,24 @@ function bootstrap(): void {
   } catch {
     // ignore — settings handler will set the real value
   }
+
+  // Boot settings, served synchronously. The renderer applies the persisted
+  // theme from this BEFORE mount (src/main.ts), so the first paint is already
+  // correct instead of arriving one async invoke later. Registered before
+  // createWindows() so it can never be missed by an early renderer.
+  //
+  // sendSync blocks the renderer, so this must stay a cheap in-memory read —
+  // getSettingsSync() memoises after the first disk hit.
+  ipcMain.on('k8s:boot-settings', (event) => {
+    try {
+      // Structured-clone safe: the settings file is plain JSON.
+      event.returnValue = appHandlers.getSettingsSync();
+    } catch {
+      // Never leave the renderer blocked on a throw — it falls back to the
+      // async get_settings path and its own defaults.
+      event.returnValue = null;
+    }
+  });
 
   const { dispatch } = buildDispatcher(buildHandlerModules(), ctx);
 

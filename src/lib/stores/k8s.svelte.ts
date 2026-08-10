@@ -7,6 +7,7 @@ import { K8sStoreLogic, COUNTABLE_RESOURCE_TYPES } from "./k8s.logic.js";
 import { resourceTypeForRef } from "$lib/utils/related-resources";
 import { clearClusterCompletionCache } from "$lib/utils/cluster-completion-source";
 import { clearOpenApiCache } from "$lib/utils/openapi-schema";
+import { scheduleFlush } from "$lib/utils/frame-scheduler";
 import { unshadowState } from "./_unshadow.js";
 
 export type { WatchEvent, NavigationEntry } from "./k8s.logic.js";
@@ -15,6 +16,16 @@ export { COUNTABLE_RESOURCE_TYPES } from "./k8s.logic.js";
 /** User-facing message from a caught invoke() rejection (no "Error:" prefix). */
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * A coalesced watch delta. `reinserted` marks a uid whose pending Deleted was
+ * superseded by an Applied inside the same batch — a replay would have removed
+ * the row and re-appended it, so the flush must move it to the end.
+ */
+interface PendingWatchEvent {
+  event: import("./k8s.logic.js").WatchEvent;
+  reinserted: boolean;
 }
 
 class K8sStore extends K8sStoreLogic {
@@ -63,8 +74,24 @@ class K8sStore extends K8sStoreLogic {
   private _watchUnlisten: UnlistenFn | null = null;
   private _watchActive = false;
   private _pfUnlisten: UnlistenFn | null = null;
-  private _pendingWatchEvents: import("./k8s.logic.js").WatchEvent[] = [];
-  private _watchFlushScheduled = false;
+  // Pending watch deltas, COALESCED BY uid. _flushWatchEvents is a last-write-
+  // wins upsert per uid, so keeping only the newest event per resource yields
+  // exactly the same result as replaying every event — while bounding the buffer
+  // to the number of distinct resources instead of the number of events.
+  //
+  // That bound is what makes a backgrounded window safe: the main process keeps
+  // emitting every 50ms (electron/handlers/watch.ts WATCH_FLUSH_INTERVAL_MS)
+  // while the renderer's flush is throttled, so an append-only buffer would grow
+  // for as long as the window stays hidden and then land as one huge flush.
+  //
+  // Ordering: a replay appends a resource at the position of the event that
+  // (re)introduced it, so a uid whose pending Deleted is later superseded by an
+  // Applied must move to the END rather than keep the Deleted's slot.
+  // `reinserted` records that transition and the flush honours it. Every other
+  // case keeps the uid's existing position, matching a replay exactly.
+  private _pendingWatchEvents = new Map<string, PendingWatchEvent>();
+  /** Cancels the scheduled flush; null when no flush is pending. */
+  private _cancelWatchFlush: (() => void) | null = null;
   // Serializes start/stop so two fire-and-forget callers can't race on the
   // single _ageInterval/_watchUnlisten/_watchActive slots and orphan a timer
   // or listener (a slow, unbounded leak under rapid type/tab switching).
@@ -447,8 +474,7 @@ class K8sStore extends K8sStoreLogic {
   }
 
   private async _stopWatchInner(): Promise<void> {
-    this._pendingWatchEvents = [];
-    this._watchFlushScheduled = false;
+    this._discardPendingWatchEvents();
     if (this._ageInterval) {
       clearInterval(this._ageInterval);
       this._ageInterval = null;
@@ -482,23 +508,48 @@ class K8sStore extends K8sStoreLogic {
 
     // Resync: watcher reconnected after a gap, do a full refresh
     if (event.event_type === "Resync") {
-      this._pendingWatchEvents = [];
-      this._watchFlushScheduled = false;
+      this._discardPendingWatchEvents();
       this._refreshAfterResync();
       return;
     }
 
-    this._pendingWatchEvents.push(event);
-    if (!this._watchFlushScheduled) {
-      this._watchFlushScheduled = true;
-      requestAnimationFrame(() => this._flushWatchEvents());
+    // Events without a uid can never be applied (the flush keys on it), so drop
+    // them here rather than buffering something the flush would skip anyway.
+    const uid = event.resource.metadata?.uid;
+    if (!uid) return;
+
+    // Coalesce: the newest event for a uid supersedes any earlier pending one.
+    // set() keeps the existing key's position, which is what a replay does for
+    // an in-place update. The exception is Deleted -> Applied: a replay removes
+    // the row and re-appends it, so drop the key first to move it to the end
+    // and flag it so the flush repositions the live row too.
+    const prev = this._pendingWatchEvents.get(uid);
+    const reinserted = prev?.event.event_type === "Deleted" && event.event_type === "Applied";
+    if (reinserted) this._pendingWatchEvents.delete(uid);
+    this._pendingWatchEvents.set(uid, {
+      event,
+      reinserted: reinserted || (prev?.reinserted ?? false),
+    });
+
+    if (!this._cancelWatchFlush) {
+      // NOT a bare requestAnimationFrame: rAF is paused while the window is
+      // minimized or occluded, which would strand the buffer until refocus.
+      this._cancelWatchFlush = scheduleFlush(() => this._flushWatchEvents());
     }
   }
 
+  /** Drop every buffered delta and cancel any scheduled flush. */
+  private _discardPendingWatchEvents(): void {
+    this._pendingWatchEvents.clear();
+    this._cancelWatchFlush?.();
+    this._cancelWatchFlush = null;
+  }
+
   private _flushWatchEvents(): void {
-    const batch = this._pendingWatchEvents;
-    this._pendingWatchEvents = [];
-    this._watchFlushScheduled = false;
+    // [uid, event] pairs — the uid is the map key, already validated on enqueue.
+    const batch = [...this._pendingWatchEvents];
+    this._pendingWatchEvents.clear();
+    this._cancelWatchFlush = null;
 
     if (batch.length === 0) return;
 
@@ -509,7 +560,7 @@ class K8sStore extends K8sStoreLogic {
     // upsert/delete instead of an O(N) findIndex/splice — turns the worst-case
     // O(N·M) flush (M events over N items) into O(N+M). Map iteration order
     // matches the current array and set() keeps an existing key's position, so
-    // the resulting item order is identical to the previous in-place logic.
+    // an update lands in place; only a `reinserted` uid moves (see below).
     // A fresh array is built at the end (required for $state.raw correctness).
     const byUid = new Map<string, Resource>();
     for (const r of this.resources.items) {
@@ -520,21 +571,25 @@ class K8sStore extends K8sStoreLogic {
     let selectedResourceUpdate: Resource | null | undefined;
     let changed = false;
 
-    for (const event of batch) {
+    for (const [uid, { event, reinserted }] of batch) {
       // Double-check scope hasn't changed mid-flush
       if (this._scopeGeneration !== scopeGen) return;
-
-      const uid = event.resource.metadata?.uid;
-      if (!uid) continue;
 
       if (event.event_type === "Applied") {
         // Same resourceVersion = identical object (k8s bumps RV on every
         // change): the event is a replay (initial watch sync / reconnect),
         // not a delta. Skipping it avoids re-rendering the whole table once
         // per replayed batch right after navigation/restore.
+        //
+        // Not applicable to a reinserted uid: a replay would have deleted and
+        // re-appended the row, so its POSITION changes even when its content
+        // does not, and skipping would leave the row where it was.
         const prev = byUid.get(uid);
         const rv = event.resource.metadata?.resource_version;
-        if (prev && rv && prev.metadata?.resource_version === rv) continue;
+        if (!reinserted && prev && rv && prev.metadata?.resource_version === rv) continue;
+        // Deleted -> Applied within the batch: drop the old key so set() appends
+        // at the end, exactly where a replay would have put it.
+        if (reinserted) byUid.delete(uid);
         byUid.set(uid, event.resource);
         changed = true;
         if (this.selectedResource?.metadata?.uid === uid) {
