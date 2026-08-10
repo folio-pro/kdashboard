@@ -213,18 +213,54 @@ describe('integration: node ops', { skip: !enabled }, () => {
     assert.ok(phases.includes('listing'));
     assert.ok(phases.includes('done'));
 
-    // The evicted workloads come back — on the other worker, since this one is
-    // cordoned. That is the whole point of the operation.
-    await waitFor(
-      async () => {
-        const remaining = await podsOn(node);
-        return remaining.every((p) => {
-          const owner = (p.metadata.owner_references as Array<{ kind?: string }> | null) ?? [];
-          return owner.some((o) => o.kind === 'DaemonSet');
-        });
-      },
-      { timeoutMs: 60_000, label: 'the drained node to hold only DaemonSet pods' },
+    // Everything the drain reported as EVICTED has to actually leave the node —
+    // that is the claim under test, and those workloads come back on the other
+    // worker since this one is cordoned.
+    //
+    // What may legitimately stay: DaemonSet pods, and any pod the drain openly
+    // reported as skipped or failed. That second case is not hypothetical. The
+    // seed's `guarded` Deployment runs one replica behind a minAvailable:1 PDB,
+    // so its pod can NEVER be evicted (the next test asserts exactly that), and
+    // the scheduler is free to place it on either worker. Whenever it landed on
+    // the node this test drains, the old "only DaemonSet pods" predicate could
+    // never come true and the test failed after the full 60s — which is what
+    // made this the suite's flakiest test rather than a real signal.
+    //
+    // Asserting against the drain's own report keeps the teeth (an evicted pod
+    // that lingers still fails) while making the outcome independent of where
+    // the scheduler happened to put an unevictable pod.
+    const accountedFor = new Set(
+      [...result.skipped, ...result.failed].map((p) => `${p.namespace}/${p.pod}`),
     );
+    const isDaemonSetPod = (p: Resource): boolean => {
+      const owner = (p.metadata.owner_references as Array<{ kind?: string }> | null) ?? [];
+      return owner.some((o) => o.kind === 'DaemonSet');
+    };
+
+    // Tracked outside the poll so the failure can name the offenders. The old
+    // message said only "timed out", which is why this survived three branches
+    // before anyone could tell what it was actually waiting on.
+    let lingering: string[] = [];
+    try {
+      await waitFor(
+        async () => {
+          lingering = (await podsOn(node))
+            .filter((p) => !isDaemonSetPod(p))
+            .filter((p) => !accountedFor.has(`${p.metadata.namespace}/${p.metadata.name}`))
+            .map((p) => `${p.metadata.namespace}/${p.metadata.name}`);
+          return lingering.length === 0;
+        },
+        { timeoutMs: 60_000, label: 'the evicted pods to leave the drained node' },
+      );
+    } catch (err) {
+      assert.fail(
+        `pods the drain claimed to evict are still on ${node}: ${lingering.join(', ')}\n` +
+          `evicted=${JSON.stringify(result.evicted)}\n` +
+          `skipped=${JSON.stringify(result.skipped)}\n` +
+          `failed=${JSON.stringify(result.failed)}\n` +
+          `(${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
   });
 
   test('a PodDisruptionBudget blocks eviction until the drain times out', async (t) => {
