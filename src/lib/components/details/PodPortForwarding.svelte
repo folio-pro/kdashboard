@@ -97,7 +97,7 @@
     {@const rawIcon = getContainerIconUrl(containerImage)}
     {@const portIcon = rawIcon && !failedIcons.has(rawIcon) ? rawIcon : null}
     <div
-      class="flex items-center gap-3 rounded-[7px] border px-3 py-2.5 {forwarded ? '' : 'border-[var(--border-color)] bg-[var(--bg-secondary)]'}"
+      class="flex items-center gap-3 rounded-md border px-3 py-2.5 {forwarded ? '' : 'border-[var(--border-color)] bg-[var(--bg-secondary)]'}"
       style={forwarded
         ? "border-color: color-mix(in srgb, var(--accent) 28%, transparent); background-color: color-mix(in srgb, var(--accent) 9%, transparent);"
         : ""}
@@ -105,9 +105,9 @@
       <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--bg-tertiary)]">
         {@render containerIcon(portIcon, port.containerName)}
       </span>
-      <span class="min-w-[80px] truncate text-[12.5px] font-medium text-[var(--text-primary)]" title={port.containerName}>{port.containerName}</span>
+      <span class="min-w-[80px] truncate text-[12px] font-medium text-[var(--text-primary)]" title={port.containerName}>{port.containerName}</span>
       <span class="min-w-[72px] font-mono text-[12px] text-[var(--text-secondary)]">{port.containerPort}/{port.protocol}</span>
-      <ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-dimmed)]" />
+      <ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
       {#if forwarded && activePf}
         <button
           class="inline-flex items-center gap-1.5 font-mono text-[12px] text-[var(--accent)] hover:underline"
@@ -155,13 +155,13 @@
   {/each}
 
   {#if portForwardError}
-    <div class="flex items-center gap-1.5 rounded-[7px] border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/5 px-3 py-2.5">
+    <div class="flex items-center gap-1.5 rounded-md border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/5 px-3 py-2.5">
       <Info class="h-3.5 w-3.5 shrink-0 text-[var(--status-failed)]" />
-      <span class="text-xs text-[var(--status-failed)]">{portForwardError}</span>
+      <span class="text-[12px] text-[var(--status-failed)]">{portForwardError}</span>
     </div>
   {/if}
 
   {#if allPorts.length === 0}
-    <p class="text-xs text-[var(--text-muted)]">No ports defined</p>
+    <p class="text-[12px] text-[var(--text-muted)]">No ports defined</p>
   {/if}
 </div>

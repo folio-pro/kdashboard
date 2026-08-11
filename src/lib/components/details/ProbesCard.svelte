@@ -92,7 +92,7 @@
           <span class="text-[12px] font-semibold text-[var(--text-primary)]">{probe.containerName}</span>
           <span
             class="rounded-full px-2 py-0.5 text-[10px] font-medium"
-            style="color: {probeTypeColors[probe.type] ?? 'var(--text-dimmed)'}; background-color: color-mix(in srgb, {probeTypeColors[probe.type] ?? 'var(--text-dimmed)'} 12%, transparent);"
+            style="color: {probeTypeColors[probe.type] ?? 'var(--text-muted)'}; background-color: color-mix(in srgb, {probeTypeColors[probe.type] ?? 'var(--text-muted)'} 12%, transparent);"
           >
             {probe.type}
           </span>
@@ -103,23 +103,23 @@
         {/if}
         <div class="grid grid-cols-5 gap-2">
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-dimmed)]">delay</span>
+            <span class="text-[10px] text-[var(--text-muted)]">delay</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.initialDelaySeconds}s</span>
           </div>
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-dimmed)]">period</span>
+            <span class="text-[10px] text-[var(--text-muted)]">period</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.periodSeconds}s</span>
           </div>
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-dimmed)]">timeout</span>
+            <span class="text-[10px] text-[var(--text-muted)]">timeout</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.timeoutSeconds}s</span>
           </div>
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-dimmed)]">success</span>
+            <span class="text-[10px] text-[var(--text-muted)]">success</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.successThreshold}</span>
           </div>
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-dimmed)]">failure</span>
+            <span class="text-[10px] text-[var(--text-muted)]">failure</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.failureThreshold}</span>
           </div>
         </div>

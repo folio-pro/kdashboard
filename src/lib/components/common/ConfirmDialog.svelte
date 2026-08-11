@@ -41,7 +41,7 @@
         {/if}
         <div class="flex flex-col gap-1">
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription class="text-xs text-[var(--text-muted)]">{description}</DialogDescription>
+          <DialogDescription class="text-[12px] text-[var(--text-muted)]">{description}</DialogDescription>
         </div>
       </div>
     </DialogHeader>

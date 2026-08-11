@@ -69,7 +69,7 @@
 <th
   bind:this={thEl}
   class={cn(
-    "relative h-10 overflow-hidden whitespace-nowrap px-4 text-left text-[11px] font-medium text-[var(--text-dimmed)]",
+    "relative h-10 overflow-hidden whitespace-nowrap px-4 text-left text-[11px] font-medium text-[var(--text-muted)]",
     column.sortable && "cursor-pointer select-none hover:text-[var(--text-secondary)]"
   )}
   style={computedStyle}
@@ -88,7 +88,7 @@
       {:else if isActive}
         <ArrowDown class="h-3 w-3 text-[var(--accent)]" />
       {:else}
-        <ChevronsUpDown class="h-3.5 w-3.5 text-[var(--text-dimmed)]" />
+        <ChevronsUpDown class="h-3.5 w-3.5 text-[var(--text-muted)]" />
       {/if}
     </button>
   {:else}

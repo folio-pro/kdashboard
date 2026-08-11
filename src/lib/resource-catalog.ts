@@ -27,7 +27,6 @@ export interface CatalogSection {
   name: string;
   key: string;
   /** 3-4 char label for the collapsed rail. */
-  abbr: string;
   items: CatalogItem[];
 }
 
@@ -35,7 +34,6 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
   {
     name: "Workloads",
     key: "workloads",
-    abbr: "WKL",
     items: [
       { name: "Pods", type: "pods", kind: "Pod", short: "po" },
       { name: "Deployments", type: "deployments", kind: "Deployment", short: "deploy" },
@@ -49,7 +47,6 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
   {
     name: "Network",
     key: "network",
-    abbr: "NET",
     items: [
       { name: "Services", type: "services", kind: "Service", short: "svc" },
       { name: "Endpoints", type: "endpoints", kind: "Endpoints", short: "ep" },
@@ -62,7 +59,6 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
   {
     name: "Configuration",
     key: "configuration",
-    abbr: "CFG",
     items: [
       { name: "Config Maps", type: "configmaps", kind: "ConfigMap", short: "cm" },
       { name: "Secrets", type: "secrets", kind: "Secret", short: "secret" },
@@ -71,7 +67,6 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
   {
     name: "Scaling",
     key: "scaling",
-    abbr: "SCL",
     items: [
       { name: "HPA", type: "hpa", kind: "HorizontalPodAutoscaler", short: "hpa" },
       { name: "VPA", type: "vpa", kind: "VerticalPodAutoscaler", short: "vpa" },
@@ -81,7 +76,6 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
   {
     name: "Storage",
     key: "storage",
-    abbr: "STO",
     items: [
       { name: "Persistent Volumes", type: "persistentvolumes", kind: "PersistentVolume", short: "pv" },
       { name: "Persistent Volume Claims", type: "persistentvolumeclaims", kind: "PersistentVolumeClaim", short: "pvc" },
@@ -93,7 +87,6 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
   {
     name: "RBAC",
     key: "rbac",
-    abbr: "RBAC",
     items: [
       { name: "Service Accounts", type: "serviceaccounts", kind: "ServiceAccount", short: "sa" },
       { name: "Roles", type: "roles", kind: "Role", short: "role" },
@@ -105,7 +98,6 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
   {
     name: "Policy",
     key: "policy",
-    abbr: "POL",
     items: [
       { name: "Network Policies", type: "networkpolicies", kind: "NetworkPolicy", short: "netpol" },
       { name: "Resource Quotas", type: "resourcequotas", kind: "ResourceQuota", short: "quota" },
@@ -118,7 +110,6 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
   {
     name: "Cluster",
     key: "cluster",
-    abbr: "CLU",
     items: [
       { name: "Nodes", type: "nodes", kind: "Node", short: "no" },
       { name: "Namespaces", type: "namespaces", kind: "Namespace", short: "ns" },

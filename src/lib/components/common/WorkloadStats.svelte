@@ -1,270 +1,163 @@
 <script lang="ts">
-  import { tweened, type Tweened } from "svelte/motion";
-  import { cubicOut } from "svelte/easing";
-  import { onDestroy } from "svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import type { WorkloadStat, HealthSegment } from "$lib/utils/workload-stats";
   import { Skeleton } from "$lib/components/ui/skeleton";
   import { AlertTriangle } from "lucide-svelte";
 
+  /**
+   * One 34px strip, where this used to be a ~125px band of five equal cards
+   * plus a separate "Filtered by" pill row.
+   *
+   * The cards gave every status the same visual weight regardless of value, so
+   * a healthy namespace spent most of the band rendering large zeros — the
+   * states that matter (Failing, Pending, Attention) looked exactly as
+   * important as the ones that didn't. Here the health bar carries the
+   * proportions and empty states simply don't render, so anything visible is
+   * something that exists.
+   */
   interface Props {
     stats: WorkloadStat[];
     healthSegments: HealthSegment[];
     isLoading: boolean;
     hasError: boolean;
-    skeletonCount?: number;
     needsAttention?: number;
   }
 
-  let { stats, healthSegments, isLoading, hasError, skeletonCount = 4, needsAttention = 0 }: Props = $props();
+  let { stats, healthSegments, isLoading, hasError, needsAttention = 0 }: Props = $props();
 
-  // Animated counter — one tweened store per stat key, managed via $effect
-  let animatedValues: Record<string, number> = $state({});
-  let tweenStores: Record<string, Tweened<number>> = {};
-  let unsubs: Array<() => void> = [];
-  let prevKeys = "";
-
-  $effect(() => {
-    const keys = stats.map((s) => s.key).join(",");
-
-    if (keys !== prevKeys) {
-      for (const unsub of unsubs) unsub();
-      unsubs = [];
-      tweenStores = {};
-      for (const key of Object.keys(animatedValues)) delete animatedValues[key];
-      for (const s of stats) {
-        const store = tweened(s.value, { duration: 400, easing: cubicOut });
-        tweenStores[s.key] = store;
-        animatedValues[s.key] = s.value;
-        unsubs.push(store.subscribe((v: number) => { animatedValues[s.key] = Math.round(v); }));
-      }
-      prevKeys = keys;
-    } else {
-      for (const s of stats) {
-        tweenStores[s.key]?.set(s.value);
-      }
-    }
-  });
-
-  // Needs attention tweened value
-  let animatedAttention = $state(0);
-  let attentionStore: Tweened<number> | null = null;
-  let attentionUnsub: (() => void) | null = null;
-  $effect(() => {
-    if (needsAttention > 0) {
-      if (!attentionStore) {
-        attentionStore = tweened(needsAttention, { duration: 400, easing: cubicOut });
-        attentionUnsub = attentionStore.subscribe((v: number) => { animatedAttention = Math.round(v); });
-      } else {
-        attentionStore.set(needsAttention);
-      }
-    } else {
-      attentionUnsub?.();
-      attentionUnsub = null;
-      attentionStore = null;
-      animatedAttention = 0;
-    }
-  });
-
-  onDestroy(() => {
-    for (const unsub of unsubs) unsub();
-    attentionUnsub?.();
-  });
-
-  let totalValue = $derived(stats.find((s) => s.key === "total")?.value ?? 0);
+  let total = $derived(stats.find((s) => s.key === "total"));
   let healthTotal = $derived(healthSegments.reduce((sum, seg) => sum + seg.value, 0));
 
-  function handleCardClick(stat: WorkloadStat) {
-    if (!stat.filterable) return;
-    uiStore.toggleStatFilter(stat.key);
-  }
+  // Everything except the total, which the "N pods" label already states, and
+  // anything at zero — a status with no members is not news.
+  let chips = $derived(stats.filter((s) => s.key !== "total" && s.value > 0));
 
   function formatValue(value: number): string {
-    if (value >= 10000) return `${(value / 1000).toFixed(1)}k`;
-    return value.toString();
+    return value >= 10000 ? `${(value / 1000).toFixed(1)}k` : value.toString();
   }
 </script>
 
 {#if isLoading}
-  <div class="flex items-stretch gap-2.5 px-6 pt-3.5 pb-3">
-    {#each Array(skeletonCount) as _}
-      <div class="flex flex-1 flex-col gap-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3.5">
-        <div class="flex items-center gap-2">
-          <Skeleton class="h-2 w-2 rounded-full" />
-          <Skeleton class="h-3 w-14" />
-        </div>
-        <Skeleton class="h-7 w-10" />
-        <Skeleton class="h-[3px] w-full rounded-full" />
-      </div>
-    {/each}
+  <div class="flex h-[34px] shrink-0 items-center gap-3 px-6">
+    <Skeleton class="h-1.5 w-[120px] rounded-full" />
+    <Skeleton class="h-3 w-16" />
+    <Skeleton class="h-3 w-20" />
+    <Skeleton class="h-3 w-20" />
   </div>
 {:else if !hasError && stats.length > 0}
-  <div class="flex items-stretch gap-2.5 px-6 pt-3.5 pb-3">
-    {#each stats as stat (stat.key)}
-      {@const isActive = uiStore.statFilter === stat.key}
-      {@const displayValue = animatedValues[stat.key] ?? stat.value}
-      {@const isEmpty = stat.value === 0}
-      <button
-        class="stat-card group flex flex-1 flex-col rounded-lg border text-left transition-[color,background-color,border-color,box-shadow] duration-200"
-        class:stat-card-active={isActive}
-        class:stat-card-clickable={stat.filterable}
-        style:--card-color={stat.color}
-        onclick={() => handleCardClick(stat)}
-        disabled={!stat.filterable}
-        title={stat.filterable ? (isActive ? "Click to clear filter" : `Filter by ${stat.label}`) : ""}
+  <div class="flex h-[34px] shrink-0 items-center gap-3 px-6">
+    {#if healthTotal > 0}
+      <div
+        class="flex h-1.5 w-[120px] shrink-0 overflow-hidden rounded-full bg-[var(--border-color)]"
+        role="img"
+        aria-label={healthSegments
+          .filter((s) => s.value > 0)
+          .map((s) => `${s.value} ${s.key}`)
+          .join(", ")}
       >
-        <div class="flex flex-col gap-1 p-3.5">
-          <!-- Label row with colored dot -->
-          <div class="flex items-center gap-1.5">
+        {#each healthSegments as seg (seg.key)}
+          {#if seg.value > 0}
             <div
-              class="h-[7px] w-[7px] shrink-0 rounded-full transition-[background-color,box-shadow] duration-200"
-              style:background-color={isEmpty ? 'var(--text-dimmed)' : stat.color}
-              style:box-shadow={!isEmpty && stat.value > 0 ? `0 0 6px ${stat.color}` : 'none'}
+              class="h-full transition-[width] duration-300"
+              style="width: {(seg.value / healthTotal) * 100}%; background-color: {seg.color};"
             ></div>
-            <span class="text-[10px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
-              {stat.label}
-            </span>
-          </div>
-
-          <!-- Value -->
-          <div class="flex items-baseline gap-1.5">
-            <span
-              class="text-[26px] font-semibold leading-none tabular-nums tracking-tight transition-colors duration-200"
-              style:color={isEmpty ? 'var(--text-dimmed)' : stat.color}
-            >
-              {formatValue(displayValue)}
-            </span>
-            {#if stat.subtitle}
-              <span class="text-[10px] text-[var(--text-dimmed)]">{stat.subtitle}</span>
-            {/if}
-          </div>
-
-          <!-- Health bar on Total card / progress bar on others -->
-          {#if stat.key === "total" && healthSegments.length > 0 && healthTotal > 0}
-            <div class="mt-1 flex h-[3px] w-full overflow-hidden rounded-full bg-[var(--border-color)]">
-              {#each healthSegments as seg (seg.key)}
-                {#if seg.value > 0}
-                  <div
-                    class="h-full transition-[width] duration-500"
-                    style="width: {(seg.value / healthTotal) * 100}%; background-color: {seg.color};"
-                  ></div>
-                {/if}
-              {/each}
-            </div>
-          {:else}
-            <div class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-[var(--border-color)]">
-              <div
-                class="h-full rounded-full transition-[width] duration-300"
-                style="width: {stat.value > 0 && totalValue > 0 ? Math.max(6, (stat.value / totalValue) * 100) : 0}%; background-color: {stat.color};"
-              ></div>
-            </div>
           {/if}
-        </div>
-      </button>
-    {/each}
-
-    <!-- Needs Attention card -->
-    {#if needsAttention > 0}
-      {@const isActive = uiStore.statFilter === "needsAttention"}
-      <button
-        class="stat-card stat-card-attention group flex flex-1 flex-col rounded-lg border text-left transition-[color,background-color,border-color,box-shadow] duration-200"
-        class:stat-card-attention-active={isActive}
-        onclick={() => uiStore.toggleStatFilter("needsAttention")}
-        title={isActive ? "Click to clear filter" : "Filter by resources needing attention"}
-      >
-        <div class="flex flex-col gap-1 p-3.5">
-          <div class="flex items-center gap-1.5">
-            <AlertTriangle class="h-3 w-3 text-[var(--status-failed)]" />
-            <span class="text-[10px] font-semibold tracking-wider text-[var(--status-failed)] uppercase">
-              Attention
-            </span>
-          </div>
-          <div class="flex items-baseline gap-1.5">
-            <span class="text-[26px] font-semibold leading-none tabular-nums tracking-tight text-[var(--status-failed)]">
-              {formatValue(animatedAttention)}
-            </span>
-            <span class="text-[10px] text-[var(--text-dimmed)]">issues</span>
-          </div>
-          <div class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-[var(--border-color)]">
-            <div
-              class="h-full rounded-full transition-[width] duration-300"
-              style="width: {needsAttention > 0 && totalValue > 0 ? Math.max(6, (needsAttention / totalValue) * 100) : 0}%; background-color: var(--status-failed);"
-            ></div>
-          </div>
-        </div>
-      </button>
+        {/each}
+      </div>
     {/if}
-  </div>
 
-  <!-- Active filter indicator -->
-  {#if uiStore.statFilter}
-    <div class="flex items-center gap-2 px-6 pb-2">
-      <span class="text-[10px] text-[var(--text-muted)]">
-        Filtered by:
+    {#if total}
+      <span class="shrink-0 text-[12px] font-medium tabular-nums text-[var(--text-primary)]">
+        {formatValue(total.value)}
+        <span class="font-normal text-[var(--text-muted)]">{total.subtitle ?? ""}</span>
       </span>
-      <button
-        class="stat-filter-pill"
-        onclick={() => uiStore.clearStatFilter()}
-      >
-        {stats.find((s) => s.key === uiStore.statFilter)?.label ?? uiStore.statFilter}
-        <span class="ml-0.5 opacity-60">&times;</span>
-      </button>
+    {/if}
+
+    <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+      {#each chips as stat (stat.key)}
+        {@const isActive = uiStore.statFilter === stat.key}
+        <button
+          class="chip"
+          class:chip-active={isActive}
+          class:chip-clickable={stat.filterable}
+          style:--chip-color={stat.color}
+          disabled={!stat.filterable}
+          aria-pressed={stat.filterable ? isActive : undefined}
+          onclick={() => uiStore.toggleStatFilter(stat.key)}
+          title={!stat.filterable
+            ? undefined
+            : isActive
+              ? `Showing only ${stat.label} — click to clear`
+              : `Show only ${stat.label}`}
+        >
+          <span class="chip-dot"></span>
+          <span class="tabular-nums">{formatValue(stat.value)}</span>
+          {stat.label}
+        </button>
+      {/each}
+
+      {#if needsAttention > 0}
+        {@const isActive = uiStore.statFilter === "needsAttention"}
+        <button
+          class="chip chip-clickable chip-attention"
+          class:chip-active={isActive}
+          style:--chip-color="var(--status-failed)"
+          aria-pressed={isActive}
+          onclick={() => uiStore.toggleStatFilter("needsAttention")}
+          title={isActive
+            ? "Showing only resources needing attention — click to clear"
+            : "Show only resources needing attention"}
+        >
+          <AlertTriangle class="h-3 w-3" />
+          <span class="tabular-nums">{formatValue(needsAttention)}</span>
+          Attention
+        </button>
+      {/if}
     </div>
-  {/if}
+  </div>
 {/if}
 
 <style>
-  .stat-card {
-    border-color: var(--border-color);
-    background-color: var(--bg-secondary);
-    cursor: default;
-    overflow: hidden;
-  }
-  .stat-card-clickable {
-    cursor: pointer;
-  }
-  .stat-card-clickable:hover {
-    border-color: var(--card-color, var(--border-hover));
-    background-color: color-mix(in srgb, var(--card-color, var(--accent)) 4%, var(--bg-secondary));
-  }
-  .stat-card-active {
-    border-color: var(--card-color, var(--accent));
-    background-color: color-mix(in srgb, var(--card-color, var(--accent)) 8%, var(--bg-secondary));
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--card-color, var(--accent)) 25%, transparent),
-      0 2px 8px color-mix(in srgb, var(--card-color, var(--accent)) 15%, transparent);
-  }
-  .stat-card-attention {
-    border-color: color-mix(in srgb, var(--status-failed) 30%, var(--border-color));
-    background-color: var(--bg-secondary);
-    cursor: pointer;
-    overflow: hidden;
-  }
-  .stat-card-attention:hover {
-    border-color: var(--status-failed);
-    background-color: color-mix(in srgb, var(--status-failed) 4%, var(--bg-secondary));
-  }
-  .stat-card-attention-active {
-    border-color: var(--status-failed);
-    background-color: color-mix(in srgb, var(--status-failed) 8%, var(--bg-secondary));
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--status-failed) 25%, transparent),
-      0 2px 8px color-mix(in srgb, var(--status-failed) 15%, transparent);
-  }
-  .stat-filter-pill {
+  .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.3rem;
+    white-space: nowrap;
     border-radius: 9999px;
-    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-    background-color: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
-    padding: 0.125rem 0.625rem;
-    font-size: 10px;
-    font-weight: 500;
-    color: var(--accent);
-    transition: background-color 0.15s;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-secondary);
+    padding: 0.125rem 0.5rem;
+    font-size: 11px;
+    color: var(--text-secondary);
+    transition:
+      border-color 0.15s,
+      background-color 0.15s,
+      color 0.15s;
   }
-  .stat-filter-pill:hover {
-    background-color: color-mix(in srgb, var(--accent) 15%, var(--bg-secondary));
+  .chip-clickable {
+    cursor: pointer;
+  }
+  .chip-clickable:hover {
+    border-color: var(--chip-color);
+    color: var(--text-primary);
+  }
+  /* The active chip IS the "filtered by" indicator — it replaces the separate
+     pill row that used to restate it on its own line. */
+  .chip-active {
+    border-color: var(--chip-color);
+    background-color: color-mix(in srgb, var(--chip-color) 12%, var(--bg-secondary));
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+  .chip-dot {
+    height: 6px;
+    width: 6px;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background-color: var(--chip-color);
+  }
+  .chip-attention {
+    color: var(--status-failed);
+    border-color: color-mix(in srgb, var(--status-failed) 35%, var(--border-color));
   }
 </style>

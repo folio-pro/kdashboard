@@ -67,13 +67,13 @@
 {:else if state === "error"}
   <div class="flex h-full items-center justify-center">
     <div class="flex max-w-md flex-col items-center gap-4 px-10 py-16 text-center">
-      <div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 text-[var(--status-failed)]">
+      <div class="flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 text-[var(--status-failed)]">
         <AlertTriangle class="h-6 w-6" />
       </div>
-      <div class="text-base font-semibold text-[var(--text-primary)]">Unable to reach cluster</div>
+      <div class="text-[15px] font-semibold text-[var(--text-primary)]">Unable to reach cluster</div>
       <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">{error}</p>
       <button
-        class="mt-1 inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-secondary)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--border-color)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+        class="mt-1 inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-secondary)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-color)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
         onclick={onretry}
       >
         <RefreshCw class="h-3.5 w-3.5" />
@@ -84,14 +84,14 @@
 {:else}
   <div class="flex h-full items-center justify-center">
     <div class="flex max-w-md flex-col items-center gap-4 px-10 py-16 text-center">
-      <div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-tertiary)] text-[var(--text-muted)]">
+      <div class="flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-tertiary)] text-[var(--text-muted)]">
         <Inbox class="h-6 w-6" />
       </div>
-      <div class="text-base font-semibold text-[var(--text-primary)]">No {resourceTypeLabel.toLowerCase()} found</div>
+      <div class="text-[15px] font-semibold text-[var(--text-primary)]">No {resourceTypeLabel.toLowerCase()} found</div>
       {#if hasStatFilter}
         <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">No resources match the active stat filter.</p>
         <button
-          class="mt-1 text-xs text-[var(--accent)] hover:underline"
+          class="mt-1 text-[12px] text-[var(--accent)] hover:underline"
           onclick={onclearStatFilter}
         >
           Clear stat filter
@@ -99,7 +99,7 @@
       {:else if hasTextFilter}
         <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">No resources match your search.</p>
         <button
-          class="mt-1 text-xs text-[var(--accent)] hover:underline"
+          class="mt-1 text-[12px] text-[var(--accent)] hover:underline"
           onclick={onclearTextFilter}
         >
           Clear filter

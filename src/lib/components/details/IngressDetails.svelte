@@ -77,7 +77,7 @@
   {#if tls.length > 0}
     <DetailSection title="TLS" icon={Lock}>
       {#snippet actions()}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{tls.length}</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">{tls.length}</span>
       {/snippet}
       <div class="flex flex-col gap-2.5">
         {#each tls as tlsEntry}
@@ -102,7 +102,7 @@
   {#if rules.length > 0}
     <DetailSection title="Rules" icon={Network}>
       {#snippet actions()}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{rules.length}</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">{rules.length}</span>
       {/snippet}
       <div class="flex flex-col gap-4">
         {#each rules as rule}
@@ -113,7 +113,7 @@
                 <div class="flex items-center gap-2.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
                   <span class="inline-flex items-center rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">{path.pathType ?? "Prefix"}</span>
                   <span class="font-mono text-[13px] text-[var(--text-secondary)]">{path.path ?? "/"}</span>
-                  <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-dimmed)]" />
+                  <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
                   <span class="font-mono text-[13px] font-medium text-[var(--text-primary)]">{path.backend?.service?.name ?? "?"}:{path.backend?.service?.port?.number ?? path.backend?.service?.port?.name ?? "?"}</span>
                 </div>
               {/each}

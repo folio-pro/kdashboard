@@ -42,7 +42,7 @@
             ></span>
           {/each}
         </div>
-        <ChevronDown class={cn("h-3.5 w-3.5 text-[var(--text-dimmed)] transition-transform", expanded && "rotate-180")} />
+        <ChevronDown class={cn("h-3.5 w-3.5 text-[var(--text-muted)] transition-transform", expanded && "rotate-180")} />
       </div>
     </button>
     {#if expanded}

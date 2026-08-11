@@ -145,7 +145,7 @@
   <!-- Pods -->
   <DetailSection title="Pods" icon={Box}>
     {#snippet actions()}
-      <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{podsLoading ? "…" : pods.length}</span>
+      <span class="font-mono text-[11px] text-[var(--text-muted)]">{podsLoading ? "…" : pods.length}</span>
     {/snippet}
     {#if pods.length > 0}
       <table class="w-full border-collapse text-[13px]">
@@ -174,7 +174,7 @@
         </tbody>
       </table>
     {:else if !podsLoading}
-      <p class="text-xs text-[var(--text-muted)]">No pods found</p>
+      <p class="text-[12px] text-[var(--text-muted)]">No pods found</p>
     {/if}
   </DetailSection>
 

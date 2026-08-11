@@ -33,7 +33,7 @@
     >
       <ArrowLeft class="h-4 w-4" />
     </button>
-    <h1 class="text-sm font-medium text-[var(--text-primary)]">Settings</h1>
+    <h1 class="text-[13px] font-medium text-[var(--text-primary)]">Settings</h1>
   </div>
 
   <!-- Tabs -->

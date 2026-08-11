@@ -26,7 +26,7 @@
     >
       <svelte:component this={iconMap[toast.type]} class="h-4 w-4 shrink-0 mt-0.5" style="color: {colorMap[toast.type]}" />
       <div class="flex-1 min-w-0">
-        <p class="text-xs font-medium text-[var(--text-primary)]">{toast.title}</p>
+        <p class="text-[12px] font-medium text-[var(--text-primary)]">{toast.title}</p>
         {#if toast.description}
           <p class="mt-0.5 text-[11px] text-[var(--text-muted)]">{toast.description}</p>
         {/if}

@@ -105,16 +105,16 @@
 </script>
 
 {#if eventsLoading && rows.length === 0}
-  <p class="px-6 py-4 text-xs text-[var(--text-muted)]">Loading events…</p>
+  <p class="px-6 py-4 text-[12px] text-[var(--text-muted)]">Loading events…</p>
 {:else if error && rows.length === 0}
   <div class="mx-6 my-4 flex items-start gap-2 rounded-md border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/5 px-3 py-2.5">
     <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--status-failed)]" />
-    <span class="text-xs text-[var(--status-failed)]">{error}</span>
+    <span class="text-[12px] text-[var(--status-failed)]">{error}</span>
   </div>
 {:else if rows.length === 0}
   <div class="flex flex-col items-center gap-1.5 py-16 text-center">
     <div class="text-[13px] text-[var(--text-secondary)]">No events for this {resource.kind}</div>
-    <p class="max-w-sm text-[11px] leading-relaxed text-[var(--text-dimmed)]">
+    <p class="max-w-sm text-[11px] leading-relaxed text-[var(--text-muted)]">
       Kubernetes events expire after about an hour.{resource.kind === "Deployment" || resource.kind === "StatefulSet" || resource.kind === "DaemonSet" ? " Most workload events live on the child Pods — open a Pod to see them." : ""}
     </p>
   </div>

@@ -2,13 +2,13 @@
   import { cn } from "$lib/utils";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "$lib/components/ui/tooltip";
-  import { ChevronRight, Pin, X } from "lucide-svelte";
+  import { ChevronRight, Pin, X, Search } from "lucide-svelte";
   import type { CrdInfo } from "$lib/types/index.js";
   import SidebarSection from "./SidebarSection.svelte";
   import SidebarItem from "./SidebarItem.svelte";
   import ClusterRail from "./ClusterRail.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
+  import { uiStore, RESOURCE_TAB_TYPES, type ActiveView } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
   import { openResourceDetail, navigateToResourceTable, navigateToCrdTable } from "$lib/actions/navigation";
   import { settingsStore } from "$lib/stores/settings.svelte";
@@ -16,44 +16,49 @@
   import { costStore } from "$lib/stores/cost.svelte";
   import { securityStore } from "$lib/stores/security.svelte";
   import { helmStore } from "$lib/stores/helm.svelte";
+  import { sidebarStore } from "$lib/stores/sidebar.svelte";
   import { RESOURCE_SECTIONS } from "$lib/resource-catalog";
+  import { filterGroups, resourceMatches, crdMatches } from "./sidebar-filter";
 
   const sections = RESOURCE_SECTIONS;
 
+  /**
+   * Sidebar entries that are standalone views rather than resource lists.
+   * Their catalog `type` IS the view name, which is what lets both handlers
+   * below be table lookups instead of parallel if-chains — previously ten
+   * branches across two functions encoding that single fact, where adding a
+   * sixth view meant remembering to touch both.
+   *
+   * The value is the data the view needs on entry, or null if it loads itself.
+   */
+  const VIRTUAL_VIEWS: Record<string, ((namespace: string) => void) | null> = {
+    portforwards: null,
+    topology: (ns) => topologyStore.loadNamespaceTopology(ns),
+    cost: (ns) => costStore.loadCostOverview(ns),
+    security: (ns) => securityStore.loadSecurityOverview(ns),
+    helm: (ns) => helmStore.loadReleases(ns),
+  };
+
   function isItemActive(type: string): boolean {
-    if (type === "portforwards") return uiStore.activeView === "portforwards";
-    if (type === "topology") return uiStore.activeView === "topology";
-    if (type === "cost") return uiStore.activeView === "cost";
-    if (type === "security") return uiStore.activeView === "security";
-    if (type === "helm") return uiStore.activeView === "helm";
+    if (type in VIRTUAL_VIEWS) return uiStore.activeView === type;
+
+    // Views that sit "inside" a resource type, and so keep its catalog entry
+    // lit. Derived from RESOURCE_TAB_TYPES rather than re-listing its members:
+    // a hand-written copy would silently stop matching the moment a new
+    // resource-bound view type was added to the set.
     const view = uiStore.activeView;
-    if (view !== "table" && view !== "details" && view !== "logs" && view !== "terminal" && view !== "yaml" && view !== "crd-table") return false;
+    if (view !== "table" && view !== "crd-table" && !RESOURCE_TAB_TYPES.has(view)) return false;
+
+    // pendingResourceType, not selectedResourceType: the former is set the
+    // instant a load is requested, so the highlight follows the click rather
+    // than waiting for the list to arrive.
     return k8sStore.pendingResourceType === type;
   }
 
   function handleItemClick(resourceType: string) {
-    if (resourceType === "portforwards") {
-      uiStore.showPortForwards();
-      return;
-    }
-    if (resourceType === "topology") {
-      uiStore.showTopology();
-      topologyStore.loadNamespaceTopology(k8sStore.currentNamespace);
-      return;
-    }
-    if (resourceType === "cost") {
-      uiStore.showCost();
-      costStore.loadCostOverview(k8sStore.currentNamespace);
-      return;
-    }
-    if (resourceType === "helm") {
-      uiStore.showHelm();
-      helmStore.loadReleases(k8sStore.currentNamespace);
-      return;
-    }
-    if (resourceType === "security") {
-      uiStore.showSecurity();
-      securityStore.loadSecurityOverview(k8sStore.currentNamespace);
+    if (resourceType in VIRTUAL_VIEWS) {
+      uiStore.showView(resourceType as ActiveView);
+      VIRTUAL_VIEWS[resourceType]?.(k8sStore.currentNamespace);
       return;
     }
     const item = sections.flatMap((s) => s.items).find((i) => i.type === resourceType);
@@ -86,6 +91,33 @@
         resources: g.resources.filter((c) => !FIXED_CRDS.has(`${c.group}/${c.plural}`)),
       }))
       .filter((g) => g.resources.length > 0)
+  );
+
+  // --- Nav filter -----------------------------------------------------------
+  // CRD discovery appends one section per API group, so a real cluster turns
+  // the nav into dozens of sections in one unbounded scroll. The filter is
+  // what makes that navigable; collapsing is what makes it tidy.
+  let isFiltering = $derived(sidebarStore.filter.trim().length > 0);
+
+  // Both lists are {title, items} groups, so one filter serves both.
+  let filteredSections = $derived(
+    filterGroups(
+      sections.map((s) => ({ title: s.name, items: s.items })),
+      sidebarStore.filter,
+      resourceMatches,
+    ),
+  );
+
+  let filteredCrdGroups = $derived(
+    filterGroups(
+      visibleCrdGroups.map((g) => ({ title: g.group, items: g.resources })),
+      sidebarStore.filter,
+      crdMatches,
+    ),
+  );
+
+  let noMatches = $derived(
+    isFiltering && filteredSections.length === 0 && filteredCrdGroups.length === 0
   );
 
   let clusterSubline = $derived.by(() => {
@@ -151,10 +183,12 @@
         <ScrollArea class="flex-1 w-full">
           <div class="flex flex-col items-center">
             {#each sections as section}
+              <!--
+                The group used to be labelled with a 7.5px monospace
+                abbreviation — unreadable, and redundant with the per-item
+                tooltips. The rule separating the groups does the same job.
+              -->
               <div class="flex w-full flex-col items-center gap-[3px] border-t border-[var(--sidebar-hover)] py-[5px] mt-[5px] first:mt-0 first:border-t-0">
-                <div class="flex h-4 w-[30px] items-center justify-center font-mono text-[7.5px] font-medium tracking-[0.06em] text-[var(--text-dimmed)]">
-                  {section.abbr}
-                </div>
                 {#each section.items as item}
                   <Tooltip>
                     <TooltipTrigger>
@@ -197,7 +231,7 @@
               style={`background: ${statusColor}; box-shadow: 0 0 0 3px color-mix(in srgb, ${statusColor} 16%, transparent);`}
             ></span>
             <div class="flex min-w-0 flex-1 flex-col">
-              <span class="truncate text-[12.5px] font-semibold leading-tight text-[var(--text-primary)]" title={k8sStore.currentContext}>{k8sStore.currentContext}</span>
+              <span class="truncate text-[12px] font-semibold leading-tight text-[var(--text-primary)]" title={k8sStore.currentContext}>{k8sStore.currentContext}</span>
               <span class="truncate font-mono text-[10px] text-[var(--text-muted)]">{clusterSubline}</span>
             </div>
           </div>
@@ -207,16 +241,47 @@
           <mount.component />
         {/each}
 
-        <!-- Flat list: one scroll for the whole tree, section headers stick
-             to the top (plain overflow container so position:sticky works). -->
+        <!-- Nav filter: the only practical way through a cluster whose CRDs
+             contribute dozens of sections. -->
+        <div class="shrink-0 px-[13px] py-2">
+          <div class="focus-ring-host flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 focus-within:border-[var(--accent)]">
+            <Search class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              placeholder="Filter resources..."
+              aria-label="Filter sidebar resources"
+              bind:value={sidebarStore.filter}
+              class="h-full min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
+            />
+            {#if isFiltering}
+              <button
+                type="button"
+                class="shrink-0 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                onclick={() => (sidebarStore.filter = "")}
+                aria-label="Clear sidebar filter"
+              >
+                <X class="h-3 w-3" />
+              </button>
+            {/if}
+          </div>
+        </div>
+
+        <!-- One scroll for the whole tree, section headers stick to the top
+             (plain overflow container so position:sticky works). -->
         <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-3.5">
-          {#if settingsStore.pinnedResources.length > 0}
+          {#if noMatches}
+            <p class="px-[15px] py-3 text-[11px] leading-snug text-[var(--text-muted)]">
+              Nothing matches “{sidebarStore.filter}”.
+            </p>
+          {/if}
+
+          {#if settingsStore.pinnedResources.length > 0 && !isFiltering}
             <SidebarSection title="Pinned">
               {#each settingsStore.pinnedResources as pin}
                 <div class="group flex w-full items-center border-l-2 border-transparent pr-[13px] transition-colors hover:bg-[var(--sidebar-hover)]">
                   <button
                     class={cn(
-                      "flex min-w-0 flex-1 items-center gap-2.5 py-[6px] pl-[13px] text-left text-[12.5px] transition-colors",
+                      "flex min-w-0 flex-1 items-center gap-2.5 py-[6px] pl-[13px] text-left text-[12px] transition-colors",
                       "text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]"
                     )}
                     onclick={async () => {
@@ -230,7 +295,7 @@
                   >
                     <Pin class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
                     <span class="min-w-0 flex-1 truncate">{pin.name}</span>
-                    <span class="shrink-0 font-mono text-[10px] text-[var(--text-dimmed)]">{pin.kind}</span>
+                    <span class="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{pin.kind}</span>
                   </button>
                   <button
                     type="button"
@@ -246,8 +311,8 @@
             </SidebarSection>
           {/if}
 
-          {#each sections as section}
-            <SidebarSection title={section.name}>
+          {#each filteredSections as section}
+            <SidebarSection title={section.title} forceOpen={isFiltering}>
               {#each section.items as item}
                 <SidebarItem
                   name={item.name}
@@ -264,7 +329,7 @@
           <!-- CRD Discovery: Custom Resources -->
           {#if k8sStore.crdError}
             <SidebarSection title="Custom Resources">
-              <div class="px-[15px] py-2 text-[11.5px] leading-snug text-[var(--text-dimmed)]">
+              <div class="px-[15px] py-2 text-[11px] leading-snug text-[var(--text-muted)]">
                 {#if k8sStore.crdError.includes("orbidden") || k8sStore.crdError.includes("403")}
                   No permission to list CRDs in this cluster.
                 {:else}
@@ -272,10 +337,10 @@
                 {/if}
               </div>
             </SidebarSection>
-          {:else if visibleCrdGroups.length > 0}
-            {#each visibleCrdGroups as group}
-              <SidebarSection title={group.group}>
-                {#each group.resources as crd}
+          {:else if filteredCrdGroups.length > 0}
+            {#each filteredCrdGroups as group}
+              <SidebarSection title={group.title} forceOpen={isFiltering}>
+                {#each group.items as crd}
                   <SidebarItem
                     name={crd.kind}
                     resourceType={`crd:${crd.group}/${crd.kind}`}

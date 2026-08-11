@@ -52,17 +52,11 @@
     }
   }
 
-  let namespaceLabel = $derived(
-    k8sStore.currentNamespace === "All Namespaces"
-      ? "All Namespaces"
-      : k8sStore.currentNamespace || "default"
-  );
 </script>
 
 <ViewPanel
   title={topologyStore.focusedResourceUid ? "Resource Topology" : "Namespace Topology"}
   icon={GitFork}
-  namespace={namespaceLabel}
   isLoading={topologyStore.isLoading}
   error={topologyStore.error}
   hasData={!!topologyStore.graph}
@@ -117,7 +111,7 @@
     </div>
   {:else if topologyStore.graph && filteredGraph?.nodes.length === 0}
     <div class="flex h-full items-center justify-center">
-      <span class="text-sm text-[var(--text-muted)]">No matching resources found</span>
+      <span class="text-[13px] text-[var(--text-muted)]">No matching resources found</span>
     </div>
   {/if}
 </ViewPanel>

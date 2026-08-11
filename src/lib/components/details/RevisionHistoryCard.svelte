@@ -98,7 +98,7 @@
 
   {#if error}
     <div class="border-t border-[var(--border-hover)] px-5 py-4">
-      <span class="text-xs text-[var(--status-failed)]">Failed to load revisions: {error}</span>
+      <span class="text-[12px] text-[var(--status-failed)]">Failed to load revisions: {error}</span>
     </div>
   {:else if revisions.length > 0}
     <div class="border-t border-[var(--border-hover)]">
@@ -159,7 +159,7 @@
     </div>
   {:else if !loading}
     <div class="border-t border-[var(--border-hover)] px-5 py-4">
-      <span class="text-xs text-[var(--text-muted)]">No revisions found</span>
+      <span class="text-[12px] text-[var(--text-muted)]">No revisions found</span>
     </div>
   {/if}
 </div>

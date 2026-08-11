@@ -13,7 +13,7 @@
   data-drag-region
 >
   <span
-    class="pointer-events-none select-none text-xs font-medium tracking-tight text-[var(--text-secondary)]"
+    class="pointer-events-none select-none text-[12px] font-medium tracking-tight text-[var(--text-secondary)]"
     data-drag-region
   >
     kdashboard{#if k8sStore.currentContext}&nbsp;&mdash;&nbsp;{k8sStore.currentContext}{/if}

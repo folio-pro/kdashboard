@@ -100,7 +100,7 @@
   <div class="border-b border-[var(--border-color)]">
     <div class="flex items-center justify-between px-6 py-4">
       <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Related Resources</span>
-      <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{related.length}</span>
+      <span class="font-mono text-[11px] text-[var(--text-muted)]">{related.length}</span>
     </div>
 
     {#each groups as group}
@@ -108,8 +108,8 @@
       <!-- Category header -->
       <div class="flex items-center gap-2 border-t border-[var(--border-hover)] bg-[var(--bg-secondary)] px-6 py-2">
         <Icon class="h-3 w-3 shrink-0" color={group.color} />
-        <span class="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-dimmed)]">{group.label}</span>
-        <span class="text-[10px] text-[var(--text-dimmed)]">{group.items.length}</span>
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{group.label}</span>
+        <span class="text-[10px] text-[var(--text-muted)]">{group.items.length}</span>
       </div>
 
       <!-- Items in this category -->
@@ -131,11 +131,11 @@
             <span class="min-w-0 flex-1 truncate font-mono text-[12px] font-medium text-[var(--text-primary)]" title={rel.name}>
               {rel.name}
             </span>
-            <ArrowUpRight class="related-arrow h-3.5 w-3.5 shrink-0 text-[var(--text-dimmed)] transition-transform" />
+            <ArrowUpRight class="related-arrow h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform" />
           </button>
         {:else}
           <div class="flex items-center gap-3 border-t border-[var(--border-hover)] px-5 py-2.5">
-            <span class="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-medium leading-tight border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-dimmed)]">
+            <span class="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-medium leading-tight border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-muted)]">
               {displayKind(rel.kind)}
             </span>
             <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--text-muted)]" title={rel.name}>

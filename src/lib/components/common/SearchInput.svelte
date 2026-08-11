@@ -37,7 +37,7 @@
     {placeholder}
     {value}
     oninput={handleInput}
-    class="h-7 w-full pl-8 pr-7 text-xs"
+    class="h-7 w-full pl-8 pr-7 text-[12px]"
   />
 
   {#if value}

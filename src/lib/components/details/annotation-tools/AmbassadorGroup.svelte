@@ -43,28 +43,28 @@
         {parsedConfig.kind ?? "Mapping"}
       </span>
       {#if parsedConfig.apiVersion}
-        <span class="text-[10px] text-[var(--text-dimmed)]">{parsedConfig.apiVersion}</span>
+        <span class="text-[10px] text-[var(--text-muted)]">{parsedConfig.apiVersion}</span>
       {/if}
     </div>
     <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
       {#if parsedConfig.prefix || parsedConfig.prefix_regex}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">Route</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">Route</span>
         <span class="font-mono text-[11px] text-[var(--text-primary)]">{parsedConfig.prefix ?? parsedConfig.prefix_regex}</span>
       {/if}
       {#if parsedConfig.service}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">Service</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">Service</span>
         <span class="font-mono text-[11px] text-[var(--accent)]">{parsedConfig.service}</span>
       {/if}
       {#if parsedConfig.timeout_ms}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">Timeout</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">Timeout</span>
         <span class="font-mono text-[11px] text-[var(--text-primary)]">{Math.round(Number(parsedConfig.timeout_ms) / 1000)}s</span>
       {/if}
       {#if parsedConfig.host}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">Host</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">Host</span>
         <span class="font-mono text-[11px] text-[var(--text-primary)]">{parsedConfig.host}</span>
       {/if}
       {#if parsedConfig.rewrite}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">Rewrite</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">Rewrite</span>
         <span class="font-mono text-[11px] text-[var(--text-primary)]">{parsedConfig.rewrite}</span>
       {/if}
     </div>
@@ -72,7 +72,7 @@
 {:else if configAnnotation}
   <!-- Config exists but couldn't be parsed → show raw -->
   <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
-    <span class="font-mono text-[11px] text-[var(--text-dimmed)]">config</span>
+    <span class="font-mono text-[11px] text-[var(--text-muted)]">config</span>
     <button
       class="text-left font-mono text-[11px] text-[var(--accent)] {expanded.has('config') ? '' : 'hover:underline'}"
       onclick={() => expanded = toggleSetItem(expanded, "config")}
@@ -92,7 +92,7 @@
   {@const short = shortKeys[key] ?? key}
   {@const isExpanded = expanded.has(key)}
   <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
-    <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{short}</span>
+    <span class="font-mono text-[11px] text-[var(--text-muted)]">{short}</span>
     {#if value === "true" || value === "false"}
       <span class="inline-flex w-fit items-center rounded px-2 py-0.5 text-[10px] font-medium {value === 'true' ? 'bg-[var(--status-running)]/15 text-[var(--status-running)]' : 'bg-[var(--status-failed)]/15 text-[var(--status-failed)]'}">
         {value}

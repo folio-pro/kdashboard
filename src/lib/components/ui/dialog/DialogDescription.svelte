@@ -13,7 +13,7 @@
 </script>
 
 <Dialog.Description
-  class={cn("text-sm text-[var(--text-secondary)]", className)}
+  class={cn("text-[13px] text-[var(--text-secondary)]", className)}
   {...restProps}
 >
   {#if children}{@render children()}{/if}

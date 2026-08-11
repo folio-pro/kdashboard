@@ -163,7 +163,7 @@
           </span>
         </div>
       </div>
-      <ChevronRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-dimmed)] transition-transform {isExpanded ? 'rotate-90' : ''}" />
+      <ChevronRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform {isExpanded ? 'rotate-90' : ''}" />
     </button>
     {#if isExpanded}
       {#each matchedEntries as [key, value]}
@@ -175,7 +175,7 @@
             <span class="text-[11px] font-medium text-[var(--text-muted)]">{key}</span>
             <div class="flex h-5 items-center gap-2">
               <button
-                class="flex items-center text-[var(--text-dimmed)] hover:text-[var(--text-primary)] {isRevealed ? 'visible' : 'invisible'}"
+                class="flex items-center text-[var(--text-muted)] hover:text-[var(--text-primary)] {isRevealed ? 'visible' : 'invisible'}"
                 onclick={() => copyValue(revealKey, displayValue)}
                 title="Copy value"
                 tabindex={isRevealed ? 0 : -1}
@@ -199,13 +199,13 @@
           {#if isRevealed}
             <pre class="max-h-32 overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]">{truncateValue(displayValue)}</pre>
           {:else}
-            <div class="rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-dimmed)]">••••••••</div>
+            <div class="rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">••••••••</div>
           {/if}
         </div>
       {/each}
       {#if dataEntries.length === 0}
         <div class="border-t border-[var(--border-hover)] px-5 py-3">
-          <span class="text-[11px] text-[var(--text-dimmed)]">No data</span>
+          <span class="text-[11px] text-[var(--text-muted)]">No data</span>
         </div>
       {/if}
     {/if}
@@ -231,7 +231,7 @@
           {allRevealed ? "hide all" : "reveal all"}
         </button>
       {/if}
-      <span class="font-mono text-[11px] text-[var(--text-dimmed)]">
+      <span class="font-mono text-[11px] text-[var(--text-muted)]">
         {#if configLoading}
           …
         {:else}
@@ -243,7 +243,7 @@
 
   {#if !configLoading && fetchedConfigMaps.length === 0 && fetchedSecrets.length === 0}
     <div class="px-6 pb-4">
-      <span class="text-xs text-[var(--text-muted)]">No configmaps or secrets referenced</span>
+      <span class="text-[12px] text-[var(--text-muted)]">No configmaps or secrets referenced</span>
     </div>
   {/if}
 
@@ -257,11 +257,11 @@
           placeholder="Filter keys…"
           aria-label="Filter configmap and secret keys"
           bind:value={keyFilter}
-          class="h-full flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+          class="h-full flex-1 bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
         />
         {#if keyFilter}
-          <span class="shrink-0 font-mono text-[10px] text-[var(--text-dimmed)]">{totalMatches}</span>
-          <button class="shrink-0 text-[var(--text-dimmed)] transition-colors hover:text-[var(--text-primary)]" onclick={() => (keyFilter = "")} title="Clear">
+          <span class="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{totalMatches}</span>
+          <button class="shrink-0 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]" onclick={() => (keyFilter = "")} title="Clear">
             <X class="h-3.5 w-3.5" />
           </button>
         {/if}
@@ -279,7 +279,7 @@
 
   {#if filterLower && totalMatches === 0 && (fetchedConfigMaps.length > 0 || fetchedSecrets.length > 0)}
     <div class="border-t border-[var(--border-hover)] px-6 py-4">
-      <span class="text-xs text-[var(--text-muted)]">No keys match “{keyFilter}”</span>
+      <span class="text-[12px] text-[var(--text-muted)]">No keys match “{keyFilter}”</span>
     </div>
   {/if}
 </div>

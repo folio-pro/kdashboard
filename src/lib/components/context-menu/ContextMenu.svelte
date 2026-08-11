@@ -190,7 +190,7 @@
           {@const IconComp = action.icon}
           <button
             role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--bg-tertiary)]"
+            class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--bg-tertiary)]"
             class:bg-[var(--bg-tertiary)]={focusedIndex === idx}
             onmouseenter={() => (focusedIndex = idx)}
             onclick={() => executeAction(action)}
@@ -217,7 +217,7 @@
             {@const IconComp = action.icon}
             <button
               role="menuitem"
-              class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--bg-tertiary)]"
+              class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--bg-tertiary)]"
               class:bg-[var(--bg-tertiary)]={focusedIndex === flatIdx}
               style:color={tierColor(action.tier)}
               onmouseenter={() => (focusedIndex = flatIdx)}
@@ -242,7 +242,7 @@
             {@const isEnabled = isActionEnabled(action)}
             <button
               role="menuitem"
-              class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs transition-colors"
+              class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] transition-colors"
               class:hover:bg-[var(--bg-tertiary)]={isEnabled}
               class:bg-[var(--bg-tertiary)]={focusedIndex === flatIdx && isEnabled}
               class:opacity-40={!isEnabled}
@@ -260,7 +260,7 @@
               {/if}
               <span class="flex-1 truncate">{action.label}</span>
               {#if action.shortcut}
-                <kbd class="shrink-0 rounded border border-[var(--border-color)] px-1 py-0.5 text-[9px] text-[var(--text-muted)]">
+                <kbd class="shrink-0 rounded border border-[var(--border-color)] px-1 py-0.5 text-[10px] text-[var(--text-muted)]">
                   {action.shortcut}
                 </kbd>
               {/if}
@@ -269,7 +269,7 @@
         {/each}
 
         {#if singleActions.length === 0}
-          <div class="px-3 py-2 text-xs text-[var(--text-muted)]">No actions available</div>
+          <div class="px-3 py-2 text-[12px] text-[var(--text-muted)]">No actions available</div>
         {/if}
       {/if}
     </div>

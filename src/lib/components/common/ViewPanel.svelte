@@ -2,13 +2,13 @@
   import { Button } from "$lib/components/ui/button";
   import { Skeleton } from "$lib/components/ui/skeleton";
   import { ArrowLeft, RefreshCw, AlertTriangle } from "lucide-svelte";
+  import NamespacePicker from "./NamespacePicker.svelte";
   import type { Snippet } from "svelte";
   import type { IconComponent } from "$lib/actions/types";
 
   interface Props {
     title: string;
     icon: IconComponent;
-    namespace: string;
     isLoading: boolean;
     error: string | null;
     hasData: boolean;
@@ -28,7 +28,6 @@
   let {
     title,
     icon: Icon,
-    namespace,
     isLoading,
     error,
     hasData,
@@ -55,8 +54,13 @@
       </Button>
       <div class="flex items-center gap-2">
         <Icon class="h-4 w-4 text-[var(--accent)]" />
-        <span class="text-sm font-semibold text-[var(--text-primary)]">{title}</span>
-        <span class="text-xs text-[var(--text-muted)]">{namespace}</span>
+        <span class="text-[13px] font-semibold text-[var(--text-primary)]">{title}</span>
+        <!--
+          These views all load per-namespace, but the namespace was rendered
+          here as dead text while the only picker lived in a title bar that
+          belonged to the resource list. Now the header owns its own picker.
+        -->
+        <NamespacePicker />
       </div>
       {#if badge}
         {@render badge()}
@@ -83,15 +87,15 @@
           {:else}
             <Skeleton class="h-20 w-60 rounded-lg" />
           {/if}
-          <span class="text-sm text-[var(--text-muted)]">{loadingMessage}</span>
+          <span class="text-[13px] text-[var(--text-muted)]">{loadingMessage}</span>
         </div>
       </div>
     {:else if error}
       <div class="flex h-full items-center justify-center">
         <div class="flex flex-col items-center gap-2 text-center">
           <AlertTriangle class="h-8 w-8 text-[var(--status-failed)]" />
-          <span class="text-sm font-medium text-[var(--text-primary)]">{errorMessage}</span>
-          <span class="max-w-md text-xs text-[var(--text-muted)]">{error}</span>
+          <span class="text-[13px] font-medium text-[var(--text-primary)]">{errorMessage}</span>
+          <span class="max-w-md text-[12px] text-[var(--text-muted)]">{error}</span>
           <Button variant="outline" size="sm" onclick={onRefresh} class="mt-2">Try again</Button>
         </div>
       </div>
@@ -104,9 +108,9 @@
         <div class="flex h-full items-center justify-center">
           <div class="flex flex-col items-center gap-2 text-center">
             <Icon class="h-8 w-8 text-[var(--text-muted)]" />
-            <span class="text-sm text-[var(--text-muted)]">{emptyMessage}</span>
+            <span class="text-[13px] text-[var(--text-muted)]">{emptyMessage}</span>
             {#if emptyHelper}
-              <span class="text-xs text-[var(--text-muted)]">{emptyHelper}</span>
+              <span class="text-[12px] text-[var(--text-muted)]">{emptyHelper}</span>
             {/if}
           </div>
         </div>

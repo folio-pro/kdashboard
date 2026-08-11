@@ -31,17 +31,11 @@
     return v.critical + v.high + v.medium + v.low + v.unknown;
   }
 
-  let namespaceLabel = $derived(
-    k8sStore.currentNamespace === "All Namespaces"
-      ? "All Namespaces"
-      : k8sStore.currentNamespace || "default"
-  );
 </script>
 
 <ViewPanel
   title="Security Overview"
   icon={Shield}
-  namespace={namespaceLabel}
   isLoading={securityStore.isLoading}
   error={securityStore.error}
   hasData={!!securityStore.overview}
@@ -65,36 +59,36 @@
       <!-- Summary Cards -->
       <div class="grid grid-cols-5 gap-3">
         <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="text-xs text-[var(--text-muted)]">Images Scanned</div>
-          <div class="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+          <div class="text-[12px] text-[var(--text-muted)]">Images Scanned</div>
+          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
             {securityStore.overview!.total_images_scanned}
           </div>
         </div>
 
         <div class="rounded-lg border border-red-500/30 bg-[var(--bg-secondary)] p-3">
-          <div class="text-xs text-red-400">Critical</div>
-          <div class="mt-1 text-lg font-semibold text-red-400">
+          <div class="text-[12px] text-red-400">Critical</div>
+          <div class="mt-1 text-[18px] font-semibold text-red-400">
             {securityStore.overview!.total_vulns.critical}
           </div>
         </div>
 
         <div class="rounded-lg border border-orange-500/30 bg-[var(--bg-secondary)] p-3">
-          <div class="text-xs text-orange-400">High</div>
-          <div class="mt-1 text-lg font-semibold text-orange-400">
+          <div class="text-[12px] text-orange-400">High</div>
+          <div class="mt-1 text-[18px] font-semibold text-orange-400">
             {securityStore.overview!.total_vulns.high}
           </div>
         </div>
 
         <div class="rounded-lg border border-yellow-500/30 bg-[var(--bg-secondary)] p-3">
-          <div class="text-xs text-yellow-400">Medium</div>
-          <div class="mt-1 text-lg font-semibold text-yellow-400">
+          <div class="text-[12px] text-yellow-400">Medium</div>
+          <div class="mt-1 text-[18px] font-semibold text-yellow-400">
             {securityStore.overview!.total_vulns.medium}
           </div>
         </div>
 
         <div class="rounded-lg border border-blue-500/30 bg-[var(--bg-secondary)] p-3">
-          <div class="text-xs text-blue-400">Low</div>
-          <div class="mt-1 text-lg font-semibold text-blue-400">
+          <div class="text-[12px] text-blue-400">Low</div>
+          <div class="mt-1 text-[18px] font-semibold text-blue-400">
             {securityStore.overview!.total_vulns.low}
           </div>
         </div>
@@ -104,12 +98,12 @@
       <div class="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3">
         <div class="flex items-center gap-2">
           <ShieldCheck class="h-4 w-4 text-[var(--status-running)]" />
-          <span class="text-sm text-[var(--text-primary)]">{securityStore.overview!.compliant_pods} compliant</span>
+          <span class="text-[13px] text-[var(--text-primary)]">{securityStore.overview!.compliant_pods} compliant</span>
         </div>
         <div class="h-4 w-px bg-[var(--border-color)]"></div>
         <div class="flex items-center gap-2">
           <ShieldAlert class="h-4 w-4 text-[var(--status-failed)]" />
-          <span class="text-sm text-[var(--text-primary)]">{securityStore.overview!.non_compliant_pods} non-compliant</span>
+          <span class="text-[13px] text-[var(--text-primary)]">{securityStore.overview!.non_compliant_pods} non-compliant</span>
         </div>
         <div class="flex-1"></div>
         {#if securityStore.overview!.pods.length > 0}
@@ -122,7 +116,7 @@
                 style="width: {pct}%; background: var(--status-running);"
               ></div>
             </div>
-            <span class="text-xs text-[var(--text-muted)]">{Math.round(pct)}%</span>
+            <span class="text-[12px] text-[var(--text-muted)]">{Math.round(pct)}%</span>
           </div>
         {/if}
         <span class="text-[11px] text-[var(--text-muted)]">
@@ -152,7 +146,7 @@
               {/if}
 
               <div class="flex flex-1 flex-col">
-                <span class="text-sm font-medium text-[var(--text-primary)]">{pod.name}</span>
+                <span class="text-[13px] font-medium text-[var(--text-primary)]">{pod.name}</span>
                 <span class="text-[11px] text-[var(--text-muted)]">{pod.namespace}</span>
               </div>
 
@@ -178,14 +172,14 @@
                   </span>
                 {/if}
                 {#if vulnTotal(pod.total_vulns) === 0}
-                  <span class="text-xs text-[var(--text-muted)]">No vulnerabilities</span>
+                  <span class="text-[12px] text-[var(--text-muted)]">No vulnerabilities</span>
                 {/if}
               </div>
             </button>
 
             {#if expandedPods.has(podKey)}
               <div class="border-t border-[var(--border-color)]">
-                <table class="w-full text-xs">
+                <table class="w-full text-[12px]">
                   <thead>
                     <tr class="text-[var(--text-muted)]">
                       <th class="px-3 py-1.5 text-left font-medium">Image</th>

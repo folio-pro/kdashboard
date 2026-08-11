@@ -43,17 +43,11 @@
     return `${gb.toFixed(2)} Gi`;
   }
 
-  let namespaceLabel = $derived(
-    k8sStore.currentNamespace === "All Namespaces"
-      ? "All Namespaces"
-      : k8sStore.currentNamespace || "default"
-  );
 </script>
 
 <ViewPanel
   title="Cost Visibility"
   icon={DollarSign}
-  namespace={namespaceLabel}
   isLoading={costStore.isLoading}
   error={costStore.error}
   hasData={!!costStore.overview}
@@ -77,11 +71,11 @@
       <!-- Cluster Summary Cards -->
       <div class="grid grid-cols-4 gap-3">
         <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          <div class="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
             <DollarSign class="h-3.5 w-3.5" />
             Monthly Estimate
           </div>
-          <div class="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
             {formatCost(costStore.overview!.cluster_cost_monthly)}
           </div>
           <div class="text-[11px] text-[var(--text-muted)]">
@@ -90,11 +84,11 @@
         </div>
 
         <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          <div class="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
             <Cpu class="h-3.5 w-3.5" />
             CPU Usage
           </div>
-          <div class="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
             {formatCpu(costStore.overview!.total_cpu_cores)}
           </div>
           <div class="text-[11px] text-[var(--text-muted)]">
@@ -103,11 +97,11 @@
         </div>
 
         <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          <div class="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
             <MemoryStick class="h-3.5 w-3.5" />
             Memory Usage
           </div>
-          <div class="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
             {formatMemory(costStore.overview!.total_memory_gb)}
           </div>
           <div class="text-[11px] text-[var(--text-muted)]">
@@ -116,10 +110,10 @@
         </div>
 
         <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          <div class="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
             Namespaces
           </div>
-          <div class="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
             {costStore.overview!.namespaces.length}
           </div>
           <div class="text-[11px] text-[var(--text-muted)]">
@@ -147,18 +141,18 @@
               {:else}
                 <ChevronRight class="h-3.5 w-3.5 text-[var(--text-muted)]" />
               {/if}
-              <span class="flex-1 text-sm font-medium text-[var(--text-primary)]">{ns.namespace}</span>
-              <span class="text-xs text-[var(--text-muted)]">{ns.workload_count} pods</span>
-              <span class="text-xs text-[var(--text-secondary)]">{formatCpu(ns.total_cpu_cores)} CPU</span>
-              <span class="text-xs text-[var(--text-secondary)]">{formatMemory(ns.total_memory_gb)} Mem</span>
-              <span class="min-w-[70px] text-right text-sm font-medium text-[var(--text-primary)]">
+              <span class="flex-1 text-[13px] font-medium text-[var(--text-primary)]">{ns.namespace}</span>
+              <span class="text-[12px] text-[var(--text-muted)]">{ns.workload_count} pods</span>
+              <span class="text-[12px] text-[var(--text-secondary)]">{formatCpu(ns.total_cpu_cores)} CPU</span>
+              <span class="text-[12px] text-[var(--text-secondary)]">{formatMemory(ns.total_memory_gb)} Mem</span>
+              <span class="min-w-[70px] text-right text-[13px] font-medium text-[var(--text-primary)]">
                 {formatCost(ns.total_cost_monthly)}/mo
               </span>
             </button>
 
             {#if expandedNamespaces.has(ns.namespace)}
               <div class="border-t border-[var(--border-color)]">
-                <table class="w-full text-xs">
+                <table class="w-full text-[12px]">
                   <thead>
                     <tr class="text-[var(--text-muted)]">
                       <th class="px-3 py-1.5 text-left font-medium">Pod</th>

@@ -10,6 +10,6 @@
   let { class: className, children }: Props = $props();
 </script>
 
-<div class={cn("py-6 text-center text-sm text-[var(--text-secondary)]", className)} data-testid="command-empty">
+<div class={cn("py-6 text-center text-[13px] text-[var(--text-secondary)]", className)} data-testid="command-empty">
   {#if children}{@render children()}{/if}
 </div>

@@ -77,7 +77,7 @@
 
 <!-- Context Customization -->
 <section>
-  <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">Contexts</h2>
+  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Contexts</h2>
   <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
     Assign icons, labels, and colors to your contexts to tell them apart in the sidebar.
   </p>
@@ -94,7 +94,7 @@
         <!-- Context row -->
         <button
           class={cn(
-            "flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs transition-colors",
+            "flex w-full items-center gap-3 px-3 py-2.5 text-left text-[12px] transition-colors",
             isEditing ? "rounded-t-lg bg-[var(--bg-secondary)]" : "rounded-lg hover:bg-[var(--bg-secondary)]/50"
           )}
           onclick={() => { editingContext = isEditing ? null : ctx; }}
@@ -107,19 +107,19 @@
             {#if iconDef && custom?.label}
               <span class="flex flex-col items-center gap-0.5">
                 <DeviconIcon id={iconDef.id} class="h-4 w-4" />
-                <span class="text-[7px] font-bold leading-none tracking-tight">{custom.label}</span>
+                <span class="text-[10px] font-bold leading-none tracking-tight">{custom.label}</span>
               </span>
             {:else if iconDef}
               <DeviconIcon id={iconDef.id} class="h-5.5 w-5.5" />
             {:else if custom?.label}
               <span class="text-[10px] font-bold leading-none tracking-tight">{custom.label}</span>
             {:else}
-              <span class="text-sm font-bold">{ctx.charAt(0).toUpperCase()}</span>
+              <span class="text-[13px] font-bold">{ctx.charAt(0).toUpperCase()}</span>
             {/if}
           </span>
           <span class="flex-1 truncate font-medium text-[var(--text-primary)]">{ctx}</span>
           {#if isActive}
-            <span class="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[9px] font-medium text-[var(--accent)]">active</span>
+            <span class="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--accent)]">active</span>
           {/if}
           {#if hasCustom}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -148,7 +148,7 @@
                 value={custom?.label ?? ""}
                 oninput={(e) => setContextLabel(ctx, (e.target as HTMLInputElement).value)}
                 maxlength={3}
-                class="h-8 w-40 font-mono text-xs uppercase"
+                class="h-8 w-40 font-mono text-[12px] uppercase"
               />
             </div>
 
@@ -158,7 +158,7 @@
               {#each ICON_CATEGORIES as cat}
                 {@const icons = iconsByCategory[cat.key] ?? []}
                 <div class="mb-2.5">
-                  <span class="mb-1 block text-[9px] text-[var(--text-muted)]">{cat.label}</span>
+                  <span class="mb-1 block text-[10px] text-[var(--text-muted)]">{cat.label}</span>
                   <div class="flex flex-wrap gap-1">
                     {#each icons as icon}
                       {@const isSelected = custom?.icon === icon.id}
@@ -221,7 +221,7 @@
 
 <!-- Kubernetes Configuration -->
 <section>
-  <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">Kubeconfig</h2>
+  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Kubeconfig</h2>
   <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
     Path to your kubeconfig file. Leave empty to use the default location (~/.kube/config).
   </p>
@@ -231,7 +231,7 @@
       placeholder="~/.kube/config"
       value={kubeconfigPath}
       oninput={(e) => { kubeconfigPath = (e.target as HTMLInputElement).value; }}
-      class="h-9 flex-1 text-xs"
+      class="h-9 flex-1 text-[12px]"
     />
     <Button
       size="sm"
@@ -245,7 +245,7 @@
 
 <!-- Prometheus -->
 <section>
-  <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">Prometheus</h2>
+  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Prometheus</h2>
   <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
     Optional. metrics-server only reports the latest scrape, so charts over time need a Prometheus.
     Point this at one reachable from this machine — an ingress URL, or
@@ -257,7 +257,7 @@
       placeholder="http://localhost:9090"
       value={prometheusUrl}
       oninput={(e) => { prometheusUrl = (e.target as HTMLInputElement).value; }}
-      class="h-9 flex-1 text-xs"
+      class="h-9 flex-1 text-[12px]"
     />
     <Button size="sm" variant="outline" class="h-9" onclick={handlePrometheusTest} disabled={testingPrometheus}>
       {testingPrometheus ? "Testing..." : "Test"}
@@ -268,7 +268,7 @@
 
 <!-- Cost Pricing -->
 <section>
-  <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">Cost Pricing</h2>
+  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Cost Pricing</h2>
   <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
     Node pricing is fetched from cloud providers (AWS, Azure, GCP) and cached for 24 hours.
     Prices are updated monthly on the server. Force a refresh if you need the latest rates.

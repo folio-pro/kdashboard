@@ -12,7 +12,7 @@
 </script>
 
 <div class="flex h-11 items-center border-t border-[var(--border-hover)] px-5">
-  <div class="w-[140px] shrink-0 text-xs font-medium text-[var(--text-dimmed)]">{label}</div>
+  <div class="w-[140px] shrink-0 text-[12px] font-medium text-[var(--text-muted)]">{label}</div>
   {#if children}
     <div class="min-w-0 flex-1">
       {@render children()}
