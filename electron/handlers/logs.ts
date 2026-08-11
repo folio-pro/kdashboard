@@ -205,8 +205,13 @@ async function pumpBody(
     if (partial.length > 0) batcher.push(partial);
   } finally {
     reader.releaseLock();
+    // In the `finally` so a mid-stream failure still delivers what was already
+    // buffered: push() only arms a 50ms debounce, and the caller's rejection
+    // path clears that timer, so anything batched within the last 50ms of a
+    // dropped stream would otherwise be discarded — exactly the lines before a
+    // crash that are worth reading.
+    batcher.flush();
   }
-  batcher.flush();
 }
 
 /**

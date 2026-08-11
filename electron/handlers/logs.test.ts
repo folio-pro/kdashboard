@@ -164,6 +164,22 @@ describe('stream_pod_logs', () => {
     expect(statuses()[0].message).toContain('connection reset by peer');
   });
 
+  // The lines just before a crash are the ones worth reading. A drop inside the
+  // batch debounce window must not take them with it.
+  test('lines still buffered when the stream drops are delivered, then the error', async () => {
+    const body = stagedBody();
+    await handlers.get('stream_pod_logs')!({ name: 'web-0', namespace: 'default' }, ctx);
+
+    body.push('last words\n');
+    // Long enough for the pump to buffer the line, shorter than the 50ms flush
+    // debounce, so the batch is still unflushed when the stream dies.
+    await settle(10);
+    body.fail(new Error('econnreset'));
+    await settle();
+
+    expect(lines()).toEqual(['last words', '[error: econnreset]']);
+  });
+
   test('rejects when the required name arg is missing', async () => {
     stagedBody();
     await expect(handlers.get('stream_pod_logs')!({ namespace: 'default' }, ctx)).rejects.toThrow(
