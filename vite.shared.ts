@@ -25,8 +25,8 @@ export function vendorChunks(id: string): string | undefined {
   if (id.includes("/node_modules/codemirror/") || id.includes("/node_modules/@codemirror/")) {
     return "vendor-codemirror";
   }
-  if (id.includes("/node_modules/@xterm/")) {
-    return "vendor-xterm";
+  if (id.includes("/node_modules/@wterm/")) {
+    return "vendor-wterm";
   }
   // bits-ui + its @floating-ui dependency are heavy and eagerly loaded;
   // isolate them so app-code edits don't bust their cache entry.

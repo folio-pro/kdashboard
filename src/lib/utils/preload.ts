@@ -4,7 +4,7 @@
  * App.svelte renders DetailPanel / LogViewer / TerminalView / YamlEditor via
  * LazyView (dynamic import) to keep the initial bundle small. The trade-off is
  * that the FIRST time a user opens one of these, the browser has to fetch +
- * evaluate a large vendor chunk (CodeMirror ~493 kB, xterm ~337 kB, the yaml
+ * evaluate a large vendor chunk (CodeMirror ~495 kB, wterm ~52 kB, the yaml
  * parser ~97 kB), which shows up as a visible stutter — the opposite of "feels
  * native".
  *
