@@ -14,7 +14,7 @@
 
 <div
   class={cn(
-    "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
+    "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-[13px] outline-none hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
     disabled && "pointer-events-none opacity-50",
     className
   )}

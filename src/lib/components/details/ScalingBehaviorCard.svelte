@@ -44,7 +44,7 @@
 {#snippet directionSection(label: string, dir: ScalingDirection, color: string)}
   <div class="border-t border-[var(--border-hover)] px-5 py-3">
     <div class="mb-2 flex items-center gap-2">
-      <span class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-dimmed)]">{label}</span>
+      <span class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
       {#if dir.selectPolicy}
         <span class="rounded bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-muted)]">{dir.selectPolicy}</span>
       {/if}
@@ -65,7 +65,7 @@
               {policy.type}
             </span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{policy.value}</span>
-            <span class="text-[11px] text-[var(--text-dimmed)]">per {policy.periodSeconds}s</span>
+            <span class="text-[11px] text-[var(--text-muted)]">per {policy.periodSeconds}s</span>
           </div>
         {/each}
       </div>

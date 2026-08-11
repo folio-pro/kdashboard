@@ -238,7 +238,7 @@
   >
     <!-- Left: Title -->
     <div class="flex flex-col gap-0.5">
-      <span class="font-mono text-base font-semibold text-[var(--text-primary)]">Terminal</span>
+      <span class="font-mono text-[15px] font-semibold text-[var(--text-primary)]">Terminal</span>
       <span class="font-mono text-[11px] text-[var(--text-muted)]">{podName}</span>
     </div>
 
@@ -248,7 +248,7 @@
       {#if containers.length > 0}
         <div class="relative">
           <button
-            class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+            class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
             onclick={(e) => toggleDropdown("container", e)}
           >
             <Box class="h-3.5 w-3.5 text-[var(--text-muted)]" />
@@ -262,7 +262,7 @@
               {#each containers as container}
                 <button
                   class={cn(
-                    "block w-full px-3 py-1.5 text-left font-mono text-xs transition-colors hover:bg-[var(--table-row-hover)]",
+                    "block w-full px-3 py-1.5 text-left font-mono text-[12px] transition-colors hover:bg-[var(--table-row-hover)]",
                     container === selectedContainer
                       ? "text-[var(--accent)]"
                       : "text-[var(--text-secondary)]",
@@ -283,7 +283,7 @@
       <!-- Shell Selector -->
       <div class="relative">
         <button
-          class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+          class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
           onclick={(e) => toggleDropdown("shell", e)}
         >
           <TerminalSquare class="h-3.5 w-3.5 text-[var(--text-muted)]" />
@@ -297,7 +297,7 @@
             {#each SHELL_OPTIONS as shell}
               <button
                 class={cn(
-                  "block w-full px-3 py-1.5 text-left font-mono text-xs transition-colors hover:bg-[var(--table-row-hover)]",
+                  "block w-full px-3 py-1.5 text-left font-mono text-[12px] transition-colors hover:bg-[var(--table-row-hover)]",
                   shell === selectedShell
                     ? "text-[var(--accent)]"
                     : "text-[var(--text-secondary)]",
@@ -317,7 +317,7 @@
       <!-- Connect/Disconnect Button -->
       {#if !isConnected}
         <button
-          class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-running)] px-3.5 font-mono text-xs font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
+          class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-running)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
           onclick={connect}
           disabled={!selectedContainer}
         >
@@ -326,7 +326,7 @@
         </button>
       {:else}
         <button
-          class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-failed)] px-3.5 font-mono text-xs font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
+          class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-failed)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
           onclick={disconnect}
         >
           <TerminalSquare class="h-3.5 w-3.5" />
@@ -341,11 +341,11 @@
     class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border-color)] px-6"
   >
     <div class="flex items-center gap-2">
-      <span class="font-mono text-xs text-[var(--text-muted)]">shell:</span>
-      <span class="font-mono text-xs text-[var(--text-secondary)]">{selectedShell}</span>
+      <span class="font-mono text-[12px] text-[var(--text-muted)]">shell:</span>
+      <span class="font-mono text-[12px] text-[var(--text-secondary)]">{selectedShell}</span>
       <div class="mx-1 h-5 w-px bg-[var(--border-color)]"></div>
-      <span class="font-mono text-xs text-[var(--text-muted)]">container:</span>
-      <span class="font-mono text-xs text-[var(--text-secondary)]">{selectedContainer || "none"}</span>
+      <span class="font-mono text-[12px] text-[var(--text-muted)]">container:</span>
+      <span class="font-mono text-[12px] text-[var(--text-secondary)]">{selectedContainer || "none"}</span>
     </div>
 
     <div class="flex items-center gap-1.5">
@@ -367,8 +367,8 @@
         class="flex h-9 shrink-0 items-center justify-between rounded-t border border-[var(--border-color)] bg-[var(--bg-tertiary,var(--bg-secondary))] px-4"
       >
         <div class="flex items-center gap-2">
-          <span class="font-mono text-xs font-semibold text-[var(--accent)]">&gt;_</span>
-          <span class="font-mono text-xs text-[var(--text-secondary)]">{podName}</span>
+          <span class="font-mono text-[12px] font-semibold text-[var(--accent)]">&gt;_</span>
+          <span class="font-mono text-[12px] text-[var(--text-secondary)]">{podName}</span>
         </div>
         {#if isConnected}
           <div class="flex items-center gap-1.5">
@@ -383,7 +383,7 @@
         class="relative flex-1 overflow-hidden rounded-b border-x border-b border-[var(--border-color)] bg-[var(--log-bg)] p-2"
       >
         {#if !terminalReady}
-          <div class="absolute inset-0 z-10 flex items-center justify-center text-xs text-[var(--text-muted)]">
+          <div class="absolute inset-0 z-10 flex items-center justify-center text-[12px] text-[var(--text-muted)]">
             Select a container and press Connect to start
           </div>
         {/if}

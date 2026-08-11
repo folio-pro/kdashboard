@@ -63,7 +63,7 @@
     style="background-color: {color}; box-shadow: {glow};"
   ></span>
   <span
-    class="text-xs font-medium"
+    class="text-[12px] font-medium"
     style="color: {color};"
   >
     {displayText}

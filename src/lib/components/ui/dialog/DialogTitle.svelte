@@ -13,7 +13,7 @@
 </script>
 
 <Dialog.Title
-  class={cn("text-lg font-semibold leading-none tracking-tight text-[var(--text-primary)]", className)}
+  class={cn("text-[18px] font-semibold leading-none tracking-tight text-[var(--text-primary)]", className)}
   {...restProps}
 >
   {#if children}{@render children()}{/if}

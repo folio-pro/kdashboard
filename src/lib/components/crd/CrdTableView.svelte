@@ -66,10 +66,10 @@
     <!-- Header -->
     <div class="flex items-center gap-2 border-b border-[var(--border-color)] px-4 py-2">
       {#if k8sStore.selectedCrd}
-        <span class="text-xs text-[var(--text-muted)]">{k8sStore.selectedCrd.group}</span>
-        <span class="text-xs text-[var(--text-muted)]">/</span>
-        <span class="text-sm font-medium text-[var(--text-primary)]">{k8sStore.selectedCrd.kind}</span>
-        <span class="text-xs text-[var(--text-muted)]">({k8sStore.crdResources.items.length})</span>
+        <span class="text-[12px] text-[var(--text-muted)]">{k8sStore.selectedCrd.group}</span>
+        <span class="text-[12px] text-[var(--text-muted)]">/</span>
+        <span class="text-[13px] font-medium text-[var(--text-primary)]">{k8sStore.selectedCrd.kind}</span>
+        <span class="text-[12px] text-[var(--text-muted)]">({k8sStore.crdResources.items.length})</span>
         {#if k8sStore.selectedCrd.scope === "Cluster"}
           <span class="ml-1 rounded bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">cluster-scoped</span>
         {/if}
@@ -78,17 +78,17 @@
 
     {#if k8sStore.isLoading}
       <div class="flex flex-1 items-center justify-center">
-        <span class="text-xs text-[var(--text-muted)]">Loading...</span>
+        <span class="text-[12px] text-[var(--text-muted)]">Loading...</span>
       </div>
     {:else if k8sStore.crdResources.items.length === 0}
       <div class="flex flex-1 items-center justify-center">
-        <span class="text-xs text-[var(--text-muted)]">
+        <span class="text-[12px] text-[var(--text-muted)]">
           No {k8sStore.selectedCrd?.kind ?? "resources"} found
         </span>
       </div>
     {:else}
       <div class="flex-1 overflow-auto" bind:this={scrollRef}>
-        <table class="w-full text-xs">
+        <table class="w-full text-[12px]">
           <thead class="sticky top-0 z-10">
             <tr class="border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
               <th class="px-3 py-2 text-left font-medium text-[var(--text-secondary)]">Name</th>

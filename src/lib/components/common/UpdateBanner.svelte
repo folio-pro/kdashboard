@@ -100,7 +100,7 @@
     >
       <ArrowDownToLine class="h-4 w-4 shrink-0 text-[var(--accent)]" />
 
-      <div class="flex items-center gap-2 text-xs">
+      <div class="flex items-center gap-2 text-[12px]">
         <span class="font-medium text-[var(--text-primary)]">
           kdashboard v{updateInfo?.version} available
         </span>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
   import { ArrowDown } from "lucide-svelte";
+  import { listen } from "$lib/ipc/event";
   import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { scheduleFlush } from "$lib/utils/frame-scheduler";
@@ -13,13 +14,10 @@
     shortPodName,
     parseLogLine,
     resetLogIdCounter,
-    buildStreamRequest,
-    streamEmptyStateMessage,
+    nextLogId,
   } from "./log-viewer";
-  import { createLogStream } from "./log-stream.svelte";
   import {
     SINCE_LABELS,
-    SINCE_WINDOW_LABELS,
     SINCE_SECONDS,
     LEVEL_BADGE_COLORS,
     LEVEL_LABELS,
@@ -41,19 +39,10 @@
   let containerSourcePod = $state<Resource | null>(null);
   let deploymentPodNames = $state<string[]>([]);
   let podsLoading = $state(false);
+  let isStreaming = $state(false);
   let logContainer: HTMLDivElement | undefined = $state();
-
-  // The whole connect/live/ended/error state machine lives in log-stream.logic.ts.
-  const stream = createLogStream({
-    onLines: (payload) => {
-      for (const line of payload) enqueueLogLine(parseLogLine(line));
-    },
-    onReset: () => clearLogs(),
-  });
-
-  // "Is there a stream at all" — what the header's Stream/Stop toggle needs. The
-  // finer phase distinction only matters for the badge and the empty state.
-  const isStreaming = $derived(stream.isActive);
+  let unlisten: (() => void) | null = null;
+  let destroyed = false;
 
   // --- Virtualizer ---
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -193,27 +182,34 @@
     });
   });
 
+  let emptyStateMessage = $derived.by(() => {
+    const hasLevelFilter = levelFilter !== "all";
+    const hasSearchFilter = filterText.trim().length > 0;
+
+    if (logs.length > 0 && filteredLogs.length === 0) {
+      if (hasLevelFilter && hasSearchFilter) {
+        return `No ${levelFilter.toUpperCase()} logs match the current search.`;
+      }
+      if (hasLevelFilter) {
+        return `No logs found for level ${levelFilter.toUpperCase()}.`;
+      }
+      if (hasSearchFilter) {
+        return "No logs match the current search.";
+      }
+    }
+
+    if (isStreaming) return "Connecting to log stream...";
+    if (isDeployment && podsLoading) return "Loading pods...";
+    if (isDeployment && deploymentPodNames.length === 0) return "No pods found for this deployment";
+    return "Select a container and press Stream to start";
+  });
+
   const isDeployment = $derived(
     k8sStore.selectedResource?.kind?.toLowerCase() === "deployment"
   );
 
   const resourceName = $derived(k8sStore.selectedResource?.metadata?.name ?? "Pod");
   const sinceLabel = $derived(SINCE_LABELS.get(sinceDuration) ?? "1 day ago");
-  const sinceWindowLabel = $derived(SINCE_WINDOW_LABELS.get(sinceDuration) ?? "1 day");
-
-  let emptyStateMessage = $derived(
-    streamEmptyStateMessage({
-      phase: stream.phase,
-      hasLogs: logs.length > 0,
-      levelFilter,
-      filterText,
-      isDeployment,
-      podsLoading,
-      deploymentPodCount: deploymentPodNames.length,
-      sinceWindowLabel,
-      errorMessage: stream.error ?? undefined,
-    }),
-  );
 
   // --- Deployment pod fetching ---
   let _fetchGeneration = 0;
@@ -269,65 +265,87 @@
   });
 
   // --- Streaming lifecycle ---
-
-  /** uid of the resource the current stream belongs to. */
-  let _streamedUid: string | null = null;
   let autoStarted = false;
 
   onMount(() => {
-    return () => stream.destroy();
+    return () => {
+      destroyed = true;
+      stopStreaming();
+    };
   });
 
-  /**
-   * The viewer is mounted per-VIEW, not per-resource (App.svelte renders it when
-   * activeView === "logs"), so switching pods has to be handled here: tear the
-   * old stream down, drop its lines, and auto-start the new one as soon as a
-   * container is known. Without this the viewer kept streaming the previous pod.
-   */
   $effect(() => {
-    const uid = k8sStore.selectedResource?.metadata?.uid ?? null;
-    const container = selectedContainer;
-
-    untrack(() => {
-      if (uid !== _streamedUid) {
-        _streamedUid = uid;
-        autoStarted = false;
-        if (stream.phase !== "idle") stopStreaming();
-        clearLogs();
-      }
-      if (container && !autoStarted) {
-        autoStarted = true;
-        startStreaming();
-      }
-    });
+    if (selectedContainer && !autoStarted) {
+      autoStarted = true;
+      startStreaming();
+    }
   });
 
-  function startStreaming() {
+  async function startStreaming() {
     if (!selectedContainer) return;
-    void stream.start(
-      buildStreamRequest({
-        resource: k8sStore.selectedResource,
-        isDeployment,
-        deploymentPodNames,
-        container: selectedContainer,
-        tailLines,
-        sinceSeconds: SINCE_SECONDS.get(sinceDuration) ?? null,
-        timestamps: showTimestamps,
-        previous: showPrevious,
-      }),
-    );
-  }
-
-  function stopStreaming() {
-    stream.stop();
-  }
-
-  /** Empty the view: both the rendered lines and the not-yet-flushed buffer. */
-  function clearLogs() {
+    if (isStreaming) stopStreaming();
+    isStreaming = true;
     logs = [];
     resetLogIdCounter();
     pendingLogs = [];
     flushScheduled = false;
+    userScrolledAway = false;
+    _seenPodNames = new Set();
+    logPodNames = [];
+
+    const streamOpts = {
+      container: selectedContainer,
+      tailLines,
+      sinceSeconds: SINCE_SECONDS.get(sinceDuration) ?? null,
+      timestamps: showTimestamps,
+      previous: showPrevious || null,
+    };
+
+    try {
+      const unlistenFn = await listen<string[]>("log-lines", (event) => {
+        for (const line of event.payload) {
+          enqueueLogLine(parseLogLine(line));
+        }
+      });
+
+      if (destroyed) {
+        unlistenFn();
+        return;
+      }
+      unlisten = unlistenFn;
+
+      if (isDeployment && deploymentPodNames.length > 0) {
+        await invoke("stream_multi_pod_logs", {
+          pods: deploymentPodNames,
+          namespace: k8sStore.selectedResource?.metadata?.namespace ?? "",
+          ...streamOpts,
+        });
+      } else {
+        const resource = k8sStore.selectedResource;
+        if (!resource || resource.kind.toLowerCase() !== "pod") return;
+        await invoke("stream_pod_logs", {
+          name: resource.metadata.name,
+          namespace: resource.metadata.namespace ?? "",
+          ...streamOpts,
+        });
+      }
+    } catch (err) {
+      logs = [{ id: nextLogId(), message: `Error starting log stream: ${err}`, level: "error" as const, isJson: false }];
+      isStreaming = false;
+    }
+  }
+
+  function stopStreaming() {
+    if (unlisten) {
+      unlisten();
+      unlisten = null;
+    }
+    isStreaming = false;
+    invoke("stop_log_stream").catch(() => {});
+  }
+
+  function clearLogs() {
+    logs = [];
     _seenPodNames = new Set();
     logPodNames = [];
     userScrolledAway = false;
@@ -451,22 +469,17 @@
         class="flex h-9 shrink-0 items-center justify-between rounded-t border border-[var(--border-color)] bg-[var(--bg-tertiary,var(--bg-secondary))] px-4"
       >
         <div class="flex items-center gap-2">
-          <span class="font-mono text-xs font-semibold text-[var(--accent)]">&gt;_</span>
-          <span class="font-mono text-xs text-[var(--text-secondary)]">{resourceName}</span>
+          <span class="font-mono text-[12px] font-semibold text-[var(--accent)]">&gt;_</span>
+          <span class="font-mono text-[12px] text-[var(--text-secondary)]">{resourceName}</span>
         </div>
         <div class="flex items-center gap-3">
           {#if lastLogTime}
             <span class="font-mono text-[11px] text-[var(--text-muted)]">last: {lastLogTime}</span>
           {/if}
-          {#if stream.phase === "live"}
+          {#if isStreaming}
             <div class="flex items-center gap-1.5">
               <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-running)]"></div>
               <span class="font-mono text-[11px] font-semibold text-[var(--status-running)]">LIVE</span>
-            </div>
-          {:else if stream.phase === "connecting"}
-            <div class="flex items-center gap-1.5">
-              <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-pending)]"></div>
-              <span class="font-mono text-[11px] font-semibold text-[var(--status-pending)]">CONNECTING</span>
             </div>
           {/if}
         </div>
@@ -479,7 +492,7 @@
         onscroll={handleScroll}
       >
         {#if filteredLogs.length === 0}
-          <div class="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">
+          <div class="flex h-full items-center justify-center text-[12px] text-[var(--text-muted)]">
             {emptyStateMessage}
           </div>
         {:else}

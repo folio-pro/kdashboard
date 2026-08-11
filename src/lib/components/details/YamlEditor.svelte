@@ -367,7 +367,7 @@
         <History class="h-3 w-3" />
         History
         {#if yamlHistory.length > 1}
-          <span class="ml-0.5 rounded bg-[var(--bg-tertiary)] px-1 text-[9px] text-[var(--text-muted)]">{yamlHistory.length}</span>
+          <span class="ml-0.5 rounded bg-[var(--bg-tertiary)] px-1 text-[10px] text-[var(--text-muted)]">{yamlHistory.length}</span>
         {/if}
       </button>
 
@@ -376,14 +376,14 @@
            shows the name, kind and namespace directly above this component. -->
       <div class="ml-auto flex items-center gap-0.5">
         {#if isModified}
-          <span class="mr-1 rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-warning)]">MODIFIED</span>
+          <span class="mr-1 rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--status-warning)]">MODIFIED</span>
         {/if}
         {#if saveSuccess}
-          <span class="mr-1 rounded bg-[var(--status-running)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-running)]">SAVED</span>
+          <span class="mr-1 rounded bg-[var(--status-running)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--status-running)]">SAVED</span>
         {/if}
         {#if activeTab === "editor" && errorCount > 0}
           <button
-            class="mr-1 flex items-center gap-1 rounded bg-[var(--status-failed)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-failed)] transition-opacity hover:opacity-80"
+            class="mr-1 flex items-center gap-1 rounded bg-[var(--status-failed)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--status-failed)] transition-opacity hover:opacity-80"
             onclick={handleShowProblems}
             title="Show problems (F8)"
             aria-label="Show problems: {errorCount} error{errorCount === 1 ? '' : 's'}"
@@ -394,7 +394,7 @@
         {/if}
         {#if activeTab === "editor" && warningCount > 0}
           <button
-            class="mr-1 flex items-center gap-1 rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--status-warning)] transition-opacity hover:opacity-80"
+            class="mr-1 flex items-center gap-1 rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--status-warning)] transition-opacity hover:opacity-80"
             onclick={handleShowProblems}
             title="Show problems (F8)"
             aria-label="Show problems: {warningCount} warning{warningCount === 1 ? '' : 's'}"
@@ -481,9 +481,9 @@
       {#if isLoading || (!cm && !cmLoadError)}
         <CodeSkeleton lines={30} lineHeight="h-3" spacing="space-y-[6px]" gutterPadding="px-3 py-2" contentPadding="p-2" fullHeight />
       {:else if cmLoadError}
-        <div class="p-4 text-xs text-[var(--status-failed)]">{cmLoadError}</div>
+        <div class="p-4 text-[12px] text-[var(--status-failed)]">{cmLoadError}</div>
       {:else if error}
-        <div class="p-4 text-xs text-[var(--status-failed)]">{error}</div>
+        <div class="p-4 text-[12px] text-[var(--status-failed)]">{error}</div>
       {:else}
         <!-- Editor Tab -->
         <div class={cn("h-full", activeTab !== "editor" && "hidden")}>

@@ -20,7 +20,7 @@
 {#await promise then mod}
   <mod.default />
 {:catch}
-  <p class="p-4 text-xs text-[var(--status-failed)]">
+  <p class="p-4 text-[12px] text-[var(--status-failed)]">
     Failed to load {name} view.
   </p>
 {/await}

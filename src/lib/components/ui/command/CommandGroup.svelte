@@ -13,7 +13,7 @@
 
 <div class={cn("overflow-hidden p-1 text-[var(--text-primary)]", className)}>
   {#if heading}
-    <div class="px-2 py-1.5 text-xs font-medium text-[var(--text-secondary)]" data-testid="command-group-label">
+    <div class="px-2 py-1.5 text-[12px] font-medium text-[var(--text-secondary)]" data-testid="command-group-label">
       {heading}
     </div>
   {/if}

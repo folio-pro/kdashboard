@@ -58,7 +58,7 @@
 >
   <!-- Left: Level filters, since, tail -->
   <div class="flex items-center gap-2">
-    <span class="font-mono text-xs text-[var(--text-muted)]">level:</span>
+    <span class="font-mono text-[12px] text-[var(--text-muted)]">level:</span>
     <div class="flex items-center gap-1">
       <button
         class={cn(
@@ -110,7 +110,7 @@
       <div class="mx-1 h-5 w-px bg-[var(--border-color)]"></div>
 
       <!-- Pod Filter -->
-      <span class="font-mono text-xs text-[var(--text-muted)]">pod:</span>
+      <span class="font-mono text-[12px] text-[var(--text-muted)]">pod:</span>
       <div class="relative">
         <button
           class="flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
@@ -151,7 +151,7 @@
     <div class="mx-1 h-5 w-px bg-[var(--border-color)]"></div>
 
     <!-- Since Selector -->
-    <span class="font-mono text-xs text-[var(--text-muted)]">since:</span>
+    <span class="font-mono text-[12px] text-[var(--text-muted)]">since:</span>
     <div class="relative">
       <button
         class="flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
@@ -185,7 +185,7 @@
     </div>
 
     <!-- Tail Selector -->
-    <span class="font-mono text-xs text-[var(--text-muted)]">tail:</span>
+    <span class="font-mono text-[12px] text-[var(--text-muted)]">tail:</span>
     <div class="relative">
       <button
         class="flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
