@@ -9,20 +9,25 @@
   import { listen } from "$lib/ipc/event";
   import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
   import { onMount } from "svelte";
-  import { Terminal } from "@xterm/xterm";
-  import { FitAddon } from "@xterm/addon-fit";
-  import { WebLinksAddon } from "@xterm/addon-web-links";
-  import "@xterm/xterm/css/xterm.css";
+  import { WTerm } from "@wterm/dom";
+  // Explicit .css subpath rather than the "@wterm/dom/css" alias: vite/client
+  // only declares modules matching *.css, so the extensionless alias fails to
+  // typecheck. Both are declared in the package's exports map.
+  import "@wterm/dom/src/terminal.css";
 
   type DropdownId = "container" | "shell" | null;
 
   const SHELL_OPTIONS = ["/bin/sh", "/bin/bash", "/bin/zsh"];
 
+  // wterm has no clear() method (unlike xterm). CUP home + ED 2 (erase screen)
+  // + ED 3 (erase scrollback) is the equivalent; all three are supported by the
+  // Zig core.
+  const CLEAR_SEQUENCE = "\x1b[H\x1b[2J\x1b[3J";
+
   let terminalEl: HTMLDivElement | undefined = $state();
-  let terminal: Terminal | null = null;
-  let fitAddon: FitAddon | null = null;
+  let hostEl: HTMLDivElement | undefined = $state();
+  let terminal: WTerm | null = null;
   let terminalReady = $state(false);
   let isConnected = $state(false);
   let selectedContainer = $state("");
@@ -30,8 +35,9 @@
   let openDropdown = $state<DropdownId>(null);
   let unlistenOutput: (() => void) | null = null;
   let unlistenExit: (() => void) | null = null;
-  let resizeCleanup: (() => void) | null = null;
   let destroyed = false;
+  let initPromise: Promise<void> | null = null;
+  let initError = $state<string | null>(null);
 
   const containers = $derived.by(() => {
     const resource = k8sStore.selectedResource;
@@ -53,93 +59,113 @@
 
   const podName = $derived(k8sStore.selectedResource?.metadata?.name ?? "Pod");
 
-  function getTerminalTheme(): Record<string, string> {
-    const style = getComputedStyle(document.documentElement);
-    const get = (v: string) => style.getPropertyValue(v).trim();
-    return {
-      background: get("--log-bg") || "#111111",
-      foreground: get("--text-secondary") || "#a0a0a0",
-      cursor: get("--accent") || "#ffffff",
-      cursorAccent: get("--log-bg") || "#111111",
-      selectionBackground: get("--log-row-selected") || "rgba(255,255,255,0.06)",
-      black: get("--log-debug") || "#737373",
-      red: get("--log-error") || "#EF4444",
-      green: get("--status-running") || "#22C55E",
-      yellow: get("--log-warn") || "#EAB308",
-      blue: get("--log-info") || "#3B82F6",
-      magenta: get("--log-json") || "#A78BFA",
-      cyan: get("--accent") || "#06B6D4",
-      white: get("--text-primary") || "#e0e0e0",
-      brightBlack: get("--text-muted") || "#525252",
-      brightRed: get("--log-error") || "#EF4444",
-      brightGreen: get("--status-running") || "#22C55E",
-      brightYellow: get("--log-warn") || "#EAB308",
-      brightBlue: get("--log-info") || "#3B82F6",
-      brightMagenta: get("--log-json") || "#A78BFA",
-      brightCyan: get("--accent") || "#06B6D4",
-      brightWhite: get("--text-primary") || "#ffffff",
-    };
+  /**
+   * Snap the emulator to a whole number of rows.
+   *
+   * wterm's auto-scroll sets scrollTop to a row boundary (_scrollToBottom
+   * floors to a multiple of the row height) while its "am I at the bottom?"
+   * probe (_isScrolledToBottom) uses a 5px tolerance. If the host height is not
+   * a multiple of the row height, the leftover fraction is never scrolled away,
+   * the probe reads it as "the user scrolled up to read history", and
+   * follow-the-output switches off permanently.
+   *
+   * Removing the fraction makes both agree, so wterm keeps following on its
+   * own. Do NOT also write scrollTop from here — two writers per frame fight
+   * each other and the scroll visibly jitters while typing.
+   *
+   * The row height is read from --term-row-height rather than duplicated as a
+   * constant: the style block is the single source of truth, and a silent
+   * mismatch here disables follow-the-output permanently.
+   */
+  function snapHostToRowGrid() {
+    const outer = hostEl;
+    const inner = terminalEl;
+    if (!outer || !inner) return;
+
+    const style = getComputedStyle(outer);
+    const rowHeight = parseFloat(style.getPropertyValue("--term-row-height"));
+    if (!rowHeight) return;
+
+    // clientHeight is the padding box, so the host's own vertical padding has
+    // to come off before dividing into rows — otherwise the emulator is sized
+    // taller than the space it actually has and the last row is clipped.
+    const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const rows = Math.max(1, Math.floor((outer.clientHeight - padY) / rowHeight));
+    inner.style.height = `${rows * rowHeight}px`;
   }
 
-  function initTerminal() {
-    if (!terminalEl || terminal) return;
+  /**
+   * Idempotent, and — critically — concurrent callers await the SAME in-flight
+   * initialisation instead of being turned away. The $effect below and
+   * connect() both race to build the terminal on mount; if the second caller
+   * returned early it would find `terminal` still null and abort the whole
+   * connection, leaving a rendered-but-never-connected panel.
+   */
+  function initTerminal(): Promise<void> {
+    if (terminal) return Promise.resolve();
+    const host = terminalEl;
+    if (!host) return Promise.resolve();
 
-    fitAddon = new FitAddon();
+    initPromise ??= (async () => {
+      try {
+        await createTerminal(host);
+      } catch (err) {
+        // Never fail silently: WTerm.init() is async and can reject (WASM
+        // instantiation, zero-sized host element). Without this the panel sat
+        // on the placeholder forever with no clue why, and the rejection
+        // escaped connect() as an unhandled promise.
+        initError = err instanceof Error ? err.message : String(err);
+        console.error("[TerminalView] terminal init failed", err);
+      }
+    })();
 
-    terminal = new Terminal({
+    return initPromise;
+  }
+
+  async function createTerminal(host: HTMLDivElement): Promise<void> {
+    const term = new WTerm(host, {
+      // Built-in ResizeObserver: recomputes cols/rows from the element's
+      // content box and fires onResize. Replaces the xterm FitAddon.
+      autoResize: true,
       cursorBlink: true,
-      cursorStyle: "block",
-      fontFamily: "'Geist Mono', ui-monospace, SFMono-Regular, monospace",
-      fontSize: 12,
-      lineHeight: 1.4,
-      theme: getTerminalTheme(),
-      allowProposedApi: true,
+      // Send keyboard input to the backend via command (not event, to avoid duplication)
+      onData: (data) => {
+        if (isConnected) {
+          invoke("send_terminal_input", { data }).catch(() => {});
+        }
+      },
+      // Send resize via command
+      onResize: (cols, rows) => {
+        if (isConnected) {
+          invoke("resize_terminal", { width: cols, height: rows }).catch(() => {});
+        }
+      },
     });
 
-    terminal.loadAddon(fitAddon);
-    terminal.loadAddon(new WebLinksAddon());
-    terminal.open(terminalEl);
-    fitAddon.fit();
+    // init() instantiates the WASM core (inlined as base64 — no network fetch).
+    await term.init();
+    if (destroyed) {
+      term.destroy();
+      return;
+    }
+
+    terminal = term;
     terminalReady = true;
-
-    // Send keyboard input to the backend via command (not event, to avoid duplication)
-    terminal.onData((data) => {
-      if (isConnected) {
-        invoke("send_terminal_input", { data }).catch(() => {});
-      }
-    });
-
-    // Send resize via command
-    terminal.onResize(({ cols, rows }) => {
-      if (isConnected) {
-        invoke("resize_terminal", { width: cols, height: rows }).catch(() => {});
-      }
-    });
-
-    // Handle window resize
-    const resizeObserver = new ResizeObserver(() => {
-      fitAddon?.fit();
-    });
-    resizeObserver.observe(terminalEl);
-
-    resizeCleanup = () => resizeObserver.disconnect();
+    initError = null;
   }
 
   async function connect() {
     if (!k8sStore.selectedResource || !selectedContainer || destroyed) return;
     disconnect();
 
-    // Init terminal if not yet created
-    if (!terminal) {
-      // Wait a tick for the DOM element to be available
-      await new Promise((r) => requestAnimationFrame(r));
-      if (destroyed) return;
-      initTerminal();
-    }
+    // Normally the $effect below has already built the terminal; this covers
+    // the case where connect() wins the race with the host node binding.
+    if (!terminal) await initTerminal();
 
+    // initTerminal() surfaces its own failure via initError — bail quietly.
     if (!terminal) return;
 
-    terminal.clear();
+    terminal.write(CLEAR_SEQUENCE);
     isConnected = true;
 
     try {
@@ -169,7 +195,7 @@
         terminal.focus();
       }
     } catch (err) {
-      terminal?.writeln(`\r\n\x1b[31mError: ${err}\x1b[0m`);
+      terminal?.write(`\r\n\x1b[31mError: ${err}\x1b[0m\r\n`);
       isConnected = false;
     }
   }
@@ -188,7 +214,7 @@
   }
 
   function clearTerminal() {
-    terminal?.clear();
+    terminal?.write(CLEAR_SEQUENCE);
   }
 
   function handleContainerSelect(container: string) {
@@ -214,15 +240,36 @@
     return () => {
       destroyed = true;
       disconnect();
-      resizeCleanup?.();
-      terminal?.dispose();
+      // destroy() disconnects the internal ResizeObserver and the input handler.
+      terminal?.destroy();
       terminal = null;
       terminalReady = false;
     };
   });
 
+  // Build the terminal as soon as its host node is bound. Doing this here
+  // rather than guessing with requestAnimationFrame inside connect() removes
+  // the timing dependency that could abort the whole connection silently.
   $effect(() => {
-    if (selectedContainer && !autoStarted) {
+    if (terminalEl && !terminal) void initTerminal();
+  });
+
+  // Keep the host aligned to the row grid across panel resizes.
+  $effect(() => {
+    const outer = hostEl;
+    if (!outer || !terminalEl) return;
+    snapHostToRowGrid();
+    const observer = new ResizeObserver(snapHostToRowGrid);
+    observer.observe(outer);
+    return () => observer.disconnect();
+  });
+
+  // Gated on terminalReady as well as the container: autoStarted latches on
+  // the first run, so firing before the emulator exists would abort connect()
+  // permanently. If init failed, terminalReady stays false and the error
+  // message is shown instead of a silently dead panel.
+  $effect(() => {
+    if (selectedContainer && terminalReady && !autoStarted) {
       autoStarted = true;
       connect();
     }
@@ -231,7 +278,11 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="flex h-full flex-col bg-[var(--bg-primary)]" onclick={() => (openDropdown = null)}>
+<div
+  data-testid="terminal-panel"
+  class="flex h-full flex-col bg-[var(--bg-primary)]"
+  onclick={() => (openDropdown = null)}
+>
   <!-- Header -->
   <div
     class="flex h-[68px] shrink-0 items-center justify-between border-b border-[var(--border-color)] px-6"
@@ -380,20 +431,95 @@
 
       <!-- Terminal Container -->
       <div
-        class="relative flex-1 overflow-hidden rounded-b border-x border-b border-[var(--border-color)] bg-[var(--log-bg)] p-2"
+        bind:this={hostEl}
+        class="wterm-host relative flex-1 overflow-hidden rounded-b border-x border-b border-[var(--border-color)] bg-[var(--log-bg)] px-2 py-2"
       >
-        {#if !terminalReady}
+        {#if initError}
+          <div
+            class="absolute inset-0 z-10 flex items-center justify-center px-4 text-center font-mono text-[12px] text-[var(--status-failed)]"
+          >
+            Terminal failed to start: {initError}
+          </div>
+        {:else if !terminalReady}
           <div class="absolute inset-0 z-10 flex items-center justify-center text-[12px] text-[var(--text-muted)]">
             Select a container and press Connect to start
           </div>
         {/if}
+        <!--
+          No onclick focus handler here: WTerm attaches its own, which skips
+          focusing when there is an active text selection so click-dragging to
+          select does not steal focus mid-selection.
+        -->
+        <!-- Height is set imperatively by snapHostToRowGrid(), not by a class. -->
         <div
           bind:this={terminalEl}
-          class="h-full w-full"
+          class="w-full"
           class:invisible={!terminalReady}
-          onclick={() => terminal?.focus()}
         ></div>
       </div>
     </div>
   </div>
 </div>
+
+<style>
+  /*
+    wterm is themed entirely through CSS custom properties (it renders to the
+    DOM, so there is no JS theme object). This maps the app palette onto the
+    --term-* contract, replacing the old getTerminalTheme() helper. Fallbacks
+    mirror the ones that helper used.
+
+    :global() is required because WTerm adds the .wterm class at runtime, so
+    Svelte cannot see it at compile time and would prune the rules as unused.
+  */
+  /* Tokens live on the host, not on .wterm: custom properties inherit, so
+     .wterm and .term-row still see them, and snapHostToRowGrid() can read
+     --term-row-height from a node that exists before WTerm mounts. */
+  .wterm-host {
+    --term-bg: var(--log-bg, #111111);
+    --term-fg: var(--text-secondary, #a0a0a0);
+    --term-cursor: var(--accent, #ffffff);
+
+    --term-color-0: var(--log-debug, #737373);
+    --term-color-1: var(--log-error, #ef4444);
+    --term-color-2: var(--status-running, #22c55e);
+    --term-color-3: var(--log-warn, #eab308);
+    --term-color-4: var(--log-info, #3b82f6);
+    --term-color-5: var(--log-json, #a78bfa);
+    --term-color-6: var(--accent, #06b6d4);
+    --term-color-7: var(--text-primary, #e0e0e0);
+    --term-color-8: var(--text-muted, #525252);
+    --term-color-9: var(--log-error, #ef4444);
+    --term-color-10: var(--status-running, #22c55e);
+    --term-color-11: var(--log-warn, #eab308);
+    --term-color-12: var(--log-info, #3b82f6);
+    --term-color-13: var(--log-json, #a78bfa);
+    --term-color-14: var(--accent, #06b6d4);
+    --term-color-15: var(--text-primary, #ffffff);
+
+    --term-font-family: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+    --term-font-size: 12px;
+    --term-line-height: 1.4;
+    /*
+      Must stay in sync with font-size x line-height (12 x 1.4 = 16.8). Rounded
+      to an integer because the auto-resize observer derives the row count with
+      Math.floor(height / rowHeight); a fractional value drifts as the panel
+      grows and misaligns the cursor.
+    */
+    --term-row-height: 17px;
+
+  }
+
+  /* The host already supplies padding, border and radius; neutralise wterm's
+     own chrome. Height is NOT set here — snapHostToRowGrid() pins it to a
+     whole number of rows so follow-the-output stays armed. */
+  .wterm-host :global(.wterm) {
+    width: 100%;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .wterm-host :global(.wterm ::selection) {
+    background: var(--log-row-selected, rgba(255, 255, 255, 0.06));
+  }
+</style>

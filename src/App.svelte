@@ -9,7 +9,7 @@
   import TabBar from "$lib/components/tabs/TabBar.svelte";
   import LazyView from "$lib/components/common/LazyView.svelte";
   // DetailPanel (pulls in the yaml parser ~97 kB), LogViewer, TerminalView and
-  // YamlEditor pull in large vendor chunks (xterm ~337 kB, CodeMirror ~493 kB)
+  // YamlEditor pull in large vendor chunks (CodeMirror ~495 kB, wterm ~52 kB)
   // so they're loaded via LazyView to keep the initial bundle small.
   import { ToastContainer } from "$lib/components/ui/toast";
   import ContextMenu from "$lib/components/context-menu/ContextMenu.svelte";
