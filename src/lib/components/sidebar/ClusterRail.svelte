@@ -8,6 +8,7 @@
   import { extensions } from "$lib/extensions";
   import { getIconById } from "$lib/utils/context-icons";
   import { getContextColor } from "$lib/utils/context-colors";
+  import { contextInitials } from "$lib/utils/context-initials";
   import DeviconIcon from "$lib/components/common/DeviconIcon.svelte";
   import { switchContext } from "$lib/actions/navigation";
 
@@ -40,7 +41,7 @@
     {#if k8sStore.contextsLoadError}
       <Tooltip>
         <TooltipTrigger>
-          <div class="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-[var(--status-failed)]/15 text-[var(--status-failed)]">
+          <div class="flex h-[34px] w-[34px] items-center justify-center rounded-lg bg-[var(--status-failed)]/15 text-[var(--status-failed)]">
             <AlertTriangle class="h-4 w-4" />
           </div>
         </TooltipTrigger>
@@ -52,6 +53,7 @@
         class="flex h-7 w-7 items-center justify-center rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
         onclick={retryLoadContexts}
         title="Retry loading contexts"
+        aria-label="Retry loading contexts"
       >
         <RefreshCw class="h-3.5 w-3.5" />
       </button>
@@ -65,28 +67,32 @@
       <Tooltip>
         <TooltipTrigger>
           <button
-            class="relative flex h-[34px] w-[34px] shrink-0 items-center justify-center transition-[border-radius,transform] {isActive ? 'rounded-[8px]' : 'rounded-[10px] hover:rounded-[8px]'}"
+            class="relative flex h-[34px] w-[34px] shrink-0 items-center justify-center transition-[border-radius,transform] {isActive ? 'rounded-lg' : 'rounded-lg hover:rounded-lg'}"
             style={isActive
               ? `background-color: var(${color}); color: white; box-shadow: 0 0 0 2px var(--rail-bg, color-mix(in srgb, var(--sidebar-bg) 92%, #000)), 0 0 0 3.5px rgba(255,255,255,0.22);`
               : `background-color: color-mix(in srgb, var(${color}) 20%, transparent); color: var(${color});`}
             onclick={() => switchContext(ctx)}
             title={ctx}
+            aria-label="Switch to context {ctx}"
+            aria-current={isActive ? "true" : undefined}
           >
             {#if isActive}
               <span class="absolute top-1/2 -left-[11px] h-5 w-[3px] -translate-y-1/2 rounded-r-[3px] bg-[var(--accent)]"></span>
             {/if}
-            {#if iconDef && label}
-              <!-- Icon + label combo -->
-              <div class="flex flex-col items-center gap-0.5">
-                <DeviconIcon id={iconDef.id} class="h-4 w-4" />
-                <span class="text-[7px] font-bold leading-none tracking-tight">{label}</span>
-              </div>
-            {:else if iconDef}
+            {#if iconDef}
+              <!--
+                There used to be an icon+label combo that rendered its label at
+                7px — below the size at which type is readable at all. The
+                tooltip already carries the full context name, so when a custom
+                icon is set the icon alone says as much.
+              -->
               <DeviconIcon id={iconDef.id} class="h-5.5 w-5.5" />
             {:else if label}
               <span class="text-[10px] font-bold leading-none tracking-tight">{label}</span>
             {:else}
-              <span class="text-sm font-bold">{ctx.charAt(0).toUpperCase()}</span>
+              <!-- Segment initials, not charAt(0): a real kubeconfig turned
+                   the whole rail into a column of near-identical letters. -->
+              <span class="text-[11px] font-bold tracking-tight">{contextInitials(ctx)}</span>
             {/if}
           </button>
         </TooltipTrigger>

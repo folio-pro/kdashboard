@@ -24,6 +24,10 @@
     "fetch-pricing": "bun scripts/fetch-pricing.ts",
     "test": "bun test && bun test ./electron"
   },
+  "//trustedDependencies": "Bun blocks postinstall scripts unless the package is listed here. Electron's postinstall is what downloads its ~211 MB binary, so without this a `bun install` leaves node_modules/electron with no dist/ and `dev:electron` dies with 'Error: Electron uninstall'. npm and npm ci run postinstall regardless and never needed this.",
+  "trustedDependencies": [
+    "electron"
+  ],
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.4",

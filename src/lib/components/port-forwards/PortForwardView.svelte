@@ -162,7 +162,7 @@
     <div class="flex flex-1 flex-col gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
       <span class="text-[10px] font-normal text-[var(--text-muted)]">Total</span>
       <div class="flex items-end gap-1.5">
-        <span class="text-lg font-semibold leading-none tabular-nums text-[var(--text-primary)]">{portForwards.length}</span>
+        <span class="text-[18px] font-semibold leading-none tabular-nums text-[var(--text-primary)]">{portForwards.length}</span>
         <span class="pb-0.5 text-[10px] text-[var(--text-muted)]">port forwards</span>
       </div>
       <div class="h-1 w-full overflow-hidden rounded-full bg-[var(--border-color)]">
@@ -177,8 +177,8 @@
       {#if portForwards.length === 0}
         <div class="flex h-full flex-col items-center justify-center py-20">
           <Unplug class="h-6 w-6 text-[var(--text-muted)]" />
-          <p class="mt-3 text-xs text-[var(--text-muted)]">No active port forwards</p>
-          <p class="mt-1 text-[11px] text-[var(--text-dimmed)]">Open a pod and forward a container port to get started</p>
+          <p class="mt-3 text-[12px] text-[var(--text-muted)]">No active port forwards</p>
+          <p class="mt-1 text-[11px] text-[var(--text-muted)]">Open a pod and forward a container port to get started</p>
         </div>
       {:else}
         <table class="w-full" style="table-layout: fixed;">
@@ -187,7 +187,7 @@
               {#each columns as col}
                 <th
                   class={cn(
-                    "relative h-10 overflow-hidden whitespace-nowrap px-4 text-left text-[11px] font-medium text-[var(--text-dimmed)]",
+                    "relative h-10 overflow-hidden whitespace-nowrap px-4 text-left text-[11px] font-medium text-[var(--text-muted)]",
                     col.sortable && "cursor-pointer select-none hover:text-[var(--text-secondary)]"
                   )}
                   style={getColumnStyle(col)}
@@ -219,7 +219,7 @@
             {#each sortedForwards as pf}
               <tr class="h-10 cursor-default border-b border-[var(--border-hover)] transition-colors hover:bg-[var(--table-row-hover)]">
                 {#each columns as col}
-                  <td class="overflow-hidden px-4 text-xs">
+                  <td class="overflow-hidden px-4 text-[12px]">
                     {#if col.key === "status"}
                       <span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--status-running)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--status-running)]">
                         <span class="h-1.5 w-1.5 rounded-full bg-[var(--status-running)]"></span>
@@ -228,14 +228,14 @@
                     {:else if col.key === "actions"}
                       <div class="flex items-center gap-1">
                         <button
-                          class="inline-flex h-7 items-center gap-1 rounded px-2.5 text-xs text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/10"
+                          class="inline-flex h-7 items-center gap-1 rounded px-2.5 text-[12px] text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/10"
                           onclick={() => openInBrowser(pf.local_port)}
                         >
                           <ExternalLink class="h-3 w-3" />
                           Open
                         </button>
                         <button
-                          class="inline-flex h-7 items-center gap-1 rounded px-2.5 text-xs text-[var(--status-failed)] transition-colors hover:bg-[var(--status-failed)]/10"
+                          class="inline-flex h-7 items-center gap-1 rounded px-2.5 text-[12px] text-[var(--status-failed)] transition-colors hover:bg-[var(--status-failed)]/10"
                           onclick={() => stopPortForward(pf.session_id)}
                         >
                           <Square class="h-3 w-3" />
@@ -281,7 +281,7 @@
 
     <!-- Copy feedback toast -->
     {#if copyFeedback}
-      <div class="pointer-events-none absolute bottom-7 right-9 z-50 rounded bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-[var(--bg-primary)] shadow-lg animate-fade-in-out">
+      <div class="pointer-events-none absolute bottom-7 right-9 z-50 rounded bg-[var(--accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--bg-primary)] shadow-lg animate-fade-in-out">
         {copyFeedback}
       </div>
     {/if}

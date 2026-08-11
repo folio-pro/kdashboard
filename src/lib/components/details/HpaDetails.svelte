@@ -102,7 +102,7 @@
   {#if metrics.length > 0}
     <DetailSection title="Metrics" icon={TrendingUp}>
       {#snippet actions()}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{metrics.length}</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">{metrics.length}</span>
       {/snippet}
       <div class="flex flex-col gap-2">
         {#each metrics as metric}
@@ -116,7 +116,7 @@
             </div>
             <div class="flex items-center gap-2">
               <span class="font-mono text-[13px] font-medium text-[var(--text-primary)]">{current}</span>
-              <span class="text-[11px] text-[var(--text-dimmed)]">/ {target}</span>
+              <span class="text-[11px] text-[var(--text-muted)]">/ {target}</span>
             </div>
           </div>
         {/each}

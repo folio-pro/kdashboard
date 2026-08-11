@@ -3,7 +3,6 @@
   import { invoke } from "$lib/ipc/core";
   import Sidebar from "$lib/components/sidebar/Sidebar.svelte";
   import WindowTitleBar from "$lib/components/titlebar/WindowTitleBar.svelte";
-  import TitleBar from "$lib/components/titlebar/TitleBar.svelte";
   import ResourceTable from "$lib/components/table/ResourceTable.svelte";
   import StatusBar from "$lib/components/common/StatusBar.svelte";
   import CommandPalette from "$lib/components/command-palette/CommandPalette.svelte";
@@ -21,7 +20,7 @@
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore, viewShowsTitleBar, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
+  import { uiStore, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { deleteResource } from "$lib/actions/registry";
@@ -197,12 +196,13 @@
       <!-- Tab Bar -->
       <TabBar />
 
-      <!-- Title Bar (hidden in views that render their own header) -->
-      {#if viewShowsTitleBar(uiStore.activeView)}
-        <TitleBar />
-      {/if}
-
-      <!-- Content Area: one view at a time -->
+      <!--
+        Content Area: one view at a time. Each view now owns its header. The
+        app used to stack a shared TitleBar above this, which in Cost /
+        Security / Helm / Topology / Port Forwards / CRDs landed on top of the
+        view's OWN header, showing the last table's title and a search box
+        that filtered nothing.
+      -->
       <div class="min-h-0 flex-1">
         {#if uiStore.activeView === "table"}
           <ResourceTable />
@@ -313,7 +313,7 @@
     <div class="flex min-w-[260px] items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 shadow-lg">
       <span class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--text-muted)] border-t-[var(--accent)]"></span>
       <div class="flex flex-col">
-        <span class="text-sm font-medium text-[var(--text-primary)]">Switching context...</span>
+        <span class="text-[13px] font-medium text-[var(--text-primary)]">Switching context...</span>
         {#if k8sStore.switchingContextTo}
           <span class="font-mono text-[11px] text-[var(--text-secondary)]">{k8sStore.switchingContextTo}</span>
         {/if}

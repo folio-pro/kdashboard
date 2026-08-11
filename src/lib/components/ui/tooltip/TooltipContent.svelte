@@ -17,7 +17,7 @@
   <Tooltip.Content
     {sideOffset}
     class={cn(
-      "z-50 overflow-hidden rounded-md bg-[var(--bg-primary)] border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-primary)] shadow-md",
+      "z-50 overflow-hidden rounded-md bg-[var(--bg-primary)] border border-[var(--border-color)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] shadow-md",
       "animate-in fade-in-0 zoom-in-95",
       className
     )}

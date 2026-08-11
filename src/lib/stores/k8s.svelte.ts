@@ -47,6 +47,17 @@ class K8sStore extends K8sStoreLogic {
 
   override connectionStatus = $state<ConnectionStatus>("disconnected");
   override isSwitchingContext = $state<boolean>(false);
+
+  /**
+   * The cluster itself is unreachable, as opposed to one resource type failing
+   * to list. ConnectionErrorOverlay takes over the whole window in this state,
+   * so views must not also render their own copy of the error behind it — the
+   * table used to, which put two "Retry connection" buttons on screen at once
+   * (and made the cluster-unavailable e2e flaky on a strict-mode violation).
+   */
+  get connectionLost(): boolean {
+    return this.connectionStatus === "error" && !this.isSwitchingContext;
+  }
   override switchingContextTo = $state<string | null>(null);
   override isLoading = $state<boolean>(false);
   override error = $state<string | null>(null);

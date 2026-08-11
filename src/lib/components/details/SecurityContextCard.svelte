@@ -66,7 +66,7 @@
     <!-- Pod-level security -->
     {#if hasPodSecurity || hasServiceAccount}
       <div class="border-t border-[var(--border-hover)] px-5 py-3">
-        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-dimmed)]">Pod Level</div>
+        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Pod Level</div>
       </div>
       {#if serviceAccountName}
         <InfoRow label="Service Account" value={serviceAccountName} />
@@ -107,7 +107,7 @@
         cs.capDrop.length > 0}
       {#if hasAny}
         <div class="border-t border-[var(--border-hover)] px-5 py-3">
-          <div class="mb-1 text-[11px] font-medium uppercase tracking-wider text-[var(--text-dimmed)]">Container: {cs.name}</div>
+          <div class="mb-1 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Container: {cs.name}</div>
         </div>
         {#if cs.privileged !== undefined}
           <InfoRow label="Privileged" value={String(cs.privileged)} valueColor={dangerColor(!cs.privileged)} />

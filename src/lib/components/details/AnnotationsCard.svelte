@@ -32,13 +32,13 @@
   <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
     <div class="flex items-center justify-between px-5 py-4">
       <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Annotations</h3>
-      <span class="text-xs text-[var(--text-muted)]">{Object.keys(annotations).length}</span>
+      <span class="text-[12px] text-[var(--text-muted)]">{Object.keys(annotations).length}</span>
     </div>
     {#each Object.entries(annotations) as [key, value]}
       {@const pretty = jsonMap[key]}
       {@const isExpanded = expanded.has(key)}
       <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{key}</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">{key}</span>
         {#if pretty}
           <button
             class="text-left font-mono text-[11px] text-[var(--accent)] {isExpanded ? '' : 'hover:underline'}"

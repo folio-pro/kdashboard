@@ -6,12 +6,14 @@
   import { openResourceDetail } from "$lib/actions/navigation";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { invoke } from "$lib/ipc/core";
+  import TableToolbar from "./TableToolbar.svelte";
+  import ApplyYamlDialog from "./ApplyYamlDialog.svelte";
   import AppTableHeader from "./TableHeader.svelte";
   import AppTableRow from "./TableRow.svelte";
   import BulkActionBar from "./BulkActionBar.svelte";
   import TableEmptyStates from "./TableEmptyStates.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
-  import { RefreshCw, LayoutGrid, Filter, ClipboardPaste, Plus } from "lucide-svelte";
+  import { RefreshCw, LayoutGrid, Filter, ClipboardPaste } from "lucide-svelte";
   import { extensions } from "$lib/extensions";
   import { Checkbox } from "$lib/components/ui/checkbox";
   import { isInputElement } from "$lib/utils/keyboard";
@@ -21,7 +23,7 @@
   import WorkloadStats from "$lib/components/common/WorkloadStats.svelte";
   import { computeWorkloadStats, matchesStatFilter, isPodNeedingAttention } from "$lib/utils/workload-stats";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
-  import { filterResources, sortResources, formatCopyFeedback, computeAllSelected as _computeAllSelected, computeSomeSelected as _computeSomeSelected, handleSelectAll as _handleSelectAll, MIN_COL_WIDTH as _MIN_COL_WIDTH } from "./resource-table";
+  import { filterResources, sortResources, computeAllSelected as _computeAllSelected, computeSomeSelected as _computeSomeSelected, handleSelectAll as _handleSelectAll, MIN_COL_WIDTH as _MIN_COL_WIDTH } from "./resource-table";
   import { columnsByType, defaultColumns, getColumnWidth as _getColumnWidth, setColumnWidth as _setColumnWidth } from "./table-columns";
 
   const MIN_COL_WIDTH = _MIN_COL_WIDTH;
@@ -151,11 +153,6 @@
     openResourceDetail(resource);
   }
 
-  function handleRowDblClick(resource: Resource, index: number) {
-    uiStore.selectedRowIndex = index;
-    openResourceDetail(resource);
-  }
-
   function handleRowContextMenu(resource: Resource, index: number, event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
@@ -242,17 +239,6 @@
     k8sStore.selectedResourceType.charAt(0).toUpperCase() +
     k8sStore.selectedResourceType.slice(1)
   );
-
-  let copyFeedback: string = $state("");
-  let copyFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
-
-  function handleCellCopy(value: string) {
-    if (copyFeedbackTimer) clearTimeout(copyFeedbackTimer);
-    copyFeedback = formatCopyFeedback(value);
-    copyFeedbackTimer = setTimeout(() => {
-      copyFeedback = "";
-    }, 1500);
-  }
 
   let prevSelectedRowIndex = -1;
   $effect(() => {
@@ -377,20 +363,9 @@
           id: "paste-yaml",
           label: "Paste & Apply YAML",
           icon: ClipboardPaste,
-          execute: async () => {
-            try {
-              const yaml = await navigator.clipboard.readText();
-              if (!yaml.trim()) {
-                toastStore.error("Empty clipboard", "No YAML to apply");
-                return;
-              }
-              await invoke("apply_yaml", { yaml });
-              toastStore.success("Applied", "YAML resource applied successfully");
-              await k8sStore.refreshResources();
-            } catch (err) {
-              toastStore.error("Apply failed", String(err));
-            }
-          },
+          // Same preview path as the Create button — this used to apply the
+          // clipboard straight to the cluster with no confirmation either.
+          execute: handleCreate,
         },
       ],
     });
@@ -400,23 +375,38 @@
     if (uiStore.selectedCount > 0) confirmBulkDelete();
   }
 
-  // --- List toolbar actions (reference console parity) ---
-  function focusFilter() {
-    document.getElementById("resource-filter")?.focus();
-  }
+  // Applying the clipboard is a write to the live cluster, so it goes through
+  // a preview first — see ApplyYamlDialog. Both entry points (the Create
+  // button and the context menu's "Paste & Apply YAML") funnel through here.
+  let applyYamlOpen = $state(false);
+  let pendingYaml = $state("");
 
   async function handleCreate() {
+    let yaml: string;
     try {
-      const yaml = await navigator.clipboard.readText();
-      if (!yaml.trim()) {
-        toastStore.error("Empty clipboard", "Copy a YAML manifest first, then Create");
-        return;
-      }
-      await invoke("apply_yaml", { yaml });
+      yaml = await navigator.clipboard.readText();
+    } catch (err) {
+      toastStore.error("Cannot read clipboard", String(err));
+      return;
+    }
+    if (!yaml.trim()) {
+      toastStore.error("Empty clipboard", "Copy a YAML manifest first, then Create");
+      return;
+    }
+    pendingYaml = yaml;
+    applyYamlOpen = true;
+  }
+
+  async function confirmApplyYaml() {
+    applyYamlOpen = false;
+    try {
+      await invoke("apply_yaml", { yaml: pendingYaml });
       toastStore.success("Applied", "Resource created from clipboard YAML");
       await k8sStore.refreshResources();
     } catch (err) {
-      toastStore.error("Create failed", String(err));
+      toastStore.error("Apply failed", String(err));
+    } finally {
+      pendingYaml = "";
     }
   }
 
@@ -426,19 +416,26 @@
     return () => {
       window.removeEventListener("keydown", handleTableKeydown);
       window.removeEventListener("kdash:bulk-delete", handleBulkDeleteEvt);
-      if (copyFeedbackTimer) clearTimeout(copyFeedbackTimer);
     };
   });
 </script>
 
 <div class="flex h-full flex-col">
+  <!-- View header: title, namespace, count, search and the two write actions -->
+  <TableToolbar
+    {resourceTypeLabel}
+    count={filteredResources.length}
+    isLoading={k8sStore.isLoading}
+    onrefresh={() => k8sStore.refreshResources()}
+    oncreate={handleCreate}
+  />
+
   <!-- Workload Stat Cards -->
   <WorkloadStats
     stats={workloadStats.stats}
     healthSegments={workloadStats.healthSegments}
     isLoading={k8sStore.isLoading}
     hasError={!!k8sStore.error}
-    skeletonCount={workloadStats.stats.length || 4}
     needsAttention={needsAttentionCount}
   />
 
@@ -448,41 +445,6 @@
     ondelete={confirmBulkDelete}
     ondeselect={() => uiStore.clearSelection()}
   />
-
-  <!-- List toolbar: count + Filter / Refresh / Create -->
-  {#if uiStore.selectedCount === 0}
-    <div class="flex items-center gap-2 px-6 pb-2.5">
-      <span class="text-xs text-[var(--text-muted)]">
-        {filteredResources.length}
-        {resourceTypeLabel.toLowerCase()}{filteredResources.length === 1 ? "" : "s"}
-      </span>
-      <div class="flex-1"></div>
-      <button
-        class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
-        onclick={focusFilter}
-        title="Filter (/)"
-      >
-        <Filter class="h-3.5 w-3.5" />
-        Filter
-      </button>
-      <button
-        class="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
-        onclick={() => k8sStore.refreshResources()}
-        title="Refresh (r)"
-        aria-label="Refresh"
-      >
-        <RefreshCw class="h-3.5 w-3.5 {k8sStore.isLoading ? 'animate-spin' : ''}" />
-      </button>
-      <button
-        class="inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 text-xs font-semibold text-[var(--bg-primary)] transition-colors hover:bg-[var(--accent-hover)]"
-        onclick={handleCreate}
-        title="Create from clipboard YAML"
-      >
-        <Plus class="h-3.5 w-3.5" />
-        Create
-      </button>
-    </div>
-  {/if}
 
   <!-- Table -->
   <div class="relative flex-1 overflow-hidden">
@@ -497,6 +459,10 @@
         onclearStatFilter={() => uiStore.clearStatFilter()}
         onclearTextFilter={() => uiStore.setFilter("")}
       />
+    {:else if k8sStore.connectionLost}
+      <!-- ConnectionErrorOverlay owns the whole window here. Rendering the
+           error again underneath it duplicated both the message and its
+           "Retry connection" button. -->
     {:else if k8sStore.error}
       <TableEmptyStates
         state="error"
@@ -561,12 +527,10 @@
                 highlighted={uiStore.selectedRowIndex === i}
                 resourceType={k8sStore.selectedResourceType}
                 onclick={() => handleRowClick(resource, i)}
-                ondblclick={() => handleRowDblClick(resource, i)}
                 oncontextmenu={(e) => handleRowContextMenu(resource, i, e)}
                 density={settingsStore.settings.table_density}
                 checkboxChecked={uiStore.selectedRows.has(resource.metadata.uid)}
                 oncheck={() => handleCheckboxChange(resource.metadata.uid)}
-                ondblclickcopy={handleCellCopy}
               />
             {/if}
           {/each}
@@ -577,27 +541,16 @@
       </table>
     {/if}
     </div>
-
-    <!-- Copy feedback toast -->
-    {#if copyFeedback}
-      <div
-        class="pointer-events-none absolute bottom-7 right-9 z-50 rounded bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-[var(--bg-primary)] shadow-lg animate-fade-in-out"
-      >
-        {copyFeedback}
-      </div>
-    {/if}
   </div>
 </div>
 
-<style>
-  @keyframes fadeInOut {
-    0% { opacity: 0; transform: translateY(4px); }
-    15% { opacity: 1; transform: translateY(0); }
-    80% { opacity: 1; transform: translateY(0); }
-    100% { opacity: 0; transform: translateY(-4px); }
-  }
-
-  :global(.animate-fade-in-out) {
-    animation: fadeInOut 1.5s ease-in-out forwards;
-  }
-</style>
+{#if applyYamlOpen}
+  <ApplyYamlDialog
+    open={applyYamlOpen}
+    yaml={pendingYaml}
+    context={k8sStore.currentContext}
+    namespace={k8sStore.currentNamespace}
+    onapply={confirmApplyYaml}
+    oncancel={() => { applyYamlOpen = false; pendingYaml = ""; }}
+  />
+{/if}

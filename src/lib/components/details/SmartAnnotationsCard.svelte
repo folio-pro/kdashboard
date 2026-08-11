@@ -57,11 +57,11 @@
         <div class="border-b border-[var(--border-color)]">
           <div class="flex items-center justify-between px-6 py-4">
             <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Other Annotations</h3>
-            <span class="text-xs text-[var(--text-muted)]">{count}</span>
+            <span class="text-[12px] text-[var(--text-muted)]">{count}</span>
           </div>
           {#each Object.entries(group.annotations) as [key, value]}
             <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
-              <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{key}</span>
+              <span class="font-mono text-[11px] text-[var(--text-muted)]">{key}</span>
               <span class="truncate font-mono text-[11px] text-[var(--text-primary)]">{value}</span>
             </div>
           {/each}
@@ -77,13 +77,13 @@
               <div class="flex items-center gap-2.5">
                 {#if group.tool.icon && ICON_MAP[group.tool.icon]}
                   {@const ToolIcon = ICON_MAP[group.tool.icon]}
-                  <ToolIcon class="h-3.5 w-3.5 text-[var(--text-dimmed)]" />
+                  <ToolIcon class="h-3.5 w-3.5 text-[var(--text-muted)]" />
                 {/if}
                 <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{group.tool.name}</h3>
               </div>
               <div class="flex items-center gap-2">
-                <span class="text-xs text-[var(--text-muted)]">{count}</span>
-                <ChevronDown class={cn("h-3.5 w-3.5 text-[var(--text-dimmed)] transition-transform", groupExpanded && "rotate-180")} />
+                <span class="text-[12px] text-[var(--text-muted)]">{count}</span>
+                <ChevronDown class={cn("h-3.5 w-3.5 text-[var(--text-muted)] transition-transform", groupExpanded && "rotate-180")} />
               </div>
             </button>
           {:else}
@@ -91,11 +91,11 @@
               <div class="flex items-center gap-2.5">
                 {#if group.tool.icon && ICON_MAP[group.tool.icon]}
                   {@const ToolIcon = ICON_MAP[group.tool.icon]}
-                  <ToolIcon class="h-3.5 w-3.5 text-[var(--text-dimmed)]" />
+                  <ToolIcon class="h-3.5 w-3.5 text-[var(--text-muted)]" />
                 {/if}
                 <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{group.tool.name}</h3>
               </div>
-              <span class="text-xs text-[var(--text-muted)]">{count}</span>
+              <span class="text-[12px] text-[var(--text-muted)]">{count}</span>
             </div>
           {/if}
 

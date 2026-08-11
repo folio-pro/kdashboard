@@ -57,7 +57,7 @@
 </script>
 
 {#if samples.length === 0}
-  <p class="py-3 text-[11px] text-[var(--text-dimmed)]">No data in this window.</p>
+  <p class="py-3 text-[11px] text-[var(--text-muted)]">No data in this window.</p>
 {:else}
   <div class="flex flex-col gap-1">
     <!-- Height is a prop, so it goes in the style attribute: an interpolated
@@ -73,7 +73,7 @@
       <path d={area} fill={color} opacity="0.12" />
       <path d={path} fill="none" stroke={color} stroke-width="1.5" vector-effect="non-scaling-stroke" />
     </svg>
-    <div class="flex justify-between font-mono text-[10px] text-[var(--text-dimmed)]">
+    <div class="flex justify-between font-mono text-[10px] text-[var(--text-muted)]">
       <span>now {format(latest)}</span>
       <span>peak {format(peak)}</span>
     </div>

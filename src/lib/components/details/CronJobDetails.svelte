@@ -68,7 +68,7 @@
   {#if activeJobs.length > 0}
     <DetailSection title="Active Jobs" icon={Clock}>
       {#snippet actions()}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{activeJobs.length}</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">{activeJobs.length}</span>
       {/snippet}
       <div class="flex flex-col gap-1.5">
         {#each activeJobs as job}

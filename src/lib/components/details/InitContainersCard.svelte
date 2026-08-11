@@ -51,7 +51,7 @@
         </div>
         <div class="mb-1.5 truncate font-mono text-[11px] text-[var(--text-muted)]">{container.image}</div>
         {#if container.command.length > 0}
-          <div class="mb-1 truncate font-mono text-[11px] text-[var(--text-dimmed)]">
+          <div class="mb-1 truncate font-mono text-[11px] text-[var(--text-muted)]">
             $ {container.command.join(" ")}{container.args.length > 0 ? ` ${container.args.join(" ")}` : ""}
           </div>
         {/if}

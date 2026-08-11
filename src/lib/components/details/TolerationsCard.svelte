@@ -87,7 +87,7 @@
 
     {#if tolerations.length > 0}
       <div class="border-t border-[var(--border-hover)] px-5 py-3">
-        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-dimmed)]">Tolerations</div>
+        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Tolerations</div>
       </div>
       {#each tolerations as toleration}
         <div class="flex items-center border-t border-[var(--border-hover)] px-5 py-3">
@@ -95,7 +95,7 @@
             {formatToleration(toleration)}
           </span>
           {#if toleration.tolerationSeconds !== undefined}
-            <span class="ml-2 shrink-0 text-[10px] text-[var(--text-dimmed)]">{toleration.tolerationSeconds}s</span>
+            <span class="ml-2 shrink-0 text-[10px] text-[var(--text-muted)]">{toleration.tolerationSeconds}s</span>
           {/if}
         </div>
       {/each}
@@ -103,7 +103,7 @@
 
     {#if hasNodeAffinity}
       <div class="border-t border-[var(--border-hover)] px-5 py-3">
-        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-dimmed)]">Node Affinity</div>
+        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Node Affinity</div>
         {#each describeAffinityTerms(nodeAffinity) as desc}
           <div class="font-mono text-[11px] text-[var(--text-muted)]">{desc}</div>
         {/each}
@@ -112,7 +112,7 @@
 
     {#if hasPodAffinity}
       <div class="border-t border-[var(--border-hover)] px-5 py-3">
-        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-dimmed)]">Pod Affinity</div>
+        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Pod Affinity</div>
         {#each describeAffinityTerms(podAffinity) as desc}
           <div class="font-mono text-[11px] text-[var(--text-muted)]">{desc}</div>
         {/each}
@@ -121,7 +121,7 @@
 
     {#if hasPodAntiAffinity}
       <div class="border-t border-[var(--border-hover)] px-5 py-3">
-        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-dimmed)]">Pod Anti-Affinity</div>
+        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Pod Anti-Affinity</div>
         {#each describeAffinityTerms(podAntiAffinity) as desc}
           <div class="font-mono text-[11px] text-[var(--text-muted)]">{desc}</div>
         {/each}

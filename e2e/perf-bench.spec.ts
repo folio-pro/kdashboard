@@ -109,7 +109,7 @@ test.describe("frontend perf bench", () => {
       k8sStore.currentContext = "bench";
       k8sStore.currentNamespace = "";
       k8sStore.selectedResourceType = "pods";
-      uiStore.activeView = "table";
+      uiStore.backToTable();
       uiStore.setFilter?.("");
     });
 
@@ -215,7 +215,7 @@ test.describe("frontend perf bench", () => {
       k8sStore.error = null;
       k8sStore.currentContext = "bench";
       k8sStore.currentNamespace = "";
-      uiStore.activeView = "table";
+      uiStore.backToTable();
 
       const pods = make(1500);
       const deploys = make(1500).map((p: any, i: number) => ({ ...p, kind: "Deployment", api_version: "apps/v1",
@@ -245,14 +245,14 @@ test.describe("frontend perf bench", () => {
       const openDetail = async () => {
         const t0 = performance.now();
         k8sStore.selectedResource = pods[10];
-        uiStore.activeView = "details";
+        uiStore.showDetails();
         // Wait until the lazy DetailPanel actually mounts.
         for (let k = 0; k < 240; k++) {
           if (document.querySelector('[data-testid="detail-panel"]')) break;
           await new Promise((res) => requestAnimationFrame(res));
         }
         const ms = performance.now() - t0;
-        uiStore.activeView = "table";
+        uiStore.backToTable();
         await raf2();
         return ms;
       };
@@ -324,7 +324,7 @@ test.describe("frontend perf bench", () => {
 
       k8sStore.connectionStatus = "connected";
       k8sStore.selectedCrd = { group: "example.com", version: "v1", kind: "Widget", plural: "widgets", scope: "Namespaced" };
-      uiStore.activeView = "crd-table";
+      uiStore.showView("crd-table");
       await raf2();
 
       const t0 = performance.now();

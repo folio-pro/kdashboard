@@ -42,7 +42,7 @@
           >
             <Layers class="h-3 w-3 shrink-0 text-[var(--accent)]" />
             <span class="truncate font-mono text-[13px] text-[var(--accent)] group-hover:underline">{ref.kind}/{ref.name}</span>
-            <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-dimmed)] transition-transform group-hover:translate-x-0.5" />
+            <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5" />
           </button>
         {:else}
           <span class="font-mono text-[13px] text-[var(--text-primary)]">{ref.kind}/{ref.name}</span>

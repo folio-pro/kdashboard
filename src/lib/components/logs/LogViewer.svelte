@@ -469,8 +469,8 @@
         class="flex h-9 shrink-0 items-center justify-between rounded-t border border-[var(--border-color)] bg-[var(--bg-tertiary,var(--bg-secondary))] px-4"
       >
         <div class="flex items-center gap-2">
-          <span class="font-mono text-xs font-semibold text-[var(--accent)]">&gt;_</span>
-          <span class="font-mono text-xs text-[var(--text-secondary)]">{resourceName}</span>
+          <span class="font-mono text-[12px] font-semibold text-[var(--accent)]">&gt;_</span>
+          <span class="font-mono text-[12px] text-[var(--text-secondary)]">{resourceName}</span>
         </div>
         <div class="flex items-center gap-3">
           {#if lastLogTime}
@@ -492,7 +492,7 @@
         onscroll={handleScroll}
       >
         {#if filteredLogs.length === 0}
-          <div class="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">
+          <div class="flex h-full items-center justify-center text-[12px] text-[var(--text-muted)]">
             {emptyStateMessage}
           </div>
         {:else}

@@ -71,15 +71,15 @@
       <span class="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">CPU</span>
       {#if cpu}
         <span class="font-mono text-[12px] tabular-nums text-[var(--text-primary)]">{cpu.label}</span>
-        <span class="font-mono text-[12px] text-[var(--text-dimmed)]">
+        <span class="font-mono text-[12px] text-[var(--text-muted)]">
           {cpu.requestLabel ? `request ${cpu.requestLabel}` : "no request"} ·
           {cpu.limitLabel ? `limit ${cpu.limitLabel}` : "no limit"}
           {cpu.percent !== null ? ` · ${cpu.percent}% of the ${cpu.basis}` : ""}
         </span>
       {:else if metricsStore.podMetricsAvailable}
-        <span class="text-[12px] text-[var(--text-dimmed)]">Waiting for the next scrape…</span>
+        <span class="text-[12px] text-[var(--text-muted)]">Waiting for the next scrape…</span>
       {:else}
-        <span class="text-[12px] text-[var(--text-dimmed)]" title={metricsStore.unavailableReason}>No metrics-server</span>
+        <span class="text-[12px] text-[var(--text-muted)]" title={metricsStore.unavailableReason}>No metrics-server</span>
       {/if}
       {#if prometheusConfigured}
         <UsageSparkline samples={cpuSamples} format={formatCpu} />
@@ -90,15 +90,15 @@
       <span class="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Memory</span>
       {#if memory}
         <span class="font-mono text-[12px] tabular-nums text-[var(--text-primary)]">{memory.label}</span>
-        <span class="font-mono text-[12px] text-[var(--text-dimmed)]">
+        <span class="font-mono text-[12px] text-[var(--text-muted)]">
           {memory.requestLabel ? `request ${memory.requestLabel}` : "no request"} ·
           {memory.limitLabel ? `limit ${memory.limitLabel}` : "no limit"}
           {memory.percent !== null ? ` · ${memory.percent}% of the ${memory.basis}` : ""}
         </span>
       {:else if metricsStore.podMetricsAvailable}
-        <span class="text-[12px] text-[var(--text-dimmed)]">Waiting for the next scrape…</span>
+        <span class="text-[12px] text-[var(--text-muted)]">Waiting for the next scrape…</span>
       {:else}
-        <span class="text-[12px] text-[var(--text-dimmed)]" title={metricsStore.unavailableReason}>No metrics-server</span>
+        <span class="text-[12px] text-[var(--text-muted)]" title={metricsStore.unavailableReason}>No metrics-server</span>
       {/if}
       {#if prometheusConfigured}
         <UsageSparkline samples={memorySamples} format={formatBytes} color="var(--status-running)" />
@@ -107,10 +107,10 @@
   </div>
 
   {#if !prometheusConfigured}
-    <p class="px-5 pb-3 text-[10.5px] text-[var(--text-dimmed)]">
+    <p class="px-5 pb-3 text-[10px] text-[var(--text-muted)]">
       Set a Prometheus URL in Settings → Kubernetes to chart the last hour.
     </p>
   {:else if historyError}
-    <p class="px-5 pb-3 text-[10.5px] text-[var(--status-failed)]">{historyError}</p>
+    <p class="px-5 pb-3 text-[10px] text-[var(--status-failed)]">{historyError}</p>
   {/if}
 </CollapsibleCard>

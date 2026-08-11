@@ -15,7 +15,7 @@
 
 <!-- Appearance -->
 <section>
-  <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">Appearance</h2>
+  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Appearance</h2>
   <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
     Choose a color theme for the interface. The theme applies to the entire application including the sidebar, tables, and detail panels.
   </p>
@@ -27,7 +27,7 @@
         {@const isActive = settingsStore.settings.theme_mode === theme.id}
         <button
           class={cn(
-            "relative flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-xs transition-all",
+            "relative flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-[12px] transition-all",
             isActive
               ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--text-primary)]"
               : "border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--border-hover)] hover:text-[var(--text-primary)]"
@@ -65,7 +65,7 @@
 
 <!-- Table Display -->
 <section>
-  <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)]">Table Display</h2>
+  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Table Display</h2>
   <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
     Control how resource tables are displayed. Compact mode fits more rows on screen, while comfortable mode gives each row more breathing room.
   </p>
@@ -85,7 +85,7 @@
         onclick={() => handleDensityChange(option.id)}
       >
         <div class="flex items-center gap-2">
-          <span class="text-xs font-medium">{option.label}</span>
+          <span class="text-[12px] font-medium">{option.label}</span>
           {#if isActive}
             <Check class="h-3.5 w-3.5 text-[var(--accent)]" />
           {/if}

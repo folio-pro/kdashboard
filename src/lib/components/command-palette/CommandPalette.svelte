@@ -385,18 +385,18 @@
                 >
                   <IconComp class="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
                   <div class="flex-1">
-                    <span class="text-xs font-medium">{item.label}</span>
+                    <span class="text-[12px] font-medium">{item.label}</span>
                     {#if item.description}
                       <span class="ml-2 text-[10px] text-[var(--text-muted)]">{item.description}</span>
                     {/if}
                   </div>
                   {#if item.hint}
-                    <kbd class="shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 text-[9px] text-[var(--text-muted)]">
+                    <kbd class="shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
                       {item.hint}
                     </kbd>
                   {/if}
                   {#if globalIndex === selectedIndex}
-                    <kbd class="shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 text-[9px] text-[var(--text-muted)]">
+                    <kbd class="shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
                       Enter
                     </kbd>
                   {/if}

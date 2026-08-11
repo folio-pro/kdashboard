@@ -52,12 +52,47 @@
     closeCtxMenu();
   }
 
+  let menuEl: HTMLDivElement | undefined = $state();
+
   $effect(() => {
     if (!ctxMenu) return;
     const handler = () => closeCtxMenu();
     window.addEventListener("click", handler);
     return () => window.removeEventListener("click", handler);
   });
+
+  // Move focus into the menu when it opens. Without this the menu was
+  // mouse-only: no roles, no focus and no key handling, so a keyboard user
+  // could neither reach it nor escape it.
+  $effect(() => {
+    if (!ctxMenu || !menuEl) return;
+    menuEl.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  });
+
+  function handleMenuKeydown(e: KeyboardEvent) {
+    if (!menuEl) return;
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeCtxMenu();
+      return;
+    }
+
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+
+    e.preventDefault();
+    const items = [...menuEl.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+    if (items.length === 0) return;
+
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      e.key === "Home" ? 0
+      : e.key === "End" ? items.length - 1
+      : e.key === "ArrowDown" ? (current + 1) % items.length
+      : (current - 1 + items.length) % items.length;
+    items[next].focus();
+  }
 
   let ctxIdx = $derived.by(() => {
     const menu = ctxMenu;
@@ -101,7 +136,7 @@
           <span class="min-w-0 flex-1 truncate">{tab.label}</span>
         {/if}
         {#if tab.count !== undefined && tab.count > 0}
-          <span class="shrink-0 tabular-nums text-[10px] text-[var(--text-dimmed)]">{tab.count}</span>
+          <span class="shrink-0 tabular-nums text-[10px] text-[var(--text-muted)]">{tab.count}</span>
         {/if}
         {#if tab.closable}
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
@@ -116,6 +151,7 @@
             tabindex="-1"
             onclick={(e) => { e.stopPropagation(); uiStore.closeTab(tab.id); }}
             title="Close tab"
+            aria-label="Close {tab.label}"
           >
             <X class="h-3 w-3" />
           </span>
@@ -128,47 +164,52 @@
 
 <!-- Tab context menu -->
 {#if ctxMenu}
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
+    bind:this={menuEl}
+    role="menu"
+    tabindex="-1"
+    aria-label="Tab actions"
     class="fixed z-50 min-w-[180px] rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
     style="left: {ctxMenu.x}px; top: {ctxMenu.y}px;"
     onclick={(e) => e.stopPropagation()}
+    onkeydown={handleMenuKeydown}
   >
     {#if ctxTabObj?.closable}
-      <button class="ctx-item" onclick={() => ctxAction(() => uiStore.closeTab(ctxMenu!.tabId))}>
+      <button class="ctx-item" role="menuitem" onclick={() => ctxAction(() => uiStore.closeTab(ctxMenu!.tabId))}>
         Close
       </button>
     {/if}
-    <button class="ctx-item" onclick={() => ctxAction(() => uiStore.closeOtherTabs(ctxMenu!.tabId))}>
+    <button class="ctx-item" role="menuitem" onclick={() => ctxAction(() => uiStore.closeOtherTabs(ctxMenu!.tabId))}>
       Close Others
     </button>
     <button
-      class="ctx-item"
+      class="ctx-item" role="menuitem"
       disabled={ctxIdx <= 0 || !uiStore.tabs.slice(0, ctxIdx).some(t => t.closable)}
       onclick={() => ctxAction(() => uiStore.closeTabsToTheLeft(ctxMenu!.tabId))}
     >
       Close to the Left
     </button>
     <button
-      class="ctx-item"
+      class="ctx-item" role="menuitem"
       disabled={ctxIdx >= uiStore.tabs.length - 1 || !uiStore.tabs.slice(ctxIdx + 1).some(t => t.closable)}
       onclick={() => ctxAction(() => uiStore.closeTabsToTheRight(ctxMenu!.tabId))}
     >
       Close to the Right
     </button>
-    <button class="ctx-item" onclick={() => ctxAction(() => uiStore.closeAllTabs())}>
+    <button class="ctx-item" role="menuitem" onclick={() => ctxAction(() => uiStore.closeAllTabs())}>
       Close All
     </button>
     <div class="my-1 h-px bg-[var(--border-color)]"></div>
     <button
-      class="ctx-item"
+      class="ctx-item" role="menuitem"
       disabled={ctxIdx <= 0}
       onclick={() => ctxAction(() => uiStore.moveTab(ctxMenu!.tabId, "left"))}
     >
       Move Left
     </button>
     <button
-      class="ctx-item"
+      class="ctx-item" role="menuitem"
       disabled={ctxIdx >= uiStore.tabs.length - 1}
       onclick={() => ctxAction(() => uiStore.moveTab(ctxMenu!.tabId, "right"))}
     >
@@ -194,7 +235,7 @@
     background-color: var(--bg-tertiary);
   }
   .ctx-item:disabled {
-    color: var(--text-dimmed);
+    color: var(--text-muted);
     cursor: default;
   }
 </style>

@@ -49,7 +49,7 @@
   <DialogContent class="sm:max-w-[380px]" aria-labelledby="scale-dialog-title" aria-describedby="scale-dialog-desc">
     <div class="flex flex-col gap-4 p-1">
       <div>
-        <h3 id="scale-dialog-title" class="text-sm font-semibold text-[var(--text-primary)]">Scale {resource.kind}</h3>
+        <h3 id="scale-dialog-title" class="text-[13px] font-semibold text-[var(--text-primary)]">Scale {resource.kind}</h3>
         <p id="scale-dialog-desc" class="mt-1 text-[11px] text-[var(--text-muted)]">{resource.name}</p>
       </div>
 
@@ -73,7 +73,7 @@
       {/if}
 
       {#if error}
-        <p class="text-xs text-[var(--status-failed)]">{error}</p>
+        <p class="text-[12px] text-[var(--status-failed)]">{error}</p>
       {/if}
 
       <div class="flex justify-end gap-2">

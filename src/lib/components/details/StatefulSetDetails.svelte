@@ -72,7 +72,7 @@
   {#if volumeClaimTemplates.length > 0}
     <DetailSection title="Volume Claim Templates" icon={HardDrive}>
       {#snippet actions()}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{volumeClaimTemplates.length}</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">{volumeClaimTemplates.length}</span>
       {/snippet}
       <div class="flex flex-col gap-2">
         {#each volumeClaimTemplates as vct}

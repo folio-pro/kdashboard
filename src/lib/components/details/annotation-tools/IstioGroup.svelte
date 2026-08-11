@@ -44,7 +44,7 @@
 <!-- Sidecar injection badge -->
 {#if injectValue !== null}
   <div class="flex items-center gap-3 border-t border-[var(--border-hover)] px-5 py-3.5">
-    <span class="font-mono text-[11px] text-[var(--text-dimmed)]">Sidecar Injection</span>
+    <span class="font-mono text-[11px] text-[var(--text-muted)]">Sidecar Injection</span>
     <span class="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium {injectValue === 'true' ? 'bg-[var(--status-running)]/15 text-[var(--status-running)]' : 'bg-[var(--status-failed)]/15 text-[var(--status-failed)]'}">
       {injectValue === "true" ? "Enabled" : "Disabled"}
     </span>
@@ -54,7 +54,7 @@
 <!-- Revision tag -->
 {#if revValue !== null}
   <div class="flex items-center gap-3 border-t border-[var(--border-hover)] px-5 py-3.5">
-    <span class="font-mono text-[11px] text-[var(--text-dimmed)]">Revision</span>
+    <span class="font-mono text-[11px] text-[var(--text-muted)]">Revision</span>
     <span class="inline-flex items-center rounded bg-[var(--bg-tertiary)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]">
       {revValue}
     </span>
@@ -64,7 +64,7 @@
 <!-- Proxy resources -->
 {#if proxyMemory !== null || proxyCPU !== null}
   <div class="flex items-center gap-4 border-t border-[var(--border-hover)] px-5 py-3.5">
-    <span class="font-mono text-[11px] text-[var(--text-dimmed)]">Proxy Resources</span>
+    <span class="font-mono text-[11px] text-[var(--text-muted)]">Proxy Resources</span>
     <div class="flex items-center gap-3">
       {#if proxyCPU !== null}
         <span class="font-mono text-[11px] text-[var(--text-primary)]">CPU: {proxyCPU}</span>
@@ -82,7 +82,7 @@
   {@const short = shortKeys[key] ?? key}
   {@const isExpanded = expanded.has(key)}
   <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
-    <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{short}</span>
+    <span class="font-mono text-[11px] text-[var(--text-muted)]">{short}</span>
     {#if parsed.type === "json" || parsed.type === "yaml"}
       <button
         class="text-left font-mono text-[11px] text-[var(--accent)] {isExpanded ? '' : 'hover:underline'}"

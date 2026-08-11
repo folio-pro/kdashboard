@@ -14,7 +14,7 @@
   }
 
   const typeColors: Record<string, string> = {
-    emptyDir: "var(--text-dimmed)",
+    emptyDir: "var(--text-muted)",
     hostPath: "var(--status-pending)",
     configMap: "var(--status-running)",
     secret: "var(--status-pending)",
@@ -90,7 +90,7 @@
       <div class="flex items-start gap-3 border-t border-[var(--border-hover)] px-5 py-3.5">
         <span
           class="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
-          style="color: {typeColors[vol.type] ?? 'var(--text-dimmed)'}; background-color: color-mix(in srgb, {typeColors[vol.type] ?? 'var(--text-dimmed)'} 12%, transparent);"
+          style="color: {typeColors[vol.type] ?? 'var(--text-muted)'}; background-color: color-mix(in srgb, {typeColors[vol.type] ?? 'var(--text-muted)'} 12%, transparent);"
         >
           {vol.type}
         </span>

@@ -177,7 +177,7 @@
           <div class="flex items-center gap-1 text-[11px]">
             {#each k8sStore.breadcrumbTrail as crumb, i}
               {#if i > 0}
-                <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-dimmed)]" />
+                <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
               {/if}
               <button
                 class="max-w-[120px] truncate text-[var(--text-muted)] transition-colors hover:text-[var(--accent)] hover:underline"
@@ -185,11 +185,11 @@
                 title="{crumb.kind}: {crumb.name}"
               >{crumb.name}</button>
             {/each}
-            <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-dimmed)]" />
+            <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
             <span class="max-w-[140px] truncate font-medium text-[var(--text-primary)]">{resource.metadata.name}</span>
           </div>
           <div class="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
-            <span class="text-[var(--text-dimmed)]">{resource.kind}</span>
+            <span class="text-[var(--text-muted)]">{resource.kind}</span>
             <span>·</span>
             {#if resource.metadata.namespace}
               <span>{resource.metadata.namespace}</span>
@@ -198,7 +198,7 @@
         {:else}
           <span class="truncate text-[15px] font-semibold text-[var(--text-primary)]">{resource.metadata.name}</span>
           <div class="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
-            <span class="text-[var(--text-dimmed)]">{resource.kind}</span>
+            <span class="text-[var(--text-muted)]">{resource.kind}</span>
             {#if resource.metadata.namespace}
               <span>·</span>
               <span>{resource.metadata.namespace}</span>
@@ -368,8 +368,8 @@
        replaced while the app was closed) or a hydration still in flight.
        Never render a silent blank panel. -->
   <div data-testid="detail-panel-empty" class="flex h-full flex-col items-center justify-center gap-2 bg-[var(--bg-primary)]">
-    <span class="text-sm text-[var(--text-muted)]">Resource not available</span>
-    <span class="max-w-[360px] text-center text-xs text-[var(--text-dimmed)]">
+    <span class="text-[13px] text-[var(--text-muted)]">Resource not available</span>
+    <span class="max-w-[360px] text-center text-[12px] text-[var(--text-muted)]">
       It may have been deleted or replaced while the app was closed. Close this
       tab, or open the resource again from its table.
     </span>

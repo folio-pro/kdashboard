@@ -97,7 +97,7 @@
         {#each resourceKeys as key}
           {#if capacity[key] || allocatable[key]}
             <tr class="border-b border-[var(--border-color)] last:border-b-0">
-              <td class="px-3 py-2.5 text-xs font-medium text-[var(--text-muted)]">{key}</td>
+              <td class="px-3 py-2.5 text-[12px] font-medium text-[var(--text-muted)]">{key}</td>
               <td class="px-3 py-2.5 font-mono text-[13px] text-[var(--text-primary)]">{capacity[key] ?? "-"}</td>
               <td class="px-3 py-2.5 font-mono text-[13px] text-[var(--text-primary)]">{allocatable[key] ?? "-"}</td>
             </tr>
@@ -110,7 +110,7 @@
   {#if taints.length > 0}
     <DetailSection title="Taints" icon={Ban}>
       {#snippet actions()}
-        <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{taints.length}</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">{taints.length}</span>
       {/snippet}
       <div class="flex flex-col gap-2">
         {#each taints as taint}

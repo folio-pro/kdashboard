@@ -45,7 +45,7 @@
 >
   <!-- Left: Title -->
   <div class="flex flex-col gap-0.5">
-    <span class="font-mono text-base font-semibold text-[var(--text-primary)]">Logs</span>
+    <span class="font-mono text-[15px] font-semibold text-[var(--text-primary)]">Logs</span>
     <span class="font-mono text-[11px] text-[var(--text-muted)]">{resourceName}</span>
   </div>
 
@@ -53,19 +53,19 @@
   <div class="flex items-center gap-2">
     <!-- Pod count badge for deployments -->
     {#if isDeployment && deploymentPodNames.length > 0}
-      <span class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-xs text-[var(--text-muted)]">
+      <span class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-muted)]">
         <Box class="h-3.5 w-3.5" />
         {deploymentPodNames.length} pods
       </span>
     {:else if isDeployment && podsLoading}
-      <span class="font-mono text-xs text-[var(--text-muted)]">Loading pods...</span>
+      <span class="font-mono text-[12px] text-[var(--text-muted)]">Loading pods...</span>
     {/if}
 
     <!-- Container Selector -->
     {#if containers.length > 0}
       <div class="relative">
         <button
-          class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+          class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
           onclick={(e) => onToggleDropdown("container", e)}
         >
           <Box class="h-3.5 w-3.5 text-[var(--text-muted)]" />
@@ -79,7 +79,7 @@
             {#each containers as container}
               <button
                 class={cn(
-                  "block w-full px-3 py-1.5 text-left font-mono text-xs transition-colors hover:bg-[var(--table-row-hover)]",
+                  "block w-full px-3 py-1.5 text-left font-mono text-[12px] transition-colors hover:bg-[var(--table-row-hover)]",
                   container === selectedContainer
                     ? "text-[var(--accent)]"
                     : "text-[var(--text-secondary)]",
@@ -105,7 +105,7 @@
       <input
         type="text"
         placeholder="Filter logs..."
-        class="w-full bg-transparent font-mono text-xs text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]"
+        class="w-full bg-transparent font-mono text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]"
         bind:value={filterText}
       />
     </div>
@@ -113,7 +113,7 @@
     <!-- Stream Button -->
     {#if !isStreaming}
       <button
-        class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-running)] px-3.5 font-mono text-xs font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
+        class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-running)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
         onclick={onStartStreaming}
         disabled={!selectedContainer}
       >
@@ -122,7 +122,7 @@
       </button>
     {:else}
       <button
-        class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-failed)] px-3.5 font-mono text-xs font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
+        class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-failed)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
         onclick={onStopStreaming}
       >
         <Square class="h-3.5 w-3.5" />

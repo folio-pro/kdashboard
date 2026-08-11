@@ -4,7 +4,7 @@
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
-  import type { ActiveView } from "$lib/stores/ui.svelte";
+  import { hintsForView } from "$lib/shortcuts";
 
   const statusColors: Record<string, string> = {
     connected: "bg-[var(--status-running)]",
@@ -15,84 +15,28 @@
 
   let statusColor = $derived(statusColors[k8sStore.connectionStatus] ?? "bg-[var(--text-muted)]");
 
-  interface LocalKbdHint {
-    key: string;
-    label: string;
-  }
-
-  function getHints(view: ActiveView, hasSelection: boolean): LocalKbdHint[] {
-    const globalHints: LocalKbdHint[] = extensions.kbdHints.map((h) => ({ key: h.key, label: h.label }));
-
-    if (view === "logs" || view === "terminal") {
-      return [{ key: "Esc", label: "Back" }, ...globalHints];
-    }
-    if (view === "details") {
-      const resource = k8sStore.selectedResource;
-      if (resource) {
-        const kind = resource.kind.toLowerCase();
-        if (kind === "pod") {
-          return [
-            { key: "l", label: "Logs" },
-            { key: "t", label: "Terminal" },
-            { key: "e", label: "Edit YAML" },
-            { key: "d", label: "Delete" },
-            { key: "Esc", label: "Back" },
-            ...globalHints,
-          ];
-        }
-        if (kind === "deployment") {
-          return [
-            { key: "l", label: "Logs" },
-            { key: "e", label: "Edit YAML" },
-            { key: "d", label: "Delete" },
-            { key: "Esc", label: "Back" },
-            ...globalHints,
-          ];
-        }
-      }
-      return [
-        { key: "e", label: "Edit YAML" },
-        { key: "d", label: "Delete" },
-        { key: "Esc", label: "Back" },
-        ...globalHints,
-      ];
-    }
-    // Table view
-    return [
-      { key: "\u2318K", label: "Command Palette" },
-      { key: "j/k", label: "Navigate" },
-      { key: "\u23CE", label: "Open" },
-      { key: "/", label: "Filter" },
-      { key: "r", label: "Refresh" },
-      ...globalHints,
-    ];
-  }
-
-  let hints = $derived(getHints(uiStore.activeView, uiStore.selectedRowIndex >= 0));
+  // Hints come straight from the shortcut registry, so what the bar advertises
+  // is by construction what the dispatcher implements.
+  let hints = $derived([
+    ...hintsForView(uiStore.activeView).map((s) => ({ key: s.keys, label: s.label })),
+    ...extensions.kbdHints.map((h) => ({ key: h.key, label: h.label })),
+  ]);
 </script>
 
 <footer
   class="flex h-[30px] shrink-0 items-center justify-between border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-4 text-[10px] text-[var(--text-muted)]"
 >
-  <!-- Left: Connection + Context + Namespace + Resource Count -->
+  <!--
+    Left: connection + port forwards only. Namespace and the resource count
+    used to live here too, but both are stated by the view header a few
+    hundred pixels above (and the namespace again in the sidebar) — three
+    copies of the same fact, none of them the one the eye goes to.
+  -->
   <div class="flex items-center gap-3">
     <!-- Connection Status -->
     <div class="flex items-center gap-1.5">
       <span class={cn("h-[7px] w-[7px] rounded-full", statusColor)}></span>
       <span class="font-medium text-[var(--text-secondary)]">{k8sStore.currentContext || "Disconnected"}</span>
-    </div>
-
-    <span class="h-3 w-px bg-[var(--border-color)]"></span>
-
-    <!-- Namespace -->
-    <span>{k8sStore.currentNamespace || "All Namespaces"}</span>
-
-    <span class="h-3 w-px bg-[var(--border-color)]"></span>
-
-    <!-- Resource count -->
-    <div class="flex items-center gap-1">
-      <span>{k8sStore.selectedResourceType.charAt(0).toUpperCase() + k8sStore.selectedResourceType.slice(1)}</span>
-      <span class="text-[var(--text-secondary)]">{k8sStore.resources.items.length}</span>
     </div>
 
     <span class="h-3 w-px bg-[var(--border-color)]"></span>
@@ -105,7 +49,7 @@
         k8sStore.portForwards.length > 0 && uiStore.activeView !== "portforwards" && "text-[var(--text-secondary)]"
       )}
       title="Port forwards"
-      onclick={() => uiStore.showPortForwards()}
+      onclick={() => uiStore.showView("portforwards")}
     >
       <Unplug class="h-3 w-3" />
       <span>{k8sStore.portForwards.length}</span>

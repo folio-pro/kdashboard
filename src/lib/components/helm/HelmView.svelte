@@ -19,11 +19,6 @@
   let query = $state("");
   let tab = $state<Tab>("values");
 
-  let namespaceLabel = $derived(
-    k8sStore.currentNamespace === "All Namespaces"
-      ? "All Namespaces"
-      : k8sStore.currentNamespace || "default",
-  );
 
   let visible = $derived(filterReleases(helmStore.releases, query));
 
@@ -67,7 +62,6 @@
 <ViewPanel
   title="Helm Releases"
   icon={Package}
-  namespace={namespaceLabel}
   isLoading={helmStore.isLoading}
   error={helmStore.error}
   hasData={helmStore.loaded}
@@ -85,7 +79,7 @@
         placeholder="Filter releases..."
         value={query}
         oninput={(e) => { query = (e.target as HTMLInputElement).value; }}
-        class="h-8 w-56 text-xs"
+        class="h-8 w-56 text-[12px]"
       />
     {/if}
   {/snippet}
@@ -101,7 +95,7 @@
           <ArrowLeft class="h-3.5 w-3.5" />
           All releases
         </button>
-        <span class="text-sm font-semibold text-[var(--text-primary)]">{release.name}</span>
+        <span class="text-[13px] font-semibold text-[var(--text-primary)]">{release.name}</span>
         <span class="font-mono text-[11px] text-[var(--text-muted)]">
           {release.chart}-{release.chart_version} · rev {release.revision}
         </span>
@@ -112,7 +106,7 @@
         {#each ["values", "manifest", "notes", "history"] as const as t}
           <button
             class={cn(
-              "border-b-2 px-3 py-2 text-[11.5px] transition-colors",
+              "border-b-2 px-3 py-2 text-[11px] transition-colors",
               tab === t
                 ? "border-[var(--accent)] text-[var(--text-primary)]"
                 : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
@@ -133,7 +127,7 @@
             </div>
             <div>
               <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Chart defaults</h3>
-              <pre class="overflow-x-auto rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-dimmed)]">{valuesYaml(release.chart_values)}</pre>
+              <pre class="overflow-x-auto rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-muted)]">{valuesYaml(release.chart_values)}</pre>
             </div>
           </div>
         {:else if tab === "manifest"}
@@ -141,7 +135,7 @@
         {:else if tab === "notes"}
           <pre class="m-4 whitespace-pre-wrap rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-secondary)]">{release.notes || "(this chart rendered no NOTES.txt)"}</pre>
         {:else}
-          <table class="w-full text-left text-[11.5px]">
+          <table class="w-full text-left text-[11px]">
             <thead class="border-b border-[var(--border-color)] text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
               <tr>
                 <th class="px-4 py-2 font-medium">Revision</th>
@@ -183,7 +177,7 @@
     </div>
   {:else}
     <ScrollArea class="h-full">
-      <table class="w-full text-left text-[11.5px]">
+      <table class="w-full text-left text-[11px]">
         <thead class="border-b border-[var(--border-color)] text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
           <tr>
             <th class="px-4 py-2 font-medium">Name</th>
@@ -217,7 +211,7 @@
       </table>
 
       {#if visible.length === 0 && helmStore.releases.length > 0}
-        <p class="p-4 text-[11.5px] text-[var(--text-muted)]">No release matches "{query}".</p>
+        <p class="p-4 text-[11px] text-[var(--text-muted)]">No release matches "{query}".</p>
       {/if}
     </ScrollArea>
   {/if}

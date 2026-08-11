@@ -20,7 +20,7 @@
   {@const short = shortKeys[key] ?? key}
   {@const isExpanded = expanded.has(key)}
   <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
-    <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{short}</span>
+    <span class="font-mono text-[11px] text-[var(--text-muted)]">{short}</span>
     {#if parsed.type === "json" || parsed.type === "yaml"}
       <button
         class="text-left font-mono text-[11px] text-[var(--accent)] {isExpanded ? '' : 'hover:underline'}"

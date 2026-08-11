@@ -76,7 +76,7 @@
   <DialogContent class="sm:max-w-[460px]" aria-labelledby="drain-dialog-title" aria-describedby="drain-dialog-desc">
     <div class="flex flex-col gap-4 p-1">
       <div>
-        <h3 id="drain-dialog-title" class="text-sm font-semibold text-[var(--text-primary)]">Drain node</h3>
+        <h3 id="drain-dialog-title" class="text-[13px] font-semibold text-[var(--text-primary)]">Drain node</h3>
         <p id="drain-dialog-desc" class="mt-1 text-[11px] text-[var(--text-muted)]">
           {nodeName} — the node is cordoned first, then every evictable pod is evicted through the
           Eviction API, so PodDisruptionBudgets are respected.
@@ -88,7 +88,7 @@
           <Checkbox checked={ignoreDaemonSets} onCheckedChange={(v: boolean) => (ignoreDaemonSets = v)} disabled={running} aria-label="Ignore DaemonSets" />
           <span>
             Ignore DaemonSets
-            <span class="block text-[10.5px] text-[var(--text-dimmed)]">DaemonSet pods stay — they are recreated on the node immediately anyway.</span>
+            <span class="block text-[10px] text-[var(--text-muted)]">DaemonSet pods stay — they are recreated on the node immediately anyway.</span>
           </span>
         </label>
 
@@ -96,7 +96,7 @@
           <Checkbox checked={deleteEmptyDirData} onCheckedChange={(v: boolean) => (deleteEmptyDirData = v)} disabled={running} aria-label="Delete emptyDir data" />
           <span>
             Delete emptyDir data
-            <span class="block text-[10.5px] text-[var(--text-dimmed)]">Pods with emptyDir volumes lose that data permanently.</span>
+            <span class="block text-[10px] text-[var(--text-muted)]">Pods with emptyDir volumes lose that data permanently.</span>
           </span>
         </label>
 
@@ -104,7 +104,7 @@
           <Checkbox checked={force} onCheckedChange={(v: boolean) => (force = v)} disabled={running} aria-label="Force" />
           <span>
             Force
-            <span class="block text-[10.5px] text-[var(--text-dimmed)]">Evict pods with no controller — nothing will recreate them.</span>
+            <span class="block text-[10px] text-[var(--text-muted)]">Evict pods with no controller — nothing will recreate them.</span>
           </span>
         </label>
       </div>
@@ -114,7 +114,7 @@
           <div class="h-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
             <div class="h-full rounded-full bg-[var(--accent)] transition-all duration-300" style="width: {percent}%"></div>
           </div>
-          <span class="font-mono text-[10.5px] text-[var(--text-muted)]">{progressLabel}</span>
+          <span class="font-mono text-[10px] text-[var(--text-muted)]">{progressLabel}</span>
         </div>
       {/if}
 
@@ -126,10 +126,10 @@
         <div class="flex flex-col gap-1 text-[11px] text-[var(--text-secondary)]">
           <span>{summarizeDrain(result)}</span>
           {#each result.failed as f}
-            <span class="font-mono text-[10.5px] text-[var(--status-failed)]">{f.namespace}/{f.pod}: {f.error}</span>
+            <span class="font-mono text-[10px] text-[var(--status-failed)]">{f.namespace}/{f.pod}: {f.error}</span>
           {/each}
           {#each result.skipped as s}
-            <span class="font-mono text-[10.5px] text-[var(--text-dimmed)]">{s.namespace}/{s.pod}: {s.reason}</span>
+            <span class="font-mono text-[10px] text-[var(--text-muted)]">{s.namespace}/{s.pod}: {s.reason}</span>
           {/each}
         </div>
       {/if}

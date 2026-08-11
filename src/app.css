@@ -27,6 +27,27 @@ html, body {
 }
 
 /* ========================================
+   Type and radius scales
+
+   Type:   10 · 11 · 12 · 13 · 15 · 18 · 26  (px, via text-[Npx])
+   Radius: sm · md · lg · xl · full
+
+   Spelled as arbitrary values rather than Tailwind aliases so each size has
+   exactly ONE spelling. The UI previously carried seventeen type steps —
+   including 9.5/10.5/11.5/12.5px half-steps no eye can resolve, and `text-xs`
+   coexisting with `text-[12px]` for the same 12px in 184 places — plus eleven
+   radii. Anything outside these lists is a mistake, not a decision.
+
+   10px  micro labels, kbd hints, column units
+   11px  secondary/meta text, chips, status bar
+   12px  default body and table cells
+   13px  section headings, dialog body
+   15px  view titles
+   18px  empty-state headings
+   26px  single hero metric
+   ======================================== */
+
+/* ========================================
    Electron custom title bar (VSCode-style)
    The window uses titleBarStyle:'hidden', so the in-app TitleBar IS the top
    bar. These rules port Tauri's `data-drag-region` (a no-op in Electron)
@@ -75,7 +96,6 @@ html, body {
   --text-primary: #E5E5E5;
   --text-secondary: #A3A3A3;
   --text-muted: #8B8B8B;
-  --text-dimmed: #757575;
   --border-color: #333333;
   --border-hover: #404040;
   --accent: #21C45D;
@@ -92,8 +112,6 @@ html, body {
   --table-header-bg: #242424;
   --table-row-hover: #1A1A1A;
   --log-bg: #171717;
-  --log-row-hover: rgba(255, 255, 255, 0.02);
-  --log-row-selected: rgba(255, 255, 255, 0.06);
   --log-timestamp: #757575;
   --log-error: #EF4343;
   --log-warn: #F59F0A;
@@ -109,7 +127,6 @@ html, body {
   --text-primary: #483B32;
   --text-secondary: #6E5E53;
   --text-muted: #7D6E64;
-  --text-dimmed: #8E7D71;
   --border-color: #CFC2AF;
   --border-hover: #BFB29D;
   --accent: #C37D22;
@@ -126,8 +143,6 @@ html, body {
   --table-header-bg: #FBF9F4;
   --table-row-hover: #F4EEE2;
   --log-bg: #F4EEE2;
-  --log-row-hover: rgba(0, 0, 0, 0.03);
-  --log-row-selected: rgba(0, 0, 0, 0.07);
   --log-timestamp: #8E7D71;
   --log-error: #CF3030;
   --log-warn: #C37D22;
@@ -143,7 +158,6 @@ html, body {
   --text-primary: #E9E0CE;
   --text-secondary: #C3B5A2;
   --text-muted: #AB9A87;
-  --text-dimmed: #9F8A75;
   --border-color: #5E4F45;
   --border-hover: #6E5F55;
   --accent: #E7A650;
@@ -160,8 +174,6 @@ html, body {
   --table-header-bg: #483B32;
   --table-row-hover: #3C312A;
   --log-bg: #3C312A;
-  --log-row-hover: rgba(255, 255, 255, 0.02);
-  --log-row-selected: rgba(255, 255, 255, 0.06);
   --log-timestamp: #9F8A75;
   --log-error: #DA6262;
   --log-warn: #E7A650;
@@ -177,7 +189,6 @@ html, body {
   --text-primary: #003C4D;
   --text-secondary: #275B68;
   --text-muted: #39626A;
-  --text-dimmed: #406E77;
   --border-color: #DBD1B3;
   --border-hover: #CBC1A3;
   --accent: #237DBE;
@@ -194,8 +205,6 @@ html, body {
   --table-header-bg: #FBF9F4;
   --table-row-hover: #F5F0E0;
   --log-bg: #F5F0E0;
-  --log-row-hover: rgba(0, 0, 0, 0.03);
-  --log-row-selected: rgba(0, 0, 0, 0.07);
   --log-timestamp: #406E77;
   --log-error: #C42421;
   --log-warn: #CE9E0D;
@@ -211,7 +220,6 @@ html, body {
   --text-primary: #FDF6E2;
   --text-secondary: #D7CDAC;
   --text-muted: #C1B79A;
-  --text-dimmed: #B7AC8A;
   --border-color: #386B75;
   --border-hover: #487B85;
   --accent: #EA723E;
@@ -228,8 +236,6 @@ html, body {
   --table-header-bg: #1B535F;
   --table-row-hover: #0F4857;
   --log-bg: #0F4857;
-  --log-row-hover: rgba(255, 255, 255, 0.02);
-  --log-row-selected: rgba(255, 255, 255, 0.06);
   --log-timestamp: #B7AC8A;
   --log-error: #DE423F;
   --log-warn: #F1BF27;
@@ -245,7 +251,6 @@ html, body {
   --text-primary: #3B4436;
   --text-secondary: #596553;
   --text-muted: #63705C;
-  --text-dimmed: #6C7B65;
   --border-color: #C7D1BD;
   --border-hover: #B7C1AD;
   --accent: #69883A;
@@ -262,8 +267,6 @@ html, body {
   --table-header-bg: #F7F9F5;
   --table-row-hover: #EBF1E4;
   --log-bg: #EBF1E4;
-  --log-row-hover: rgba(0, 0, 0, 0.03);
-  --log-row-selected: rgba(0, 0, 0, 0.07);
   --log-timestamp: #6C7B65;
   --log-error: #BA3F2C;
   --log-warn: #AB742B;
@@ -279,7 +282,6 @@ html, body {
   --text-primary: #DDE3D3;
   --text-secondary: #BAC3AC;
   --text-muted: #A5AE98;
-  --text-dimmed: #96A187;
   --border-color: #4F6356;
   --border-hover: #5F7366;
   --accent: #8DAE5B;
@@ -296,8 +298,6 @@ html, body {
   --table-header-bg: #3C4940;
   --table-row-hover: #313A34;
   --log-bg: #313A34;
-  --log-row-hover: rgba(255, 255, 255, 0.02);
-  --log-row-selected: rgba(255, 255, 255, 0.06);
   --log-timestamp: #96A187;
   --log-error: #D96E5E;
   --log-warn: #DBA661;
@@ -313,7 +313,6 @@ html, body {
   --text-primary: #484365;
   --text-secondary: #676284;
   --text-muted: #76718E;
-  --text-dimmed: #86829B;
   --border-color: #D6CAC2;
   --border-hover: #C6BAB2;
   --accent: #CE5955;
@@ -330,8 +329,6 @@ html, body {
   --table-header-bg: #FAF8F4;
   --table-row-hover: #F2ECE4;
   --log-bg: #F2ECE4;
-  --log-row-hover: rgba(0, 0, 0, 0.03);
-  --log-row-selected: rgba(0, 0, 0, 0.07);
   --log-timestamp: #86829B;
   --log-error: #D02F4A;
   --log-warn: #D28A32;
@@ -347,7 +344,6 @@ html, body {
   --text-primary: #282C34;
   --text-secondary: #4E545F;
   --text-muted: #575E6B;
-  --text-dimmed: #636A79;
   --border-color: #D0D4DD;
   --border-hover: #C0C4CD;
   --accent: #0754AB;
@@ -364,8 +360,6 @@ html, body {
   --table-header-bg: #FAFBFC;
   --table-row-hover: #F0F2F5;
   --log-bg: #FAFBFC;
-  --log-row-hover: rgba(0, 0, 0, 0.03);
-  --log-row-selected: rgba(0, 0, 0, 0.07);
   --log-timestamp: #636A79;
   --log-error: #B32323;
   --log-warn: #BC8010;
@@ -381,7 +375,6 @@ html, body {
   --text-primary: #F8F8F2;
   --text-secondary: #BBBFD3;
   --text-muted: #A7ABBE;
-  --text-dimmed: #959AB1;
   --border-color: #585C74;
   --border-hover: #686C84;
   --accent: #BF95F9;
@@ -398,8 +391,6 @@ html, body {
   --table-header-bg: #3D4157;
   --table-row-hover: #313444;
   --log-bg: #313444;
-  --log-row-hover: rgba(255, 255, 255, 0.02);
-  --log-row-selected: rgba(255, 255, 255, 0.06);
   --log-timestamp: #959AB1;
   --log-error: #FF5757;
   --log-warn: #FFB86B;
@@ -415,7 +406,6 @@ html, body {
   --text-primary: #EDEDDE;
   --text-secondary: #C6CAAF;
   --text-muted: #ACB096;
-  --text-dimmed: #9EA385;
   --border-color: #4F4F4A;
   --border-hover: #5F5F5A;
   --accent: #94EC55;
@@ -432,8 +422,6 @@ html, body {
   --table-header-bg: #3A3A36;
   --table-row-hover: #2A2A28;
   --log-bg: #2A2A28;
-  --log-row-hover: rgba(255, 255, 255, 0.02);
-  --log-row-selected: rgba(255, 255, 255, 0.06);
   --log-timestamp: #9EA385;
   --log-error: #EF5D92;
   --log-warn: #F4D143;
@@ -447,7 +435,19 @@ html, body {
 [data-theme] {
   --border-color: color-mix(in srgb, var(--text-primary) 14%, var(--bg-primary));
   --border-hover: color-mix(in srgb, var(--text-primary) 22%, var(--bg-primary));
+  /* Derived rather than declared per theme: the overlay takes its polarity
+     from the theme's own text colour, so light themes darken and dark themes
+     lighten without eleven hand-maintained pairs. */
+  --log-row-hover: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  --log-row-selected: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }
+
+/* There used to be a fourth text tier, --text-dimmed, one notch below
+   --text-muted. In the default theme it resolved to #757575 on #0C0C0C —
+   4.25:1, under the 4.5:1 WCAG AA floor — and it was used at 10-11px in 116
+   places, i.e. exactly where contrast matters most. The tier bought no
+   perceptible hierarchy over --text-muted at those sizes, so it is gone
+   rather than merely retuned; --text-muted clears AA in every theme. */
 
 /* ========================================
    Native color-scheme per theme
@@ -564,12 +564,65 @@ select {
   -webkit-app-region: no-drag;
 }
 
-/* Focus rings for keyboard navigation (buttons/links only) */
+/* Focus rings for keyboard navigation.
+   Previously buttons and links only, which left every text input, checkbox,
+   select and the j/k-navigable table rows with no visible focus at all. */
 button:focus-visible,
-a:focus-visible {
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible,
+[role="checkbox"]:focus-visible,
+[role="row"]:focus-visible,
+[role="option"]:focus-visible,
+[role="menuitem"]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-radius: 2px;
+}
+
+/* Composite controls — a search box or picker where the visible affordance is
+   a wrapper (icon + input + kbd hint) that lights up via :focus-within. The
+   bare input inside must not draw a second ring, which lands *inside* the
+   control it is supposed to be marking and gets clipped by the wrapper. The
+   wrapper owns the focus affordance; the input opts out. */
+.focus-ring-host:focus-within {
+  outline: none;
+}
+
+.focus-ring-host :is(input, textarea):focus-visible {
+  outline: none;
+}
+
+/* ========================================
+   Reduced motion
+
+   The UI animates a fair amount — spinners, sliding toasts, the sidebar grid
+   transition, width-tweened meters and health bars. None of it was gated,
+   so a user who has asked their OS for less motion got all of it anyway.
+   Durations collapse to ~0 rather than `animation: none`, so anything whose
+   end state is set by an animation still lands on that end state.
+   ======================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* The one exception: a spinner frozen mid-rotation reads as a hung app.
+     Keep it turning, just slowly enough not to be a distraction. */
+  .animate-spin {
+    animation-duration: 2s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 /* ========================================
@@ -655,11 +708,11 @@ a:focus-visible {
 }
 
 .cm-mergeView .cm-changedLine {
-  background-color: rgba(var(--accent-rgb, 99, 102, 241), 0.06) !important;
+  background-color: color-mix(in srgb, var(--accent) 6%, transparent) !important;
 }
 
 .cm-mergeView .cm-deletedChunk {
-  background-color: rgba(239, 68, 68, 0.08) !important;
+  background-color: color-mix(in srgb, var(--status-failed) 8%, transparent) !important;
 }
 
 .cm-merge-spacer {
@@ -693,7 +746,7 @@ a:focus-visible {
 
 .cm-tooltip-autocomplete > ul > li[aria-selected] {
   background-color: var(--accent) !important;
-  color: white !important;
+  color: var(--bg-primary) !important;
 }
 
 .cm-tooltip-autocomplete .cm-completionLabel {
@@ -708,7 +761,7 @@ a:focus-visible {
 }
 
 .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail {
-  color: rgba(255, 255, 255, 0.7) !important;
+  color: color-mix(in srgb, var(--bg-primary) 70%, transparent) !important;
 }
 
 .cm-completionIcon {

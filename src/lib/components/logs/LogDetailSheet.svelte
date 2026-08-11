@@ -37,11 +37,12 @@
     {#if selectedLog}
       <!-- Header -->
       <div class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border-color)] px-5 pr-12">
-        <span class="font-mono text-sm font-semibold text-[var(--text-primary)]">Log Detail</span>
+        <span class="font-mono text-[13px] font-semibold text-[var(--text-primary)]">Log Detail</span>
         <button
           class="flex h-7 w-7 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
           onclick={copyLogContent}
           title="Copy"
+          aria-label="Copy log line"
         >
           {#if copied}
             <Check class="h-3.5 w-3.5 text-[var(--status-running)]" />

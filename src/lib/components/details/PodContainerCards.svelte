@@ -60,7 +60,7 @@
 {#if containerStatuses.length > 0}
   <DetailSection title="Containers" icon={Layers}>
     {#snippet actions()}
-      <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{containerStatuses.length}</span>
+      <span class="font-mono text-[11px] text-[var(--text-muted)]">{containerStatuses.length}</span>
     {/snippet}
     <div class="flex flex-col gap-2.5">
       {#each containerStatuses as c}
@@ -79,7 +79,7 @@
             </span>
             <div class="min-w-0 flex-1">
               <div class="text-[13px] font-medium text-[var(--text-primary)]">{c.name}</div>
-              <div class="truncate font-mono text-[11.5px] text-[var(--text-muted)]" title={c.image}>{c.image}</div>
+              <div class="truncate font-mono text-[11px] text-[var(--text-muted)]" title={c.image}>{c.image}</div>
             </div>
             <StatusBadge status={getContainerState(c.state ?? {})} />
             {#if c.restartCount > 0}
@@ -93,28 +93,28 @@
           <!-- grid -->
           <div class="mt-3.5 grid gap-x-6 gap-y-3 border-t border-[var(--border-color)] pt-3.5 [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
             <div>
-              <span class="mb-0.5 block text-[10.5px] text-[var(--text-muted)]">Ports</span>
-              <span class="font-mono text-[12.5px] text-[var(--text-primary)]">{ctrPorts(spec)}</span>
+              <span class="mb-0.5 block text-[10px] text-[var(--text-muted)]">Ports</span>
+              <span class="font-mono text-[12px] text-[var(--text-primary)]">{ctrPorts(spec)}</span>
             </div>
             <div>
-              <span class="mb-0.5 block text-[10.5px] text-[var(--text-muted)]">Mounts</span>
-              <span class="font-mono text-[12.5px] text-[var(--text-primary)]">{ctrMounts(spec)}</span>
+              <span class="mb-0.5 block text-[10px] text-[var(--text-muted)]">Mounts</span>
+              <span class="font-mono text-[12px] text-[var(--text-primary)]">{ctrMounts(spec)}</span>
             </div>
             <div>
-              <span class="mb-0.5 block text-[10.5px] text-[var(--text-muted)]">CPU</span>
-              <span class="font-mono text-[12.5px] text-[var(--text-primary)]">{ctrRes(spec, "cpu")}</span>
+              <span class="mb-0.5 block text-[10px] text-[var(--text-muted)]">CPU</span>
+              <span class="font-mono text-[12px] text-[var(--text-primary)]">{ctrRes(spec, "cpu")}</span>
             </div>
             <div>
-              <span class="mb-0.5 block text-[10.5px] text-[var(--text-muted)]">Memory</span>
-              <span class="font-mono text-[12.5px] text-[var(--text-primary)]">{ctrRes(spec, "memory")}</span>
+              <span class="mb-0.5 block text-[10px] text-[var(--text-muted)]">Memory</span>
+              <span class="font-mono text-[12px] text-[var(--text-primary)]">{ctrRes(spec, "memory")}</span>
             </div>
             <div>
-              <span class="mb-0.5 block text-[10.5px] text-[var(--text-muted)]">Image Pull</span>
-              <span class="font-mono text-[12.5px] text-[var(--text-primary)]">{ctrImagePull(spec)}</span>
+              <span class="mb-0.5 block text-[10px] text-[var(--text-muted)]">Image Pull</span>
+              <span class="font-mono text-[12px] text-[var(--text-primary)]">{ctrImagePull(spec)}</span>
             </div>
             <div>
-              <span class="mb-0.5 block text-[10.5px] text-[var(--text-muted)]">Env</span>
-              <span class="font-mono text-[12.5px] text-[var(--text-primary)]">{ctrEnvCount(spec)} vars</span>
+              <span class="mb-0.5 block text-[10px] text-[var(--text-muted)]">Env</span>
+              <span class="font-mono text-[12px] text-[var(--text-primary)]">{ctrEnvCount(spec)} vars</span>
             </div>
           </div>
         </div>

@@ -15,7 +15,7 @@
 
 <button
   type="button"
-  class="group flex w-full min-w-0 items-center gap-3 rounded-[7px] border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-3 text-left transition-colors hover:border-[var(--border-hover)] hover:bg-[var(--bg-tertiary)]"
+  class="group flex w-full min-w-0 items-center gap-3 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-3 text-left transition-colors hover:border-[var(--border-hover)] hover:bg-[var(--bg-tertiary)]"
   {onclick}
 >
   <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-tertiary)] text-[var(--accent)]">
@@ -28,5 +28,5 @@
       <div class="truncate text-[11px] text-[var(--text-muted)]">{sub}</div>
     {/if}
   </div>
-  <ChevronRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-dimmed)] transition-[transform,color] group-hover:translate-x-0.5 group-hover:text-[var(--accent)]" />
+  <ChevronRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-[transform,color] group-hover:translate-x-0.5 group-hover:text-[var(--accent)]" />
 </button>

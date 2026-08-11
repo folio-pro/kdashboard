@@ -6,7 +6,6 @@ import {
   computeAllSelected,
   computeSomeSelected,
   handleSelectAll,
-  formatCopyFeedback,
   clampColumnWidth,
 } from "./resource-table";
 
@@ -386,30 +385,6 @@ describe("ResourceTable — handleSelectAll", () => {
   });
 });
 
-describe("ResourceTable — formatCopyFeedback", () => {
-  test("short value is shown verbatim", () => {
-    expect(formatCopyFeedback("hello")).toBe("Copied: hello");
-  });
-
-  test("exactly 40 chars is NOT truncated", () => {
-    const val = "a".repeat(40);
-    expect(formatCopyFeedback(val)).toBe(`Copied: ${val}`);
-  });
-
-  test("41 chars is truncated with ellipsis", () => {
-    const val = "a".repeat(41);
-    expect(formatCopyFeedback(val)).toBe(`Copied: ${"a".repeat(40)}...`);
-  });
-
-  test("long value shows first 40 chars + ellipsis", () => {
-    const val = "abcdefghij".repeat(10); // 100 chars
-    expect(formatCopyFeedback(val)).toBe(`Copied: ${val.slice(0, 40)}...`);
-  });
-
-  test("empty string", () => {
-    expect(formatCopyFeedback("")).toBe("Copied: ");
-  });
-});
 
 describe("ResourceTable — column width clamping", () => {
   test("width above minimum is unchanged", () => {

@@ -82,7 +82,7 @@
   <!-- Ports -->
   <DetailSection title="Ports" icon={Globe}>
     {#snippet actions()}
-      <span class="font-mono text-[11px] text-[var(--text-dimmed)]">{ports.length}</span>
+      <span class="font-mono text-[11px] text-[var(--text-muted)]">{ports.length}</span>
     {/snippet}
     {#if ports.length > 0}
       <table class="w-full border-collapse text-[13px]">
@@ -112,7 +112,7 @@
         </tbody>
       </table>
     {:else}
-      <p class="text-xs text-[var(--text-muted)]">No ports configured</p>
+      <p class="text-[12px] text-[var(--text-muted)]">No ports configured</p>
     {/if}
   </DetailSection>
 
