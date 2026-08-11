@@ -28,15 +28,13 @@
     highlighted: boolean;
     resourceType: string;
     onclick: () => void;
-    ondblclick?: () => void;
     oncontextmenu?: (event: MouseEvent) => void;
     density: "comfortable" | "compact";
     checkboxChecked?: boolean;
     oncheck?: () => void;
-    ondblclickcopy?: (value: string) => void;
   }
 
-  let { resource, columns, selected, highlighted, resourceType, onclick, ondblclick, oncontextmenu, density, checkboxChecked = false, oncheck, ondblclickcopy }: Props = $props();
+  let { resource, columns, selected, highlighted, resourceType, onclick, oncontextmenu, density, checkboxChecked = false, oncheck }: Props = $props();
 
   let trailingMounts = $derived(
     extensions.mountsFor("table-row-trailing").filter((m) => !m.visible || m.visible()),
@@ -118,40 +116,10 @@
     failedIcons = next;
   }
 
-  function handleCellDblClick(event: MouseEvent, key: string) {
-    event.stopPropagation();
-    const value = getCellValue(resource, key, cellCtx);
-    if (!value || value === "-" || value === "<none>") return;
-
-    const td = (event.target as HTMLElement).closest("td") as HTMLElement | null;
-
-    navigator.clipboard.writeText(value).then(() => {
-      if (td) {
-        td.classList.add("cell-copied-flash");
-        setTimeout(() => td.classList.remove("cell-copied-flash"), 600);
-      }
-      ondblclickcopy?.(value);
-    }).catch(() => {
-      // clipboard write failed silently
-    });
-  }
+  // Cells used to copy their value on double-click. That path was
+  // unreachable: the row's own single click already opened the detail tab and
+  // unmounted the table, so the second click never landed here.
 </script>
-
-<style>
-  :global(.cell-copied-flash) {
-    animation: cellFlash 0.6s ease-out;
-  }
-
-  @keyframes cellFlash {
-    0% {
-      background-color: var(--accent);
-      color: white;
-    }
-    100% {
-      background-color: transparent;
-    }
-  }
-</style>
 
 <tr
   class={cn(
@@ -164,11 +132,9 @@
         : "hover:bg-[var(--table-row-hover)]"
   )}
   onclick={onclick}
-  ondblclick={ondblclick}
   oncontextmenu={oncontextmenu}
   tabindex={highlighted ? 0 : -1}
   aria-selected={selected || highlighted}
-  role="row"
 >
   {#if oncheck}
     <td class="w-10 px-4 text-center" onclick={(e) => e.stopPropagation()}>
@@ -180,10 +146,7 @@
     </td>
   {/if}
   {#each columns as column}
-    <td
-      class="overflow-hidden px-4 text-xs"
-      ondblclick={(e) => handleCellDblClick(e, column.key)}
-    >
+    <td class="overflow-hidden px-4 text-[12px]">
       {#if isContainersColumn(column.key)}
         <div class="flex items-center gap-1.5 overflow-hidden">
           {#each containerStatuses as c}
@@ -217,11 +180,11 @@
           <!-- The type size lives on this row, not on each span, so the used
                value and its denominator can never drift apart; the spans only
                carry colour. -->
-          <div class="flex items-baseline gap-1.5 overflow-hidden font-mono text-[11.5px] leading-none tabular-nums">
+          <div class="flex items-baseline gap-1.5 overflow-hidden font-mono text-[11px] leading-none tabular-nums">
             {#if usage}
               <span class="text-[var(--text-primary)]">{usage.label}</span>
               {#if usage.basisLabel}
-                <span class="truncate text-[var(--text-dimmed)]">/ {usage.basisLabel}</span>
+                <span class="truncate text-[var(--text-muted)]">/ {usage.basisLabel}</span>
               {/if}
             {:else}
               <span class="text-[var(--text-muted)]">—</span>

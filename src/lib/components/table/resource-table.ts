@@ -114,7 +114,3 @@ export function handleSelectAll(
   }
 }
 
-/** Format copy-feedback text, truncating long values at 40 chars. */
-export function formatCopyFeedback(value: string): string {
-  return `Copied: ${value.length > 40 ? value.slice(0, 40) + "..." : value}`;
-}

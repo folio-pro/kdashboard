@@ -4,12 +4,20 @@
 
   let isRetrying = $state(false);
 
-  let showOverlay = $derived(
-    k8sStore.connectionStatus === "error" && !k8sStore.isSwitchingContext
-  );
+  // Shared with the views that must stay quiet behind this overlay, so the
+  // two can't drift into showing (or hiding) the error independently.
+  let showOverlay = $derived(k8sStore.connectionLost);
 
+  /**
+   * `error` is transient: a later loadResources() clears it before the user
+   * has read it, so the overlay ended up showing only the generic fallback
+   * and the actual cause ("kubeconfig not found at /nonexistent/path") was
+   * lost. contextsLoadError survives until the next successful load, so it is
+   * the better second choice — the generic string is a last resort, not a
+   * routine outcome.
+   */
   let errorMessage = $derived(
-    k8sStore.error ?? "Lost connection to the Kubernetes cluster."
+    k8sStore.error ?? k8sStore.contextsLoadError ?? "Lost connection to the Kubernetes cluster."
   );
 
   async function handleRetry() {
@@ -35,17 +43,17 @@
       </div>
 
       <div class="flex flex-col items-center gap-1 text-center">
-        <h2 class="text-sm font-semibold text-[var(--text-primary)]">
+        <h2 class="text-[13px] font-semibold text-[var(--text-primary)]">
           Cluster connection lost
         </h2>
-        <p class="max-w-xs text-xs leading-relaxed text-[var(--text-secondary)]">
+        <p class="max-w-xs text-[12px] leading-relaxed text-[var(--text-secondary)]">
           {errorMessage}
         </p>
       </div>
 
       <div class="flex items-center gap-3">
         <button
-          class="flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-4 py-2 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--accent)]/10 disabled:opacity-50"
+          class="flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-4 py-2 text-[12px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--accent)]/10 disabled:opacity-50"
           onclick={handleRetry}
           disabled={isRetrying}
         >
