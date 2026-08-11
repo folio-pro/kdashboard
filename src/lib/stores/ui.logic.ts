@@ -84,27 +84,10 @@ export function ensureTabCounterAbove(n: number): void {
 }
 
 /** View types that should only have one tab open at a time */
-const SINGLETON_VIEWS = new Set<ActiveView>(["settings", "topology", "cost", "security", "portforwards"]);
+const SINGLETON_VIEWS = new Set<ActiveView>(["settings", "topology", "cost", "security", "portforwards", "helm"]);
 
 /** View types tied to a specific resource (cache selectedResource on tab switch) */
 export const RESOURCE_TAB_TYPES = new Set<ActiveView>(["details", "logs", "yaml", "terminal"]);
-
-/**
- * View types that render their own header and should suppress the global
- * `<TitleBar />`. Kept as the allowlist's *complement* because new views
- * default to having a title bar (fail safe — surface > hide).
- */
-const VIEWS_WITHOUT_TITLE_BAR = new Set<ActiveView>([
-  "details",
-  "logs",
-  "terminal",
-  "yaml",
-  "settings",
-]);
-
-export function viewShowsTitleBar(view: ActiveView): boolean {
-  return !VIEWS_WITHOUT_TITLE_BAR.has(view);
-}
 
 /** Canonical display labels for each view type */
 export const VIEW_LABELS: Record<ActiveView, string> = {
@@ -130,7 +113,6 @@ export type DetailSubtab = "overview" | "logs" | "shell" | "yaml" | "events";
 export class UiStoreLogic {
   sidebarCollapsed = false;
   commandPaletteOpen = false;
-  activeView: ActiveView = "table";
   previousView: ActiveView | null = null;
 
   // Active sub-tab inside the resource DetailPanel (Overview/Logs/Shell/YAML/
@@ -151,6 +133,18 @@ export class UiStoreLogic {
   get activeTab(): Tab | undefined {
     return this.tabs.find((t) => t.id === this.activeTabId);
   }
+
+  /**
+   * Which view is on screen. Derived, not stored: a tab's `type` IS its view,
+   * so this was previously a second copy of `activeTab.type` that four
+   * separate sites had to remember to keep in sync — including a bare
+   * `uiStore.activeView = "table"` in the benchmark runner, which bypassed
+   * the tab model entirely and is exactly where such a copy drifts.
+   */
+  get activeView(): ActiveView {
+    return this.activeTab?.type ?? "table";
+  }
+
 
   // ── Per-tab UI state (getter/setter over `this.activeTab`) ──
   // Defaults mirror the pre-refactor globals so consumers that never touched
@@ -270,7 +264,7 @@ export class UiStoreLogic {
       this.onBeforeTabSwitch?.(from, tab);
     }
     this.activeTabId = tabId;
-    this.activeView = tab.type;
+    // activeView follows from tab.type — nothing to assign.
     // No reset of filter/sort/statFilter/selectedRows — each tab owns its state.
   }
 
@@ -424,26 +418,6 @@ export class UiStoreLogic {
     this._switchView("yaml", { label: resourceName ?? "YAML", resourceName });
   }
 
-  showPortForwards(): void {
-    this._switchView("portforwards");
-  }
-
-  showTopology(): void {
-    this._switchView("topology");
-  }
-
-  showCost(): void {
-    this._switchView("cost");
-  }
-
-  showSecurity(): void {
-    this._switchView("security");
-  }
-
-  showHelm(): void {
-    this._switchView("helm");
-  }
-
   showView(view: ActiveView): void {
     this._switchView(view);
   }
@@ -548,9 +522,9 @@ export class UiStoreLogic {
     this._flushDebounce();
     // Per-tab state is implicitly cleared by recreating the tabs array —
     // no need to touch filter/sort/statFilter/selectedRows individually.
+    // mkPodsTab() is a table tab, so activeView follows to "table" on its own.
     this.tabs = [mkPodsTab()];
     this.activeTabId = DEFAULT_TAB_ID;
-    this.activeView = "table";
     this.previousView = null;
     this._onResetContextChange();
   }

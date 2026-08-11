@@ -2,7 +2,6 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import {
   UiStoreLogic,
   resetTabCounter,
-  viewShowsTitleBar,
   serializeTabs,
   deserializeTabs,
   restoreTab,
@@ -123,8 +122,8 @@ describe("UiStore", () => {
       expect(store.previousView).toBe("table");
     });
 
-    test("showPortForwards switches to portforwards", () => {
-      store.showPortForwards();
+    test("showView switches to portforwards", () => {
+      store.showView("portforwards");
       expect(store.activeView).toBe("portforwards");
       expect(store.previousView).toBe("table");
     });
@@ -721,32 +720,4 @@ describe("UiStore", () => {
     });
   });
 
-  describe("viewShowsTitleBar", () => {
-    test("hides TitleBar for views that render their own header", () => {
-      const hidden: ActiveView[] = [
-        "details",
-        "logs",
-        "terminal",
-        "yaml",
-        "settings",
-      ];
-      for (const v of hidden) {
-        expect(viewShowsTitleBar(v)).toBe(false);
-      }
-    });
-
-    test("shows TitleBar for resource/list/dashboard views", () => {
-      const shown: ActiveView[] = [
-        "table",
-        "crd-table",
-        "portforwards",
-        "topology",
-        "cost",
-        "security",
-      ];
-      for (const v of shown) {
-        expect(viewShowsTitleBar(v)).toBe(true);
-      }
-    });
-  });
 });

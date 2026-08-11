@@ -116,7 +116,7 @@ export const resourceActions: ActionDef[] = [
         resource.metadata.uid,
         resource.metadata.namespace ?? null,
       );
-      uiStore.showTopology();
+      uiStore.showView("topology");
     },
   },
   {

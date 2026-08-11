@@ -7,7 +7,6 @@ import {
   type Tab,
   RESOURCE_TAB_TYPES,
   VIEW_LABELS,
-  viewShowsTitleBar,
   mkPodsTab,
   DEFAULT_TAB_ID,
   DEFAULT_RESOURCE_TYPE,
@@ -20,7 +19,7 @@ import {
 } from "./ui.logic.js";
 
 export type { ActiveView, Tab };
-export { RESOURCE_TAB_TYPES, VIEW_LABELS, viewShowsTitleBar, DEFAULT_TAB_ID, DEFAULT_RESOURCE_TYPE };
+export { RESOURCE_TAB_TYPES, VIEW_LABELS, DEFAULT_TAB_ID, DEFAULT_RESOURCE_TYPE };
 
 const SAVE_DEBOUNCE_MS = 250;
 
@@ -31,7 +30,8 @@ class UiStore extends UiStoreLogic {
   // on `tabs` makes nested tab fields reactive automatically.
   override sidebarCollapsed = $state<boolean>(false);
   override commandPaletteOpen = $state<boolean>(false);
-  override activeView = $state<ActiveView>("table");
+  // No activeView field: it is a getter over activeTab.type on UiStoreLogic,
+  // and reactive by virtue of reading the `tabs` / `activeTabId` state below.
   override previousView = $state<ActiveView | null>(null);
   override detailSubtab = $state<DetailSubtab>("overview");
 
@@ -66,8 +66,6 @@ class UiStore extends UiStoreLogic {
     if (!state) return;
     this.tabs = state.tabs.map(restoreTab);
     this.activeTabId = state.activeTabId;
-    const activeTab = this.tabs.find((t) => t.id === state.activeTabId);
-    if (activeTab) this.activeView = activeTab.type;
     // Prevent id collisions with newly opened tabs.
     ensureTabCounterAbove(maxTabIdSuffix(this.tabs));
   }

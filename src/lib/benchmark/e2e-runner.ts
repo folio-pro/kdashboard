@@ -95,7 +95,7 @@ async function measureType(
   let itemCount = 0;
 
   // Make the virtual table the active view so assignments actually render.
-  uiStore.activeView = "table";
+  uiStore.backToTable();
 
   for (let i = 0; i < warmup + iterations; i++) {
     const t0 = performance.now();
