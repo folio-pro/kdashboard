@@ -67,3 +67,38 @@ export async function apiGet<T>(
   }
   return (await resp.json()) as T;
 }
+
+/**
+ * Issue an authenticated GET and return the Response with its body UNCONSUMED,
+ * so the caller can read it incrementally and abort it.
+ *
+ * Separate from apiGet, which buffers the whole body and JSON-parses it — the
+ * opposite of what a `follow=true` log stream needs. Resolving as soon as the
+ * response headers arrive also gives callers a truthful "connected" signal.
+ *
+ * The caller owns the returned body: it MUST read or cancel it, otherwise the
+ * socket stays held open.
+ */
+export async function apiStream(
+  path: string,
+  query: URLSearchParams,
+  signal: AbortSignal,
+): Promise<Response> {
+  const cfg = kc();
+  const cluster = cfg.getCurrentCluster();
+  if (!cluster) {
+    throw new Error('No active cluster in kubeconfig');
+  }
+  const url = new URL(cluster.server.replace(/\/$/, '') + path);
+  url.search = query.toString();
+
+  const opts = await cfg.applyToFetchOptions({});
+  opts.method = 'GET';
+
+  const resp = await fetch(url.toString(), { ...(opts as RequestInit), signal });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`${resp.status} ${resp.statusText}${body ? `: ${body}` : ''}`);
+  }
+  return resp;
+}

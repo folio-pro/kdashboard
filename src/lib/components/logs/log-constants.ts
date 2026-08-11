@@ -23,6 +23,14 @@ export const SINCE_OPTIONS: { label: string; value: SinceDuration; seconds: numb
 export const SINCE_LABELS = new Map(SINCE_OPTIONS.map((o) => [o.value, o.label]));
 export const SINCE_SECONDS = new Map(SINCE_OPTIONS.map((o) => [o.value, o.seconds]));
 
+/**
+ * The same durations phrased as a window ("1 day") instead of a point in time
+ * ("1 day ago"), so they read correctly inside "nothing in the last {…}".
+ */
+export const SINCE_WINDOW_LABELS = new Map(
+  SINCE_OPTIONS.map((o) => [o.value, o.label.replace(/ ago$/, "")]),
+);
+
 // --- Tail options ---
 
 export const TAIL_OPTIONS: TailLines[] = [100, 500, 1000, 5000];
