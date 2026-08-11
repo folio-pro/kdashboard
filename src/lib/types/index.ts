@@ -5,5 +5,4 @@ export * from './cost';
 export * from './metrics';
 export * from './helm';
 export * from './security';
-export * from './troubleshooting';
 export * from './ui';

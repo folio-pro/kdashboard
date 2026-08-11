@@ -29,18 +29,6 @@ export function formatAge(timestamp: string): string {
   return "< 1s";
 }
 
-/** Relative time like "5s ago", "3m ago", "2h ago", or a short date for older entries. */
-export function formatRelativeTime(timestamp: string): string {
-  if (!timestamp) return "—";
-  const d = new Date(timestamp);
-  const diff = Date.now() - d.getTime();
-
-  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
 export function formatTimestamp(timestamp: string): string {
   if (!timestamp) return "Unknown";
   try {

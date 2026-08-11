@@ -2,27 +2,6 @@
  * Utility functions for PodDetails and its sub-components.
  */
 
-export function parseResourceValue(val: string): { value: string; unit: string } {
-  if (val === "-") return { value: "-", unit: "" };
-  const match = val.match(/^(\d+\.?\d*)\s*(.*)$/);
-  if (match) return { value: match[1], unit: match[2] };
-  return { value: val, unit: "" };
-}
-
-export function getUsagePercent(request: string, limit: string): number {
-  if (request === "-" || limit === "-") return 0;
-  const reqVal = parseFloat(request);
-  const limVal = parseFloat(limit);
-  if (isNaN(reqVal) || isNaN(limVal) || limVal === 0) return 0;
-  return Math.min(100, Math.round((reqVal / limVal) * 100));
-}
-
-export function getBarColor(percent: number): string {
-  if (percent >= 90) return "var(--status-failed)";
-  if (percent >= 70) return "var(--status-pending)";
-  return "var(--status-running)";
-}
-
 export function decodeBase64(val: string): string {
   try { return atob(val); } catch { return val; }
 }

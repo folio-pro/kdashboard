@@ -216,27 +216,3 @@ export function sortItems(
 
 // --- Composite logic class ---
 
-/**
- * Aggregates all performance-related pure logic for testability.
- * The Svelte store extends this and overrides fields with $state.
- */
-export class PerformanceStoreLogic {
-  watchBatcher = new WatchBatcher();
-  debouncedFilter = new DebouncedFilter();
-
-  filterItems(
-    items: Resource[],
-    filterLower: string,
-    statFilter: string | null,
-  ): Resource[] {
-    return filterItems(items, filterLower, statFilter);
-  }
-
-  sortItems(
-    items: Resource[],
-    sortColumn: string,
-    sortDirection: "asc" | "desc",
-  ): Resource[] {
-    return sortItems(items, sortColumn, sortDirection);
-  }
-}

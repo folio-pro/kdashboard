@@ -24,11 +24,6 @@ export function filterReleases(releases: HelmRelease[], query: string): HelmRele
   );
 }
 
-/** Stable identity for a release across namespaces. */
-export function releaseKey(namespace: string, name: string): string {
-  return `${namespace}/${name}`;
-}
-
 export class HelmStoreLogic {
   releases: HelmRelease[] = [];
   selected: HelmReleaseDetail | null = null;
