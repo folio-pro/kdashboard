@@ -24,11 +24,9 @@
     MESSAGE_COLORS,
     type TailLines,
     type SinceDuration,
-    type DropdownId,
   } from "./log-constants";
   import { getJsonHighlighted } from "./log-highlighting";
-  import LogHeader from "./LogHeader.svelte";
-  import LogFilterBar from "./LogFilterBar.svelte";
+  import LogControlBar from "./LogControlBar.svelte";
   import LogDetailSheet from "./LogDetailSheet.svelte";
 
   // --- Core state ---
@@ -125,7 +123,6 @@
   let sinceDuration = $state<SinceDuration>("1d");
   let showPrevious = $state(false);
   let useRegex = $state(false);
-  let openDropdown = $state<DropdownId>(null);
   let selectedLog = $state<LogLine | null>(null);
 
   // --- Pod name tracking ---
@@ -169,12 +166,6 @@
     );
   });
 
-  let lastLogTime = $derived.by(() => {
-    if (logs.length === 0) return "";
-    const last = logs[logs.length - 1];
-    return last.timestamp ?? "";
-  });
-
   $effect.pre(() => {
     const count = filteredLogs.length;
     untrack(() => {
@@ -208,7 +199,6 @@
     k8sStore.selectedResource?.kind?.toLowerCase() === "deployment"
   );
 
-  const resourceName = $derived(k8sStore.selectedResource?.metadata?.name ?? "Pod");
   const sinceLabel = $derived(SINCE_LABELS.get(sinceDuration) ?? "1 day ago");
 
   // --- Deployment pod fetching ---
@@ -354,30 +344,22 @@
   // --- Callback handlers for sub-components ---
   function handleContainerSelect(container: string) {
     selectedContainer = container;
-    openDropdown = null;
     if (isStreaming) startStreaming();
   }
 
   function handleSinceSelect(value: SinceDuration) {
     sinceDuration = value;
-    openDropdown = null;
     if (isStreaming) startStreaming();
   }
 
   function handleTailSelect(value: TailLines) {
     tailLines = value;
-    openDropdown = null;
     if (isStreaming) startStreaming();
   }
 
   function togglePrevious() {
     showPrevious = !showPrevious;
     if (isStreaming) startStreaming();
-  }
-
-  function toggleDropdown(id: DropdownId, e: MouseEvent) {
-    e.stopPropagation();
-    openDropdown = openDropdown === id ? null : id;
   }
 
   // --- Log detail / navigation ---
@@ -421,73 +403,14 @@
 
 <svelte:window onkeydown={handleGlobalKeydown} />
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="flex h-full flex-col bg-[var(--bg-primary)]" onclick={() => (openDropdown = null)}>
-  <!-- Header -->
-  <LogHeader
-    {resourceName}
-    {selectedContainer}
-    {containers}
-    bind:filterText
-    {isStreaming}
-    {isDeployment}
-    {deploymentPodNames}
-    {podsLoading}
-    bind:openDropdown
-    onStartStreaming={startStreaming}
-    onStopStreaming={stopStreaming}
-    onContainerSelect={handleContainerSelect}
-    onToggleDropdown={toggleDropdown}
-  />
-
-  <!-- Filter Bar -->
-  <LogFilterBar
-    bind:levelFilter
-    bind:podFilter
-    {sinceDuration}
-    {sinceLabel}
-    {tailLines}
-    bind:showTimestamps
-    {showPrevious}
-    bind:useRegex
-    bind:openDropdown
-    {isDeployment}
-    {logPodNames}
-    onSinceSelect={handleSinceSelect}
-    onTailSelect={handleTailSelect}
-    onTogglePrevious={togglePrevious}
-    onToggleDropdown={toggleDropdown}
-    onClear={clearLogs}
-  />
-
-  <!-- Log Viewer -->
-  <div class="flex-1 overflow-hidden px-6 py-4">
+<div data-testid="log-viewer" class="flex h-full flex-col bg-[var(--bg-primary)]">
+  <!-- Log Viewer: the tab bar already names the view and the resource, so this
+       panel carries no title of its own. -->
+  <div class="flex-1 overflow-hidden px-4 pt-3 pb-2">
     <div class="relative flex h-full flex-col">
-      <!-- Prompt Bar -->
-      <div
-        class="flex h-9 shrink-0 items-center justify-between rounded-t border border-[var(--border-color)] bg-[var(--bg-tertiary,var(--bg-secondary))] px-4"
-      >
-        <div class="flex items-center gap-2">
-          <span class="font-mono text-[12px] font-semibold text-[var(--accent)]">&gt;_</span>
-          <span class="font-mono text-[12px] text-[var(--text-secondary)]">{resourceName}</span>
-        </div>
-        <div class="flex items-center gap-3">
-          {#if lastLogTime}
-            <span class="font-mono text-[11px] text-[var(--text-muted)]">last: {lastLogTime}</span>
-          {/if}
-          {#if isStreaming}
-            <div class="flex items-center gap-1.5">
-              <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-running)]"></div>
-              <span class="font-mono text-[11px] font-semibold text-[var(--status-running)]">LIVE</span>
-            </div>
-          {/if}
-        </div>
-      </div>
-
       <!-- Log Entries (virtualized) -->
       <div
-        class="relative min-h-0 flex-1 overflow-y-auto rounded-b border-x border-b border-[var(--border-color)] bg-[var(--log-bg)] font-mono"
+        class="relative min-h-0 flex-1 overflow-y-auto rounded border border-[var(--border-color)] bg-[var(--log-bg)] font-mono"
         bind:this={logContainer}
         onscroll={handleScroll}
       >
@@ -551,6 +474,33 @@
       {/if}
     </div>
   </div>
+
+  <!-- Controls: single bar at the bottom of the panel -->
+  <LogControlBar
+    {selectedContainer}
+    {containers}
+    bind:filterText
+    {isStreaming}
+    {isDeployment}
+    {deploymentPodNames}
+    {podsLoading}
+    bind:levelFilter
+    bind:podFilter
+    {sinceDuration}
+    {sinceLabel}
+    {tailLines}
+    bind:showTimestamps
+    {showPrevious}
+    bind:useRegex
+    {logPodNames}
+    onStartStreaming={startStreaming}
+    onStopStreaming={stopStreaming}
+    onContainerSelect={handleContainerSelect}
+    onSinceSelect={handleSinceSelect}
+    onTailSelect={handleTailSelect}
+    onTogglePrevious={togglePrevious}
+    onClear={clearLogs}
+  />
 
   <!-- Log Detail Sheet -->
   <LogDetailSheet {selectedLog} onClose={closeDetail} />
