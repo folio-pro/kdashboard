@@ -423,7 +423,14 @@
             {#each $virtualizer.getVirtualItems() as row (row.index)}
               {@const line = filteredLogs[row.index]}
               {#if line}
+                <!-- Rows open the detail sheet on click. They are not tab
+                     stops — there can be thousands — so the keyboard path is
+                     the arrow-key navigation in handleGlobalKeydown, not a
+                     per-row key handler. -->
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <div
+                  role="button"
+                  tabindex="-1"
                   data-index={row.index}
                   use:measureElement
                   style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({row.start}px);"
