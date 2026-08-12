@@ -287,7 +287,13 @@
       container: selectedContainer,
       tailLines,
       sinceSeconds: SINCE_SECONDS.get(sinceDuration) ?? null,
-      timestamps: showTimestamps,
+      // Always ask the backend for timestamps; showTimestamps only decides
+      // whether the rendered row prints them. Wiring it to the request made one
+      // flag mean two things: toggling it mid-stream left the live stream on
+      // the old setting, and honouring it would have meant restarting the
+      // stream — clearing the whole buffer — for a display-only switch.
+      // parseLogLine strips the prefix either way, so the message is identical.
+      timestamps: true,
       previous: showPrevious || null,
     };
 
