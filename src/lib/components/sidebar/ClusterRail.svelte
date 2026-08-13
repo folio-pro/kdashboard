@@ -1,5 +1,6 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
+  import { Button } from "$lib/components/ui";
   import { ChevronLeft, Settings, AlertTriangle, RefreshCw } from "lucide-svelte";
   import { Tooltip, TooltipTrigger, TooltipContent } from "$lib/components/ui/tooltip";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -25,16 +26,15 @@
   style="background: var(--rail-bg, color-mix(in srgb, var(--sidebar-bg) 92%, #000));"
 >
   <!-- Collapse button -->
-  <button
-    class={cn(
-      "mt-2 mb-1 flex h-7 w-7 items-center justify-center rounded-full",
-      "text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-hover)] hover:text-[var(--text-primary)]"
-    )}
+  <Button
+    variant="muted"
+    size="icon-sm"
+    class="mt-2 mb-1 rounded-full hover:bg-[var(--sidebar-hover)]"
     onclick={() => uiStore.toggleSidebar()}
     title="Collapse sidebar"
   >
     <ChevronLeft class="h-4 w-4" />
-  </button>
+  </Button>
 
   <!-- Context icons -->
   <div class="flex w-full flex-1 flex-col items-center gap-[9px] overflow-y-auto overflow-x-hidden py-2">
@@ -49,14 +49,15 @@
           <p>{k8sStore.contextsLoadError}</p>
         </TooltipContent>
       </Tooltip>
-      <button
-        class="flex h-7 w-7 items-center justify-center rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+      <Button
+        variant="toolbar"
+        size="icon-sm"
         onclick={retryLoadContexts}
         title="Retry loading contexts"
         aria-label="Retry loading contexts"
       >
         <RefreshCw class="h-3.5 w-3.5" />
-      </button>
+      </Button>
     {/if}
     {#each k8sStore.contexts as ctx}
       {@const custom = settingsStore.getContextCustomization(ctx)}
@@ -107,11 +108,10 @@
   {#each extensions.mountsFor("cluster-rail-bottom") as mount (mount.id)}
     <mount.component />
   {/each}
+  <!-- Full-bleed rail footer — see the note on the sidebar's expand control:
+       layout-shaped chrome stays a raw button on tokens. -->
   <button
-    class={cn(
-      "flex w-full items-center justify-center border-t border-[var(--border-color)] py-3",
-      "text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-    )}
+    class="flex w-full items-center justify-center border-t border-[var(--border-color)] py-3 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
     onclick={() => uiStore.toggleSettings()}
     title="Settings"
   >

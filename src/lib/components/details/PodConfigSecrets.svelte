@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { ChevronRight, FileText, Lock, Copy, Check, Search, X } from "lucide-svelte";
+  import { ChevronRight, FileText, Lock, Copy, Check } from "lucide-svelte";
+  import { Button, SearchField } from "$lib/components/ui";
   import { invoke } from "$lib/ipc/core";
   import type { Resource, ResourceList } from "$lib/types";
   import { toggleSetItem } from "$lib/utils/k8s-helpers";
@@ -174,8 +175,10 @@
           <div class="mb-1 flex items-center justify-between">
             <span class="text-[11px] font-medium text-[var(--text-muted)]">{key}</span>
             <div class="flex h-5 items-center gap-2">
-              <button
-                class="flex items-center text-[var(--text-muted)] hover:text-[var(--text-primary)] {isRevealed ? 'visible' : 'invisible'}"
+              <Button
+                variant="muted"
+                size="icon-xs"
+                class={isRevealed ? "visible" : "invisible"}
                 onclick={() => copyValue(revealKey, displayValue)}
                 title="Copy value"
                 tabindex={isRevealed ? 0 : -1}
@@ -185,21 +188,22 @@
                 {:else}
                   <Copy class="h-3 w-3" />
                 {/if}
-              </button>
+              </Button>
               {#if isSecret}
-                <button
-                  class="text-[10px] font-medium text-[var(--accent)] hover:underline"
+                <Button
+                  variant="link"
+                  size="inline-xs"
                   onclick={() => revealedSecrets = toggleSetItem(revealedSecrets, revealKey)}
                 >
                   {isRevealed ? "hide" : "reveal"}
-                </button>
+                </Button>
               {/if}
             </div>
           </div>
           {#if isRevealed}
-            <pre class="max-h-32 overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]">{truncateValue(displayValue)}</pre>
+            <pre class="max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]">{truncateValue(displayValue)}</pre>
           {:else}
-            <div class="rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">••••••••</div>
+            <div class="rounded-sm border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">••••••••</div>
           {/if}
         </div>
       {/each}
@@ -218,18 +222,12 @@
     <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Config &amp; Secrets</span>
     <div class="flex items-center gap-3">
       {#if !configLoading && (fetchedConfigMaps.length > 0 || fetchedSecrets.length > 0)}
-        <button
-          class="text-[10px] font-medium text-[var(--accent)] hover:underline"
-          onclick={copyAllConfigs}
-        >
+        <Button variant="link" size="inline-xs" onclick={copyAllConfigs}>
           {copiedKey === "__all__" ? "copied!" : "copy all"}
-        </button>
-        <button
-          class="text-[10px] font-medium text-[var(--accent)] hover:underline"
-          onclick={toggleRevealAll}
-        >
+        </Button>
+        <Button variant="link" size="inline-xs" onclick={toggleRevealAll}>
           {allRevealed ? "hide all" : "reveal all"}
-        </button>
+        </Button>
       {/if}
       <span class="font-mono text-[11px] text-[var(--text-muted)]">
         {#if configLoading}
@@ -250,22 +248,18 @@
   <!-- Key search -->
   {#if !configLoading && (fetchedConfigMaps.length > 0 || fetchedSecrets.length > 0)}
     <div class="px-6 pb-3">
-      <div class="focus-ring-host flex h-8 items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 transition-colors focus-within:border-[var(--accent)]">
-        <Search class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-        <input
-          type="text"
-          placeholder="Filter keys…"
-          aria-label="Filter configmap and secret keys"
-          bind:value={keyFilter}
-          class="h-full flex-1 bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
-        />
-        {#if keyFilter}
-          <span class="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{totalMatches}</span>
-          <button class="shrink-0 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]" onclick={() => (keyFilter = "")} title="Clear">
-            <X class="h-3.5 w-3.5" />
-          </button>
-        {/if}
-      </div>
+      <SearchField
+        clearable
+        placeholder="Filter keys…"
+        ariaLabel="Filter configmap and secret keys"
+        bind:value={keyFilter}
+      >
+        {#snippet trailing()}
+          {#if keyFilter}
+            <span class="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{totalMatches}</span>
+          {/if}
+        {/snippet}
+      </SearchField>
     </div>
   {/if}
 

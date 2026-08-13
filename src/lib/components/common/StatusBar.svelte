@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { Kbd, Spinner } from "$lib/components/ui";
   import { cn } from "$lib/utils";
-  import { Loader2, Unplug } from "lucide-svelte";
+  import { Unplug } from "lucide-svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
@@ -57,7 +58,7 @@
 
     {#if k8sStore.isLoading}
       <span class="h-3 w-px bg-[var(--border-color)]"></span>
-      <Loader2 class="h-3 w-3 animate-spin" />
+      <Spinner size="xs" />
     {/if}
 
     {#each extensions.mountsFor("status-bar-start") as mount (mount.id)}
@@ -69,11 +70,7 @@
   <div class="flex items-center gap-2.5">
     {#each hints as hint}
       <div class="flex items-center gap-1">
-        <kbd
-          class="inline-flex min-w-[16px] items-center justify-center rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1 py-px font-mono text-[10px] font-medium text-[var(--text-secondary)]"
-        >
-          {hint.key}
-        </kbd>
+        <Kbd class="min-w-[16px] justify-center px-1 py-px font-medium">{hint.key}</Kbd>
         <span class="text-[var(--text-muted)]">{hint.label}</span>
       </div>
     {/each}

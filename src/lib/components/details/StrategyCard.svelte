@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import InfoRow from "./InfoRow.svelte";
 
   interface Props {
@@ -31,7 +32,7 @@
 <div class="border-b border-[var(--border-color)]">
   <div class="flex items-center justify-between px-6 py-4">
     <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Update Strategy</span>
-    <span class="rounded bg-[var(--bg-tertiary)] px-2 py-0.5 font-mono text-[11px] font-medium text-[var(--text-primary)]">{strategyType || "—"}</span>
+    <Badge appearance="surface" size="sm" mono class="text-[var(--text-primary)]">{strategyType || "—"}</Badge>
   </div>
 
   {#if isDeployment}

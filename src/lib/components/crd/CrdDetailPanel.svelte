@@ -4,6 +4,7 @@
   import { formatAge } from "$lib/utils/age";
   import { resolveJsonPath } from "$lib/utils/k8s-helpers";
   import { ArrowLeft, Copy, Check } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
   import type { Resource, CrdColumn, StatusCondition } from "$lib/types/index.js";
 
   interface Props {
@@ -41,13 +42,10 @@
 <div class="flex h-full flex-col">
   <!-- Header -->
   <div class="flex items-center gap-2 border-b border-[var(--border-color)] px-4 py-2">
-    <button
-      class="flex items-center gap-1 text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-      onclick={onback}
-    >
+    <Button variant="ghost" size="inline-sm" class="text-[var(--text-secondary)] hover:bg-transparent" onclick={onback}>
       <ArrowLeft class="h-3.5 w-3.5" />
       Back
-    </button>
+    </Button>
     <span class="text-[12px] text-[var(--text-muted)]">/</span>
     <span class="text-[13px] font-medium text-[var(--text-primary)]">{resource.kind}</span>
     <span class="text-[12px] text-[var(--text-muted)]">/</span>
@@ -64,9 +62,15 @@
             <span class="text-[var(--text-muted)]">Name</span>
             <div class="flex items-center gap-1">
               <span class="text-[var(--text-primary)]">{resource.metadata.name}</span>
-              <button class="opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity" onclick={() => copyValue(resource.metadata.name, "name")}>
+              <Button
+                variant="muted"
+                size="icon-xs"
+                class="opacity-0 transition-opacity hover:opacity-100 focus:opacity-100"
+                onclick={() => copyValue(resource.metadata.name, "name")}
+                aria-label="Copy name"
+              >
                 {#if copiedField === "name"}<Check class="h-3 w-3 text-[var(--status-running)]" />{:else}<Copy class="h-3 w-3 text-[var(--text-muted)]" />{/if}
-              </button>
+              </Button>
             </div>
           </div>
           {#if resource.metadata.namespace}
@@ -126,7 +130,7 @@
                   <div class="flex items-center gap-2">
                     <span class="text-[12px] font-medium text-[var(--text-primary)]">{cond.type}</span>
                     <span class={cn(
-                      "rounded px-1 py-0.5 text-[10px] font-medium",
+                      "rounded-sm px-1 py-0.5 text-[10px] font-medium",
                       cond.status === "True" ? "bg-[var(--status-running)]/10 text-[var(--status-running)]" :
                       cond.status === "False" ? "bg-[var(--status-failed)]/10 text-[var(--status-failed)]" :
                       "bg-[var(--status-pending)]/10 text-[var(--status-pending)]"
@@ -158,7 +162,7 @@
           <h3 class="mb-3 text-[12px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Labels</h3>
           <div class="flex flex-wrap gap-1">
             {#each Object.entries(resource.metadata.labels) as [key, value]}
-              <span class="rounded bg-[var(--bg-primary)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)]">
+              <span class="rounded-sm bg-[var(--bg-primary)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)]">
                 {key}={value}
               </span>
             {/each}

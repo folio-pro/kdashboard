@@ -1,5 +1,6 @@
 <script lang="ts">
   import { WifiOff, RefreshCw } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
   import { k8sStore } from "$lib/stores/k8s.svelte";
 
   let isRetrying = $state(false);
@@ -52,14 +53,16 @@
       </div>
 
       <div class="flex items-center gap-3">
-        <button
-          class="flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-4 py-2 text-[12px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--accent)]/10 disabled:opacity-50"
+        <Button
+          variant="outline"
+          size="md"
+          class="rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--accent)]/10"
           onclick={handleRetry}
           disabled={isRetrying}
         >
           <RefreshCw class="h-3.5 w-3.5 {isRetrying ? 'animate-spin' : ''}" />
           {isRetrying ? "Reconnecting..." : "Retry connection"}
-        </button>
+        </Button>
       </div>
 
       <p class="text-[10px] text-[var(--text-muted)]">

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Kbd } from "$lib/components/ui";
   import { cn } from "$lib/utils";
   import { invoke } from "$lib/ipc/core";
   import { Dialog, DialogContent } from "$lib/components/ui/dialog";
@@ -391,14 +392,10 @@
                     {/if}
                   </div>
                   {#if item.hint}
-                    <kbd class="shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
-                      {item.hint}
-                    </kbd>
+                    <Kbd>{item.hint}</Kbd>
                   {/if}
                   {#if globalIndex === selectedIndex}
-                    <kbd class="shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
-                      Enter
-                    </kbd>
+                    <Kbd>Enter</Kbd>
                   {/if}
                 </CommandItem>
               {/each}
@@ -408,9 +405,9 @@
       </Command>
       <!-- Footer hint bar (reference console parity) -->
       <div class="flex items-center gap-4 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-2 text-[11px] text-[var(--text-muted)]">
-        <span class="flex items-center gap-1.5"><kbd class="rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1 font-mono text-[10px] text-[var(--text-secondary)]">↑↓</kbd> Navigate</span>
-        <span class="flex items-center gap-1.5"><kbd class="rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1 font-mono text-[10px] text-[var(--text-secondary)]">↵</kbd> Open</span>
-        <span class="flex items-center gap-1.5"><kbd class="rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1 font-mono text-[10px] text-[var(--text-secondary)]">esc</kbd> Close</span>
+        <span class="flex items-center gap-1.5"><Kbd class="px-1">↑↓</Kbd> Navigate</span>
+        <span class="flex items-center gap-1.5"><Kbd class="px-1">↵</Kbd> Open</span>
+        <span class="flex items-center gap-1.5"><Kbd class="px-1">esc</Kbd> Close</span>
       </div>
     </div>
   </DialogContent>

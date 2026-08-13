@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import { ChevronRight, Network, Lock } from "lucide-svelte";
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
@@ -89,7 +90,7 @@
             {#if tlsEntry.hosts && tlsEntry.hosts.length > 0}
               <div class="flex flex-wrap gap-1.5">
                 {#each tlsEntry.hosts as host}
-                  <span class="rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1 font-mono text-[11px] text-[var(--text-primary)]">{host}</span>
+                  <span class="rounded-sm border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1 font-mono text-[11px] text-[var(--text-primary)]">{host}</span>
                 {/each}
               </div>
             {/if}
@@ -111,7 +112,7 @@
             {#if rule.http?.paths}
               {#each rule.http.paths as path}
                 <div class="flex items-center gap-2.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
-                  <span class="inline-flex items-center rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">{path.pathType ?? "Prefix"}</span>
+                  <Badge appearance="surface" bordered mono>{path.pathType ?? "Prefix"}</Badge>
                   <span class="font-mono text-[13px] text-[var(--text-secondary)]">{path.path ?? "/"}</span>
                   <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
                   <span class="font-mono text-[13px] font-medium text-[var(--text-primary)]">{path.backend?.service?.name ?? "?"}:{path.backend?.service?.port?.number ?? path.backend?.service?.port?.name ?? "?"}</span>

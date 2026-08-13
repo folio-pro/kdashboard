@@ -121,7 +121,7 @@
             onclick={() => navigate(rel)}
           >
             <span
-              class="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-semibold leading-tight border border-[var(--border-color)] bg-[var(--bg-tertiary)]"
+              class="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-sm px-2 py-0.5 text-[10px] font-semibold leading-tight border border-[var(--border-color)] bg-[var(--bg-tertiary)]"
               style:color={group.color}
               style:border-color="{group.color}30"
               style:background-color="{group.color}08"
@@ -135,7 +135,7 @@
           </button>
         {:else}
           <div class="flex items-center gap-3 border-t border-[var(--border-hover)] px-5 py-2.5">
-            <span class="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-medium leading-tight border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-muted)]">
+            <span class="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-sm px-2 py-0.5 text-[10px] font-medium leading-tight border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-muted)]">
               {displayKind(rel.kind)}
             </span>
             <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--text-muted)]" title={rel.name}>

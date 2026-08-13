@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { cn } from "$lib/utils";
   import { Box, Trash2, TerminalSquare } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
   import { SelectMenu } from "$lib/components/ui/select-menu";
   import { listen } from "$lib/ipc/event";
   import { invoke } from "$lib/ipc/core";
@@ -55,10 +55,10 @@
    *
    * wterm's auto-scroll sets scrollTop to a row boundary (_scrollToBottom
    * floors to a multiple of the row height) while its "am I at the bottom?"
-   * probe (_isScrolledToBottom) uses a 5px tolerance. If the host height is not
-   * a multiple of the row height, the leftover fraction is never scrolled away,
-   * the probe reads it as "the user scrolled up to read history", and
-   * follow-the-output switches off permanently.
+   * probe (_isScrolledToBottom) uses a 5px tolerance. If the emulator's content
+   * box is not a multiple of the row height, the leftover fraction is never
+   * scrolled away, the probe reads it as "the user scrolled up to read
+   * history", and follow-the-output switches off permanently.
    *
    * Removing the fraction makes both agree, so wterm keeps following on its
    * own. Do NOT also write scrollTop from here — two writers per frame fight
@@ -73,16 +73,27 @@
     const inner = terminalEl;
     if (!outer || !inner) return;
 
-    const style = getComputedStyle(outer);
-    const rowHeight = parseFloat(style.getPropertyValue("--term-row-height"));
+    const outerStyle = getComputedStyle(outer);
+    const rowHeight = parseFloat(outerStyle.getPropertyValue("--term-row-height"));
     if (!rowHeight) return;
 
-    // clientHeight is the padding box, so the host's own vertical padding has
-    // to come off before dividing into rows — otherwise the emulator is sized
-    // taller than the space it actually has and the last row is clipped.
-    const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-    const rows = Math.max(1, Math.floor((outer.clientHeight - padY) / rowHeight));
-    inner.style.height = `${rows * rowHeight}px`;
+    // The scroll box is `inner` (WTerm puts .wterm on the element it is handed
+    // and turns on overflow-y once there is scrollback), so its vertical
+    // breathing room lives on `inner` too and scrolls away with the content.
+    // Put it on `outer` instead and it becomes a fixed frame that shears the
+    // first and last row as they pass under it.
+    //
+    // clientHeight is the padding box. `outer`'s padding comes off to get the
+    // space actually available; `inner`'s comes off before dividing into rows
+    // and back on afterwards, because border-box counts it inside the height
+    // being set — without that the last row is clipped by exactly the padding.
+    const innerStyle = getComputedStyle(inner);
+    const outerPadY = parseFloat(outerStyle.paddingTop) + parseFloat(outerStyle.paddingBottom);
+    const innerPadY = parseFloat(innerStyle.paddingTop) + parseFloat(innerStyle.paddingBottom);
+
+    const available = outer.clientHeight - outerPadY - innerPadY;
+    const rows = Math.max(1, Math.floor(available / rowHeight));
+    inner.style.height = `${rows * rowHeight + innerPadY}px`;
   }
 
   /**
@@ -268,7 +279,7 @@
       <!-- Terminal Container -->
       <div
         bind:this={hostEl}
-        class="wterm-host relative flex-1 overflow-hidden rounded border border-[var(--border-color)] bg-[var(--log-bg)] px-2 py-2"
+        class="wterm-host relative flex-1 overflow-hidden rounded-sm border border-[var(--border-color)] bg-[var(--log-bg)] px-2"
       >
         {#if initError}
           <div
@@ -299,22 +310,15 @@
   <!-- Controls: single bar at the bottom of the panel. -->
   <div class="flex h-11 shrink-0 items-center gap-2 border-t border-[var(--border-color)] px-4">
     {#if !isConnected}
-      <button
-        class="flex h-7 shrink-0 items-center gap-1.5 rounded bg-[var(--status-running)] px-3 font-mono text-[11px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
-        onclick={connect}
-        disabled={!selectedContainer}
-      >
+      <Button variant="solid-tone" tone="success" size="sm" mono onclick={connect} disabled={!selectedContainer}>
         <TerminalSquare class="h-3 w-3" />
         <span>Connect</span>
-      </button>
+      </Button>
     {:else}
-      <button
-        class="flex h-7 shrink-0 items-center gap-1.5 rounded bg-[var(--status-failed)] px-3 font-mono text-[11px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
-        onclick={disconnect}
-      >
+      <Button variant="solid-tone" tone="error" size="sm" mono onclick={disconnect}>
         <TerminalSquare class="h-3 w-3" />
         <span>Disconnect</span>
-      </button>
+      </Button>
     {/if}
 
     {#if containers.length > 0}
@@ -336,14 +340,15 @@
       {#snippet icon()}<TerminalSquare class="h-3 w-3 text-[var(--text-muted)]" />{/snippet}
     </SelectMenu>
 
-    <button
-      class="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+    <Button
+      variant="toolbar"
+      size="icon-sm"
       title="Clear terminal"
       aria-label="Clear terminal"
       onclick={clearTerminal}
     >
       <Trash2 class="h-3 w-3" />
-    </button>
+    </Button>
 
     {#if isConnected}
       <div class="ml-auto flex shrink-0 items-center gap-1.5">
@@ -364,10 +369,26 @@
     :global() is required because WTerm adds the .wterm class at runtime, so
     Svelte cannot see it at compile time and would prune the rules as unused.
   */
-  /* Tokens live on the host, not on .wterm: custom properties inherit, so
-     .wterm and .term-row still see them, and snapHostToRowGrid() can read
-     --term-row-height from a node that exists before WTerm mounts. */
-  .wterm-host {
+  /* The tokens are declared on BOTH the host and .wterm, and both are load
+     bearing.
+
+     On the host, because snapHostToRowGrid() reads --term-row-height from a
+     node that exists before WTerm mounts.
+
+     On .wterm, because inheritance does not reach it: the package's own
+     stylesheet declares the full --term-* set on `.wterm` itself, and a value
+     declared on an element beats one inherited from its parent. Setting them
+     only on the host — which is what this component used to do — left the
+     terminal painting VS Code's #1e1e1e over a --log-bg host, which is the
+     two-tone seam at the padding edge, and rendering the whole 16-colour
+     palette from the package defaults instead of the active theme. Neither
+     symptom was obvious because 12px x 1.4 and the package's 14px x 1.2 both
+     round to the same 17px row, so the grid still lined up.
+
+     `.wterm-host :global(.wterm)` (0,2,0) outranks the package's `.wterm`
+     (0,1,0). */
+  .wterm-host,
+  .wterm-host :global(.wterm) {
     --term-bg: var(--log-bg, #111111);
     --term-fg: var(--text-secondary, #a0a0a0);
     --term-cursor: var(--accent, #ffffff);
@@ -402,12 +423,19 @@
 
   }
 
-  /* The host already supplies padding, border and radius; neutralise wterm's
-     own chrome. Height is NOT set here — snapHostToRowGrid() pins it to a
-     whole number of rows so follow-the-output stays armed. */
+  /* The host supplies the border, radius and horizontal padding; neutralise
+     wterm's own chrome. The vertical padding stays HERE rather than on the
+     host because this element is the scroll box — padding on a scroll box is
+     part of the scrolled content, so the top gap scrolls away with the first
+     row and the last row clears the bottom edge instead of being sheared off
+     by a frame that does not move. snapHostToRowGrid() adds it back on top of
+     the whole-row height for the same reason.
+
+     Height is NOT set here — snapHostToRowGrid() pins it to a whole number of
+     rows so follow-the-output stays armed. */
   .wterm-host :global(.wterm) {
     width: 100%;
-    padding: 0;
+    padding: 8px 0;
     border-radius: 0;
     box-shadow: none;
   }

@@ -1,6 +1,13 @@
 <script lang="ts">
-  import { cn } from "$lib/utils";
-  import { Box, Search, Clock, History, Regex, Trash2, Play, Square } from "lucide-svelte";
+  import { Box, Clock, History, Regex, Trash2, Play, Square } from "lucide-svelte";
+  import {
+    Badge,
+    Button,
+    SearchField,
+    type ButtonActiveStyle,
+    type ButtonTone,
+    type ButtonVariant,
+  } from "$lib/components/ui";
   import { SelectMenu } from "$lib/components/ui/select-menu";
   import { shortPodName } from "./log-viewer";
   import type { LogLevel } from "./log-viewer";
@@ -65,27 +72,23 @@
   // needs a non-null stand-in.
   const ALL_PODS = "";
 
-  const LEVELS: { value: LogLevel; on: string; off: string }[] = [
-    {
-      value: "all",
-      on: "bg-[var(--accent)] font-semibold text-[var(--bg-primary)]",
-      off: "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]",
-    },
-    {
-      value: "info",
-      on: "bg-[var(--log-info)]/20 text-[var(--log-info)]",
-      off: "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--log-info)]",
-    },
-    {
-      value: "warn",
-      on: "bg-[var(--log-warn)]/20 text-[var(--log-warn)]",
-      off: "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--log-warn)]",
-    },
-    {
-      value: "error",
-      on: "bg-[var(--log-error)]/20 text-[var(--log-error)]",
-      off: "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--log-error)]",
-    },
+  /**
+   * `all` reads as a plain toolbar control that fills with the accent when
+   * selected; the three level buttons carry their own status colour at rest
+   * and tint with it when selected. Expressed as variants rather than an
+   * on/off pair of class strings so the selected treatment is defined once,
+   * in the design system, for every segmented control in the app.
+   */
+  const LEVELS: {
+    value: LogLevel;
+    variant: ButtonVariant;
+    tone: ButtonTone;
+    activeStyle: ButtonActiveStyle;
+  }[] = [
+    { value: "all", variant: "toolbar", tone: "accent", activeStyle: "solid" },
+    { value: "info", variant: "toolbar-tone", tone: "info", activeStyle: "soft" },
+    { value: "warn", variant: "toolbar-tone", tone: "warning", activeStyle: "soft" },
+    { value: "error", variant: "toolbar-tone", tone: "error", activeStyle: "soft" },
   ];
 
   const TOGGLES = $derived([
@@ -94,30 +97,27 @@
     { icon: History, label: "Previous container logs", on: showPrevious, toggle: onTogglePrevious },
   ]);
 
-  const TOGGLE_BTN = "flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors";
-  const TOGGLE_ON = "bg-[var(--accent)] text-[var(--bg-primary)]";
-  const TOGGLE_OFF = "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]";
 </script>
 
 <div class="flex h-11 shrink-0 items-center gap-2 border-t border-[var(--border-color)] px-4">
   <!-- Stream toggle -->
   {#if !isStreaming}
-    <button
-      class="flex h-7 shrink-0 items-center gap-1.5 rounded bg-[var(--status-running)] px-3 font-mono text-[11px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
+    <Button
+      variant="solid-tone"
+      tone="success"
+      size="sm"
+      mono
       onclick={onStartStreaming}
       disabled={!selectedContainer}
     >
       <Play class="h-3 w-3" />
       <span>Stream</span>
-    </button>
+    </Button>
   {:else}
-    <button
-      class="flex h-7 shrink-0 items-center gap-1.5 rounded bg-[var(--status-failed)] px-3 font-mono text-[11px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
-      onclick={onStopStreaming}
-    >
+    <Button variant="solid-tone" tone="error" size="sm" mono onclick={onStopStreaming}>
       <Square class="h-3 w-3" />
       <span>Stop</span>
-    </button>
+    </Button>
   {/if}
 
   {#if containers.length > 0}
@@ -136,16 +136,17 @@
   <!-- Level filters -->
   <div class="flex shrink-0 items-center gap-1" role="group" aria-label="Log level filter">
     {#each LEVELS as level}
-      <button
-        class={cn(
-          "flex h-7 items-center justify-center rounded px-2.5 font-mono text-[11px] font-medium transition-colors",
-          levelFilter === level.value ? level.on : level.off,
-        )}
-        aria-pressed={levelFilter === level.value}
+      <Button
+        variant={level.variant}
+        size="sm"
+        mono
+        tone={level.tone}
+        active={levelFilter === level.value}
+        activeStyle={level.activeStyle}
         onclick={() => (levelFilter = level.value)}
       >
         {level.value}
-      </button>
+      </Button>
     {/each}
   </div>
 
@@ -164,10 +165,10 @@
   {:else if isDeployment && podsLoading}
     <span class="shrink-0 font-mono text-[11px] text-[var(--text-muted)]">loading pods…</span>
   {:else if isDeployment && deploymentPodNames.length > 0}
-    <span class="flex h-7 shrink-0 items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-muted)]">
+    <Badge appearance="outline" tone="muted" size="sm" mono class="h-7 px-2.5">
       <Box class="h-3 w-3" />
       {deploymentPodNames.length} pods
-    </span>
+    </Badge>
   {/if}
 
   <SelectMenu
@@ -189,34 +190,32 @@
 
   <!-- Filter input: the only element allowed to shrink, so a narrow window
        squeezes it instead of pushing the controls out of the bar. -->
-  <div
-    class="focus-ring-host flex h-7 min-w-[80px] flex-1 items-center gap-2 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 transition-colors focus-within:border-[var(--accent)]"
-  >
-    <Search class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
-    <input
-      type="text"
-      placeholder="Filter logs…"
-      class="w-full bg-transparent font-mono text-[11px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]"
-      bind:value={filterText}
-    />
-  </div>
+  <SearchField
+    size="sm"
+    mono
+    placeholder="Filter logs…"
+    ariaLabel="Filter logs"
+    class="min-w-[80px] flex-1"
+    bind:value={filterText}
+  />
 
   <!-- Icon toggles -->
   {#each TOGGLES as toggle}
-    <button
-      class={cn(TOGGLE_BTN, toggle.on ? TOGGLE_ON : TOGGLE_OFF)}
+    <Button
+      variant="toolbar"
+      size="icon-sm"
+      active={toggle.on}
       title={toggle.label}
       aria-label={toggle.label}
-      aria-pressed={toggle.on}
       onclick={toggle.toggle}
     >
       <toggle.icon class="h-3 w-3" />
-    </button>
+    </Button>
   {/each}
 
-  <button class={cn(TOGGLE_BTN, TOGGLE_OFF)} title="Clear logs" aria-label="Clear logs" onclick={onClear}>
+  <Button variant="toolbar" size="icon-sm" title="Clear logs" aria-label="Clear logs" onclick={onClear}>
     <Trash2 class="h-3 w-3" />
-  </button>
+  </Button>
 
   {#if isStreaming}
     <div class="flex shrink-0 items-center gap-1.5">

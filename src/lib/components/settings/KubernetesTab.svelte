@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import { cn } from "$lib/utils";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
@@ -119,14 +120,14 @@
           </span>
           <span class="flex-1 truncate font-medium text-[var(--text-primary)]">{ctx}</span>
           {#if isActive}
-            <span class="rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--accent)]">active</span>
+            <Badge tone="accent" pill class="px-2">active</Badge>
           {/if}
           {#if hasCustom}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <span
               role="button"
               tabindex="0"
-              class="flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+              class="flex h-5 w-5 items-center justify-center rounded-sm text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
               onclick={(e) => { e.stopPropagation(); resetContext(ctx); }}
               onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); resetContext(ctx); } }}
               title="Reset customization"
@@ -231,11 +232,11 @@
       placeholder="~/.kube/config"
       value={kubeconfigPath}
       oninput={(e) => { kubeconfigPath = (e.target as HTMLInputElement).value; }}
-      class="h-9 flex-1 text-[12px]"
+      size="lg"
+      class="flex-1"
     />
     <Button
-      size="sm"
-      class="h-9"
+      size="lg"
       onclick={handleKubeconfigSave}
     >
       Save
@@ -257,12 +258,13 @@
       placeholder="http://localhost:9090"
       value={prometheusUrl}
       oninput={(e) => { prometheusUrl = (e.target as HTMLInputElement).value; }}
-      class="h-9 flex-1 text-[12px]"
+      size="lg"
+      class="flex-1"
     />
-    <Button size="sm" variant="outline" class="h-9" onclick={handlePrometheusTest} disabled={testingPrometheus}>
+    <Button size="lg" variant="outline" onclick={handlePrometheusTest} disabled={testingPrometheus}>
       {testingPrometheus ? "Testing..." : "Test"}
     </Button>
-    <Button size="sm" class="h-9" onclick={handlePrometheusSave}>Save</Button>
+    <Button size="lg" onclick={handlePrometheusSave}>Save</Button>
   </div>
 </section>
 
@@ -275,9 +277,8 @@
   </p>
   <div class="mt-4 flex items-center gap-3">
     <Button
-      size="sm"
+      size="lg"
       variant="outline"
-      class="h-9 gap-2"
       onclick={async () => {
         refreshingPricing = true;
         try {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import { Spinner } from "$lib/components/ui";
   import { invoke } from "$lib/ipc/core";
   import Sidebar from "$lib/components/sidebar/Sidebar.svelte";
   import WindowTitleBar from "$lib/components/titlebar/WindowTitleBar.svelte";
@@ -311,7 +312,7 @@
 {#if k8sStore.isSwitchingContext}
   <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
     <div class="flex min-w-[260px] items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 shadow-lg">
-      <span class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--text-muted)] border-t-[var(--accent)]"></span>
+      <Spinner size="md" />
       <div class="flex flex-col">
         <span class="text-[13px] font-medium text-[var(--text-primary)]">Switching context...</span>
         {#if k8sStore.switchingContextTo}

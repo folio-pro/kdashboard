@@ -1,5 +1,6 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
+  import { Button, Input } from "$lib/components/ui";
   import { ChevronDown, Check, AlertTriangle, RefreshCw, Boxes } from "lucide-svelte";
   import { Popover, PopoverTrigger, PopoverContent } from "$lib/components/ui/popover";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -32,25 +33,26 @@
 
 <Popover bind:open>
   <PopoverTrigger>
-    <button
-      class="flex items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-tertiary)] py-1 pl-2 pr-1.5 transition-colors hover:border-[var(--border-color)] hover:bg-[var(--sidebar-active)]"
+    <Button
+      variant="toolbar"
+      size="sm"
+      class="border-[var(--border-hover)] bg-[var(--bg-tertiary)] pl-2 pr-1.5 hover:bg-[var(--sidebar-active)]"
       aria-label="Change namespace"
     >
       <Boxes class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-      <span class="text-[12px] text-[var(--text-secondary)]">
-        {k8sStore.currentNamespace || "All Namespaces"}
-      </span>
+      <span>{k8sStore.currentNamespace || "All Namespaces"}</span>
       <ChevronDown class="h-3 w-3 text-[var(--text-muted)]" />
-    </button>
+    </Button>
   </PopoverTrigger>
   <PopoverContent align="start" class="w-fit p-0">
     <div class="p-2">
-      <input
+      <Input
         type="text"
+        size="sm"
         placeholder="Filter namespaces..."
         bind:value={filter}
         aria-label="Filter namespaces"
-        class="h-7 w-full rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
+        class="bg-[var(--bg-secondary)]"
       />
     </div>
     <div class="flex flex-col overflow-y-auto py-1" style="max-height: 240px;">
@@ -60,14 +62,15 @@
             <AlertTriangle class="h-3.5 w-3.5 shrink-0" />
             <span class="text-[11px]">Failed to load namespaces</span>
           </div>
-          <button
-            class="inline-flex h-6 items-center justify-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]"
+          <Button
+            variant="toolbar"
+            size="xs"
             onclick={() => k8sStore.loadNamespaces()}
             title={k8sStore.namespacesLoadError}
           >
             <RefreshCw class="h-3 w-3" />
             Retry
-          </button>
+          </Button>
         </div>
       {/if}
       {#each filtered as ns}

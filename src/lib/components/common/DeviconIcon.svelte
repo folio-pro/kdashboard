@@ -23,7 +23,7 @@
   </span>
 {:else}
   <!-- Placeholder while loading -->
-  <span class={`inline-block rounded bg-current/10 ${className}`}></span>
+  <span class={`inline-block rounded-sm bg-current/10 ${className}`}></span>
 {/if}
 
 <style>

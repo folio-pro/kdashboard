@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Column } from "$lib/types";
   import { AlertTriangle, Inbox, RefreshCw } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
   import { Skeleton } from "$lib/components/ui/skeleton";
 
   let {
@@ -31,7 +32,7 @@
     <thead class="sticky top-0 z-10 bg-[var(--bg-primary)]">
       <tr class="border-b border-[var(--border-color)]">
         <th class="h-10 px-4 text-center" style="width: 40px;">
-          <Skeleton class="mx-auto h-3.5 w-3.5 rounded" />
+          <Skeleton class="mx-auto h-3.5 w-3.5 rounded-sm" />
         </th>
         {#each columns as column}
           <th
@@ -50,7 +51,7 @@
           style="opacity: {Math.max(0.1, 1 - i * 0.06)}"
         >
           <td class="px-4 text-center" style="width: 40px;">
-            <Skeleton class="mx-auto h-3.5 w-3.5 rounded" />
+            <Skeleton class="mx-auto h-3.5 w-3.5 rounded-sm" />
           </td>
           {#each columns as column, j}
             <td
@@ -72,13 +73,10 @@
       </div>
       <div class="text-[15px] font-semibold text-[var(--text-primary)]">Unable to reach cluster</div>
       <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">{error}</p>
-      <button
-        class="mt-1 inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-secondary)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-color)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
-        onclick={onretry}
-      >
+      <Button variant="toolbar" size="md" class="mt-1" onclick={onretry}>
         <RefreshCw class="h-3.5 w-3.5" />
         Retry connection
-      </button>
+      </Button>
     </div>
   </div>
 {:else}
@@ -90,20 +88,14 @@
       <div class="text-[15px] font-semibold text-[var(--text-primary)]">No {resourceTypeLabel.toLowerCase()} found</div>
       {#if hasStatFilter}
         <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">No resources match the active stat filter.</p>
-        <button
-          class="mt-1 text-[12px] text-[var(--accent)] hover:underline"
-          onclick={onclearStatFilter}
-        >
+        <Button variant="link" size="inline-sm" class="mt-1" onclick={onclearStatFilter}>
           Clear stat filter
-        </button>
+        </Button>
       {:else if hasTextFilter}
         <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">No resources match your search.</p>
-        <button
-          class="mt-1 text-[12px] text-[var(--accent)] hover:underline"
-          onclick={onclearTextFilter}
-        >
+        <Button variant="link" size="inline-sm" class="mt-1" onclick={onclearTextFilter}>
           Clear filter
-        </button>
+        </Button>
       {:else}
         <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">There are none in this namespace. Try switching namespace or context to see results.</p>
       {/if}

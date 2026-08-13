@@ -4,7 +4,7 @@
 
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Input } from "$lib/components/ui/input";
+  import { Button, Input } from "$lib/components/ui";
   import { Package, ArrowLeft } from "lucide-svelte";
   import { helmStore } from "$lib/stores/helm.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -88,13 +88,10 @@
     {@const release = helmStore.selected}
     <div class="flex h-full flex-col">
       <div class="flex items-center gap-3 border-b border-[var(--border-color)] px-4 py-3">
-        <button
-          class="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-          onclick={() => helmStore.clearSelection()}
-        >
+        <Button variant="muted" size="inline" class="hover:bg-transparent" onclick={() => helmStore.clearSelection()}>
           <ArrowLeft class="h-3.5 w-3.5" />
           All releases
-        </button>
+        </Button>
         <span class="text-[13px] font-semibold text-[var(--text-primary)]">{release.name}</span>
         <span class="font-mono text-[11px] text-[var(--text-muted)]">
           {release.chart}-{release.chart_version} · rev {release.revision}
@@ -104,17 +101,16 @@
 
       <div class="flex gap-1 border-b border-[var(--border-color)] px-4">
         {#each ["values", "manifest", "notes", "history"] as const as t}
-          <button
-            class={cn(
-              "border-b-2 px-3 py-2 text-[11px] transition-colors",
-              tab === t
-                ? "border-[var(--accent)] text-[var(--text-primary)]"
-                : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-            )}
+          <Button
+            variant="tab"
+            size="xs"
+            class="h-auto px-3 py-2 font-normal"
+            active={tab === t}
+            activeStyle="underline"
             onclick={() => (tab = t)}
           >
             {t[0]!.toUpperCase() + t.slice(1)}
-          </button>
+          </Button>
         {/each}
       </div>
 
@@ -123,17 +119,17 @@
           <div class="grid grid-cols-2 gap-4 p-4">
             <div>
               <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">User-supplied values</h3>
-              <pre class="overflow-x-auto rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-secondary)]">{valuesYaml(release.values)}</pre>
+              <pre class="overflow-x-auto rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-secondary)]">{valuesYaml(release.values)}</pre>
             </div>
             <div>
               <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Chart defaults</h3>
-              <pre class="overflow-x-auto rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-muted)]">{valuesYaml(release.chart_values)}</pre>
+              <pre class="overflow-x-auto rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-muted)]">{valuesYaml(release.chart_values)}</pre>
             </div>
           </div>
         {:else if tab === "manifest"}
-          <pre class="m-4 overflow-x-auto rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-secondary)]">{release.manifest || "(empty manifest)"}</pre>
+          <pre class="m-4 overflow-x-auto rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-secondary)]">{release.manifest || "(empty manifest)"}</pre>
         {:else if tab === "notes"}
-          <pre class="m-4 whitespace-pre-wrap rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-secondary)]">{release.notes || "(this chart rendered no NOTES.txt)"}</pre>
+          <pre class="m-4 whitespace-pre-wrap rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] text-[var(--text-secondary)]">{release.notes || "(this chart rendered no NOTES.txt)"}</pre>
         {:else}
           <table class="w-full text-left text-[11px]">
             <thead class="border-b border-[var(--border-color)] text-[10px] uppercase tracking-wider text-[var(--text-muted)]">

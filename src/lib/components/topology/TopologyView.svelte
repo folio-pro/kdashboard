@@ -1,7 +1,7 @@
 <script lang="ts">
+  import { Badge, SearchField } from "$lib/components/ui";
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { Button } from "$lib/components/ui/button";
-  import SearchInput from "$lib/components/common/SearchInput.svelte";
   import TopologyCanvas from "./TopologyCanvas.svelte";
   import TopologyLegend from "./TopologyLegend.svelte";
   import { Skeleton } from "$lib/components/ui/skeleton";
@@ -68,26 +68,32 @@
 >
   {#snippet badge()}
     {#if topologyStore.graph}
-      <span class="rounded-md bg-[var(--bg-tertiary)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]">
+      <Badge appearance="surface" size="sm">
         {topologyStore.graph.total_resources} resources
         {#if topologyStore.graph.clustered}
           · clustered
         {/if}
-      </span>
+      </Badge>
       {#if topologyStore.graph.has_cycles}
-        <span class="flex items-center gap-1 rounded-md bg-[var(--status-pending)]/10 px-2 py-0.5 text-[11px] text-[var(--status-pending)]">
+        <Badge tone="warning" size="sm" class="rounded-md font-normal">
           <AlertTriangle class="h-3 w-3" />
           cycles detected
-        </span>
+        </Badge>
       {/if}
     {/if}
   {/snippet}
 
   {#snippet headerActions()}
     <div class="w-48">
-      <SearchInput placeholder="Filter nodes..." value={searchFilter} onchange={(v) => searchFilter = v} />
+      <SearchField
+        size="sm"
+        clearable
+        placeholder="Filter nodes..."
+        ariaLabel="Filter topology nodes"
+        bind:value={searchFilter}
+      />
     </div>
-    <Button variant="outline" size="icon" onclick={() => showLegend = !showLegend} title="Toggle legend" aria-label="Toggle legend">
+    <Button variant="outline" size="icon-lg" onclick={() => showLegend = !showLegend} title="Toggle legend" aria-label="Toggle legend">
       {#if showLegend}
         <Minimize2 class="h-3.5 w-3.5" />
       {:else}

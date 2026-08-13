@@ -1,5 +1,6 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
+  import { Menu, MenuItem, MenuSeparator } from "$lib/components/ui";
   import { uiStore, RESOURCE_TAB_TYPES, VIEW_LABELS, DEFAULT_TAB_ID, type Tab } from "$lib/stores/ui.svelte";
   import {
     Box, Layers, FileText, Terminal, Unplug, Settings,
@@ -142,7 +143,7 @@
           <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <span
             class={cn(
-              "ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded transition-all",
+              "ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-all",
               isActive
                 ? "opacity-50 hover:opacity-100 hover:bg-[var(--bg-tertiary)]"
                 : "opacity-0 group-hover:opacity-50 hover:opacity-100 hover:bg-[var(--bg-tertiary)]"
@@ -165,77 +166,56 @@
 <!-- Tab context menu -->
 {#if ctxMenu}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
-    bind:this={menuEl}
+  <Menu
+    bind:ref={menuEl}
+    position="fixed"
     role="menu"
-    tabindex="-1"
+    tabindex={-1}
     aria-label="Tab actions"
-    class="fixed z-50 min-w-[180px] rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+    class="min-w-[180px]"
     style="left: {ctxMenu.x}px; top: {ctxMenu.y}px;"
     onclick={(e) => e.stopPropagation()}
     onkeydown={handleMenuKeydown}
   >
     {#if ctxTabObj?.closable}
-      <button class="ctx-item" role="menuitem" onclick={() => ctxAction(() => uiStore.closeTab(ctxMenu!.tabId))}>
+      <MenuItem role="menuitem" onclick={() => ctxAction(() => uiStore.closeTab(ctxMenu!.tabId))}>
         Close
-      </button>
+      </MenuItem>
     {/if}
-    <button class="ctx-item" role="menuitem" onclick={() => ctxAction(() => uiStore.closeOtherTabs(ctxMenu!.tabId))}>
+    <MenuItem role="menuitem" onclick={() => ctxAction(() => uiStore.closeOtherTabs(ctxMenu!.tabId))}>
       Close Others
-    </button>
-    <button
-      class="ctx-item" role="menuitem"
+    </MenuItem>
+    <MenuItem
+      role="menuitem"
       disabled={ctxIdx <= 0 || !uiStore.tabs.slice(0, ctxIdx).some(t => t.closable)}
       onclick={() => ctxAction(() => uiStore.closeTabsToTheLeft(ctxMenu!.tabId))}
     >
       Close to the Left
-    </button>
-    <button
-      class="ctx-item" role="menuitem"
+    </MenuItem>
+    <MenuItem
+      role="menuitem"
       disabled={ctxIdx >= uiStore.tabs.length - 1 || !uiStore.tabs.slice(ctxIdx + 1).some(t => t.closable)}
       onclick={() => ctxAction(() => uiStore.closeTabsToTheRight(ctxMenu!.tabId))}
     >
       Close to the Right
-    </button>
-    <button class="ctx-item" role="menuitem" onclick={() => ctxAction(() => uiStore.closeAllTabs())}>
+    </MenuItem>
+    <MenuItem role="menuitem" onclick={() => ctxAction(() => uiStore.closeAllTabs())}>
       Close All
-    </button>
-    <div class="my-1 h-px bg-[var(--border-color)]"></div>
-    <button
-      class="ctx-item" role="menuitem"
+    </MenuItem>
+    <MenuSeparator />
+    <MenuItem
+      role="menuitem"
       disabled={ctxIdx <= 0}
       onclick={() => ctxAction(() => uiStore.moveTab(ctxMenu!.tabId, "left"))}
     >
       Move Left
-    </button>
-    <button
-      class="ctx-item" role="menuitem"
+    </MenuItem>
+    <MenuItem
+      role="menuitem"
       disabled={ctxIdx >= uiStore.tabs.length - 1}
       onclick={() => ctxAction(() => uiStore.moveTab(ctxMenu!.tabId, "right"))}
     >
       Move Right
-    </button>
-  </div>
+    </MenuItem>
+  </Menu>
 {/if}
-
-<style>
-  .ctx-item {
-    display: block;
-    width: 100%;
-    padding: 4px 12px;
-    text-align: left;
-    font-size: 11px;
-    color: var(--text-primary);
-    background: none;
-    border: none;
-    cursor: pointer;
-    transition: background-color 0.1s;
-  }
-  .ctx-item:hover:not(:disabled) {
-    background-color: var(--bg-tertiary);
-  }
-  .ctx-item:disabled {
-    color: var(--text-muted);
-    cursor: default;
-  }
-</style>

@@ -2,6 +2,7 @@
   import { open } from "$lib/ipc/shell";
   import { cn } from "$lib/utils";
   import { ChevronsUpDown, Unplug, ExternalLink, Square } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import type { Column, PortForwardInfo, SortDirection } from "$lib/types";
 
@@ -173,7 +174,7 @@
 
   <!-- Table -->
   <div class="relative flex-1 overflow-hidden px-6 pb-4">
-    <div class="h-full overflow-auto rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+    <div class="h-full overflow-auto rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)]">
       {#if portForwards.length === 0}
         <div class="flex h-full flex-col items-center justify-center py-20">
           <Unplug class="h-6 w-6 text-[var(--text-muted)]" />
@@ -227,20 +228,24 @@
                       </span>
                     {:else if col.key === "actions"}
                       <div class="flex items-center gap-1">
-                        <button
-                          class="inline-flex h-7 items-center gap-1 rounded px-2.5 text-[12px] text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/10"
+                        <Button
+                          variant="ghost-tone"
+                          tone="accent"
+                          size="sm"
                           onclick={() => openInBrowser(pf.local_port)}
                         >
                           <ExternalLink class="h-3 w-3" />
                           Open
-                        </button>
-                        <button
-                          class="inline-flex h-7 items-center gap-1 rounded px-2.5 text-[12px] text-[var(--status-failed)] transition-colors hover:bg-[var(--status-failed)]/10"
+                        </Button>
+                        <Button
+                          variant="ghost-tone"
+                          tone="error"
+                          size="sm"
                           onclick={() => stopPortForward(pf.session_id)}
                         >
                           <Square class="h-3 w-3" />
                           Stop
-                        </button>
+                        </Button>
                       </div>
                     {:else if col.key === "local_port"}
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -281,7 +286,7 @@
 
     <!-- Copy feedback toast -->
     {#if copyFeedback}
-      <div class="pointer-events-none absolute bottom-7 right-9 z-50 rounded bg-[var(--accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--bg-primary)] shadow-lg animate-fade-in-out">
+      <div class="pointer-events-none absolute bottom-7 right-9 z-50 rounded-sm bg-[var(--accent)] px-3 py-1.5 text-[12px] font-medium text-[var(--bg-primary)] shadow-lg animate-fade-in-out">
         {copyFeedback}
       </div>
     {/if}

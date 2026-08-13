@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Kbd } from "$lib/components/ui";
   import { SHORTCUTS, type ShortcutScope } from "$lib/shortcuts";
 
   const SCOPE_LABELS: Record<ShortcutScope, string> = {
@@ -31,9 +32,9 @@
     </h3>
     <div class="grid grid-cols-2 gap-x-8 gap-y-1">
       {#each group.items as shortcut (shortcut.id)}
-        <div class="flex items-center justify-between gap-3 rounded px-2 py-1 hover:bg-[var(--bg-secondary)]">
+        <div class="flex items-center justify-between gap-3 rounded-sm px-2 py-1 hover:bg-[var(--bg-secondary)]">
           <span class="text-[11px] text-[var(--text-secondary)]">{shortcut.label}</span>
-          <kbd class="shrink-0 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-muted)]">{shortcut.keys}</kbd>
+          <Kbd>{shortcut.keys}</Kbd>
         </div>
       {/each}
     </div>

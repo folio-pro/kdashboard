@@ -2,6 +2,8 @@
   import { cn } from "$lib/utils";
   import { ChevronDown } from "lucide-svelte";
   import { Popover, PopoverTrigger, PopoverContent } from "$lib/components/ui/popover";
+  import { buttonVariants } from "../button/index.js";
+  import MenuItem from "../menu/MenuItem.svelte";
   import type { Snippet } from "svelte";
 
   /**
@@ -14,6 +16,12 @@
    * outside-click / Escape / focus handling come for free. The log and terminal
    * panels each used to carry their own copy of that machinery, driven by a
    * panel-wide `openDropdown` union and manual `stopPropagation()` calls.
+   *
+   * The trigger and the rows take their look from `buttonVariants` and
+   * `MenuItem` rather than repeating the toolbar control's class string, so a
+   * picker cannot drift away from the buttons standing next to it. The trigger
+   * cannot be `<Button>` itself: PopoverTrigger renders the element and needs
+   * to own it, so it borrows the classes instead.
    */
   let {
     items,
@@ -42,7 +50,7 @@
 
 <Popover bind:open>
   <PopoverTrigger
-    class="flex h-7 shrink-0 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+    class={buttonVariants({ variant: "toolbar", size: "sm", mono: true })}
     {title}
     aria-label={title}
   >
@@ -52,15 +60,9 @@
   </PopoverTrigger>
   <PopoverContent align="start" class={cn("w-fit min-w-[120px] overflow-y-auto p-0 py-1", contentClass)}>
     {#each items as item}
-      <button
-        class={cn(
-          "block w-full px-3 py-1.5 text-left font-mono text-[11px] whitespace-nowrap transition-colors hover:bg-[var(--table-row-hover)]",
-          item.value === value ? "text-[var(--accent)]" : "text-[var(--text-secondary)]",
-        )}
-        onclick={() => select(item)}
-      >
+      <MenuItem mono class="whitespace-nowrap" selected={item.value === value} onclick={() => select(item)}>
         {item.label}
-      </button>
+      </MenuItem>
     {/each}
   </PopoverContent>
 </Popover>

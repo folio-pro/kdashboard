@@ -1,4 +1,6 @@
 <script lang="ts">
+  import AnnotationValue from "./AnnotationValue.svelte";
+
   interface Props {
     annotations: Record<string, string>;
   }
@@ -29,7 +31,7 @@
 </script>
 
 {#if Object.keys(annotations).length > 0}
-  <div class="overflow-hidden rounded border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+  <div class="overflow-hidden rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)]">
     <div class="flex items-center justify-between px-5 py-4">
       <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Annotations</h3>
       <span class="text-[12px] text-[var(--text-muted)]">{Object.keys(annotations).length}</span>
@@ -40,16 +42,12 @@
       <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
         <span class="font-mono text-[11px] text-[var(--text-muted)]">{key}</span>
         {#if pretty}
-          <button
-            class="text-left font-mono text-[11px] text-[var(--accent)] {isExpanded ? '' : 'hover:underline'}"
-            onclick={() => toggle(key)}
-          >
-            {#if isExpanded}
-              <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]">{pretty}</pre>
-            {:else}
-              <span class="truncate block">{value}</span>
-            {/if}
-          </button>
+          <AnnotationValue
+            {value}
+            formatted={pretty}
+            expanded={isExpanded}
+            ontoggle={() => toggle(key)}
+          />
         {:else}
           <span class="truncate font-mono text-[11px] text-[var(--text-primary)]">{value}</span>
         {/if}

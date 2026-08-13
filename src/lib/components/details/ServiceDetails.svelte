@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import { Globe } from "lucide-svelte";
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
@@ -53,7 +54,7 @@
   <DetailSection title="Service Spec" icon={Globe}>
     <KvGrid>
       <KvField label="Type">
-        <span class="inline-flex w-fit items-center rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--text-secondary)]">{serviceType}</span>
+        <Badge appearance="surface" size="sm" bordered mono class="w-fit px-1.5">{serviceType}</Badge>
       </KvField>
       <KvField label="Cluster IP" value={clusterIP} />
       <KvField label="Selector" value={selectorStr} />

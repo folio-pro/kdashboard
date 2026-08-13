@@ -1,5 +1,6 @@
 <script lang="ts">
   import { toastStore } from "$lib/stores/toast.svelte";
+  import { Button } from "../button/index.js";
   import { CheckCircle2, XCircle, AlertTriangle, Info, X } from "lucide-svelte";
   import { fly } from "svelte/transition";
 
@@ -31,22 +32,25 @@
           <p class="mt-0.5 text-[11px] text-[var(--text-muted)]">{toast.description}</p>
         {/if}
         {#if toast.action}
-          <button
-            class="mt-1.5 text-[11px] font-medium hover:underline"
+          <Button
+            variant="link"
+            size="inline"
+            class="mt-1.5"
             style="color: {colorMap[toast.type]}"
             onclick={toast.action.onClick}
           >
             {toast.action.label}
-          </button>
+          </Button>
         {/if}
       </div>
-      <button
-        class="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+      <Button
+        variant="muted"
+        size="icon-xs"
         onclick={() => toastStore.dismiss(toast.id)}
         aria-label="Dismiss notification"
       >
         <X class="h-3.5 w-3.5" />
-      </button>
+      </Button>
     </div>
   {/each}
 </div>

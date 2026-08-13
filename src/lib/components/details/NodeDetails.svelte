@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import { Server, Cpu, Ban } from "lucide-svelte";
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
@@ -115,7 +116,7 @@
       <div class="flex flex-col gap-2">
         {#each taints as taint}
           <div class="flex items-center gap-3 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
-            <span class="inline-flex items-center rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">{taint.effect}</span>
+            <Badge appearance="surface" bordered mono>{taint.effect}</Badge>
             <span class="truncate font-mono text-[12px] text-[var(--text-primary)]">{taint.key}{taint.value ? `=${taint.value}` : ""}</span>
           </div>
         {/each}

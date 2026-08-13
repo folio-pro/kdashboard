@@ -1,17 +1,52 @@
 <script lang="ts">
   import { cn } from "$lib/utils.js";
-  import { buttonVariants, type ButtonVariant, type ButtonSize } from "./variants.js";
+  import {
+    buttonVariants,
+    type ButtonVariant,
+    type ButtonSize,
+    type ButtonTone,
+    type ButtonActiveStyle,
+  } from "./variants.js";
   import type { HTMLButtonAttributes } from "svelte/elements";
 
   interface Props extends HTMLButtonAttributes {
     variant?: ButtonVariant;
     size?: ButtonSize;
+    /** Render the label in the mono face (toolbars, log controls). */
+    mono?: boolean;
+    /** Colour of the selected state, and of `toolbar-tone` at rest. */
+    tone?: ButtonTone;
+    /**
+     * Selected state for segmented/filter controls. Left undefined the button
+     * is not a toggle and carries no aria-pressed; set to false it is a toggle
+     * that happens to be off, which assistive technology has to be told.
+     */
+    active?: boolean;
+    activeStyle?: ButtonActiveStyle;
     class?: string;
   }
 
-  let { variant = "default", size = "default", class: className, children, ...restProps }: Props = $props();
+  let {
+    variant = "accent",
+    size = "md",
+    mono = false,
+    tone = "accent",
+    active,
+    activeStyle = "solid",
+    class: className,
+    children,
+    ...restProps
+  }: Props = $props();
 </script>
 
-<button class={cn(buttonVariants({ variant, size }), className)} {...restProps}>
+<!-- restProps is spread first so a call site cannot contradict the ARIA state
+     the component derives from `active`, and `type` defaults to "button": the
+     HTML default is "submit", which makes any control inside a form submit it. -->
+<button
+  type="button"
+  {...restProps}
+  class={cn(buttonVariants({ variant, size, mono, tone, active: active ?? false, activeStyle }), className)}
+  aria-pressed={active}
+>
   {@render children?.()}
 </button>

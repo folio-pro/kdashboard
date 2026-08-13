@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import CollapsibleCard from "./CollapsibleCard.svelte";
 
   interface Props {
@@ -46,7 +47,7 @@
     <div class="mb-2 flex items-center gap-2">
       <span class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
       {#if dir.selectPolicy}
-        <span class="rounded bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-muted)]">{dir.selectPolicy}</span>
+        <Badge appearance="surface" tone="muted" mono>{dir.selectPolicy}</Badge>
       {/if}
     </div>
     {#if dir.stabilizationWindowSeconds !== undefined}
@@ -58,12 +59,7 @@
       <div class="flex flex-col gap-1.5">
         {#each dir.policies as policy}
           <div class="flex items-center gap-2">
-            <span
-              class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
-              style="color: {color}; background-color: color-mix(in srgb, {color} 12%, transparent);"
-            >
-              {policy.type}
-            </span>
+            <Badge style="--tone: {color};">{policy.type}</Badge>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{policy.value}</span>
             <span class="text-[11px] text-[var(--text-muted)]">per {policy.periodSeconds}s</span>
           </div>

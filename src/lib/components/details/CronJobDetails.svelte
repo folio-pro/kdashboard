@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import { Clock } from "lucide-svelte";
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
@@ -43,7 +44,7 @@
   <DetailSection title="CronJob Spec" icon={Clock}>
     {#snippet actions()}
       {#if suspend}
-        <span class="inline-flex items-center rounded border border-[var(--status-pending)]/30 bg-[var(--status-pending)]/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--status-pending)]">Suspended</span>
+        <Badge tone="warning" class="border border-[var(--status-pending)]/30">Suspended</Badge>
       {/if}
     {/snippet}
     <KvGrid>

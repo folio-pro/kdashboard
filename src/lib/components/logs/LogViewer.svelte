@@ -1,6 +1,7 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
   import { ArrowDown } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
   import { listen } from "$lib/ipc/event";
   import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -416,7 +417,7 @@
     <div class="relative flex h-full flex-col">
       <!-- Log Entries (virtualized) -->
       <div
-        class="relative min-h-0 flex-1 overflow-y-auto rounded border border-[var(--border-color)] bg-[var(--log-bg)] font-mono"
+        class="relative min-h-0 flex-1 overflow-y-auto rounded-sm border border-[var(--border-color)] bg-[var(--log-bg)] font-mono"
         bind:this={logContainer}
         onscroll={handleScroll}
       >
@@ -449,7 +450,7 @@
                   onclick={() => selectLog(line)}
                 >
                   {#if line.podName}
-                    <span class="shrink-0 max-w-[140px] truncate rounded bg-[var(--accent)]/10 px-1.5 py-0 text-[10px] font-medium leading-[20px] text-[var(--accent)]" title={line.podName}>
+                    <span class="shrink-0 max-w-[140px] truncate rounded-sm bg-[var(--accent)]/10 px-1.5 py-0 text-[10px] font-medium leading-[20px] text-[var(--accent)]" title={line.podName}>
                       {shortPodName(line.podName)}
                     </span>
                   {/if}
@@ -477,13 +478,16 @@
 
       <!-- Jump to Bottom -->
       {#if userScrolledAway && filteredLogs.length > 0}
-        <button
-          class="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] shadow-lg transition-colors hover:bg-[var(--bg-tertiary,var(--bg-secondary))] hover:text-[var(--text-primary)]"
+        <Button
+          variant="toolbar"
+          size="sm"
+          mono
+          class="absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full px-3 shadow-lg"
           onclick={jumpToBottom}
         >
           <ArrowDown class="h-3 w-3" />
           Jump to bottom
-        </button>
+        </Button>
       {/if}
     </div>
   </div>

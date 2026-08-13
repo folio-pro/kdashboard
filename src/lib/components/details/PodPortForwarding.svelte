@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Play, Box, Info, Square, ExternalLink, Loader2, ArrowRight } from "lucide-svelte";
+  import { Play, Box, Info, Square, ExternalLink, ArrowRight } from "lucide-svelte";
+  import { Button, Input, Spinner } from "$lib/components/ui";
   import { open } from "$lib/ipc/shell";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { getContainerIconUrl } from "$lib/utils/container-icon";
@@ -102,33 +103,39 @@
         ? "border-color: color-mix(in srgb, var(--accent) 28%, transparent); background-color: color-mix(in srgb, var(--accent) 9%, transparent);"
         : ""}
     >
-      <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--bg-tertiary)]">
+      <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-[var(--bg-tertiary)]">
         {@render containerIcon(portIcon, port.containerName)}
       </span>
       <span class="min-w-[80px] truncate text-[12px] font-medium text-[var(--text-primary)]" title={port.containerName}>{port.containerName}</span>
       <span class="min-w-[72px] font-mono text-[12px] text-[var(--text-secondary)]">{port.containerPort}/{port.protocol}</span>
       <ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
       {#if forwarded && activePf}
-        <button
-          class="inline-flex items-center gap-1.5 font-mono text-[12px] text-[var(--accent)] hover:underline"
+        <Button
+          variant="link"
+          size="inline-sm"
+          mono
           onclick={() => open(`http://localhost:${activePf.local_port}`)}
           title="Open in browser"
-        >localhost:{activePf.local_port} <ExternalLink class="h-3 w-3" /></button>
+        >localhost:{activePf.local_port} <ExternalLink class="h-3 w-3" /></Button>
         <span class="ml-auto inline-flex items-center gap-1.5 text-[12px] text-[var(--status-running)]">
           <span class="h-1.5 w-1.5 rounded-full bg-[var(--status-running)]"></span>active
         </span>
-        <button
-          class="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-secondary)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--status-failed)] hover:text-[var(--text-primary)]"
+        <Button
+          variant="toolbar"
+          size="sm"
+          class="hover:border-[var(--status-failed)]"
           onclick={() => handleStopPortForward(port.containerPort)}
         >
           <Square class="h-3 w-3 text-[var(--status-failed)]" /> Stop
-        </button>
+        </Button>
       {:else}
         <div class="ml-auto flex items-center gap-2">
           <span class="font-mono text-[12px] text-[var(--text-muted)]">localhost:</span>
-          <input
+          <Input
             type="text"
-            class="h-7 w-14 rounded-md border border-[var(--border-hover)] bg-[var(--bg-primary)] px-1.5 text-center font-mono text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+            size="sm"
+            mono
+            class="w-14 px-1.5 text-center"
             value={getLocalPort(port.containerPort)}
             oninput={(e) => {
               const target = e.target as HTMLInputElement;
@@ -137,18 +144,20 @@
             disabled={loading}
             title="Local port"
           />
-          <button
-            class="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hover)] bg-[var(--bg-secondary)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--status-running)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          <Button
+            variant="toolbar"
+            size="sm"
+            class="hover:border-[var(--status-running)]"
             onclick={() => handlePortForward(port.containerPort)}
             disabled={loading}
           >
             {#if loading}
-              <Loader2 class="h-3 w-3 animate-spin text-[var(--status-running)]" />
+              <Spinner size="xs" class="text-[var(--status-running)]" />
             {:else}
               <Play class="h-3 w-3 text-[var(--status-running)]" />
             {/if}
             Forward
-          </button>
+          </Button>
         </div>
       {/if}
     </div>

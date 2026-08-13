@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Search, RefreshCw, Plus } from "lucide-svelte";
+  import { RefreshCw, Plus } from "lucide-svelte";
+  import { Button, Kbd, SearchField } from "$lib/components/ui";
   import NamespacePicker from "$lib/components/common/NamespacePicker.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
 
@@ -55,39 +56,40 @@
 
   <div class="flex-1"></div>
 
-  <div
-    class="focus-ring-host flex h-8 w-[260px] items-center gap-2 rounded-md border border-[var(--border-hover)] bg-[var(--bg-tertiary)] px-2.5 transition-[border-color,box-shadow] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]"
+  <SearchField
+    bind:ref={searchInput}
+    id="resource-filter"
+    class="w-[260px]"
+    placeholder="Search {resourceTypeLabel.toLowerCase()}..."
+    ariaLabel="Search {resourceTypeLabel.toLowerCase()}"
+    value={uiStore.filter}
+    oninput={(e) => uiStore.setFilter((e.target as HTMLInputElement).value)}
+    onkeydown={handleSearchKeydown}
   >
-    <Search class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-    <input
-      bind:this={searchInput}
-      id="resource-filter"
-      type="text"
-      placeholder="Search {resourceTypeLabel.toLowerCase()}..."
-      aria-label="Search {resourceTypeLabel.toLowerCase()}"
-      value={uiStore.filter}
-      oninput={(e) => uiStore.setFilter((e.target as HTMLInputElement).value)}
-      onkeydown={handleSearchKeydown}
-      class="h-full flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
-    />
-    <kbd class="shrink-0 rounded border border-[var(--border-hover)] px-1 font-mono text-[10px] leading-[14px] text-[var(--text-muted)]">/</kbd>
-  </div>
+    {#snippet trailing()}
+      <Kbd>/</Kbd>
+    {/snippet}
+  </SearchField>
 
-  <button
-    class="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+  <Button
+    variant="ghost"
+    size="icon-sm"
+    class="text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
     onclick={onrefresh}
     title="Refresh (r)"
     aria-label="Refresh"
   >
     <RefreshCw class="h-3.5 w-3.5 {isLoading ? 'animate-spin' : ''}" />
-  </button>
+  </Button>
 
-  <button
-    class="inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 text-[12px] font-semibold text-[var(--bg-primary)] transition-colors hover:bg-[var(--accent-hover)]"
+  <Button
+    variant="accent"
+    size="sm"
+    class="font-semibold"
     onclick={oncreate}
     title="Create a resource from a YAML manifest on the clipboard"
   >
     <Plus class="h-3.5 w-3.5" />
     Create
-  </button>
+  </Button>
 </header>

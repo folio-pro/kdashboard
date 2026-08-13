@@ -1,6 +1,7 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
   import { Copy, Check } from "lucide-svelte";
+  import { Badge, Button } from "$lib/components/ui";
   import { Sheet, SheetContent } from "$lib/components/ui/sheet";
   import type { LogLine } from "./log-viewer";
   import { LEVEL_LABELS, LEVEL_PILL_COLORS, MESSAGE_COLORS } from "./log-constants";
@@ -38,8 +39,10 @@
       <!-- Header -->
       <div class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border-color)] px-5 pr-12">
         <span class="font-mono text-[13px] font-semibold text-[var(--text-primary)]">Log Detail</span>
-        <button
-          class="flex h-7 w-7 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+        <Button
+          variant="muted"
+          size="icon-sm"
+          class="hover:bg-[var(--bg-secondary)]"
           onclick={copyLogContent}
           title="Copy"
           aria-label="Copy log line"
@@ -49,7 +52,7 @@
           {:else}
             <Copy class="h-3.5 w-3.5" />
           {/if}
-        </button>
+        </Button>
       </div>
 
       <!-- Metadata -->
@@ -57,16 +60,14 @@
         <div class="flex items-center gap-2">
           <span
             class={cn(
-              "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold",
+              "rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-bold",
               LEVEL_PILL_COLORS[selectedLog.level],
             )}
           >
             {LEVEL_LABELS[selectedLog.level]}
           </span>
           {#if selectedLog.isJson}
-            <span class="rounded bg-[var(--log-json)]/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-[var(--log-json)]">
-              JSON
-            </span>
+            <Badge mono class="font-bold" style="--tone: var(--log-json);">JSON</Badge>
           {/if}
         </div>
         {#if selectedLog.podName}

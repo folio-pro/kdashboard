@@ -49,7 +49,7 @@
   <!-- Header -->
   <div class="flex h-[52px] items-center justify-between border-b border-[var(--border-color)] px-4">
     <div class="flex items-center gap-3">
-      <Button variant="outline" size="icon" onclick={onBack} title="Back" aria-label="Go back">
+      <Button variant="outline" size="icon-lg" onclick={onBack} title="Back" aria-label="Go back">
         <ArrowLeft class="h-4 w-4" />
       </Button>
       <div class="flex items-center gap-2">
@@ -71,7 +71,7 @@
       {#if headerActions}
         {@render headerActions()}
       {/if}
-      <Button variant="outline" size="icon" onclick={onRefresh} disabled={isLoading} title="Refresh" aria-label="Refresh">
+      <Button variant="outline" size="icon-lg" onclick={onRefresh} disabled={isLoading} title="Refresh" aria-label="Refresh">
         <RefreshCw class="h-3.5 w-3.5 {isLoading ? 'animate-spin' : ''}" />
       </Button>
     </div>
@@ -96,7 +96,7 @@
           <AlertTriangle class="h-8 w-8 text-[var(--status-failed)]" />
           <span class="text-[13px] font-medium text-[var(--text-primary)]">{errorMessage}</span>
           <span class="max-w-md text-[12px] text-[var(--text-muted)]">{error}</span>
-          <Button variant="outline" size="sm" onclick={onRefresh} class="mt-2">Try again</Button>
+          <Button variant="outline" size="md" onclick={onRefresh} class="mt-2">Try again</Button>
         </div>
       </div>
     {:else if hasData}
