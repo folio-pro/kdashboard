@@ -250,7 +250,7 @@
   <!-- Key search -->
   {#if !configLoading && (fetchedConfigMaps.length > 0 || fetchedSecrets.length > 0)}
     <div class="px-6 pb-3">
-      <div class="flex h-8 items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 transition-colors focus-within:border-[var(--accent)]">
+      <div class="focus-ring-host flex h-8 items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 transition-colors focus-within:border-[var(--accent)]">
         <Search class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
         <input
           type="text"

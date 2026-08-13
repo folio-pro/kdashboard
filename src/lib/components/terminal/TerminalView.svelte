@@ -1,11 +1,7 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
-  import {
-    Box,
-    ChevronDown,
-    Trash2,
-    TerminalSquare,
-  } from "lucide-svelte";
+  import { Box, Trash2, TerminalSquare } from "lucide-svelte";
+  import { SelectMenu } from "$lib/components/ui/select-menu";
   import { listen } from "$lib/ipc/event";
   import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -15,8 +11,6 @@
   // only declares modules matching *.css, so the extensionless alias fails to
   // typecheck. Both are declared in the package's exports map.
   import "@wterm/dom/src/terminal.css";
-
-  type DropdownId = "container" | "shell" | null;
 
   const SHELL_OPTIONS = ["/bin/sh", "/bin/bash", "/bin/zsh"];
 
@@ -32,7 +26,6 @@
   let isConnected = $state(false);
   let selectedContainer = $state("");
   let selectedShell = $state("/bin/sh");
-  let openDropdown = $state<DropdownId>(null);
   let unlistenOutput: (() => void) | null = null;
   let unlistenExit: (() => void) | null = null;
   let destroyed = false;
@@ -56,8 +49,6 @@
       selectedContainer = "";
     }
   });
-
-  const podName = $derived(k8sStore.selectedResource?.metadata?.name ?? "Pod");
 
   /**
    * Snap the emulator to a whole number of rows.
@@ -219,19 +210,12 @@
 
   function handleContainerSelect(container: string) {
     selectedContainer = container;
-    openDropdown = null;
     if (isConnected) connect();
   }
 
   function handleShellSelect(shell: string) {
     selectedShell = shell;
-    openDropdown = null;
     if (isConnected) connect();
-  }
-
-  function toggleDropdown(id: DropdownId, e: MouseEvent) {
-    e.stopPropagation();
-    openDropdown = openDropdown === id ? null : id;
   }
 
   let autoStarted = false;
@@ -276,163 +260,15 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-  data-testid="terminal-panel"
-  class="flex h-full flex-col bg-[var(--bg-primary)]"
-  onclick={() => (openDropdown = null)}
->
-  <!-- Header -->
-  <div
-    class="flex h-[68px] shrink-0 items-center justify-between border-b border-[var(--border-color)] px-6"
-  >
-    <!-- Left: Title -->
-    <div class="flex flex-col gap-0.5">
-      <span class="font-mono text-[15px] font-semibold text-[var(--text-primary)]">Terminal</span>
-      <span class="font-mono text-[11px] text-[var(--text-muted)]">{podName}</span>
-    </div>
-
-    <!-- Right: Container, Shell, Connect -->
-    <div class="flex items-center gap-2">
-      <!-- Container Selector -->
-      {#if containers.length > 0}
-        <div class="relative">
-          <button
-            class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-            onclick={(e) => toggleDropdown("container", e)}
-          >
-            <Box class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-            <span>{selectedContainer}</span>
-            <ChevronDown class="h-3 w-3 text-[var(--text-muted)]" />
-          </button>
-          {#if openDropdown === "container"}
-            <div
-              class="absolute top-full right-0 z-50 mt-1 min-w-[160px] rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-            >
-              {#each containers as container}
-                <button
-                  class={cn(
-                    "block w-full px-3 py-1.5 text-left font-mono text-[12px] transition-colors hover:bg-[var(--table-row-hover)]",
-                    container === selectedContainer
-                      ? "text-[var(--accent)]"
-                      : "text-[var(--text-secondary)]",
-                  )}
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    handleContainerSelect(container);
-                  }}
-                >
-                  {container}
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
-
-      <!-- Shell Selector -->
-      <div class="relative">
-        <button
-          class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-          onclick={(e) => toggleDropdown("shell", e)}
-        >
-          <TerminalSquare class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-          <span>{selectedShell}</span>
-          <ChevronDown class="h-3 w-3 text-[var(--text-muted)]" />
-        </button>
-        {#if openDropdown === "shell"}
-          <div
-            class="absolute top-full right-0 z-50 mt-1 min-w-[120px] rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-          >
-            {#each SHELL_OPTIONS as shell}
-              <button
-                class={cn(
-                  "block w-full px-3 py-1.5 text-left font-mono text-[12px] transition-colors hover:bg-[var(--table-row-hover)]",
-                  shell === selectedShell
-                    ? "text-[var(--accent)]"
-                    : "text-[var(--text-secondary)]",
-                )}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  handleShellSelect(shell);
-                }}
-              >
-                {shell}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <!-- Connect/Disconnect Button -->
-      {#if !isConnected}
-        <button
-          class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-running)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
-          onclick={connect}
-          disabled={!selectedContainer}
-        >
-          <TerminalSquare class="h-3.5 w-3.5" />
-          <span>Connect</span>
-        </button>
-      {:else}
-        <button
-          class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-failed)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
-          onclick={disconnect}
-        >
-          <TerminalSquare class="h-3.5 w-3.5" />
-          <span>Disconnect</span>
-        </button>
-      {/if}
-    </div>
-  </div>
-
-  <!-- Toolbar -->
-  <div
-    class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border-color)] px-6"
-  >
-    <div class="flex items-center gap-2">
-      <span class="font-mono text-[12px] text-[var(--text-muted)]">shell:</span>
-      <span class="font-mono text-[12px] text-[var(--text-secondary)]">{selectedShell}</span>
-      <div class="mx-1 h-5 w-px bg-[var(--border-color)]"></div>
-      <span class="font-mono text-[12px] text-[var(--text-muted)]">container:</span>
-      <span class="font-mono text-[12px] text-[var(--text-secondary)]">{selectedContainer || "none"}</span>
-    </div>
-
-    <div class="flex items-center gap-1.5">
-      <button
-        class="flex h-7 items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-        onclick={clearTerminal}
-      >
-        <Trash2 class="h-3 w-3" />
-        <span>Clear</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Terminal -->
-  <div class="flex-1 overflow-hidden px-6 py-4">
+<div data-testid="terminal-panel" class="flex h-full flex-col bg-[var(--bg-primary)]">
+  <!-- Terminal: the tab bar already names the view and the pod, so this panel
+       carries no title of its own. -->
+  <div class="flex-1 overflow-hidden px-4 pt-3 pb-2">
     <div class="flex h-full flex-col">
-      <!-- Prompt Bar -->
-      <div
-        class="flex h-9 shrink-0 items-center justify-between rounded-t border border-[var(--border-color)] bg-[var(--bg-tertiary,var(--bg-secondary))] px-4"
-      >
-        <div class="flex items-center gap-2">
-          <span class="font-mono text-[12px] font-semibold text-[var(--accent)]">&gt;_</span>
-          <span class="font-mono text-[12px] text-[var(--text-secondary)]">{podName}</span>
-        </div>
-        {#if isConnected}
-          <div class="flex items-center gap-1.5">
-            <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-running)]"></div>
-            <span class="font-mono text-[11px] font-semibold text-[var(--status-running)]">CONNECTED</span>
-          </div>
-        {/if}
-      </div>
-
       <!-- Terminal Container -->
       <div
         bind:this={hostEl}
-        class="wterm-host relative flex-1 overflow-hidden rounded-b border-x border-b border-[var(--border-color)] bg-[var(--log-bg)] px-2 py-2"
+        class="wterm-host relative flex-1 overflow-hidden rounded border border-[var(--border-color)] bg-[var(--log-bg)] px-2 py-2"
       >
         {#if initError}
           <div
@@ -458,6 +294,63 @@
         ></div>
       </div>
     </div>
+  </div>
+
+  <!-- Controls: single bar at the bottom of the panel. -->
+  <div class="flex h-11 shrink-0 items-center gap-2 border-t border-[var(--border-color)] px-4">
+    {#if !isConnected}
+      <button
+        class="flex h-7 shrink-0 items-center gap-1.5 rounded bg-[var(--status-running)] px-3 font-mono text-[11px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
+        onclick={connect}
+        disabled={!selectedContainer}
+      >
+        <TerminalSquare class="h-3 w-3" />
+        <span>Connect</span>
+      </button>
+    {:else}
+      <button
+        class="flex h-7 shrink-0 items-center gap-1.5 rounded bg-[var(--status-failed)] px-3 font-mono text-[11px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
+        onclick={disconnect}
+      >
+        <TerminalSquare class="h-3 w-3" />
+        <span>Disconnect</span>
+      </button>
+    {/if}
+
+    {#if containers.length > 0}
+      <SelectMenu
+        title="Container"
+        value={selectedContainer}
+        items={containers.map((c) => ({ value: c, label: c, onSelect: () => handleContainerSelect(c) }))}
+        contentClass="min-w-[160px]"
+      >
+        {#snippet icon()}<Box class="h-3 w-3 text-[var(--text-muted)]" />{/snippet}
+      </SelectMenu>
+    {/if}
+
+    <SelectMenu
+      title="Shell"
+      value={selectedShell}
+      items={SHELL_OPTIONS.map((sh) => ({ value: sh, label: sh, onSelect: () => handleShellSelect(sh) }))}
+    >
+      {#snippet icon()}<TerminalSquare class="h-3 w-3 text-[var(--text-muted)]" />{/snippet}
+    </SelectMenu>
+
+    <button
+      class="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+      title="Clear terminal"
+      aria-label="Clear terminal"
+      onclick={clearTerminal}
+    >
+      <Trash2 class="h-3 w-3" />
+    </button>
+
+    {#if isConnected}
+      <div class="ml-auto flex shrink-0 items-center gap-1.5">
+        <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-running)]"></div>
+        <span class="font-mono text-[11px] font-semibold text-[var(--status-running)]">CONNECTED</span>
+      </div>
+    {/if}
   </div>
 </div>
 
