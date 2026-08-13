@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import { invoke } from "$lib/ipc/core";
   import { History } from "lucide-svelte";
   import { Button } from "$lib/components/ui/button";
@@ -118,9 +119,9 @@
                 <div class="flex items-center gap-2">
                   <span>#{rev.revision}</span>
                   {#if rev.is_current}
-                    <span class="rounded bg-[var(--status-running)]/15 px-1.5 py-0.5 text-[10px] font-medium text-[var(--status-running)]">
+                    <Badge tone="success">
                       current
-                    </span>
+                    </Badge>
                   {/if}
                 </div>
               </td>
@@ -144,7 +145,7 @@
               <td class="px-4 py-2.5 text-right">
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="md"
                   disabled={rev.is_current || rollbackInFlight}
                   onclick={() => (pendingRevision = rev)}
                   title={rev.is_current ? "Already the current revision" : `Rollback to revision ${rev.revision}`}

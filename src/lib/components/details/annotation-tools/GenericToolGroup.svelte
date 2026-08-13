@@ -2,6 +2,7 @@
   import type { ToolGroupProps } from "./types";
   import { detectAndFormat } from "./parse-value";
   import { toggleSetItem } from "$lib/utils/k8s-helpers";
+  import AnnotationValue from "../AnnotationValue.svelte";
 
   let { annotations, toolConfig, shortKeys }: ToolGroupProps = $props();
 
@@ -22,16 +23,12 @@
   <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
     <span class="font-mono text-[11px] text-[var(--text-muted)]">{short}</span>
     {#if parsed.type === "json" || parsed.type === "yaml"}
-      <button
-        class="text-left font-mono text-[11px] text-[var(--accent)] {isExpanded ? '' : 'hover:underline'}"
-        onclick={() => expanded = toggleSetItem(expanded, key)}
-      >
-        {#if isExpanded}
-          <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]">{parsed.formatted}</pre>
-        {:else}
-          <span class="truncate block">{value}</span>
-        {/if}
-      </button>
+      <AnnotationValue
+        {value}
+        formatted={parsed.formatted}
+        expanded={isExpanded}
+        ontoggle={() => (expanded = toggleSetItem(expanded, key))}
+      />
     {:else}
       <span class="truncate font-mono text-[11px] text-[var(--text-primary)]">{value}</span>
     {/if}

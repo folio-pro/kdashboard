@@ -63,8 +63,8 @@
     <pre class="mt-3 max-h-[300px] select-text overflow-auto rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]">{yaml}</pre>
 
     <DialogFooter class="mt-4">
-      <Button variant="outline" size="sm" onclick={oncancel}>Cancel</Button>
-      <Button variant="default" size="sm" onclick={onapply}>
+      <Button variant="outline" size="md" onclick={oncancel}>Cancel</Button>
+      <Button variant="accent" size="md" onclick={onapply}>
         Apply {summary.resources.length > 1 ? `${summary.resources.length} resources` : "to cluster"}
       </Button>
     </DialogFooter>

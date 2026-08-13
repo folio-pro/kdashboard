@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import InfoRow from "./InfoRow.svelte";
   import CollapsibleCard from "./CollapsibleCard.svelte";
 
@@ -128,7 +129,7 @@
           <InfoRow label="Capabilities Add">
             <div class="flex flex-wrap gap-1">
               {#each cs.capAdd as cap}
-                <span class="rounded bg-[var(--status-failed)]/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-[var(--status-failed)]">{cap}</span>
+                <Badge tone="error" mono>{cap}</Badge>
               {/each}
             </div>
           </InfoRow>
@@ -137,7 +138,7 @@
           <InfoRow label="Capabilities Drop">
             <div class="flex flex-wrap gap-1">
               {#each cs.capDrop as cap}
-                <span class="rounded bg-[var(--status-running)]/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-[var(--status-running)]">{cap}</span>
+                <Badge tone="success" mono>{cap}</Badge>
               {/each}
             </div>
           </InfoRow>

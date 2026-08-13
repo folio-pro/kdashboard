@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import { TrendingUp } from "lucide-svelte";
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
@@ -112,7 +113,7 @@
           <div class="flex items-center justify-between rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
             <div class="flex items-center gap-2.5">
               <span class="text-[13px] font-medium text-[var(--text-primary)]">{metricName}</span>
-              <span class="inline-flex items-center rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">{metric.type ?? "Resource"}</span>
+              <Badge appearance="surface" bordered mono>{metric.type ?? "Resource"}</Badge>
             </div>
             <div class="flex items-center gap-2">
               <span class="font-mono text-[13px] font-medium text-[var(--text-primary)]">{current}</span>

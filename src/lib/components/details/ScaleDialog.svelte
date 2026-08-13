@@ -54,14 +54,14 @@
       </div>
 
       <div class="flex items-center justify-center gap-4">
-        <Button variant="outline" size="icon" onclick={() => replicas = decrementReplicas(replicas)} disabled={loading} aria-label="Decrease replicas">
+        <Button variant="outline" size="icon-lg" onclick={() => replicas = decrementReplicas(replicas)} disabled={loading} aria-label="Decrease replicas">
           <Minus class="h-4 w-4" />
         </Button>
         <div class="flex flex-col items-center">
           <span class="text-3xl font-bold tabular-nums text-[var(--text-primary)]">{replicas}</span>
           <span class="text-[10px] text-[var(--text-muted)]">replicas</span>
         </div>
-        <Button variant="outline" size="icon" onclick={() => replicas = incrementReplicas(replicas)} disabled={loading} aria-label="Increase replicas">
+        <Button variant="outline" size="icon-lg" onclick={() => replicas = incrementReplicas(replicas)} disabled={loading} aria-label="Increase replicas">
           <Plus class="h-4 w-4" />
         </Button>
       </div>
@@ -77,8 +77,8 @@
       {/if}
 
       <div class="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onclick={() => open = false} disabled={loading}>Cancel</Button>
-        <Button size="sm" onclick={handleScale} disabled={!isScaleEnabled(loading, replicas, resource.currentReplicas)}>
+        <Button variant="outline" size="md" onclick={() => open = false} disabled={loading}>Cancel</Button>
+        <Button size="md" onclick={handleScale} disabled={!isScaleEnabled(loading, replicas, resource.currentReplicas)}>
           {getButtonLabel(loading)}
         </Button>
       </div>

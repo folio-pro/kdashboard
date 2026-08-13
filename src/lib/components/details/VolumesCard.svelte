@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import CollapsibleCard from "./CollapsibleCard.svelte";
 
   interface Props {
@@ -88,12 +89,9 @@
   <CollapsibleCard title="Volumes" count={volumes.length}>
     {#each volumes as vol}
       <div class="flex items-start gap-3 border-t border-[var(--border-hover)] px-5 py-3.5">
-        <span
-          class="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
-          style="color: {typeColors[vol.type] ?? 'var(--text-muted)'}; background-color: color-mix(in srgb, {typeColors[vol.type] ?? 'var(--text-muted)'} 12%, transparent);"
-        >
+        <Badge class="mt-0.5" style="--tone: {typeColors[vol.type] ?? 'var(--text-muted)'};">
           {vol.type}
-        </span>
+        </Badge>
         <div class="min-w-0 flex-1">
           <div class="text-[12px] font-medium text-[var(--text-primary)]">{vol.name}</div>
           {#if vol.detail}

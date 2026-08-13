@@ -1,6 +1,7 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
   import { RotateCcw } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
 
   interface HistoryEntry {
     yaml: string;
@@ -66,13 +67,10 @@
                 After
               </span>
             </div>
-            <button
-              class="flex h-[28px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-              onclick={() => onrestore(selectedIndex!)}
-            >
+            <Button variant="toolbar" size="sm" mono class="text-[10px]" onclick={() => onrestore(selectedIndex!)}>
               <RotateCcw class="h-3 w-3" />
               Restore this version
-            </button>
+            </Button>
           </div>
           <div bind:this={diffContainer} class="min-h-0 flex-1 overflow-hidden"></div>
         </div>

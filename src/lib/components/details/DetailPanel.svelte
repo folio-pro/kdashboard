@@ -179,11 +179,13 @@
               {#if i > 0}
                 <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
               {/if}
-              <button
-                class="max-w-[120px] truncate text-[var(--text-muted)] transition-colors hover:text-[var(--accent)] hover:underline"
+              <Button
+                variant="muted"
+                size="inline"
+                class="max-w-[120px] truncate hover:bg-transparent hover:text-[var(--accent)] hover:underline"
                 onclick={() => k8sStore.navigateToHistoryIndex(i)}
                 title="{crumb.kind}: {crumb.name}"
-              >{crumb.name}</button>
+              >{crumb.name}</Button>
             {/each}
             <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
             <span class="max-w-[140px] truncate font-medium text-[var(--text-primary)]">{resource.metadata.name}</span>
@@ -214,31 +216,31 @@
       <!-- Right: Action buttons -->
       <div class="flex items-center gap-2">
         {#if isScalable}
-          <Button variant="outline" size="sm" class="gap-2" onclick={() => resource && dialogStore.openScale(resource)} title="Scale (s)">
+          <Button variant="outline" size="md" class="gap-2" onclick={() => resource && dialogStore.openScale(resource)} title="Scale (s)">
             <Scale class="h-3.5 w-3.5" />
             Scale
           </Button>
         {/if}
         {#if showLogsButton}
-          <Button variant="outline" size="sm" class="gap-2" onclick={() => setSubtab("logs")} title="Logs (l)">
+          <Button variant="outline" size="md" class="gap-2" onclick={() => setSubtab("logs")} title="Logs (l)">
             <ScrollText class="h-3.5 w-3.5" />
             Logs
           </Button>
         {/if}
         {#if kind === "pod"}
-          <Button variant="outline" size="sm" class="gap-2" onclick={() => setSubtab("shell")} title="Shell (t)">
+          <Button variant="outline" size="md" class="gap-2" onclick={() => setSubtab("shell")} title="Shell (t)">
             <Terminal class="h-3.5 w-3.5" />
             Shell
           </Button>
         {/if}
         {#if isRestartable}
-          <Button variant="outline" size="sm" class="gap-2" onclick={doRestart} disabled={restartLoading} title="Restart">
+          <Button variant="outline" size="md" class="gap-2" onclick={doRestart} disabled={restartLoading} title="Restart">
             <RotateCcw class="h-3.5 w-3.5" />
             {restartLoading ? "Restarting..." : "Restart"}
           </Button>
         {/if}
         {#if isRollbackable}
-          <Button variant="outline" size="sm" class="gap-2" onclick={doRollback} disabled={rollbackLoading} title="Rollback">
+          <Button variant="outline" size="md" class="gap-2" onclick={doRollback} disabled={rollbackLoading} title="Rollback">
             <History class="h-3.5 w-3.5" />
             {rollbackLoading ? "Rolling back..." : "Rollback"}
           </Button>
@@ -247,7 +249,7 @@
           {@const cordoned = isCordoned(resource)}
           <Button
             variant="outline"
-            size="sm"
+            size="md"
             class="gap-2"
             onclick={doToggleCordon}
             disabled={cordonLoading}
@@ -262,7 +264,7 @@
           </Button>
           <Button
             variant="destructive"
-            size="sm"
+            size="md"
             class="gap-2"
             onclick={() => resource && dialogStore.openDrain(resource.metadata.name)}
             title="Evict every pod off this node"
@@ -274,11 +276,11 @@
         {#each extensions.mountsFor("detail-panel-actions") as mount (mount.id)}
           <mount.component {resource} />
         {/each}
-        <Button variant="outline" size="sm" class="gap-2" onclick={() => setSubtab("yaml")} title="Edit YAML (e)">
+        <Button variant="outline" size="md" class="gap-2" onclick={() => setSubtab("yaml")} title="Edit YAML (e)">
           <Pencil class="h-3.5 w-3.5" />
           Edit
         </Button>
-        <Button variant="destructive" size="sm" class="gap-2" onclick={handleDelete} title="Delete Resource">
+        <Button variant="destructive" size="md" class="gap-2" onclick={handleDelete} title="Delete Resource">
           <Trash2 class="h-3.5 w-3.5" />
           Delete
         </Button>

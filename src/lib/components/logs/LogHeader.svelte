@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cn } from "$lib/utils";
+  import { Badge, Button, Input, Menu, MenuItem } from "$lib/components/ui";
   import {
     Play,
     Square,
@@ -53,10 +53,10 @@
   <div class="flex items-center gap-2">
     <!-- Pod count badge for deployments -->
     {#if isDeployment && deploymentPodNames.length > 0}
-      <span class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-muted)]">
+      <Badge appearance="outline" tone="muted" size="sm" mono class="h-9 px-3">
         <Box class="h-3.5 w-3.5" />
         {deploymentPodNames.length} pods
-      </span>
+      </Badge>
     {:else if isDeployment && podsLoading}
       <span class="font-mono text-[12px] text-[var(--text-muted)]">Loading pods...</span>
     {/if}
@@ -64,70 +64,61 @@
     <!-- Container Selector -->
     {#if containers.length > 0}
       <div class="relative">
-        <button
-          class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-          onclick={(e) => onToggleDropdown("container", e)}
-        >
+        <Button variant="toolbar" size="lg" mono onclick={(e) => onToggleDropdown("container", e)}>
           <Box class="h-3.5 w-3.5 text-[var(--text-muted)]" />
           <span>{selectedContainer}</span>
           <ChevronDown class="h-3 w-3 text-[var(--text-muted)]" />
-        </button>
+        </Button>
         {#if openDropdown === "container"}
-          <div
-            class="absolute top-full right-0 z-50 mt-1 min-w-[160px] rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-          >
+          <Menu align="right" class="min-w-[160px]">
             {#each containers as container}
-              <button
-                class={cn(
-                  "block w-full px-3 py-1.5 text-left font-mono text-[12px] transition-colors hover:bg-[var(--table-row-hover)]",
-                  container === selectedContainer
-                    ? "text-[var(--accent)]"
-                    : "text-[var(--text-secondary)]",
-                )}
+              <MenuItem
+                mono
+                selected={container === selectedContainer}
                 onclick={(e) => {
                   e.stopPropagation();
                   onContainerSelect(container);
                 }}
               >
                 {container}
-              </button>
+              </MenuItem>
             {/each}
-          </div>
+          </Menu>
         {/if}
       </div>
     {/if}
 
     <!-- Filter Input -->
-    <div
-      class="flex h-[34px] w-[180px] items-center gap-2 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5"
-    >
-      <Search class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-      <input
+    <div class="relative w-[180px]">
+      <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted)]" />
+      <Input
         type="text"
+        size="lg"
+        mono
         placeholder="Filter logs..."
-        class="w-full bg-transparent font-mono text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]"
+        class="bg-[var(--bg-secondary)] pl-8"
         bind:value={filterText}
       />
     </div>
 
     <!-- Stream Button -->
     {#if !isStreaming}
-      <button
-        class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-running)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
+      <Button
+        variant="solid-tone"
+        tone="success"
+        size="lg"
+        mono
         onclick={onStartStreaming}
         disabled={!selectedContainer}
       >
         <Play class="h-3.5 w-3.5" />
         <span>Stream</span>
-      </button>
+      </Button>
     {:else}
-      <button
-        class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-failed)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
-        onclick={onStopStreaming}
-      >
+      <Button variant="solid-tone" tone="error" size="lg" mono onclick={onStopStreaming}>
         <Square class="h-3.5 w-3.5" />
         <span>Stop</span>
-      </button>
+      </Button>
     {/if}
   </div>
 </div>

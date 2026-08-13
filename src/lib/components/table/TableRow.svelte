@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import { cn } from "$lib/utils";
   import type { Resource, Column } from "$lib/types";
   import StatusBadge from "$lib/components/common/StatusBadge.svelte";
@@ -151,7 +152,7 @@
         <div class="flex items-center gap-1.5 overflow-hidden">
           {#each containerStatuses as c}
             <div
-              class="relative flex h-6 w-6 shrink-0 items-center justify-center rounded border"
+              class="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border"
               style:background-color={`color-mix(in srgb, ${containerStateColor(c.state)} 14%, var(--bg-tertiary))`}
               style:border-color={`color-mix(in srgb, ${containerStateColor(c.state)} 28%, transparent)`}
               title="{c.name} ({c.state})"
@@ -221,7 +222,7 @@
       {:else if isTagColumn(column.key)}
         {@const tagValue = getCellValue(resource, column.key, cellCtx)}
         {#if tagValue && tagValue !== "-" && tagValue !== "<none>"}
-          <span class="inline-flex max-w-full items-center truncate rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--text-secondary)]" title={tagValue}>{tagValue}</span>
+          <Badge appearance="surface" size="sm" bordered mono class="max-w-full truncate px-1.5" title={tagValue}>{tagValue}</Badge>
         {:else}
           <span class="text-[var(--text-muted)]">—</span>
         {/if}

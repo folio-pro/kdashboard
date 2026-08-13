@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { DollarSign, Cpu, MemoryStick, ChevronDown, ChevronRight } from "lucide-svelte";
@@ -60,9 +61,9 @@
 >
   {#snippet badge()}
     {#if costStore.overview}
-      <span class="rounded-md bg-[var(--bg-tertiary)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]">
+      <Badge appearance="surface" size="sm">
         {costStore.overview.source}
-      </span>
+      </Badge>
     {/if}
   {/snippet}
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cn } from "$lib/utils";
+  import { Button, Menu, MenuItem } from "$lib/components/ui";
   import {
     Box,
     ChevronDown,
@@ -298,91 +298,73 @@
       <!-- Container Selector -->
       {#if containers.length > 0}
         <div class="relative">
-          <button
-            class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-            onclick={(e) => toggleDropdown("container", e)}
-          >
+          <Button variant="toolbar" size="lg" mono onclick={(e) => toggleDropdown("container", e)}>
             <Box class="h-3.5 w-3.5 text-[var(--text-muted)]" />
             <span>{selectedContainer}</span>
             <ChevronDown class="h-3 w-3 text-[var(--text-muted)]" />
-          </button>
+          </Button>
           {#if openDropdown === "container"}
-            <div
-              class="absolute top-full right-0 z-50 mt-1 min-w-[160px] rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-            >
+            <Menu align="right" class="min-w-[160px]">
               {#each containers as container}
-                <button
-                  class={cn(
-                    "block w-full px-3 py-1.5 text-left font-mono text-[12px] transition-colors hover:bg-[var(--table-row-hover)]",
-                    container === selectedContainer
-                      ? "text-[var(--accent)]"
-                      : "text-[var(--text-secondary)]",
-                  )}
+                <MenuItem
+                  mono
+                  selected={container === selectedContainer}
                   onclick={(e) => {
                     e.stopPropagation();
                     handleContainerSelect(container);
                   }}
                 >
                   {container}
-                </button>
+                </MenuItem>
               {/each}
-            </div>
+            </Menu>
           {/if}
         </div>
       {/if}
 
       <!-- Shell Selector -->
       <div class="relative">
-        <button
-          class="flex h-[34px] items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 font-mono text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-          onclick={(e) => toggleDropdown("shell", e)}
-        >
+        <Button variant="toolbar" size="lg" mono onclick={(e) => toggleDropdown("shell", e)}>
           <TerminalSquare class="h-3.5 w-3.5 text-[var(--text-muted)]" />
           <span>{selectedShell}</span>
           <ChevronDown class="h-3 w-3 text-[var(--text-muted)]" />
-        </button>
+        </Button>
         {#if openDropdown === "shell"}
-          <div
-            class="absolute top-full right-0 z-50 mt-1 min-w-[120px] rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-          >
+          <Menu align="right" class="min-w-[120px]">
             {#each SHELL_OPTIONS as shell}
-              <button
-                class={cn(
-                  "block w-full px-3 py-1.5 text-left font-mono text-[12px] transition-colors hover:bg-[var(--table-row-hover)]",
-                  shell === selectedShell
-                    ? "text-[var(--accent)]"
-                    : "text-[var(--text-secondary)]",
-                )}
+              <MenuItem
+                mono
+                selected={shell === selectedShell}
                 onclick={(e) => {
                   e.stopPropagation();
                   handleShellSelect(shell);
                 }}
               >
                 {shell}
-              </button>
+              </MenuItem>
             {/each}
-          </div>
+          </Menu>
         {/if}
       </div>
 
       <!-- Connect/Disconnect Button -->
       {#if !isConnected}
-        <button
-          class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-running)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90 disabled:opacity-50"
+        <Button
+          variant="solid-tone"
+          tone="success"
+          size="lg"
+          mono
           onclick={connect}
           disabled={!selectedContainer}
         >
           <TerminalSquare class="h-3.5 w-3.5" />
           <span>Connect</span>
-        </button>
+        </Button>
       {:else}
-        <button
-          class="flex h-[34px] items-center gap-1.5 rounded bg-[var(--status-failed)] px-3.5 font-mono text-[12px] font-medium text-[var(--bg-primary)] transition-opacity hover:opacity-90"
-          onclick={disconnect}
-        >
+        <Button variant="solid-tone" tone="error" size="lg" mono onclick={disconnect}>
           <TerminalSquare class="h-3.5 w-3.5" />
           <span>Disconnect</span>
-        </button>
+        </Button>
       {/if}
     </div>
   </div>
@@ -400,13 +382,10 @@
     </div>
 
     <div class="flex items-center gap-1.5">
-      <button
-        class="flex h-7 items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-        onclick={clearTerminal}
-      >
+      <Button variant="toolbar" size="sm" mono onclick={clearTerminal}>
         <Trash2 class="h-3 w-3" />
         <span>Clear</span>
-      </button>
+      </Button>
     </div>
   </div>
 

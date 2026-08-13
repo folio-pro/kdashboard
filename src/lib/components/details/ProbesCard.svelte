@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import CollapsibleCard from "./CollapsibleCard.svelte";
 
   interface Props {
@@ -90,12 +91,9 @@
       <div class="border-t border-[var(--border-hover)] px-5 py-4">
         <div class="mb-3 flex items-center gap-2">
           <span class="text-[12px] font-semibold text-[var(--text-primary)]">{probe.containerName}</span>
-          <span
-            class="rounded-full px-2 py-0.5 text-[10px] font-medium"
-            style="color: {probeTypeColors[probe.type] ?? 'var(--text-muted)'}; background-color: color-mix(in srgb, {probeTypeColors[probe.type] ?? 'var(--text-muted)'} 12%, transparent);"
-          >
+          <Badge pill class="px-2" style="--tone: {probeTypeColors[probe.type] ?? 'var(--text-muted)'};">
             {probe.type}
-          </span>
+          </Badge>
           <span class="text-[11px] text-[var(--text-muted)]">{probe.probeName}</span>
         </div>
         {#if probe.detail}

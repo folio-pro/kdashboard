@@ -46,12 +46,12 @@
       </div>
     </DialogHeader>
     <DialogFooter class="mt-4">
-      <Button variant="outline" size="sm" onclick={oncancel}>
+      <Button variant="outline" size="md" onclick={oncancel}>
         {cancelLabel}
       </Button>
       <Button
-        variant={variant === "destructive" ? "destructive" : "default"}
-        size="sm"
+        variant={variant === "destructive" ? "destructive" : "accent"}
+        size="md"
         onclick={onconfirm}
       >
         {confirmLabel}

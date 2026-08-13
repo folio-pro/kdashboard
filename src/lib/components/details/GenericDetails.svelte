@@ -32,7 +32,7 @@
   <!-- Spec (raw) -->
   <CollapsibleCard title="Spec">
     <div class="px-6 pb-2">
-      <pre class="max-h-80 overflow-auto rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]">{getSpecPreview()}</pre>
+      <pre class="max-h-80 overflow-auto rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]">{getSpecPreview()}</pre>
     </div>
   </CollapsibleCard>
 

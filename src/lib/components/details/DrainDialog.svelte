@@ -119,7 +119,7 @@
       {/if}
 
       {#if error}
-        <p class="whitespace-pre-wrap rounded border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/5 p-2 text-[11px] text-[var(--status-failed)]">{error}</p>
+        <p class="whitespace-pre-wrap rounded-sm border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/5 p-2 text-[11px] text-[var(--status-failed)]">{error}</p>
       {/if}
 
       {#if result}
@@ -135,10 +135,10 @@
       {/if}
 
       <div class="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onclick={() => (open = false)} disabled={running}>
+        <Button variant="outline" size="md" onclick={() => (open = false)} disabled={running}>
           {result ? "Close" : "Cancel"}
         </Button>
-        <Button variant="destructive" size="sm" onclick={handleDrain} disabled={running}>
+        <Button variant="destructive" size="md" onclick={handleDrain} disabled={running}>
           {running ? "Draining…" : result ? "Drain again" : `Drain ${nodeName}`}
         </Button>
       </div>

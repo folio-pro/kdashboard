@@ -2,7 +2,8 @@
   import { cn } from "$lib/utils";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "$lib/components/ui/tooltip";
-  import { ChevronRight, Pin, X, Search } from "lucide-svelte";
+  import { ChevronRight, Pin, X } from "lucide-svelte";
+  import { Button, SearchField } from "$lib/components/ui";
   import type { CrdInfo } from "$lib/types/index.js";
   import SidebarSection from "./SidebarSection.svelte";
   import SidebarItem from "./SidebarItem.svelte";
@@ -165,11 +166,12 @@
     {#if uiStore.sidebarCollapsed}
       <!-- Collapsed: single column with group labels + icons -->
       <div class="flex h-full w-full flex-col items-center py-2">
+        <!-- Full-bleed rail control: its shape is the layout, not a button box.
+             Routing it through <Button> meant undoing the height, width and
+             radius at the call site, which is the drift the primitives exist
+             to stop. Tokens, not the component. -->
         <button
-          class={cn(
-            "mb-2 flex h-[42px] w-full items-center justify-center",
-            "text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-          )}
+          class="mb-2 flex h-[42px] w-full items-center justify-center text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
           onclick={() => uiStore.toggleSidebar()}
           title="Expand sidebar"
         >
@@ -244,26 +246,13 @@
         <!-- Nav filter: the only practical way through a cluster whose CRDs
              contribute dozens of sections. -->
         <div class="shrink-0 px-[13px] py-2">
-          <div class="focus-ring-host flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 focus-within:border-[var(--accent)]">
-            <Search class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
-            <input
-              type="text"
-              placeholder="Filter resources..."
-              aria-label="Filter sidebar resources"
-              bind:value={sidebarStore.filter}
-              class="h-full min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
-            />
-            {#if isFiltering}
-              <button
-                type="button"
-                class="shrink-0 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-                onclick={() => (sidebarStore.filter = "")}
-                aria-label="Clear sidebar filter"
-              >
-                <X class="h-3 w-3" />
-              </button>
-            {/if}
-          </div>
+          <SearchField
+            size="sm"
+            clearable
+            placeholder="Filter resources..."
+            ariaLabel="Filter sidebar resources"
+            bind:value={sidebarStore.filter}
+          />
         </div>
 
         <!-- One scroll for the whole tree, section headers stick to the top
@@ -297,15 +286,17 @@
                     <span class="min-w-0 flex-1 truncate">{pin.name}</span>
                     <span class="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{pin.kind}</span>
                   </button>
-                  <button
+                  <Button
                     type="button"
-                    class="shrink-0 pl-2 opacity-0 transition-opacity text-[var(--text-muted)] hover:text-[var(--status-failed)] focus-visible:opacity-100 group-hover:opacity-100"
+                    variant="muted"
+                    size="icon-xs"
+                    class="mr-1 shrink-0 opacity-0 transition-opacity hover:bg-transparent hover:text-[var(--status-failed)] focus-visible:opacity-100 group-hover:opacity-100"
                     onclick={() => settingsStore.unpinResource(pin.kind, pin.name, pin.namespace)}
                     title="Unpin"
                     aria-label={`Unpin ${pin.name}`}
                   >
                     <X class="h-3 w-3" />
-                  </button>
+                  </Button>
                 </div>
               {/each}
             </SidebarSection>

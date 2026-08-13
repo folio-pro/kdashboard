@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { cn } from "$lib/utils";
+  import { Badge, Button, Spinner } from "$lib/components/ui";
   import {
     Copy,
     Check,
-    Loader2,
     Save,
     Undo2,
     Redo2,
@@ -343,98 +343,101 @@
 
     <!-- Tab bar -->
     <div class="flex h-[36px] shrink-0 items-center gap-0 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-2">
-      <button
-        class={cn(
-          "flex items-center gap-1.5 rounded px-3 py-1.5 text-[11px] font-medium transition-colors",
-          activeTab === "editor"
-            ? "bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm"
-            : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-        )}
+      <Button
+        variant="segment"
+        size="xs"
+        active={activeTab === "editor"}
+        activeStyle="raised"
+        class="px-3"
         onclick={() => { activeTab = "editor"; }}
       >
         <Code class="h-3 w-3" />
         Editor
-      </button>
-      <button
-        class={cn(
-          "flex items-center gap-1.5 rounded px-3 py-1.5 text-[11px] font-medium transition-colors",
-          activeTab === "history"
-            ? "bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm"
-            : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-        )}
+      </Button>
+      <Button
+        variant="segment"
+        size="xs"
+        active={activeTab === "history"}
+        activeStyle="raised"
+        class="px-3"
         onclick={() => { activeTab = "history"; }}
       >
         <History class="h-3 w-3" />
         History
         {#if yamlHistory.length > 1}
-          <span class="ml-0.5 rounded bg-[var(--bg-tertiary)] px-1 text-[10px] text-[var(--text-muted)]">{yamlHistory.length}</span>
+          <Badge appearance="surface" tone="muted" class="ml-0.5 px-1">{yamlHistory.length}</Badge>
         {/if}
-      </button>
+      </Button>
 
       <!-- Status and every editor action, sized to sit inside the 36px strip.
            The resource's identity is not repeated here: DetailPanel already
            shows the name, kind and namespace directly above this component. -->
       <div class="ml-auto flex items-center gap-0.5">
         {#if isModified}
-          <span class="mr-1 rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--status-warning)]">MODIFIED</span>
+          <Badge tone="warn" class="mr-1 font-semibold">MODIFIED</Badge>
         {/if}
         {#if saveSuccess}
-          <span class="mr-1 rounded bg-[var(--status-running)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--status-running)]">SAVED</span>
+          <Badge tone="success" class="mr-1 font-semibold">SAVED</Badge>
         {/if}
         {#if activeTab === "editor" && errorCount > 0}
-          <button
-            class="mr-1 flex items-center gap-1 rounded bg-[var(--status-failed)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--status-failed)] transition-opacity hover:opacity-80"
+          <Button
+            variant="soft-tone"
+            tone="error"
+            size="inline-xs"
+            class="mr-1 px-1.5 py-0.5 font-semibold"
             onclick={handleShowProblems}
             title="Show problems (F8)"
             aria-label="Show problems: {errorCount} error{errorCount === 1 ? '' : 's'}"
           >
             <CircleAlert class="h-2.5 w-2.5" />
             {errorCount}
-          </button>
+          </Button>
         {/if}
         {#if activeTab === "editor" && warningCount > 0}
-          <button
-            class="mr-1 flex items-center gap-1 rounded bg-[var(--status-warning)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--status-warning)] transition-opacity hover:opacity-80"
+          <Button
+            variant="soft-tone"
+            tone="warn"
+            size="inline-xs"
+            class="mr-1 px-1.5 py-0.5 font-semibold"
             onclick={handleShowProblems}
             title="Show problems (F8)"
             aria-label="Show problems: {warningCount} warning{warningCount === 1 ? '' : 's'}"
           >
             <TriangleAlert class="h-2.5 w-2.5" />
             {warningCount}
-          </button>
+          </Button>
         {/if}
 
         {#if activeTab === "editor"}
-          <button
-            class="flex h-[24px] items-center rounded px-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+          <Button
+            variant="muted"
+            size="icon-xs"
             onclick={handleSearch}
             title="Search (Cmd+F)"
             aria-label="Search"
           >
             <Search class="h-3 w-3" />
-          </button>
-          <button
-            class="flex h-[24px] items-center rounded px-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+          </Button>
+          <Button
+            variant="muted"
+            size="icon-xs"
             onclick={handleUndo}
             title="Undo (Cmd+Z)"
             aria-label="Undo"
           >
             <Undo2 class="h-3 w-3" />
-          </button>
-          <button
-            class="flex h-[24px] items-center rounded px-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+          </Button>
+          <Button
+            variant="muted"
+            size="icon-xs"
             onclick={handleRedo}
             title="Redo (Cmd+Shift+Z)"
             aria-label="Redo"
           >
             <Redo2 class="h-3 w-3" />
-          </button>
+          </Button>
         {/if}
-        <button
-          class="flex h-[24px] items-center gap-1.5 rounded px-2 text-[11px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
-          onclick={copyToClipboard}
-          title="Copy YAML to clipboard"
-        >
+        <Button variant="muted" size="xs" onclick={copyToClipboard} title="Copy YAML to clipboard">
           {#if copied}
             <Check class="h-3 w-3 text-[var(--status-running)]" />
             <span>Copied</span>
@@ -442,37 +445,30 @@
             <Copy class="h-3 w-3" />
             <span>Copy</span>
           {/if}
-        </button>
+        </Button>
 
         {#if isModified}
-          <button
-            class="flex h-[24px] items-center gap-1.5 rounded px-2 text-[11px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
-            onclick={resetToOriginal}
-            title="Reset to original"
-          >
+          <Button variant="muted" size="xs" onclick={resetToOriginal} title="Reset to original">
             <RotateCcw class="h-3 w-3" />
             <span>Reset</span>
-          </button>
+          </Button>
         {/if}
-        <button
-          class={cn(
-            "ml-1 flex h-[24px] items-center gap-1.5 rounded px-2.5 text-[11px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-40",
-            isModified && errorCount === 0
-              ? "bg-[var(--accent)] text-[var(--bg-primary)]"
-              : "border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-muted)]"
-          )}
+        <Button
+          variant={isModified && errorCount === 0 ? "accent" : "outline"}
+          size="xs"
+          class="ml-1 px-2.5 font-semibold"
           onclick={saveYaml}
           disabled={isSaving || !isModified || errorCount > 0}
           title={errorCount > 0 ? "Fix the YAML errors before applying" : "Apply to cluster"}
         >
           {#if isSaving}
-            <Loader2 class="h-3 w-3 animate-spin" />
+            <Spinner size="xs" />
             <span>Applying...</span>
           {:else}
             <Save class="h-3 w-3" />
             <span>Apply</span>
           {/if}
-        </button>
+        </Button>
       </div>
     </div>
 

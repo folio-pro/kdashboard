@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import { untrack } from "svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -71,7 +72,7 @@
         <span class="text-[13px] font-medium text-[var(--text-primary)]">{k8sStore.selectedCrd.kind}</span>
         <span class="text-[12px] text-[var(--text-muted)]">({k8sStore.crdResources.items.length})</span>
         {#if k8sStore.selectedCrd.scope === "Cluster"}
-          <span class="ml-1 rounded bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">cluster-scoped</span>
+          <Badge appearance="surface" tone="muted" class="ml-1">cluster-scoped</Badge>
         {/if}
       {/if}
     </div>

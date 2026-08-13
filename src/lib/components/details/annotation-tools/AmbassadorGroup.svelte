@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { Badge } from "$lib/components/ui";
   import type { ToolGroupProps } from "./types";
   import { detectAndFormat } from "./parse-value";
   import { parse as parseYaml } from "yaml";
   import { toggleSetItem } from "$lib/utils/k8s-helpers";
+  import AnnotationValue from "../AnnotationValue.svelte";
 
   let { annotations, toolConfig, shortKeys }: ToolGroupProps = $props();
 
@@ -39,9 +41,9 @@
 {#if parsedConfig}
   <div class="border-t border-[var(--border-hover)] px-5 py-3.5">
     <div class="flex items-center gap-2 mb-2">
-      <span class="inline-flex items-center rounded bg-[var(--bg-tertiary)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]">
+      <Badge appearance="surface" class="px-2">
         {parsedConfig.kind ?? "Mapping"}
-      </span>
+      </Badge>
       {#if parsedConfig.apiVersion}
         <span class="text-[10px] text-[var(--text-muted)]">{parsedConfig.apiVersion}</span>
       {/if}
@@ -73,16 +75,11 @@
   <!-- Config exists but couldn't be parsed → show raw -->
   <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
     <span class="font-mono text-[11px] text-[var(--text-muted)]">config</span>
-    <button
-      class="text-left font-mono text-[11px] text-[var(--accent)] {expanded.has('config') ? '' : 'hover:underline'}"
-      onclick={() => expanded = toggleSetItem(expanded, "config")}
-    >
-      {#if expanded.has("config")}
-        <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]">{configAnnotation}</pre>
-      {:else}
-        <span class="truncate block">{configAnnotation}</span>
-      {/if}
-    </button>
+    <AnnotationValue
+      value={configAnnotation}
+      expanded={expanded.has("config")}
+      ontoggle={() => (expanded = toggleSetItem(expanded, "config"))}
+    />
   </div>
 {/if}
 
@@ -94,20 +91,16 @@
   <div class="flex flex-col gap-0.5 border-t border-[var(--border-hover)] px-5 py-3.5">
     <span class="font-mono text-[11px] text-[var(--text-muted)]">{short}</span>
     {#if value === "true" || value === "false"}
-      <span class="inline-flex w-fit items-center rounded px-2 py-0.5 text-[10px] font-medium {value === 'true' ? 'bg-[var(--status-running)]/15 text-[var(--status-running)]' : 'bg-[var(--status-failed)]/15 text-[var(--status-failed)]'}">
+      <Badge tone={value === "true" ? "success" : "error"} class="w-fit px-2">
         {value}
-      </span>
+      </Badge>
     {:else if parsed.type === "json" || parsed.type === "yaml"}
-      <button
-        class="text-left font-mono text-[11px] text-[var(--accent)] {isExpanded ? '' : 'hover:underline'}"
-        onclick={() => expanded = toggleSetItem(expanded, key)}
-      >
-        {#if isExpanded}
-          <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]">{parsed.formatted}</pre>
-        {:else}
-          <span class="truncate block">{value}</span>
-        {/if}
-      </button>
+      <AnnotationValue
+        {value}
+        formatted={parsed.formatted}
+        expanded={isExpanded}
+        ontoggle={() => (expanded = toggleSetItem(expanded, key))}
+      />
     {:else}
       <span class="truncate font-mono text-[11px] text-[var(--text-primary)]">{value}</span>
     {/if}

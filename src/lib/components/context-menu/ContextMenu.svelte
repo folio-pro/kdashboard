@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Kbd } from "$lib/components/ui";
   import { contextMenuStore } from "$lib/stores/context-menu.svelte";
   import {
     getActionsForResource,
@@ -260,9 +261,7 @@
               {/if}
               <span class="flex-1 truncate">{action.label}</span>
               {#if action.shortcut}
-                <kbd class="shrink-0 rounded border border-[var(--border-color)] px-1 py-0.5 text-[10px] text-[var(--text-muted)]">
-                  {action.shortcut}
-                </kbd>
+                <Kbd>{action.shortcut}</Kbd>
               {/if}
             </button>
           {/each}

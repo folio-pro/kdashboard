@@ -1,6 +1,7 @@
 <script lang="ts">
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
+  import { Badge, Card, type BadgeTone } from "$lib/components/ui";
   import { Shield, ShieldAlert, ShieldCheck, ChevronDown, ChevronRight } from "lucide-svelte";
   import { securityStore } from "$lib/stores/security.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -31,6 +32,35 @@
     return v.critical + v.high + v.medium + v.low + v.unknown;
   }
 
+  /**
+   * CVSS severity mapped onto the design system's semantic tones. This view
+   * used to reach straight for raw Tailwind palette classes, which are fixed
+   * to a dark background and wash out to unreadable on the five light theme
+   * presets.
+   */
+  type Severity = "critical" | "high" | "medium" | "low";
+
+  const severityTone: Record<Severity, BadgeTone> = {
+    critical: "error",
+    high: "terminating",
+    medium: "warning",
+    low: "info",
+  };
+
+  const severityVar: Record<Severity, string> = {
+    critical: "var(--status-failed)",
+    high: "var(--status-terminating)",
+    medium: "var(--status-pending)",
+    low: "var(--status-succeeded)",
+  };
+
+  const severities: { key: Severity; label: string; initial: string }[] = [
+    { key: "critical", label: "Critical", initial: "C" },
+    { key: "high", label: "High", initial: "H" },
+    { key: "medium", label: "Medium", initial: "M" },
+    { key: "low", label: "Low", initial: "L" },
+  ];
+
 </script>
 
 <ViewPanel
@@ -48,9 +78,7 @@
 >
   {#snippet badge()}
     {#if securityStore.overview}
-      <span class="rounded-md bg-[var(--bg-tertiary)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]">
-        {securityStore.overview.scanner}
-      </span>
+      <Badge appearance="surface" size="sm">{securityStore.overview.scanner}</Badge>
     {/if}
   {/snippet}
 
@@ -58,40 +86,21 @@
     <div class="p-4 space-y-4">
       <!-- Summary Cards -->
       <div class="grid grid-cols-5 gap-3">
-        <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+        <Card>
           <div class="text-[12px] text-[var(--text-muted)]">Images Scanned</div>
           <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
             {securityStore.overview!.total_images_scanned}
           </div>
-        </div>
+        </Card>
 
-        <div class="rounded-lg border border-red-500/30 bg-[var(--bg-secondary)] p-3">
-          <div class="text-[12px] text-red-400">Critical</div>
-          <div class="mt-1 text-[18px] font-semibold text-red-400">
-            {securityStore.overview!.total_vulns.critical}
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-orange-500/30 bg-[var(--bg-secondary)] p-3">
-          <div class="text-[12px] text-orange-400">High</div>
-          <div class="mt-1 text-[18px] font-semibold text-orange-400">
-            {securityStore.overview!.total_vulns.high}
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-yellow-500/30 bg-[var(--bg-secondary)] p-3">
-          <div class="text-[12px] text-yellow-400">Medium</div>
-          <div class="mt-1 text-[18px] font-semibold text-yellow-400">
-            {securityStore.overview!.total_vulns.medium}
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-blue-500/30 bg-[var(--bg-secondary)] p-3">
-          <div class="text-[12px] text-blue-400">Low</div>
-          <div class="mt-1 text-[18px] font-semibold text-blue-400">
-            {securityStore.overview!.total_vulns.low}
-          </div>
-        </div>
+        {#each severities as sev}
+          <Card tone={severityTone[sev.key]}>
+            <div class="text-[12px]" style="color: {severityVar[sev.key]};">{sev.label}</div>
+            <div class="mt-1 text-[18px] font-semibold" style="color: {severityVar[sev.key]};">
+              {securityStore.overview!.total_vulns[sev.key]}
+            </div>
+          </Card>
+        {/each}
       </div>
 
       <!-- Compliance Bar -->
@@ -151,26 +160,14 @@
               </div>
 
               <div class="flex items-center gap-1.5">
-                {#if pod.total_vulns.critical > 0}
-                  <span class="rounded bg-red-500/20 px-1.5 py-0.5 text-[11px] font-medium text-red-400">
-                    {pod.total_vulns.critical} C
-                  </span>
-                {/if}
-                {#if pod.total_vulns.high > 0}
-                  <span class="rounded bg-orange-500/20 px-1.5 py-0.5 text-[11px] font-medium text-orange-400">
-                    {pod.total_vulns.high} H
-                  </span>
-                {/if}
-                {#if pod.total_vulns.medium > 0}
-                  <span class="rounded bg-yellow-500/20 px-1.5 py-0.5 text-[11px] font-medium text-yellow-400">
-                    {pod.total_vulns.medium} M
-                  </span>
-                {/if}
-                {#if pod.total_vulns.low > 0}
-                  <span class="rounded bg-blue-500/20 px-1.5 py-0.5 text-[11px] font-medium text-blue-400">
-                    {pod.total_vulns.low} L
-                  </span>
-                {/if}
+                {#each severities as sev}
+                  {#if pod.total_vulns[sev.key] > 0}
+                    <Badge tone={severityTone[sev.key]} size="sm">
+                      {pod.total_vulns[sev.key]}
+                      {sev.initial}
+                    </Badge>
+                  {/if}
+                {/each}
                 {#if vulnTotal(pod.total_vulns) === 0}
                   <span class="text-[12px] text-[var(--text-muted)]">No vulnerabilities</span>
                 {/if}
@@ -196,13 +193,22 @@
                         <td class="max-w-[300px] truncate px-3 py-1.5 font-mono text-[var(--text-primary)]" title={img.image}>
                           {img.image}
                         </td>
-                        <td class="px-3 py-1.5 text-right {img.vulns.critical > 0 ? 'text-red-400 font-medium' : ''}">
+                        <td
+                          class="px-3 py-1.5 text-right {img.vulns.critical > 0 ? 'font-medium' : ''}"
+                          style={img.vulns.critical > 0 ? `color: ${severityVar.critical};` : ""}
+                        >
                           {img.vulns.critical}
                         </td>
-                        <td class="px-3 py-1.5 text-right {img.vulns.high > 0 ? 'text-orange-400 font-medium' : ''}">
+                        <td
+                          class="px-3 py-1.5 text-right {img.vulns.high > 0 ? 'font-medium' : ''}"
+                          style={img.vulns.high > 0 ? `color: ${severityVar.high};` : ""}
+                        >
                           {img.vulns.high}
                         </td>
-                        <td class="px-3 py-1.5 text-right {img.vulns.medium > 0 ? 'text-yellow-400' : ''}">
+                        <td
+                          class="px-3 py-1.5 text-right"
+                          style={img.vulns.medium > 0 ? `color: ${severityVar.medium};` : ""}
+                        >
                           {img.vulns.medium}
                         </td>
                         <td class="px-3 py-1.5 text-right">{img.vulns.low}</td>

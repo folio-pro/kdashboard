@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cn } from "$lib/utils";
+  import { Button, Menu, MenuItem, type ButtonVariant, type ButtonTone, type ButtonActiveStyle } from "$lib/components/ui";
   import {
     ChevronDown,
     Search,
@@ -51,6 +51,23 @@
     onToggleDropdown: (id: DropdownId, e: MouseEvent) => void;
     onClear: () => void;
   } = $props();
+
+  /**
+   * The level segmented control. `all` reads as a plain toolbar button that
+   * fills with the accent when selected; the three level buttons carry their
+   * own log colour at rest and tint with it when selected.
+   */
+  const LEVEL_FILTERS: {
+    value: LogLevel;
+    variant: ButtonVariant;
+    tone: ButtonTone;
+    activeStyle: ButtonActiveStyle;
+  }[] = [
+    { value: "all", variant: "toolbar", tone: "accent", activeStyle: "solid" },
+    { value: "info", variant: "toolbar-tone", tone: "info", activeStyle: "soft" },
+    { value: "warn", variant: "toolbar-tone", tone: "warn", activeStyle: "soft" },
+    { value: "error", variant: "toolbar-tone", tone: "error", activeStyle: "soft" },
+  ];
 </script>
 
 <div
@@ -60,50 +77,19 @@
   <div class="flex items-center gap-2">
     <span class="font-mono text-[12px] text-[var(--text-muted)]">level:</span>
     <div class="flex items-center gap-1">
-      <button
-        class={cn(
-          "flex h-7 items-center justify-center rounded px-2.5 font-mono text-[11px] font-semibold transition-colors",
-          levelFilter === "all"
-            ? "bg-[var(--accent)] text-[var(--bg-primary)]"
-            : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]",
-        )}
-        onclick={() => (levelFilter = "all")}
-      >
-        all
-      </button>
-      <button
-        class={cn(
-          "flex h-7 items-center justify-center rounded px-2.5 font-mono text-[11px] font-medium transition-colors",
-          levelFilter === "info"
-            ? "bg-[var(--log-info)]/20 text-[var(--log-info)]"
-            : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--log-info)]",
-        )}
-        onclick={() => (levelFilter = "info")}
-      >
-        info
-      </button>
-      <button
-        class={cn(
-          "flex h-7 items-center justify-center rounded px-2.5 font-mono text-[11px] font-medium transition-colors",
-          levelFilter === "warn"
-            ? "bg-[var(--log-warn)]/20 text-[var(--log-warn)]"
-            : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--log-warn)]",
-        )}
-        onclick={() => (levelFilter = "warn")}
-      >
-        warn
-      </button>
-      <button
-        class={cn(
-          "flex h-7 items-center justify-center rounded px-2.5 font-mono text-[11px] font-medium transition-colors",
-          levelFilter === "error"
-            ? "bg-[var(--log-error)]/20 text-[var(--log-error)]"
-            : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--log-error)]",
-        )}
-        onclick={() => (levelFilter = "error")}
-      >
-        error
-      </button>
+      {#each LEVEL_FILTERS as level}
+        <Button
+          variant={level.variant}
+          size="sm"
+          mono
+          tone={level.tone}
+          active={levelFilter === level.value}
+          activeStyle={level.activeStyle}
+          onclick={() => (levelFilter = level.value)}
+        >
+          {level.value}
+        </Button>
+      {/each}
     </div>
 
     {#if isDeployment && logPodNames.length > 1}
@@ -112,38 +98,29 @@
       <!-- Pod Filter -->
       <span class="font-mono text-[12px] text-[var(--text-muted)]">pod:</span>
       <div class="relative">
-        <button
-          class="flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-          onclick={(e) => onToggleDropdown("pod", e)}
-        >
+        <Button variant="toolbar" size="sm" mono class="gap-1" onclick={(e) => onToggleDropdown("pod", e)}>
           <span class="max-w-[120px] truncate">{podFilter === null ? "all pods" : shortPodName(podFilter)}</span>
           <ChevronDown class="h-2.5 w-2.5 text-[var(--text-muted)]" />
-        </button>
+        </Button>
         {#if openDropdown === "pod"}
-          <div
-            class="absolute top-full left-0 z-50 mt-1 max-h-[200px] min-w-[160px] overflow-y-auto rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-          >
-            <button
-              class={cn(
-                "block w-full px-3 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-[var(--table-row-hover)]",
-                podFilter === null ? "text-[var(--accent)]" : "text-[var(--text-secondary)]",
-              )}
+          <Menu class="max-h-[200px] min-w-[160px] overflow-y-auto">
+            <MenuItem
+              mono
+              selected={podFilter === null}
               onclick={(e) => { e.stopPropagation(); podFilter = null; openDropdown = null; }}
             >
               all pods
-            </button>
+            </MenuItem>
             {#each logPodNames as pName}
-              <button
-                class={cn(
-                  "block w-full px-3 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-[var(--table-row-hover)]",
-                  pName === podFilter ? "text-[var(--accent)]" : "text-[var(--text-secondary)]",
-                )}
+              <MenuItem
+                mono
+                selected={pName === podFilter}
                 onclick={(e) => { e.stopPropagation(); podFilter = pName; openDropdown = null; }}
               >
                 {pName}
-              </button>
+              </MenuItem>
             {/each}
-          </div>
+          </Menu>
         {/if}
       </div>
     {/if}
@@ -153,115 +130,76 @@
     <!-- Since Selector -->
     <span class="font-mono text-[12px] text-[var(--text-muted)]">since:</span>
     <div class="relative">
-      <button
-        class="flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-        onclick={(e) => onToggleDropdown("since", e)}
-      >
+      <Button variant="toolbar" size="sm" mono class="gap-1" onclick={(e) => onToggleDropdown("since", e)}>
         <span>{sinceLabel}</span>
         <ChevronDown class="h-2.5 w-2.5 text-[var(--text-muted)]" />
-      </button>
+      </Button>
       {#if openDropdown === "since"}
-        <div
-          class="absolute top-full left-0 z-50 mt-1 min-w-[120px] rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-        >
+        <Menu class="min-w-[120px]">
           {#each SINCE_OPTIONS as option}
-            <button
-              class={cn(
-                "block w-full px-3 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-[var(--table-row-hover)]",
-                option.value === sinceDuration
-                  ? "text-[var(--accent)]"
-                  : "text-[var(--text-secondary)]",
-              )}
+            <MenuItem
+              mono
+              selected={option.value === sinceDuration}
               onclick={(e) => {
                 e.stopPropagation();
                 onSinceSelect(option.value);
               }}
             >
               {option.label}
-            </button>
+            </MenuItem>
           {/each}
-        </div>
+        </Menu>
       {/if}
     </div>
 
     <!-- Tail Selector -->
     <span class="font-mono text-[12px] text-[var(--text-muted)]">tail:</span>
     <div class="relative">
-      <button
-        class="flex h-7 items-center gap-1 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-        onclick={(e) => onToggleDropdown("tail", e)}
-      >
+      <Button variant="toolbar" size="sm" mono class="gap-1" onclick={(e) => onToggleDropdown("tail", e)}>
         <span>{tailLines}</span>
         <ChevronDown class="h-2.5 w-2.5 text-[var(--text-muted)]" />
-      </button>
+      </Button>
       {#if openDropdown === "tail"}
-        <div
-          class="absolute top-full left-0 z-50 mt-1 min-w-[80px] rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-        >
+        <Menu class="min-w-[80px]">
           {#each TAIL_OPTIONS as option}
-            <button
-              class={cn(
-                "block w-full px-3 py-1.5 text-left font-mono text-[11px] transition-colors hover:bg-[var(--table-row-hover)]",
-                option === tailLines
-                  ? "text-[var(--accent)]"
-                  : "text-[var(--text-secondary)]",
-              )}
+            <MenuItem
+              mono
+              selected={option === tailLines}
               onclick={(e) => {
                 e.stopPropagation();
                 onTailSelect(option);
               }}
             >
               {option}
-            </button>
+            </MenuItem>
           {/each}
-        </div>
+        </Menu>
       {/if}
     </div>
   </div>
 
   <!-- Right: Timestamps, Previous, Regex, Clear -->
   <div class="flex items-center gap-1.5">
-    <button
-      class={cn(
-        "flex h-7 items-center gap-1.5 rounded px-2.5 font-mono text-[11px] font-medium transition-colors",
-        showTimestamps
-          ? "bg-[var(--accent)] text-[var(--bg-primary)]"
-          : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]",
-      )}
+    <Button
+      variant="toolbar"
+      size="sm"
+      mono
+      active={showTimestamps}
       onclick={() => (showTimestamps = !showTimestamps)}
     >
       <Calendar class="h-3 w-3" />
       <span>timestamps</span>
-    </button>
-    <button
-      class={cn(
-        "flex h-7 items-center rounded px-2.5 font-mono text-[11px] transition-colors",
-        showPrevious
-          ? "bg-[var(--accent)] text-[var(--bg-primary)]"
-          : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]",
-      )}
-      onclick={onTogglePrevious}
-    >
+    </Button>
+    <Button variant="toolbar" size="sm" mono active={showPrevious} onclick={onTogglePrevious}>
       Previous
-    </button>
-    <button
-      class={cn(
-        "flex h-7 items-center gap-1.5 rounded px-2.5 font-mono text-[11px] transition-colors",
-        useRegex
-          ? "bg-[var(--accent)] text-[var(--bg-primary)]"
-          : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]",
-      )}
-      onclick={() => (useRegex = !useRegex)}
-    >
+    </Button>
+    <Button variant="toolbar" size="sm" mono active={useRegex} onclick={() => (useRegex = !useRegex)}>
       <Search class="h-3 w-3" />
       <span>regex</span>
-    </button>
-    <button
-      class="flex h-7 items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 font-mono text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-      onclick={onClear}
-    >
+    </Button>
+    <Button variant="toolbar" size="sm" mono onclick={onClear}>
       <Trash2 class="h-3 w-3" />
       <span>Clear</span>
-    </button>
+    </Button>
   </div>
 </div>

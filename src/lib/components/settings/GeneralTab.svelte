@@ -35,7 +35,7 @@
           onclick={() => selectTheme(theme.id)}
         >
           {#if colors}
-            <div class="flex shrink-0 gap-0.5 overflow-hidden rounded">
+            <div class="flex shrink-0 gap-0.5 overflow-hidden rounded-sm">
               <span class="h-5 w-3.5" style:background-color={colors.bg}></span>
               <span class="h-5 w-3.5" style:background-color={colors.secondary}></span>
               <span class="h-5 w-3.5" style:background-color={colors.accent}></span>
@@ -92,7 +92,7 @@
         </div>
         <span class="mt-0.5 text-[10px] text-[var(--text-muted)]">{option.desc}</span>
         <!-- Mini density preview -->
-        <div class="mt-2.5 flex flex-col rounded border border-[var(--border-color)]/50 overflow-hidden">
+        <div class="mt-2.5 flex flex-col rounded-sm border border-[var(--border-color)]/50 overflow-hidden">
           {#each { length: option.rowCount } as _}
             <div
               class={cn(

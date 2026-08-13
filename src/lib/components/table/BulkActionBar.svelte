@@ -1,5 +1,6 @@
 <script lang="ts">
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
+  import { Button } from "$lib/components/ui";
   import {
     confirmDelete as commitDelete,
     handleBulkDelete as computeShowConfirm,
@@ -27,20 +28,14 @@
 </script>
 
 {#if selectedCount > 0}
-  <div class="flex items-center gap-3 rounded bg-[var(--accent)]/10 px-4 py-2 mx-8 mb-2">
+  <div class="flex items-center gap-3 rounded-sm bg-[var(--accent)]/10 px-4 py-2 mx-8 mb-2">
     <span class="text-[12px] font-medium text-[var(--text-primary)]">{selectedCount} {selectedCount === 1 ? 'resource' : 'resources'} selected</span>
-    <button
-      class="rounded border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 px-3 py-1 text-[12px] font-medium text-[var(--status-failed)] hover:bg-[var(--status-failed)]/20 transition-colors"
-      onclick={handleBulkDelete}
-    >
+    <Button variant="destructive" size="sm" onclick={handleBulkDelete}>
       Delete selected
-    </button>
-    <button
-      class="rounded border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-1 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] transition-colors"
-      onclick={ondeselect}
-    >
+    </Button>
+    <Button variant="toolbar" size="sm" onclick={ondeselect}>
       Deselect all
-    </button>
+    </Button>
   </div>
 {/if}
 
