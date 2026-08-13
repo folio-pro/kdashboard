@@ -169,6 +169,8 @@
   <Menu
     bind:ref={menuEl}
     position="fixed"
+    role="menu"
+    tabindex={-1}
     aria-label="Tab actions"
     class="min-w-[180px]"
     style="left: {ctxMenu.x}px; top: {ctxMenu.y}px;"

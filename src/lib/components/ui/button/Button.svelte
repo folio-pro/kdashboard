@@ -16,7 +16,11 @@
     mono?: boolean;
     /** Colour of the selected state, and of `toolbar-tone` at rest. */
     tone?: ButtonTone;
-    /** Selected state for segmented/filter controls. */
+    /**
+     * Selected state for segmented/filter controls. Left undefined the button
+     * is not a toggle and carries no aria-pressed; set to false it is a toggle
+     * that happens to be off, which assistive technology has to be told.
+     */
     active?: boolean;
     activeStyle?: ButtonActiveStyle;
     class?: string;
@@ -27,7 +31,7 @@
     size = "md",
     mono = false,
     tone = "accent",
-    active = false,
+    active,
     activeStyle = "solid",
     class: className,
     children,
@@ -35,10 +39,14 @@
   }: Props = $props();
 </script>
 
+<!-- restProps is spread first so a call site cannot contradict the ARIA state
+     the component derives from `active`, and `type` defaults to "button": the
+     HTML default is "submit", which makes any control inside a form submit it. -->
 <button
-  class={cn(buttonVariants({ variant, size, mono, tone, active, activeStyle }), className)}
-  aria-pressed={active ? true : undefined}
+  type="button"
   {...restProps}
+  class={cn(buttonVariants({ variant, size, mono, tone, active: active ?? false, activeStyle }), className)}
+  aria-pressed={active}
 >
   {@render children?.()}
 </button>

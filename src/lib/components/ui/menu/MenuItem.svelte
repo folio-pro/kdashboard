@@ -32,7 +32,10 @@
   }: Props = $props();
 </script>
 
+<!-- type="button": the HTML default is "submit", and a menu row inside a form
+     must not submit it. -->
 <button
+  type="button"
   class={cn(
     "block w-full px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--table-row-hover)] disabled:cursor-default disabled:text-[var(--text-muted)] disabled:hover:bg-transparent",
     mono && "font-mono",

@@ -44,7 +44,7 @@
   <DetailSection title="CronJob Spec" icon={Clock}>
     {#snippet actions()}
       {#if suspend}
-        <Badge tone="warn" class="border border-[var(--status-pending)]/30">Suspended</Badge>
+        <Badge tone="warning" class="border border-[var(--status-pending)]/30">Suspended</Badge>
       {/if}
     {/snippet}
     <KvGrid>

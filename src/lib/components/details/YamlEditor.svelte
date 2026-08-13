@@ -374,7 +374,7 @@
            shows the name, kind and namespace directly above this component. -->
       <div class="ml-auto flex items-center gap-0.5">
         {#if isModified}
-          <Badge tone="warn" class="mr-1 font-semibold">MODIFIED</Badge>
+          <Badge tone="warning" class="mr-1 font-semibold">MODIFIED</Badge>
         {/if}
         {#if saveSuccess}
           <Badge tone="success" class="mr-1 font-semibold">SAVED</Badge>
@@ -396,7 +396,7 @@
         {#if activeTab === "editor" && warningCount > 0}
           <Button
             variant="soft-tone"
-            tone="warn"
+            tone="warning"
             size="inline-xs"
             class="mr-1 px-1.5 py-0.5 font-semibold"
             onclick={handleShowProblems}

@@ -6,7 +6,6 @@ import type { LogLine } from "./log-viewer";
 
 export type TailLines = 100 | 500 | 1000 | 5000;
 export type SinceDuration = "5m" | "15m" | "1h" | "6h" | "1d" | "3d" | "7d";
-export type DropdownId = "pod" | "container" | "since" | "tail" | null;
 
 // --- Since options ---
 

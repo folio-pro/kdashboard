@@ -1,4 +1,5 @@
 import { tv, type VariantProps } from "tailwind-variants";
+import { toneVariants } from "../tones.js";
 
 /**
  * "Filled in the button's own tone" and "tinted in it" are each written once
@@ -104,14 +105,7 @@ export const buttonVariants = tv({
      * The colour a selected control (and `toolbar-tone`) takes, as a theme
      * variable rather than a class per colour.
      */
-    tone: {
-      accent: "[--tone:var(--accent)]",
-      neutral: "[--tone:var(--text-secondary)]",
-      success: "[--tone:var(--status-running)]",
-      warn: "[--tone:var(--status-pending)]",
-      error: "[--tone:var(--status-failed)]",
-      info: "[--tone:var(--status-succeeded)]",
-    },
+    tone: toneVariants,
     /**
      * Selected state for segmented/filter controls. Pairs with any variant:
      * the variant supplies the resting look, `active` the selected one.

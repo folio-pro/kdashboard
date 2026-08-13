@@ -55,9 +55,16 @@ of the text they sit in.
 
 Semantic, never a colour name. `neutral · muted · accent · success · warning ·
 error · info · terminating`, each mapping to a theme variable
-(`--status-running`, `--status-failed`, …). `Badge` resolves the tone into a
-single `--tone` custom property, so an appearance is one rule rather than one
-rule per tone.
+(`--status-running`, `--status-failed`, …).
+
+The list lives in `tones.ts` and both `Badge` and `Button` derive their `tone`
+variant from it. They used to keep separate lists that disagreed — one said
+`warning`, the other `warn` — and tailwind-variants falls back to the default
+on a name it does not know, so the mismatch rendered the wrong colour in
+silence. One vocabulary, one file.
+
+A tone resolves to a `--tone` custom property, so an appearance is one rule
+rather than one rule per tone.
 
 ## Primitives
 
@@ -68,7 +75,8 @@ rule per tone.
 | `Card` | `rounded-lg border … bg-[var(--bg-secondary)] p-3` surfaces |
 | `Input` | raw `<input type="text">` |
 | `SearchField` | the icon + input + hint box, six copies of it |
-| `Menu`, `MenuItem`, `MenuSeparator` | the app's own dropdown and context menus |
+| `SelectMenu` | value pickers in panel toolbars (Popover-backed) |
+| `Menu`, `MenuItem`, `MenuSeparator` | the cursor-anchored context menu |
 | `Kbd` | keyboard hints |
 | `Spinner` | ad-hoc `Loader2 class="animate-spin"` |
 | `Checkbox`, `Skeleton`, `CodeSkeleton` | — |
@@ -119,6 +127,11 @@ drift in the other direction.
   `aria-pressed`.
 - **New primitive only on the third copy.** Two similar blocks are a
   coincidence; three are a component.
+- **Never claim an ARIA role you do not implement.** `role="menu"` promises a
+  keyboard model — focus in on open, arrows roving between items, Escape to
+  close. `Menu` leaves the role to the caller for exactly this reason. A role
+  without its behaviour is worse than no role: it tells assistive technology to
+  expect something that never happens.
 
 The first two rules are enforced by `design-system.test.ts`, which fails the
 suite on a raw palette class or a bare `rounded` anywhere under `src/`. Both

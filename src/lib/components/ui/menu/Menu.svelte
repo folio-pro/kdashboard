@@ -8,15 +8,28 @@
    * `absolute top-full … rounded border … bg-[var(--bg-secondary)] py-1
    * shadow-lg` existed, drifting on radius and alignment.
    *
-   * This is deliberately not the bits-ui popover: these menus are anchored by
-   * a `relative` parent (or positioned `fixed` at a cursor), and swapping them
-   * to a portal-based primitive is a behaviour change, not a styling one.
+   * This is deliberately not the bits-ui popover, which SelectMenu already
+   * wraps for value pickers: what is left here is the cursor-anchored context
+   * menu, which has to be positioned at an arbitrary point rather than against
+   * a trigger.
+   *
+   * `role` is NOT defaulted to "menu". That role is a promise of a keyboard
+   * model — focus moves into the menu on open, arrow keys rove between items,
+   * Escape closes — and this component implements none of it; its one consumer
+   * does. Claiming the role from here would hand every future caller an
+   * accessibility contract it silently fails to honour, which is worse than no
+   * role at all. Pass `role="menu"` — and the `tabindex` and key handling that
+   * go with it — only alongside that behaviour.
    */
   interface Props extends HTMLAttributes<HTMLDivElement> {
     /** Which edge of the anchor the menu hangs from. */
     align?: "left" | "right";
     /** `fixed` for cursor-anchored context menus, which set their own inset. */
     position?: "absolute" | "fixed";
+    /**
+     * Only pass "menu" if you also implement its keyboard model — see above.
+     */
+    role?: "menu";
     /**
      * The menu's own element. `bind:this` on a component yields the component
      * instance, not the node, and callers need the node for outside-click
@@ -29,6 +42,7 @@
   let {
     align = "left",
     position = "absolute",
+    role,
     ref = $bindable(),
     class: className,
     children,
@@ -45,8 +59,7 @@
     position === "fixed" && "fixed",
     className
   )}
-  role="menu"
-  tabindex="-1"
+  {role}
   {...restProps}
 >
   {@render children?.()}

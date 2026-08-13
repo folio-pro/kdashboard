@@ -21,10 +21,12 @@ export {
   type BadgeSize,
 } from "./badge/index.js";
 export { Card } from "./card/index.js";
+export { TONES, toneVariants, type Tone } from "./tones.js";
 export { Input } from "./input/index.js";
 export { Kbd } from "./kbd/index.js";
 export { Menu, MenuItem, MenuSeparator } from "./menu/index.js";
 export { SearchField } from "./search-field/index.js";
+export { SelectMenu } from "./select-menu/index.js";
 export { default as Spinner } from "./spinner/Spinner.svelte";
 export { Checkbox } from "./checkbox/index.js";
 export { Skeleton, CodeSkeleton } from "./skeleton/index.js";

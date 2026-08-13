@@ -75,7 +75,7 @@
         {/if}
       </Badge>
       {#if topologyStore.graph.has_cycles}
-        <Badge tone="warn" size="sm" class="rounded-md font-normal">
+        <Badge tone="warning" size="sm" class="rounded-md font-normal">
           <AlertTriangle class="h-3 w-3" />
           cycles detected
         </Badge>

@@ -11,26 +11,38 @@ import { join } from "node:path";
 
 const SRC = join(import.meta.dir, "../../..");
 
-function svelteFiles(dir: string, acc: string[] = []): string[] {
+/**
+ * `.ts` counts as much as `.svelte`: the variant maps that decide what every
+ * button and badge in the app looks like live in the `variants.ts` files, so a
+ * scanner that only reads markup exempts exactly the files with the widest
+ * blast radius. This file is skipped because it necessarily contains the very
+ * tokens it forbids.
+ */
+const SELF = "design-system.test.ts";
+
+function styledFiles(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry);
     if (statSync(path).isDirectory()) {
-      svelteFiles(path, acc);
-    } else if (entry.endsWith(".svelte")) {
+      styledFiles(path, acc);
+    } else if ((entry.endsWith(".svelte") || entry.endsWith(".ts")) && entry !== SELF) {
       acc.push(path);
     }
   }
   return acc;
 }
 
-const files = svelteFiles(SRC).map((path) => ({
+const files = styledFiles(SRC).map((path) => ({
   path: path.slice(SRC.length + 1),
   source: readFileSync(path, "utf8"),
 }));
 
 /** Strip comments so prose about the rules doesn't trip the rules. */
 function code(source: string): string {
-  return source.replace(/<!--[\s\S]*?-->/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  return source
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
 }
 
 describe("design system", () => {

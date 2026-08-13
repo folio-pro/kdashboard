@@ -1,4 +1,5 @@
 import { tv, type VariantProps } from "tailwind-variants";
+import { toneVariants } from "../tones.js";
 
 /**
  * Badge / pill / chip.
@@ -16,16 +17,7 @@ import { tv, type VariantProps } from "tailwind-variants";
 export const badgeVariants = tv({
   base: "inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium",
   variants: {
-    tone: {
-      neutral: "[--tone:var(--text-secondary)]",
-      muted: "[--tone:var(--text-muted)]",
-      accent: "[--tone:var(--accent)]",
-      success: "[--tone:var(--status-running)]",
-      warning: "[--tone:var(--status-pending)]",
-      error: "[--tone:var(--status-failed)]",
-      info: "[--tone:var(--status-succeeded)]",
-      terminating: "[--tone:var(--status-terminating)]",
-    },
+    tone: toneVariants,
     appearance: {
       /** Tinted background, tone-coloured label. The default chip. */
       soft: "bg-[color-mix(in_srgb,var(--tone)_15%,transparent)] text-[var(--tone)]",
