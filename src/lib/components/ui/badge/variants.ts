@@ -1,5 +1,5 @@
 import { tv, type VariantProps } from "tailwind-variants";
-import { toneVariants } from "../tones.js";
+import type { Tone } from "../tones.js";
 
 /**
  * Badge / pill / chip.
@@ -17,7 +17,6 @@ import { toneVariants } from "../tones.js";
 export const badgeVariants = tv({
   base: "inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium",
   variants: {
-    tone: toneVariants,
     appearance: {
       /** Tinted background, tone-coloured label. The default chip. */
       soft: "bg-[color-mix(in_srgb,var(--tone)_15%,transparent)] text-[var(--tone)]",
@@ -47,7 +46,6 @@ export const badgeVariants = tv({
     },
   },
   defaultVariants: {
-    tone: "neutral",
     appearance: "soft",
     size: "xs",
     pill: false,
@@ -56,6 +54,7 @@ export const badgeVariants = tv({
   },
 });
 
-export type BadgeTone = VariantProps<typeof badgeVariants>["tone"];
+/** Reaches the element as an inline `--tone` declaration — see `toneStyle`. */
+export type BadgeTone = Tone;
 export type BadgeAppearance = VariantProps<typeof badgeVariants>["appearance"];
 export type BadgeSize = VariantProps<typeof badgeVariants>["size"];

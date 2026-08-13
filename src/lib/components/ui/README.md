@@ -57,14 +57,18 @@ Semantic, never a colour name. `neutral · muted · accent · success · warning
 error · info · terminating`, each mapping to a theme variable
 (`--status-running`, `--status-failed`, …).
 
-The list lives in `tones.ts` and both `Badge` and `Button` derive their `tone`
-variant from it. They used to keep separate lists that disagreed — one said
+The list lives in `tones.ts` and both `Badge` and `Button` take their `tone`
+prop from it. They used to keep separate lists that disagreed — one said
 `warning`, the other `warn` — and tailwind-variants falls back to the default
 on a name it does not know, so the mismatch rendered the wrong colour in
 silence. One vocabulary, one file.
 
 A tone resolves to a `--tone` custom property, so an appearance is one rule
-rather than one rule per tone.
+rather than one rule per tone. It is set as an **inline `style`**, not a class:
+Tailwind matches class names as literal text, so an arbitrary property built
+per tone (`[--tone:${value}]`) is a name the scanner never sees and a rule that
+never ships. Pass a one-off colour the vocabulary has no name for the same way
+— `style="--tone: var(--log-json);"` — and it wins over the prop.
 
 ## Primitives
 

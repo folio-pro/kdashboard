@@ -21,7 +21,7 @@ export {
   type BadgeSize,
 } from "./badge/index.js";
 export { Card } from "./card/index.js";
-export { TONES, toneVariants, type Tone } from "./tones.js";
+export { TONES, toneStyle, type Tone } from "./tones.js";
 export { Input } from "./input/index.js";
 export { Kbd } from "./kbd/index.js";
 export { Menu, MenuItem, MenuSeparator } from "./menu/index.js";

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { cn } from "$lib/utils.js";
+  import { toneStyle } from "../tones.js";
   import {
     buttonVariants,
     type ButtonVariant,
@@ -34,9 +35,15 @@
     active,
     activeStyle = "solid",
     class: className,
+    style,
     children,
     ...restProps
   }: Props = $props();
+
+  // `tone` is a value, not an appearance, so it travels as an inline custom
+  // property rather than a class. The call site's own declarations come last,
+  // so a one-off `style` still wins.
+  const inlineStyle = $derived(style ? `${toneStyle(tone)} ${style}` : toneStyle(tone));
 </script>
 
 <!-- restProps is spread first so a call site cannot contradict the ARIA state
@@ -45,7 +52,8 @@
 <button
   type="button"
   {...restProps}
-  class={cn(buttonVariants({ variant, size, mono, tone, active: active ?? false, activeStyle }), className)}
+  class={cn(buttonVariants({ variant, size, mono, active: active ?? false, activeStyle }), className)}
+  style={inlineStyle}
   aria-pressed={active}
 >
   {@render children?.()}

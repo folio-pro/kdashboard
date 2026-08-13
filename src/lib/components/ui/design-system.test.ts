@@ -80,4 +80,27 @@ describe("design system", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it("assembles no Tailwind arbitrary value at runtime", () => {
+    // Tailwind matches class names as literal text in the source. A bracketed
+    // utility whose contents are interpolated is a name the scanner never
+    // sees, so its rule is simply missing from the stylesheet — silently, and
+    // only at runtime. `tones.ts` shipped `[--tone:${value}]` this way and the
+    // whole control bar rendered colourless.
+    //
+    // Interpolation is fine anywhere else in a class list (`h-${n}` is a
+    // different mistake and a rarer one); this looks only for the brackets.
+    // A class name has no spaces in it, which is also what keeps the ANSI
+    // escapes in TerminalView (`\x1b[31mError: ${…}`) out of the net.
+    const runtimeArbitrary = /`[^`]*\[[^\]`\s]*\$\{/g;
+
+    const offenders = files
+      .map((f) => ({ path: f.path, hits: code(f.source).match(runtimeArbitrary) ?? [] }))
+      .filter((f) => f.hits.length > 0)
+      .map((f) => `${f.path}: ${f.hits.join(", ")}`);
+
+    // Pass the value through an inline `style` (see `toneStyle`) or spell each
+    // class out in full — one literal per case is what the scanner reads.
+    expect(offenders).toEqual([]);
+  });
 });

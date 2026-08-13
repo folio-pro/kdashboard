@@ -26,10 +26,22 @@ export const TONES = {
 export type Tone = keyof typeof TONES;
 
 /**
- * The `--tone` declarations as a tailwind-variants `variants.tone` map.
- * Spelled as an arbitrary property (`[--tone:…]`) so the value travels with
- * the class list and inherits to the element's own children.
+ * The `--tone` declaration, as an inline `style` value.
+ *
+ * It is NOT a Tailwind class. It used to be one — an arbitrary property built
+ * per tone, `[--tone:${value}]` — and that shipped a UI with no colour: the
+ * Tailwind scanner matches class names as literal text in the source, so a
+ * name assembled at runtime is a name it never sees. Nothing errored. The
+ * eight rules were simply absent from the stylesheet, `var(--tone)` resolved
+ * to nothing, and every control coloured through it — the Stream and Connect
+ * buttons, the log level filters, every Badge — painted transparent on a
+ * transparent background.
+ *
+ * A custom property carrying a value, set per element, is what the `style`
+ * attribute is for; four Badge call sites were already spelling it that way by
+ * hand. Declaring it here keeps it out of the scanner's reach for good, and it
+ * still inherits to the element's children.
  */
-export const toneVariants = Object.fromEntries(
-  Object.entries(TONES).map(([name, value]) => [name, `[--tone:${value}]`])
-) as Record<Tone, string>;
+export function toneStyle(tone: Tone): string {
+  return `--tone: ${TONES[tone]};`;
+}

@@ -1,5 +1,5 @@
 import { tv, type VariantProps } from "tailwind-variants";
-import { toneVariants } from "../tones.js";
+import type { Tone } from "../tones.js";
 
 /**
  * "Filled in the button's own tone" and "tinted in it" are each written once
@@ -102,11 +102,6 @@ export const buttonVariants = tv({
       false: "",
     },
     /**
-     * The colour a selected control (and `toolbar-tone`) takes, as a theme
-     * variable rather than a class per colour.
-     */
-    tone: toneVariants,
-    /**
      * Selected state for segmented/filter controls. Pairs with any variant:
      * the variant supplies the resting look, `active` the selected one.
      */
@@ -148,7 +143,6 @@ export const buttonVariants = tv({
     variant: "accent",
     size: "md",
     mono: false,
-    tone: "accent",
     active: false,
     activeStyle: "solid",
   },
@@ -156,5 +150,9 @@ export const buttonVariants = tv({
 
 export type ButtonVariant = VariantProps<typeof buttonVariants>["variant"];
 export type ButtonSize = VariantProps<typeof buttonVariants>["size"];
-export type ButtonTone = VariantProps<typeof buttonVariants>["tone"];
+/**
+ * The colour a `*-tone` variant and a selected control take. It reaches the
+ * element as an inline `--tone` declaration, not a class — see `toneStyle`.
+ */
+export type ButtonTone = Tone;
 export type ButtonActiveStyle = VariantProps<typeof buttonVariants>["activeStyle"];
