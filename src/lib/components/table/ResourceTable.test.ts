@@ -324,6 +324,15 @@ describe("ResourceTable — events", () => {
       .toEqual(["old", "mid", "new"]);
   });
 
+  test("eventLastSeen compares parsed times, not strings (fractional seconds)", () => {
+    // Lexically "…00.500Z" < "…00Z", but it is the newer instant.
+    const items = [
+      makeEvent("whole", { eventTime: "2026-06-01T00:00:00Z" }),
+      makeEvent("fractional", { eventTime: "2026-06-01T00:00:00.500Z" }),
+    ];
+    expect(sortResources(items, "eventLastSeen", "asc")[0].metadata.name).toBe("fractional");
+  });
+
   test("eventLastSeen falls back to creation timestamp when unobserved", () => {
     const items = [
       makeEvent("observed", { lastTimestamp: "2026-06-01T00:00:00Z" }),

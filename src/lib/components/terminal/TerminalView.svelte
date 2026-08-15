@@ -33,17 +33,50 @@
   let initPromise: Promise<void> | null = null;
   let initError = $state<string | null>(null);
 
-  // Debug containers started this session — the selected resource is a
+  // Debug containers started on the current pod — the selected resource is a
   // snapshot, so freshly added ephemeral containers are not in its status yet.
+  // Cleared when the selection moves to another resource (see the identity
+  // effect below); they belong to one pod only.
   let debugContainers = $state<string[]>([]);
   let debugStarting = $state(false);
 
   // Node-shell pods (start_node_shell) are transient privileged pods that only
   // sleep; the real shell comes from nsenter-ing the host namespaces. The label
   // is set by electron/handlers/node-shell.ts.
+  const NODE_SHELL_LABEL = "kdashboard.io/node-shell";
   const isNodeShell = $derived(
-    k8sStore.selectedResource?.metadata.labels?.["kdashboard.io/node-shell"] === "true",
+    k8sStore.selectedResource?.metadata.labels?.[NODE_SHELL_LABEL] === "true",
   );
+
+  // The node-shell pod this view currently owns. It is a leaked privileged pod
+  // the moment its terminal is gone, so it is deleted when the selection moves
+  // away AND on unmount (the backend's activeDeadlineSeconds is only the
+  // fallback reaper). Plain variable: only the identity effect writes it.
+  let activeNodeShell: { name: string; namespace: string } | null = null;
+
+  function stopNodeShell(pod: { name: string; namespace: string }) {
+    invoke("stop_node_shell", pod).catch(() => {});
+  }
+
+  // React to the selected resource's identity, not a mount-time snapshot:
+  // reset per-pod debug containers and release the previous node-shell pod.
+  let selectedUid: string | undefined;
+  $effect(() => {
+    const resource = k8sStore.selectedResource;
+    const uid = resource?.metadata.uid;
+    if (uid === selectedUid) return;
+    selectedUid = uid;
+
+    debugContainers = [];
+
+    const next = isNodeShell && resource
+      ? { name: resource.metadata.name, namespace: resource.metadata.namespace ?? "" }
+      : null;
+    if (activeNodeShell && activeNodeShell.name !== next?.name) {
+      stopNodeShell(activeNodeShell);
+    }
+    activeNodeShell = next;
+  });
 
   const containers = $derived.by(() => {
     const resource = k8sStore.selectedResource;
@@ -284,21 +317,12 @@
   let autoStarted = false;
 
   onMount(() => {
-    // Captured on mount: the selection can change before the cleanup runs.
-    const mounted = k8sStore.selectedResource;
-    const mountedIsNodeShell =
-      mounted?.metadata.labels?.["kdashboard.io/node-shell"] === "true";
     return () => {
       destroyed = true;
       disconnect();
-      // A node-shell pod is a leaked privileged pod once its terminal is gone —
-      // delete it with the view (the backend's activeDeadlineSeconds is only
-      // the fallback reaper).
-      if (mountedIsNodeShell && mounted) {
-        invoke("stop_node_shell", {
-          name: mounted.metadata.name,
-          namespace: mounted.metadata.namespace ?? "",
-        }).catch(() => {});
+      if (activeNodeShell) {
+        stopNodeShell(activeNodeShell);
+        activeNodeShell = null;
       }
       // destroy() disconnects the internal ResizeObserver and the input handler.
       terminal?.destroy();

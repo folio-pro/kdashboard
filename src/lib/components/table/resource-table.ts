@@ -90,13 +90,13 @@ export function sortResources(
       aVal = (a.spec?.type as string) ?? a.type ?? "";
       bVal = (b.spec?.type as string) ?? b.type ?? "";
     } else if (sortColumn === "eventLastSeen") {
-      aVal = eventLastTimestamp(a) ?? a.metadata.creation_timestamp;
-      bVal = eventLastTimestamp(b) ?? b.metadata.creation_timestamp;
+      // Parsed, not string-compared: eventTime is a MicroTime, and RFC 3339
+      // strings with and without fractional seconds do not sort lexically.
+      const aTime = Date.parse(eventLastTimestamp(a) ?? a.metadata.creation_timestamp);
+      const bTime = Date.parse(eventLastTimestamp(b) ?? b.metadata.creation_timestamp);
       // Like age: newest first when "asc", so the default view leads with
       // what the cluster did most recently.
-      return sortDirection === "asc"
-        ? bVal.localeCompare(aVal)
-        : aVal.localeCompare(bVal);
+      return sortDirection === "asc" ? bTime - aTime : aTime - bTime;
     } else if (sortColumn === "eventReason") {
       aVal = (a.spec?.reason as string) ?? "";
       bVal = (b.spec?.reason as string) ?? "";

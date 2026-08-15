@@ -99,9 +99,18 @@ async function waitForPodRunning(name: string, namespace: string): Promise<void>
   throw new Error(`Timed out waiting for the node shell pod to start (last phase: ${lastPhase})`);
 }
 
-/** Best-effort delete; NotFound is success (something else reaped it). */
+/**
+ * Best-effort delete; NotFound is success (something else reaped it). Only
+ * pods carrying the node-shell label are deletable through this path — the
+ * renderer supplies name/namespace, and without the guard stop_node_shell
+ * would be a force-delete primitive for arbitrary pods.
+ */
 async function deleteNodeShellPod(name: string, namespace: string): Promise<void> {
   try {
+    const pod = await getCoreV1Api().readNamespacedPod({ name, namespace });
+    if (pod.metadata?.labels?.[NODE_SHELL_LABEL] !== 'true') {
+      throw new Error(`Pod ${namespace}/${name} is not a node shell pod`);
+    }
     await getCoreV1Api().deleteNamespacedPod({ name, namespace, gracePeriodSeconds: 0 });
   } catch (err) {
     const msg = k8sErrorMessage(err);

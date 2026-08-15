@@ -294,7 +294,15 @@
 {/if}
 
 {#if dialogStore.compareOpen && dialogStore.compareResource}
-  <CompareDialog bind:open={dialogStore.compareOpen} resource={dialogStore.compareResource} />
+  <!-- Function binding: closing must go through closeCompare() so the stored
+       resource is cleared along with the open flag. -->
+  <CompareDialog
+    bind:open={
+      () => dialogStore.compareOpen,
+      (v) => { if (!v) dialogStore.closeCompare(); }
+    }
+    resource={dialogStore.compareResource}
+  />
 {/if}
 
 {#if dialogStore.deleteOpen && dialogStore.deleteResource}
