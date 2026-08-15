@@ -31,6 +31,9 @@
     "false": "error",
     terminating: "orange",
     unknown: "muted",
+    // core/v1 Event types (global Events view)
+    normal: "muted",
+    warning: "warning",
   };
 
   const categoryColors: Record<StatusCategory, string> = {

@@ -1,4 +1,5 @@
 import type { Resource } from "$lib/types";
+import { eventLastTimestamp } from "./cell-values";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -23,15 +24,28 @@ export function clampColumnWidth(width: number): number {
   return Math.max(MIN_COL_WIDTH, width);
 }
 
-/** Text filtering — matches resource name or namespace case-insensitively. */
+/**
+ * Text filtering — matches resource name or namespace case-insensitively.
+ * Events additionally match on reason/message: their names are hashes the
+ * table does not even show, so name-only filtering would find nothing.
+ */
 export function filterResources(items: Resource[], filterText: string): Resource[] {
   if (!filterText) return items;
   const lower = filterText.toLowerCase();
-  return items.filter(
-    (r) =>
+  return items.filter((r) => {
+    if (
       r.metadata.name.toLowerCase().includes(lower) ||
-      (r.metadata.namespace ?? "").toLowerCase().includes(lower),
-  );
+      (r.metadata.namespace ?? "").toLowerCase().includes(lower)
+    ) {
+      return true;
+    }
+    if (r.kind !== "Event") return false;
+    const spec = r.spec as { reason?: unknown; message?: unknown } | undefined;
+    return (
+      (typeof spec?.reason === "string" && spec.reason.toLowerCase().includes(lower)) ||
+      (typeof spec?.message === "string" && spec.message.toLowerCase().includes(lower))
+    );
+  });
 }
 
 /** Sort resources by a given column and direction. */
@@ -72,9 +86,20 @@ export function sortResources(
       const aCount = aData && typeof aData === "object" ? Object.keys(aData).length : 0;
       const bCount = bData && typeof bData === "object" ? Object.keys(bData).length : 0;
       return sortDirection === "asc" ? aCount - bCount : bCount - aCount;
-    } else if (sortColumn === "type") {
+    } else if (sortColumn === "type" || sortColumn === "eventType") {
       aVal = (a.spec?.type as string) ?? a.type ?? "";
       bVal = (b.spec?.type as string) ?? b.type ?? "";
+    } else if (sortColumn === "eventLastSeen") {
+      aVal = eventLastTimestamp(a) ?? a.metadata.creation_timestamp;
+      bVal = eventLastTimestamp(b) ?? b.metadata.creation_timestamp;
+      // Like age: newest first when "asc", so the default view leads with
+      // what the cluster did most recently.
+      return sortDirection === "asc"
+        ? bVal.localeCompare(aVal)
+        : aVal.localeCompare(bVal);
+    } else if (sortColumn === "eventReason") {
+      aVal = (a.spec?.reason as string) ?? "";
+      bVal = (b.spec?.reason as string) ?? "";
     } else {
       aVal = a.metadata.name;
       bVal = b.metadata.name;

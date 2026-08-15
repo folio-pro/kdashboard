@@ -102,6 +102,12 @@ describe('resolveResourceType', () => {
       group: 'admissionregistration.k8s.io',
       clusterScoped: true,
     });
+    expect(resolveResourceType('events')).toMatchObject({
+      group: '',
+      version: 'v1',
+      kind: 'Event',
+      clusterScoped: false,
+    });
   });
 
   test('returns undefined for a virtual view id', () => {

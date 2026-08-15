@@ -57,6 +57,19 @@ function count(value: unknown): string {
 }
 
 /**
+ * When an Event was last observed: lastTimestamp for classic events, then the
+ * series / eventTime fields the events.k8s.io shapes use, then firstTimestamp.
+ * Null when the object carries none of them (caller falls back to creation).
+ */
+export function eventLastTimestamp(resource: Resource): string | null {
+  const spec = (resource.spec ?? {}) as Json;
+  const series = spec.series as { lastObservedTime?: string } | undefined;
+  const candidate =
+    spec.lastTimestamp ?? series?.lastObservedTime ?? spec.eventTime ?? spec.firstTimestamp;
+  return typeof candidate === "string" && candidate !== "" ? candidate : null;
+}
+
+/**
  * The value shown in `key`'s cell. Unknown keys render as "-", which is what
  * lets a resource type ship a column before its accessor exists.
  */
@@ -206,6 +219,26 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
     case "vaAttached":
       return bool(status.attached);
 
+    // --- Events -------------------------------------------------------------
+    // core/v1 Event fields ride in the synthetic spec (see kinds.ts `synth`).
+    case "eventLastSeen": {
+      void ctx.ageTick;
+      return formatAge(eventLastTimestamp(resource) ?? meta.creation_timestamp);
+    }
+    case "eventType":
+      return str(spec.type);
+    case "eventReason":
+      return str(spec.reason);
+    case "eventObject":
+      return refLabel(spec.involvedObject as { kind?: string; name?: string });
+    case "eventMessage":
+      return str(spec.message);
+    case "eventCount": {
+      const series = spec.series as { count?: number } | undefined;
+      const n = (spec.count as number) ?? series?.count;
+      return typeof n === "number" ? n.toString() : "1";
+    }
+
     // --- Scheduling / policy -----------------------------------------------
     case "pcValue":
       return spec.value === undefined ? NONE : String(spec.value);
@@ -247,6 +280,7 @@ const MONO_COLUMNS = new Set([
   "sliceEndpoints", "slicePorts", "scProvisioner", "vaAttacher", "vaVolume",
   "vaNode", "pcValue", "leaseHolder", "webhookCount", "webhookNames",
   "ingressController", "csiModes",
+  "eventLastSeen", "eventReason", "eventObject", "eventCount",
 ]);
 
 /** Short classifier cells, rendered as tag pills. */
@@ -262,7 +296,8 @@ const USAGE_COLUMNS = new Set(["cpuUsage", "memUsage", "podCpu", "podMemory"]);
 export const isMonoColumn = (key: string): boolean => MONO_COLUMNS.has(key);
 export const isTagColumn = (key: string): boolean => TAG_COLUMNS.has(key);
 export const isUsageColumn = (key: string): boolean => USAGE_COLUMNS.has(key);
-export const isStatusColumn = (key: string): boolean => key === "status" || key === "phase";
+export const isStatusColumn = (key: string): boolean =>
+  key === "status" || key === "phase" || key === "eventType";
 export const isContainersColumn = (key: string): boolean => key === "containers";
 
 // ---------------------------------------------------------------------------

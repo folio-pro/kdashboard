@@ -113,6 +113,7 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
     items: [
       { name: "Nodes", type: "nodes", kind: "Node", short: "no" },
       { name: "Namespaces", type: "namespaces", kind: "Namespace", short: "ns" },
+      { name: "Events", type: "events", kind: "Event", short: "ev" },
       { name: "Priority Classes", type: "priorityclasses", kind: "PriorityClass", short: "pc" },
       { name: "Runtime Classes", type: "runtimeclasses", kind: "RuntimeClass", short: "runtimeclass" },
       { name: "Leases", type: "leases", kind: "Lease", short: "lease" },

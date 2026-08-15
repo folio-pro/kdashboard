@@ -467,6 +467,30 @@ export function computePVCStats(items: Resource[]): WorkloadStatsResult {
   };
 }
 
+export function computeEventStats(items: Resource[]): WorkloadStatsResult {
+  let normal = 0, warning = 0;
+
+  for (const item of items) {
+    // Event.type rides in the synthetic spec (see kinds.ts `synth`).
+    const type = (item.spec?.type as string) ?? "Normal";
+    if (type === "Warning") warning++;
+    else normal++;
+  }
+
+  const total = items.length;
+  return {
+    stats: [
+      { key: "total", label: "Total", value: total, color: "var(--accent)", subtitle: "events", filterable: false },
+      { key: "normal", label: "Normal", value: normal, color: "var(--status-running)", filterable: true },
+      { key: "warning", label: "Warning", value: warning, color: "var(--status-pending)", filterable: true },
+    ],
+    healthSegments: [
+      { key: "normal", value: normal, color: "var(--status-running)" },
+      { key: "warning", value: warning, color: "var(--status-pending)" },
+    ],
+  };
+}
+
 function computeDefaultStats(items: Resource[], resourceType: string): WorkloadStatsResult {
   return {
     stats: [
@@ -491,6 +515,7 @@ const computeByType: Record<string, (items: Resource[]) => WorkloadStatsResult> 
   secrets: computeSecretStats,
   namespaces: computeNamespaceStats,
   persistentvolumeclaims: computePVCStats,
+  events: computeEventStats,
 };
 
 export function computeWorkloadStats(resourceType: string, items: Resource[]): WorkloadStatsResult {
@@ -562,6 +587,12 @@ export function matchesStatFilter(resource: Resource, resourceType: string, filt
       if (filterKey === "active") return replicas > 0 && hasOwner && ready >= replicas;
       if (filterKey === "orphaned") return replicas > 0 && !hasOwner;
       if (filterKey === "mismatched") return replicas > 0 && ready < replicas;
+      return false;
+    }
+    case "events": {
+      const type = (resource.spec?.type as string) ?? "Normal";
+      if (filterKey === "warning") return type === "Warning";
+      if (filterKey === "normal") return type !== "Warning";
       return false;
     }
     case "secrets": {

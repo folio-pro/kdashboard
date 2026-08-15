@@ -14,6 +14,12 @@ class DialogStore extends DialogStoreLogic {
 
   upsellOpen = $state(false);
 
+  drainOpen = $state(false);
+  drainNodeName = $state<string | null>(null);
+
+  compareOpen = $state(false);
+  compareResource = $state<Resource | null>(null);
+
   constructor() {
     super();
     unshadowState(this);

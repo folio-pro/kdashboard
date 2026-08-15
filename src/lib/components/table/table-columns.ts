@@ -229,6 +229,17 @@ export const columnsByType: Record<string, Column[]> = {
     { key: "webhookNames", label: "Names", sortable: false },
     { key: "age", label: "Age", sortable: true, width: "80px" },
   ],
+  // kubectl-style event listing: no Name column (event names are hashes), the
+  // message carries the signal. Default sort is eventLastSeen (see ui.logic).
+  events: [
+    { key: "eventLastSeen", label: "Last Seen", sortable: true, width: "90px" },
+    { key: "eventType", label: "Type", sortable: true, width: "100px" },
+    { key: "eventReason", label: "Reason", sortable: true, width: "160px" },
+    { key: "eventObject", label: "Object", sortable: false, width: "220px" },
+    { key: "eventMessage", label: "Message", sortable: false },
+    { key: "eventCount", label: "Count", sortable: false, width: "70px" },
+    { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
+  ],
   validatingwebhookconfigurations: [
     { key: "name", label: "Name", sortable: true },
     { key: "webhookCount", label: "Webhooks", sortable: false, width: "100px" },

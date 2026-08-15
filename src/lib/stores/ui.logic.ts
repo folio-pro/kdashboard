@@ -64,6 +64,15 @@ export interface Tab {
 
 const EMPTY_SELECTED_ROWS: Set<string> = new Set();
 
+/**
+ * Sort column a tab starts on before the user picks one. Events lead with the
+ * most recent activity (their table has no Name column to sort by); everything
+ * else keeps the historical name sort.
+ */
+export function defaultSortColumn(tab: Tab | undefined | null): string {
+  return tab?.resourceType === "events" ? "eventLastSeen" : "name";
+}
+
 let _tabCounter = 0;
 function nextTabId(): string {
   return `tab-${++_tabCounter}`;
@@ -167,7 +176,7 @@ export class UiStoreLogic {
   }
 
   get sortColumn(): string {
-    return this.activeTab?.sortColumn ?? "name";
+    return this.activeTab?.sortColumn ?? defaultSortColumn(this.activeTab);
   }
   set sortColumn(v: string) {
     const t = this.activeTab;
@@ -452,7 +461,7 @@ export class UiStoreLogic {
   setSort(column: string): void {
     const t = this.activeTab;
     if (!t) return;
-    const currentCol = t.sortColumn ?? "name";
+    const currentCol = t.sortColumn ?? defaultSortColumn(t);
     const currentDir = t.sortDirection ?? "asc";
     if (currentCol === column) {
       t.sortDirection = currentDir === "asc" ? "desc" : "asc";

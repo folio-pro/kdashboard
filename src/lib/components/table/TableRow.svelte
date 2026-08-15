@@ -11,6 +11,8 @@
   import { costStore } from "$lib/stores/cost.svelte";
   import { metricsStore } from "$lib/stores/metrics.svelte";
   import { extensions } from "$lib/extensions";
+  import { KIND_TO_RESOURCE_TYPE } from "$lib/resource-catalog";
+  import { openRelatedResourceTab } from "$lib/actions/navigation";
   import {
     getCellValue,
     isContainersColumn,
@@ -120,6 +122,20 @@
   // Cells used to copy their value on double-click. That path was
   // unreachable: the row's own single click already opened the detail tab and
   // unmounted the table, so the second click never landed here.
+
+  // Events: the Object column deep-links to the involved resource when its
+  // Kind is one the catalog can navigate to (built-in kinds only — a CRD kind
+  // renders as plain text).
+  let eventObjectTarget = $derived.by(() => {
+    if (resourceType !== "events") return null;
+    const ref = resource.spec?.involvedObject as
+      | { kind?: string; name?: string; namespace?: string }
+      | undefined;
+    if (!ref?.kind || !ref.name) return null;
+    const type = KIND_TO_RESOURCE_TYPE[ref.kind];
+    if (!type) return null;
+    return { type, name: ref.name, namespace: ref.namespace ?? resource.metadata.namespace ?? undefined };
+  });
 </script>
 
 <tr
@@ -201,7 +217,7 @@
           </div>
         </div>
       {:else if isStatusColumn(column.key)}
-        {@const val = getCellValue(resource, "status", cellCtx)}
+        {@const val = getCellValue(resource, column.key, cellCtx)}
         {#if val !== "-"}
           <StatusBadge status={val} />
         {:else}
@@ -219,6 +235,18 @@
                 : "text-[var(--text-muted)]"
           )}
         >{restarts}</span>
+      {:else if column.key === "eventObject" && eventObjectTarget}
+        {@const label = getCellValue(resource, column.key, cellCtx)}
+        {@const target = eventObjectTarget}
+        <button
+          type="button"
+          class="block max-w-full truncate font-mono text-[12px] text-[var(--accent)] hover:underline"
+          title={label}
+          onclick={(e) => {
+            e.stopPropagation();
+            void openRelatedResourceTab(target.type, target.name, target.namespace);
+          }}
+        >{label}</button>
       {:else if isTagColumn(column.key)}
         {@const tagValue = getCellValue(resource, column.key, cellCtx)}
         {#if tagValue && tagValue !== "-" && tagValue !== "<none>"}
