@@ -31,7 +31,11 @@
   import LogDetailSheet from "./LogDetailSheet.svelte";
 
   // --- Core state ---
-  let logs = $state<LogLine[]>([]);
+  // $state.raw: at streaming rates a deep proxy would wrap every LogLine (and
+  // the template's _jsonHighlightedCache writes through the proxy would
+  // invalidate the very render effect that reads them, double-rendering JSON
+  // rows). The array is only ever replaced wholesale, never mutated in place.
+  let logs = $state.raw<LogLine[]>([]);
   let filterText = $state("");
   let showTimestamps = $state(true);
   let selectedContainer = $state("");
@@ -91,11 +95,11 @@
     const shouldScroll = !userScrolledAway;
 
     if (pendingLogs.length > 0) {
-      logs.push(...pendingLogs);
+      // Reassign (never push): `logs` is $state.raw, in-place mutation would
+      // not be tracked.
+      const merged = logs.length > 0 ? logs.concat(pendingLogs) : pendingLogs;
+      logs = merged.length > tailLines ? merged.slice(-tailLines) : merged;
       pendingLogs = [];
-      if (logs.length > tailLines) {
-        logs = logs.slice(-tailLines);
-      }
     }
     flushScheduled = false;
 
@@ -108,8 +112,17 @@
     }
   }
 
+  // Coalesce to one layout read per frame: isAtBottom() reads
+  // scrollHeight/scrollTop synchronously, and scroll events fire far more
+  // often than frames during a fast wheel/drag.
+  let scrollCheckScheduled = false;
   function handleScroll() {
-    userScrolledAway = !isAtBottom();
+    if (scrollCheckScheduled) return;
+    scrollCheckScheduled = true;
+    requestAnimationFrame(() => {
+      scrollCheckScheduled = false;
+      userScrolledAway = !isAtBottom();
+    });
   }
 
   function jumpToBottom() {

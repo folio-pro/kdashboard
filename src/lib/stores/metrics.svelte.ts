@@ -4,7 +4,9 @@ import type { PodMetricsResult, PodUsageInfo, PrometheusResult } from "$lib/type
 import { MetricsStoreLogic, POD_METRICS_TTL_MS } from "./metrics.logic";
 
 class MetricsStore extends MetricsStoreLogic {
-  override podUsage = $state<Record<string, PodUsageInfo>>({});
+  // $state.raw: replaced wholesale every poll (applyPodUsage builds a fresh
+  // map); deep-proxying thousands of per-pod entries buys nothing.
+  override podUsage = $state.raw<Record<string, PodUsageInfo>>({});
   override podMetricsAvailable = $state(true);
   override unavailableReason = $state("");
 

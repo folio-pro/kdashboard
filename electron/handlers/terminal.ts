@@ -76,10 +76,52 @@ class OutputStream extends Writable {
   }
 }
 
+/**
+ * Coalesce PTY output into one IPC send per flush window. Without this every
+ * WebSocket chunk becomes its own structured-clone `webContents.send` — a
+ * `cat bigfile` produces thousands of IPC messages per second. 8 ms keeps
+ * keystroke echo imperceptible while capping sends at ~125/s; the byte cap
+ * bounds renderer message size under heavy output.
+ */
+const TERMINAL_FLUSH_MS = 8;
+const TERMINAL_FLUSH_BYTES = 64 * 1024;
+
+interface OutputCoalescer {
+  push: (text: string) => void;
+  flush: () => void;
+}
+
+function makeOutputCoalescer(emit: (chunk: string) => void): OutputCoalescer {
+  let buf = '';
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = (): void => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (buf.length === 0) return;
+    const out = buf;
+    buf = '';
+    emit(out);
+  };
+  return {
+    push(text: string): void {
+      buf += text;
+      if (buf.length >= TERMINAL_FLUSH_BYTES) {
+        flush();
+      } else if (!timer) {
+        timer = setTimeout(flush, TERMINAL_FLUSH_MS);
+      }
+    },
+    flush,
+  };
+}
+
 interface Session {
   ws: WebSocket;
   stdin: PassThrough;
   stdout: OutputStream;
+  output: OutputCoalescer;
 }
 
 /** Single active session (matches the Rust OnceLock<Option<...>> single slot). */
@@ -91,6 +133,12 @@ function endSession(notify: boolean, ctx: HandlerCtx | null): void {
   if (!current) return;
   session = null;
 
+  // Deliver any buffered output before the exit event.
+  try {
+    current.output.flush();
+  } catch {
+    /* ignore */
+  }
   try {
     current.stdin.end();
   } catch {
@@ -132,10 +180,11 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
     endSession(false, ctx);
 
     const stdin = new PassThrough();
-    const stdout = new OutputStream((text) => ctx.emit(TERMINAL_OUTPUT, text), 80, 24);
+    const output = makeOutputCoalescer((text) => ctx.emit(TERMINAL_OUTPUT, text));
+    const stdout = new OutputStream((text) => output.push(text), 80, 24);
     // stderr shares the same channel — interactive shells multiplex onto stdout
     // anyway, but a TTY-less write to stderr must still reach the user.
-    const stderr = new OutputStream((text) => ctx.emit(TERMINAL_OUTPUT, text), 80, 24);
+    const stderr = new OutputStream((text) => output.push(text), 80, 24);
 
     const exec = new Exec(kc());
 
@@ -162,7 +211,7 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
       throw new Error(`Failed to start terminal exec: ${(err as Error).message}`);
     }
 
-    session = { ws, stdin, stdout };
+    session = { ws, stdin, stdout, output };
 
     // If the socket dies for any reason (server close, network error), make sure
     // we clean up and tell the renderer the session ended.

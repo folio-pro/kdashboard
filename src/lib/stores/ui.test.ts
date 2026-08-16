@@ -7,6 +7,7 @@ import {
   restoreTab,
   maxTabIdSuffix,
   TABS_STORAGE_VERSION,
+  CachedItems,
   type ActiveView,
   type Tab,
 } from "./ui.logic.js";
@@ -562,7 +563,7 @@ describe("UiStore", () => {
       store.selectedRowIndex = 3;
       // Simulate cache population
       const tab = store.activeTab!;
-      tab.cachedItems = [];
+      tab.cachedItems = new CachedItems([]);
       tab.cacheReady = true;
       tab.count = 42;
 

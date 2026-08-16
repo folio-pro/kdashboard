@@ -137,8 +137,18 @@
     }
   });
 
+  // Key the reload on the resource's IDENTITY, not the object reference:
+  // selectedResource is reassigned on every Applied watch event for this uid,
+  // and reloading then would tear down and rebuild the whole CodeMirror editor
+  // (plus an IPC round-trip) per status churn — discarding in-progress edits.
+  let loadedKey: string | undefined;
   $effect(() => {
-    if (resource) {
+    if (!resource) return;
+    const key =
+      resource.metadata?.uid ??
+      `${resource.kind}/${resource.metadata?.namespace ?? ""}/${resource.metadata?.name ?? ""}`;
+    if (key !== loadedKey) {
+      loadedKey = key;
       loadYaml(resource);
     }
   });

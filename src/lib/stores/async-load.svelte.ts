@@ -10,7 +10,11 @@ import { unshadowState } from "./_unshadow.js";
  *   class CostStore extends AsyncLoadStore<CostOverview> { ... }
  */
 export class AsyncLoadStore<T> extends AsyncLoadStoreLogic<T> {
-  override data = $state<T | null>(null);
+  // $state.raw: these payloads (topology graph, cost/security overviews) are
+  // large nested backend objects, always replaced wholesale and never
+  // field-mutated — deep-proxying them costs a Proxy + signal per object the
+  // renderers walk, for reactivity nothing uses.
+  override data = $state.raw<T | null>(null);
   override isLoading = $state(false);
   override error = $state<string | null>(null);
 

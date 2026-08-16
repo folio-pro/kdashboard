@@ -8,11 +8,12 @@ class CostStore extends AsyncLoadStore<CostOverview> {
   /** Alias for readability in templates */
   get overview() { return this.data; }
 
-  /** Node costs keyed by node name for O(1) lookup from table rows */
-  nodeCosts = $state<Record<string, NodeCostInfo>>({});
+  /** Node costs keyed by node name for O(1) lookup from table rows.
+   *  $state.raw: both records are replaced wholesale, never field-mutated. */
+  nodeCosts = $state.raw<Record<string, NodeCostInfo>>({});
   private _nodeLoading = false;
 
-  nodeMetrics = $state<Record<string, NodeMetricsInfo>>({});
+  nodeMetrics = $state.raw<Record<string, NodeMetricsInfo>>({});
   private _metricsLoading = false;
   private _metricsFetchedAt = 0;
 

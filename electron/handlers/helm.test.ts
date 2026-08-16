@@ -29,29 +29,29 @@ function encodeAsSecretData(obj: unknown): string {
 }
 
 describe('decodeRelease', () => {
-  test('unwraps base64 -> base64 -> gzip -> JSON', () => {
-    expect(decodeRelease(encodeAsSecretData(RELEASE))).toEqual(RELEASE);
+  test('unwraps base64 -> base64 -> gzip -> JSON', async () => {
+    expect(await decodeRelease(encodeAsSecretData(RELEASE))).toEqual(RELEASE);
   });
 
-  test('accepts a payload with only helm\'s gzip layer (no second base64)', () => {
+  test('accepts a payload with only helm\'s gzip layer (no second base64)', async () => {
     const singleLayer = gzipSync(Buffer.from(JSON.stringify(RELEASE), 'utf8')).toString('base64');
-    expect(decodeRelease(singleLayer)).toEqual(RELEASE);
+    expect(await decodeRelease(singleLayer)).toEqual(RELEASE);
   });
 
-  test('accepts an uncompressed JSON payload', () => {
+  test('accepts an uncompressed JSON payload', async () => {
     const plain = Buffer.from(
       Buffer.from(JSON.stringify(RELEASE), 'utf8').toString('base64'),
       'utf8',
     ).toString('base64');
-    expect(decodeRelease(plain)).toEqual(RELEASE);
+    expect(await decodeRelease(plain)).toEqual(RELEASE);
   });
 
-  test('throws on a payload that is not a release object', () => {
+  test('throws on a payload that is not a release object', async () => {
     const notAnObject = Buffer.from(
       Buffer.from('"just a string"', 'utf8').toString('base64'),
       'utf8',
     ).toString('base64');
-    expect(() => decodeRelease(notAnObject)).toThrow('not a JSON object');
+    expect(decodeRelease(notAnObject)).rejects.toThrow('not a JSON object');
   });
 });
 

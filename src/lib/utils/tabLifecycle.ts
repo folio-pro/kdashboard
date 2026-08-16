@@ -1,6 +1,6 @@
 import type { Resource, ResourceList } from "$lib/types";
 import type { Tab } from "$lib/stores/ui.logic";
-import { RESOURCE_TAB_TYPES } from "$lib/stores/ui.logic";
+import { CachedItems, RESOURCE_TAB_TYPES } from "$lib/stores/ui.logic";
 
 /**
  * Minimal k8s store surface used by the tab lifecycle. Kept narrow so the
@@ -68,7 +68,7 @@ function saveOutgoingTabState(
   // Skip save when store holds a different resource_type (in-flight load).
   if (isTableTab(fromTab) && fromTab.resourceType) {
     if (k8s.resources.resource_type === fromTab.resourceType) {
-      fromTab.cachedItems = k8s.resources.items;
+      fromTab.cachedItems = new CachedItems(k8s.resources.items);
       fromTab.count = k8s.resources.items.length;
       fromTab.cacheReady = true;
     }
@@ -125,7 +125,7 @@ function restoreFromCache(toTab: Tab, k8s: TabLifecycleK8sStore): void {
     k8s.currentNamespace = toTab.namespace;
   }
   // resourceType guaranteed by caller guard in handleTabSwitch.
-  k8s.restoreResources(toTab.resourceType!, toTab.cachedItems!);
+  k8s.restoreResources(toTab.resourceType!, toTab.cachedItems!.items);
 }
 
 function triggerLoad(toTab: Tab, k8s: TabLifecycleK8sStore): void {
@@ -151,7 +151,7 @@ function triggerLoad(toTab: Tab, k8s: TabLifecycleK8sStore): void {
   loadPromise
     .then(() => {
       if (k8s.selectedResourceType === expectedType && !k8s.error) {
-        toTab.cachedItems = k8s.resources.items;
+        toTab.cachedItems = new CachedItems(k8s.resources.items);
         toTab.count = k8s.resources.items.length;
         toTab.cacheReady = true;
       }

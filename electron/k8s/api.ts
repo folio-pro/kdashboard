@@ -5,7 +5,7 @@
 // list used by every kind), and content negotiation for metadata-only lists.
 // Both live here so handlers share one implementation of auth + TLS + headers.
 
-import { kc } from './client';
+import { kc, clusterAuthHeaders, expireClusterAuth } from './client';
 
 /**
  * Metadata-only content negotiation: the apiserver returns a
@@ -17,7 +17,14 @@ import { kc } from './client';
 export const META_ACCEPT =
   'application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1,application/json';
 
-/** Issue an authenticated GET against the active cluster, returning parsed JSON. */
+/**
+ * Issue an authenticated GET against the active cluster, returning parsed JSON.
+ *
+ * Auth headers come from the shared per-cluster cache in client.ts (the same
+ * one the typed clients use — one TTL, one single-flight, one invalidation);
+ * TLS is handled by the undici dispatcher installed there. A 401 expires the
+ * cache and retries once in case the token rotated inside the TTL window.
+ */
 export async function apiGet<T>(
   path: string,
   query?: Record<string, string>,
@@ -33,34 +40,21 @@ export async function apiGet<T>(
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
   }
 
-  // applyToFetchOptions injects auth headers + the TLS agent (client certs/CA).
-  const opts = await cfg.applyToFetchOptions({});
-  opts.method = 'GET';
-  if (accept) {
-    // Content negotiation (e.g. PartialObjectMetadataList for counts) — far
-    // smaller payloads, much faster to transfer + JSON.parse.
-    //
-    // applyToFetchOptions hands back a Headers INSTANCE, whose entries live
-    // behind a symbol key: spreading it produced `{[Symbol(map)]: …}`, which
-    // fetch rejects ("Key Symbol(map) … cannot be converted to a ByteString").
-    // Every counted request threw and get_resource_counts swallowed it as 0,
-    // so the sidebar counts were silently always zero. Go through Headers.
-    const merged: Record<string, string> = {};
-    const existing: unknown = opts.headers;
-    if (existing instanceof Headers) {
-      existing.forEach((value, key) => {
-        merged[key] = value;
-      });
-    } else if (existing && typeof existing === 'object') {
-      for (const [key, value] of Object.entries(existing as Record<string, string>)) {
-        merged[key] = String(value);
-      }
+  const doFetch = async (): Promise<Response> => {
+    const headers: Record<string, string> = { ...(await clusterAuthHeaders()) };
+    if (accept) {
+      // Content negotiation (e.g. PartialObjectMetadataList for counts) — far
+      // smaller payloads, much faster to transfer + JSON.parse.
+      headers.Accept = accept;
     }
-    merged.Accept = accept;
-    opts.headers = merged;
-  }
+    return fetch(url.toString(), { method: 'GET', headers });
+  };
 
-  const resp = await fetch(url.toString(), opts as RequestInit);
+  let resp = await doFetch();
+  if (resp.status === 401) {
+    expireClusterAuth();
+    resp = await doFetch();
+  }
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
     throw new Error(`${resp.status} ${resp.statusText}${body ? `: ${body}` : ''}`);

@@ -292,6 +292,14 @@
 
   let orderedGroups = $derived.by(() => orderGroups(groupedItems, categoryOrder));
 
+  // O(1) index lookup for the template — `filteredItems.indexOf(item)` per
+  // rendered item was O(N²) per keystroke on clusters with many CRDs/namespaces.
+  let itemIndex = $derived.by(() => {
+    const map = new Map<(typeof filteredItems)[number], number>();
+    filteredItems.forEach((item, i) => map.set(item, i));
+    return map;
+  });
+
   $effect(() => {
     query;
     selectedIndex = 0;
@@ -374,7 +382,7 @@
             {/if}
             <CommandGroup heading={category}>
               {#each items as item}
-                {@const globalIndex = filteredItems.indexOf(item)}
+                {@const globalIndex = itemIndex.get(item) ?? -1}
                 {@const IconComp = getItemIcon(item)}
                 <CommandItem
                   class={cn(

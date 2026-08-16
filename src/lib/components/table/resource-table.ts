@@ -13,11 +13,17 @@ export const MIN_COL_WIDTH = 40;
 
 export type SortDirection = "asc" | "desc";
 
-// NOTE: we use String.prototype.localeCompare directly here, NOT a cached
-// Intl.Collator. A micro-benchmark on 3000 names showed the cached collator is
-// ~1.5-2x SLOWER than localeCompare in JavaScriptCore (the Tauri webview engine
-// on macOS/Linux) and also changes ordering semantics — so the "cache a
-// collator" optimization is a regression for this runtime. See the perf audit.
+// Cached collator: the sort re-runs over the full list on every watch flush,
+// and in V8 (Electron) a cached Intl.Collator.compare is several times faster
+// than per-call localeCompare (which re-resolves the locale each time). The
+// old note here favoring localeCompare benchmarked JavaScriptCore under Tauri
+// and no longer applies. Timestamps (RFC 3339, uniform format) sort with plain
+// string comparison — no locale semantics needed.
+const collator = new Intl.Collator();
+
+function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
 /** Clamp a column width to the minimum allowed value. */
 export function clampColumnWidth(width: number): number {
@@ -69,8 +75,8 @@ export function sortResources(
       bVal = b.metadata.creation_timestamp;
       // Note: age sort is inverted — newer (larger timestamp) first when "asc"
       return sortDirection === "asc"
-        ? bVal.localeCompare(aVal)
-        : aVal.localeCompare(bVal);
+        ? compareStrings(bVal, aVal)
+        : compareStrings(aVal, bVal);
     } else if (sortColumn === "status") {
       aVal = (a.status?.phase as string) ?? "";
       bVal = (b.status?.phase as string) ?? "";
@@ -105,7 +111,7 @@ export function sortResources(
       bVal = b.metadata.name;
     }
 
-    const cmp = aVal.localeCompare(bVal);
+    const cmp = collator.compare(aVal, bVal);
     return sortDirection === "asc" ? cmp : -cmp;
   });
 }

@@ -65,6 +65,9 @@
     // previous one and must not be treated as fresh.
     void metricsStore.loadPodMetrics(ns, true);
     const timer = setInterval(() => {
+      // A minimized/hidden window doesn't need fresh metrics — skip the IPC +
+      // cluster fetch; the next visible tick (or re-entry) refreshes.
+      if (document.hidden) return;
       void metricsStore.loadPodMetrics(ns);
     }, POD_METRICS_TTL_MS);
     return () => clearInterval(timer);
@@ -257,11 +260,9 @@
 
   let workloadStats = $derived(computeWorkloadStats(k8sStore.selectedResourceType, k8sStore.resources.items));
 
-  let needsAttentionCount = $derived(
-    k8sStore.selectedResourceType === "pods"
-      ? k8sStore.resources.items.filter(isPodNeedingAttention).length
-      : 0
-  );
+  // Folded into computePodStats' single pass over the items (walking every
+  // containerStatus twice per flush was measurable on big namespaces).
+  let needsAttentionCount = $derived(workloadStats.needsAttention ?? 0);
 
   // Auto-clear stat filter on resource type change.
   // prevResourceType is a plain `let` so the effect only tracks selectedResourceType.

@@ -38,6 +38,7 @@
 import { Watch } from '@kubernetes/client-node';
 
 import { kc } from '../k8s/client';
+import { apiGet, META_ACCEPT } from '../k8s/api';
 import type { RawObject, Resource } from '../k8s/resource-types';
 import { dynamicToResource, listProjectionFor } from '../k8s/resource-mapping';
 import { apiVersionOf, resolveResourceType } from '../k8s/kinds';
@@ -242,6 +243,17 @@ async function startResourceWatch(
     }
   };
 
+  /** Tell the renderer to do a full relist (covers deltas a watch can't replay). */
+  const emitResync = (): void => {
+    ctx.emit(WATCH_CHANNEL, [
+      {
+        event_type: 'Resync',
+        resource_type: resourceType,
+        resource: { api_version: '', kind: '', metadata: {} },
+      } satisfies WatchEvent,
+    ]);
+  };
+
   const watch = new Watch(kc());
 
   // The start invoke resolves/rejects with the FIRST connection attempt only:
@@ -268,6 +280,28 @@ async function startResourceWatch(
       }
     };
 
+    /**
+     * Reconnecting with NO resourceVersion makes the apiserver replay the
+     * whole collection as ADDED — N projections + N/20 IPC batches that the
+     * renderer's Resync relist duplicates anyway. When the RV expired (410),
+     * grab a fresh one from a metadata-only limit=1 list instead: the list's
+     * RV is a valid watch start point, and the Resync relist covers anything
+     * missed in between. Falls back to the classic replay on failure.
+     */
+    const seedRV = async (): Promise<void> => {
+      try {
+        const list = await apiGet<{ metadata?: { resourceVersion?: string } }>(
+          path,
+          { limit: '1' },
+          META_ACCEPT,
+        );
+        const rv = list?.metadata?.resourceVersion;
+        if (rv && isCurrent() && !state.lastRV) state.lastRV = rv;
+      } catch {
+        // keep lastRV unset — the reconnect replays and the Resync path holds
+      }
+    };
+
     /** Schedule a reconnect with exponential backoff + jitter (0.5x-1x the delay). */
     const scheduleReconnect = (): void => {
       if (!isCurrent()) return;
@@ -275,7 +309,11 @@ async function startResourceWatch(
       state.backoffMs = Math.min(state.backoffMs * 2, BACKOFF_MAX_MS);
       state.reconnectTimer = setTimeout(() => {
         state.reconnectTimer = null;
-        connect();
+        if (!state.lastRV && state.hadInitialSync) {
+          void seedRV().then(connect);
+        } else {
+          connect();
+        }
       }, delay);
     };
 
@@ -361,17 +399,7 @@ async function startResourceWatch(
               // relist in a loop.
               if (!state.lastRV && (healthy || rvExpired)) {
                 rvExpired = false;
-                ctx.emit(WATCH_CHANNEL, [
-                  {
-                    event_type: 'Resync',
-                    resource_type: resourceType,
-                    resource: {
-                      api_version: '',
-                      kind: '',
-                      metadata: {},
-                    },
-                  } satisfies WatchEvent,
-                ]);
+                emitResync();
               }
             } else {
               // First connection's natural close (e.g. the 30s server window)
@@ -402,12 +430,16 @@ async function startResourceWatch(
             `[watch] failed to open watch for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
             err instanceof Error ? err.message : err,
           );
-          // A 410 at open means our resume RV already expired: drop it so the
-          // retry does a fresh replay, and force a Resync on the next close.
+          // A 410 at open means our resume RV already expired. Drop it (the
+          // retry seeds a fresh RV, or replays if that fails) and tell the
+          // renderer to relist NOW: deletes that happened past the expired RV
+          // can never be replayed, so without this Resync stale rows would
+          // linger until some later healthy-close resync.
           const status = (err as { code?: number; statusCode?: number } | undefined);
           if (status?.code === 410 || status?.statusCode === 410) {
             state.lastRV = undefined;
-            rvExpired = true;
+            rvExpired = false;
+            if (state.hadInitialSync && isCurrent()) emitResync();
           }
           // Failed to OPEN the watch. If this is the first attempt, tear down
           // and reject the start invoke; otherwise keep the loop alive with

@@ -36,12 +36,21 @@
   // re-fetches the full object on demand. Other types carry full data in the
   // list already and need no hydration.
   let hydrated = $state<Resource | null>(null);
+  // Keyed on uid+resourceVersion: selectedResource is reassigned on every
+  // Applied watch event for this uid, and the initial watch replay re-applies
+  // the same version — without the key each of those fired another get_resource
+  // IPC round-trip serializing the full object.
+  let hydratedKey = "";
   $effect(() => {
     const li = listItem;
     if (!li || (li.kind ?? "").toLowerCase() !== "pod") {
       hydrated = null;
+      hydratedKey = "";
       return;
     }
+    const key = `${li.metadata?.uid ?? ""}@${li.metadata?.resource_version ?? ""}`;
+    if (key === hydratedKey) return;
+    hydratedKey = key;
     const uid = li.metadata?.uid;
     invoke<Resource>("get_resource", {
       kind: li.kind,

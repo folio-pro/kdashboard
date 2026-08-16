@@ -55,6 +55,7 @@ class ExtensionRegistry {
       throw new Error(`Duplicate mount id: ${mount.id}`);
     }
     this.#mounts.push(mount as unknown as SlotMount);
+    this.#mountsBySlot.clear();
   }
 
   registerKbdHint(hint: KbdHint): void {
@@ -97,11 +98,20 @@ class ExtensionRegistry {
     return this.#hints.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }
 
+  // Memoized per slot: called from every rendered table row, and mounts are
+  // sealed at startup — three array allocations per row per render for a
+  // static answer. Registration clears the memo, so pre-seal reads stay fresh.
+  #mountsBySlot = new Map<SlotName, ReadonlyArray<SlotMount>>();
+
   mountsFor<S extends SlotName>(slot: S): ReadonlyArray<SlotMount<S>> {
-    const filtered = this.#mounts
-      .filter((m) => m.slot === slot)
-      .slice()
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    let filtered = this.#mountsBySlot.get(slot);
+    if (!filtered) {
+      filtered = this.#mounts
+        .filter((m) => m.slot === slot)
+        .slice()
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      this.#mountsBySlot.set(slot, filtered);
+    }
     return filtered as unknown as ReadonlyArray<SlotMount<S>>;
   }
 
