@@ -223,6 +223,10 @@
       error = `Failed to load YAML: ${err}`;
       originalYaml = "";
       currentContent = "";
+      // A failed load must stay retryable: clear the identity key so the next
+      // watch event (or re-selection) for this resource triggers a fresh load
+      // instead of being skipped as "already loaded".
+      loadedKey = undefined;
     } finally {
       isLoading = false;
     }

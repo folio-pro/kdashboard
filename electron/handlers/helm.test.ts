@@ -51,7 +51,7 @@ describe('decodeRelease', () => {
       Buffer.from('"just a string"', 'utf8').toString('base64'),
       'utf8',
     ).toString('base64');
-    expect(decodeRelease(notAnObject)).rejects.toThrow('not a JSON object');
+    await expect(decodeRelease(notAnObject)).rejects.toThrow('not a JSON object');
   });
 });
 

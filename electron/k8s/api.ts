@@ -52,6 +52,8 @@ export async function apiGet<T>(
 
   let resp = await doFetch();
   if (resp.status === 401) {
+    // Release the discarded body — unread, it pins the pooled connection.
+    await resp.body?.cancel().catch(() => {});
     expireClusterAuth();
     resp = await doFetch();
   }

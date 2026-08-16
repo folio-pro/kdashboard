@@ -230,6 +230,7 @@ async function filterNamespacesByAccess(names: string[]): Promise<string[]> {
   }
 
   const auth = getAuthorizationV1Api();
+  let degraded = false;
   const allowed = await mapWithConcurrency(names, ACCESS_REVIEW_CONCURRENCY, async (namespace) => {
     try {
       const review = await auth.createSelfSubjectAccessReview({
@@ -241,12 +242,19 @@ async function filterNamespacesByAccess(names: string[]): Promise<string[]> {
       });
       return review.status?.allowed ? namespace : null;
     } catch {
+      degraded = true;
       return namespace;
     }
   });
   const filtered = allowed.filter((n): n is string => n !== null);
   const visible = filtered.length > 0 ? filtered : names;
-  accessReviewCache.set(cacheKey, { at: now, inputKey, visible });
+  // Only cache clean verdicts: both fail-open paths (a failed review, or a
+  // filter that would hide everything) are transient degradations — pinning
+  // them for the whole TTL would keep the wrong list after the apiserver
+  // recovers.
+  if (!degraded && filtered.length > 0) {
+    accessReviewCache.set(cacheKey, { at: now, inputKey, visible });
+  }
   return visible;
 }
 

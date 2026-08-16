@@ -274,9 +274,15 @@ class CachedClusterAuth {
       return this.#cached;
     }
     // Single-flight: concurrent calls during a refresh share one rebuild.
-    this.#pending ??= this.#build().finally(() => {
-      this.#pending = null;
-    });
+    if (!this.#pending) {
+      const p = this.#build();
+      this.#pending = p;
+      // Guarded clear: expire() may have replaced #pending with a fresher
+      // build by the time this one settles — never null out someone else's.
+      void p.finally(() => {
+        if (this.#pending === p) this.#pending = null;
+      });
+    }
     const fresh = await this.#pending;
     if (this.#cached && this.#cached !== fresh) this.#destroyAgent(this.#cached);
     this.#cached = fresh;
@@ -313,8 +319,11 @@ class CachedClusterAuth {
   }
 
   /** Force the next getAuth() to rebuild (e.g. after a 401), without leaking
-   *  the current agent — the rebuild swap destroys it. */
+   *  the current agent — the rebuild swap destroys it. Also drops an in-flight
+   *  rebuild: it started BEFORE the 401, so its material may be the very token
+   *  that just got rejected; the next getAuth() starts a fresh build. */
   expire(): void {
+    this.#pending = null;
     if (this.#cached) this.#cached = { ...this.#cached, at: 0 };
   }
 

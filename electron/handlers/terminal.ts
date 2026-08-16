@@ -88,12 +88,16 @@ const TERMINAL_FLUSH_BYTES = 64 * 1024;
 
 interface OutputCoalescer {
   push: (text: string) => void;
-  flush: () => void;
+  /** Flush what's buffered and drop anything that arrives afterwards — the
+   *  WebSocket close is not immediate, so late in-flight writes must not leak
+   *  a previous pod's output into a replacement session. */
+  close: () => void;
 }
 
 function makeOutputCoalescer(emit: (chunk: string) => void): OutputCoalescer {
   let buf = '';
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
   const flush = (): void => {
     if (timer) {
       clearTimeout(timer);
@@ -106,6 +110,7 @@ function makeOutputCoalescer(emit: (chunk: string) => void): OutputCoalescer {
   };
   return {
     push(text: string): void {
+      if (closed) return;
       buf += text;
       if (buf.length >= TERMINAL_FLUSH_BYTES) {
         flush();
@@ -113,7 +118,10 @@ function makeOutputCoalescer(emit: (chunk: string) => void): OutputCoalescer {
         timer = setTimeout(flush, TERMINAL_FLUSH_MS);
       }
     },
-    flush,
+    close(): void {
+      flush();
+      closed = true;
+    },
   };
 }
 
@@ -133,9 +141,10 @@ function endSession(notify: boolean, ctx: HandlerCtx | null): void {
   if (!current) return;
   session = null;
 
-  // Deliver any buffered output before the exit event.
+  // Deliver any buffered output before the exit event, then seal the
+  // coalescer so late in-flight writes can't emit into a replacement session.
   try {
-    current.output.flush();
+    current.output.close();
   } catch {
     /* ignore */
   }
