@@ -10,12 +10,17 @@
 //   - allow switching the active context at runtime (switch_context)
 
 import * as fs from 'node:fs';
+import * as https from 'node:https';
 import * as tls from 'node:tls';
 
 import { Agent, setGlobalDispatcher, type Dispatcher } from 'undici';
 
 import {
   KubeConfig,
+  createConfiguration,
+  ServerConfiguration,
+  type Configuration,
+  type RequestContext,
   CoreV1Api,
   AppsV1Api,
   CustomObjectsApi,
@@ -230,6 +235,152 @@ function installTlsDispatcher(cfg: KubeConfig): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Typed-client auth caching + connection reuse.
+//
+// KubeConfig.makeApiClient wires the KubeConfig itself in as the request
+// authenticator, and its applySecurityAuthentication re-reads ca/cert/key
+// FILES synchronously and builds a brand-new `https.Agent` (keepAlive: false)
+// on EVERY request — a full TCP+TLS handshake per typed API call. This wrapper
+// runs that work once, swaps the agent for a shared keepAlive one, and replays
+// the recorded headers/agent onto each request. A short TTL keeps rotating
+// tokens working; a config change tears everything down.
+// ---------------------------------------------------------------------------
+
+const AUTH_CACHE_TTL_MS = 30_000;
+
+interface RecordedAuth {
+  at: number;
+  headers: Record<string, string>;
+  agent: unknown;
+}
+
+class CachedClusterAuth {
+  #cfg: KubeConfig;
+  #cached: RecordedAuth | null = null;
+  #pending: Promise<RecordedAuth> | null = null;
+
+  constructor(cfg: KubeConfig) {
+    this.#cfg = cfg;
+  }
+
+  getName(): string {
+    return 'default';
+  }
+
+  /** The cached auth material, rebuilt (single-flight) when the TTL lapses. */
+  async getAuth(): Promise<RecordedAuth> {
+    if (this.#cached && Date.now() - this.#cached.at < AUTH_CACHE_TTL_MS) {
+      return this.#cached;
+    }
+    // Single-flight: concurrent calls during a refresh share one rebuild.
+    if (!this.#pending) {
+      const p = this.#build();
+      this.#pending = p;
+      // Guarded clear: expire() may have replaced #pending with a fresher
+      // build by the time this one settles — never null out someone else's.
+      void p.finally(() => {
+        if (this.#pending === p) this.#pending = null;
+      });
+    }
+    const fresh = await this.#pending;
+    if (this.#cached && this.#cached !== fresh) this.#destroyAgent(this.#cached);
+    this.#cached = fresh;
+    return fresh;
+  }
+
+  async applySecurityAuthentication(context: RequestContext): Promise<void> {
+    const auth = await this.getAuth();
+    for (const [k, v] of Object.entries(auth.headers)) context.setHeaderParam(k, v);
+    context.setAgent(auth.agent as Parameters<RequestContext['setAgent']>[0]);
+  }
+
+  async #build(): Promise<RecordedAuth> {
+    const headers: Record<string, string> = {};
+    let agent: unknown;
+    // Record what the real implementation would have applied to the request.
+    const recorder = {
+      setHeaderParam: (key: string, value: string): void => {
+        headers[key] = value;
+      },
+      setAgent: (a: unknown): void => {
+        agent = a;
+      },
+    };
+    await this.#cfg.applySecurityAuthentication(recorder as unknown as RequestContext);
+    // Rebuild plain https agents with keepAlive so sockets are reused across
+    // calls. Proxy agents (constructor !== https.Agent) are kept verbatim.
+    if (agent && (agent as object).constructor === https.Agent) {
+      const opts = (agent as https.Agent).options ?? {};
+      (agent as https.Agent).destroy();
+      agent = new https.Agent({ ...opts, keepAlive: true, maxSockets: 16 });
+    }
+    return { at: Date.now(), headers, agent };
+  }
+
+  /** Force the next getAuth() to rebuild (e.g. after a 401), without leaking
+   *  the current agent — the rebuild swap destroys it. Also drops an in-flight
+   *  rebuild: it started BEFORE the 401, so its material may be the very token
+   *  that just got rejected; the next getAuth() starts a fresh build. */
+  expire(): void {
+    this.#pending = null;
+    if (this.#cached) this.#cached = { ...this.#cached, at: 0 };
+  }
+
+  #destroyAgent(entry: RecordedAuth): void {
+    const agent = entry.agent as { destroy?: () => void } | undefined;
+    try {
+      agent?.destroy?.();
+    } catch {
+      // ignore
+    }
+  }
+
+  destroy(): void {
+    if (this.#cached) this.#destroyAgent(this.#cached);
+    this.#cached = null;
+  }
+}
+
+let typedAuth: CachedClusterAuth | null = null;
+let typedConfiguration: Configuration | null = null;
+
+onConfigChange(() => {
+  typedAuth?.destroy();
+  typedAuth = null;
+  typedConfiguration = null;
+});
+
+function typedConfigFor(cfg: KubeConfig): Configuration {
+  if (!typedConfiguration) {
+    const cluster = cfg.getCurrentCluster();
+    if (!cluster) {
+      throw new Error('No active cluster!');
+    }
+    typedAuth = new CachedClusterAuth(cfg);
+    typedConfiguration = createConfiguration({
+      baseServer: new ServerConfiguration(cluster.server, {}),
+      authMethods: { default: typedAuth },
+    });
+  }
+  return typedConfiguration;
+}
+
+/**
+ * Cached auth headers for the active cluster, shared with the typed clients
+ * (one TTL, one single-flight, one invalidation path). The raw fetch path
+ * (api.ts) uses these — its TLS is handled by the undici dispatcher above.
+ */
+export async function clusterAuthHeaders(): Promise<Record<string, string>> {
+  typedConfigFor(kc());
+  return (await typedAuth!.getAuth()).headers;
+}
+
+/** Force the next auth read to rebuild — call on a 401 (token likely rotated). */
+export function expireClusterAuth(): void {
+  typedAuth?.expire();
+}
+
 /**
  * Generic typed Api factory. Prefer the named getters below; reach for this
  * only when you need an Api class not covered by a dedicated getter.
@@ -237,41 +388,42 @@ function installTlsDispatcher(cfg: KubeConfig): void {
  *   const metrics = makeApiClient(MetricsV1beta1Api)
  */
 export function makeApiClient<T extends ApiType>(apiClientType: ApiConstructor<T>): T {
-  return kc().makeApiClient(apiClientType);
+  const cfg = kc();
+  return new apiClientType(typedConfigFor(cfg));
 }
 
 export function getCoreV1Api(): CoreV1Api {
-  return kc().makeApiClient(CoreV1Api);
+  return makeApiClient(CoreV1Api);
 }
 
 export function getAppsV1Api(): AppsV1Api {
-  return kc().makeApiClient(AppsV1Api);
+  return makeApiClient(AppsV1Api);
 }
 
 export function getCustomObjectsApi(): CustomObjectsApi {
-  return kc().makeApiClient(CustomObjectsApi);
+  return makeApiClient(CustomObjectsApi);
 }
 
 export function getApiextensionsV1Api(): ApiextensionsV1Api {
-  return kc().makeApiClient(ApiextensionsV1Api);
+  return makeApiClient(ApiextensionsV1Api);
 }
 
 export function getBatchV1Api(): BatchV1Api {
-  return kc().makeApiClient(BatchV1Api);
+  return makeApiClient(BatchV1Api);
 }
 
 export function getNetworkingV1Api(): NetworkingV1Api {
-  return kc().makeApiClient(NetworkingV1Api);
+  return makeApiClient(NetworkingV1Api);
 }
 
 export function getRbacAuthorizationV1Api(): RbacAuthorizationV1Api {
-  return kc().makeApiClient(RbacAuthorizationV1Api);
+  return makeApiClient(RbacAuthorizationV1Api);
 }
 
 export function getAuthorizationV1Api(): AuthorizationV1Api {
-  return kc().makeApiClient(AuthorizationV1Api);
+  return makeApiClient(AuthorizationV1Api);
 }
 
 export function getVersionApi(): VersionApi {
-  return kc().makeApiClient(VersionApi);
+  return makeApiClient(VersionApi);
 }

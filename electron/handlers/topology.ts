@@ -16,17 +16,15 @@
 // root_ids, has_cycles, total_resources, cluster_groups, ...). The Svelte types
 // in src/lib/types/cluster.ts depend on exactly these names.
 
-import { AutoscalingV2Api } from '@kubernetes/client-node';
-
 import type { HandlerCtx, HandlerMap } from '../dispatch';
 import {
   getActiveContextName,
   getCoreV1Api,
   getAppsV1Api,
   getBatchV1Api,
-  getNetworkingV1Api,
-  makeApiClient,
+  onConfigChange,
 } from '../k8s/client';
+import { apiGet, META_ACCEPT } from '../k8s/api';
 import {
   asObject,
   asArray,
@@ -496,13 +494,31 @@ interface TopologyCacheEntry {
   promise: Promise<TopologyGraph>;
 }
 
+/** Bounded: each entry pins a full graph; without a cap the map grows with
+ * every namespace/context ever visited and the stale graphs are never GC'd. */
+const TOPOLOGY_CACHE_MAX_ENTRIES = 8;
+
 const topologyCache = new Map<string, TopologyCacheEntry>();
+
+// A context switch invalidates everything (keys embed the context, but stale
+// graphs for other contexts would otherwise sit in memory indefinitely).
+onConfigChange(() => topologyCache.clear());
 
 async function getNamespaceTopology(namespace: string | null): Promise<TopologyGraph> {
   const key = `${getActiveContextName() ?? ''}|${namespace ?? ''}`;
   const now = Date.now();
   const hit = topologyCache.get(key);
   if (hit && now - hit.at < TOPOLOGY_CACHE_TTL_MS) return hit.promise;
+
+  // Evict expired entries, then the oldest if still at capacity.
+  for (const [k, v] of topologyCache) {
+    if (now - v.at >= TOPOLOGY_CACHE_TTL_MS) topologyCache.delete(k);
+  }
+  while (topologyCache.size >= TOPOLOGY_CACHE_MAX_ENTRIES) {
+    const oldest = topologyCache.keys().next().value;
+    if (oldest === undefined) break;
+    topologyCache.delete(oldest);
+  }
 
   const promise = fetchNamespaceTopology(namespace);
   topologyCache.set(key, { at: now, promise });
@@ -513,15 +529,32 @@ async function getNamespaceTopology(namespace: string | null): Promise<TopologyG
   return promise;
 }
 
+/**
+ * Metadata-only list via content negotiation. Kinds whose graph node needs no
+ * status/spec field (see extractStatusStr) fetch a PartialObjectMetadataList —
+ * uid/name/namespace/ownerReferences are all in metadata, and the payload is a
+ * tiny fraction of the full body (listing every Secret/ConfigMap cluster-wide
+ * with full bodies was the dominant cost of building the graph). The Accept
+ * header falls back to a normal list server-side if the kind doesn't support
+ * the projection.
+ */
+async function listMeta(group: string, version: string, plural: string, ns: string | null): Promise<JsonValue[]> {
+  const base = group === '' ? `/api/${version}` : `/apis/${group}/${version}`;
+  const path = ns
+    ? `${base}/namespaces/${encodeURIComponent(ns)}/${plural}`
+    : `${base}/${plural}`;
+  const list = await apiGet<{ items?: JsonValue[] }>(path, undefined, META_ACCEPT);
+  return list.items ?? [];
+}
+
 async function fetchNamespaceTopology(namespace: string | null): Promise<TopologyGraph> {
   const core = getCoreV1Api();
   const apps = getAppsV1Api();
   const batch = getBatchV1Api();
-  const net = getNetworkingV1Api();
-  const autoscaling = makeApiClient(AutoscalingV2Api);
 
   // Each entry mirrors one fetch_typed! arm in queries.rs (kind + apiVersion +
-  // namespaced/all-namespaces list fn).
+  // namespaced/all-namespaces list fn). Kinds needing a status/spec field keep
+  // the typed full-body list; the rest go metadata-only (listMeta above).
   const fetches: Array<Promise<RawResource[]>> = [
     fetchTyped(
       (ns) =>
@@ -541,15 +574,7 @@ async function fetchNamespaceTopology(namespace: string | null): Promise<Topolog
       'Deployment',
       'apps/v1',
     ),
-    fetchTyped(
-      (ns) =>
-        ns
-          ? apps.listNamespacedReplicaSet({ namespace: ns }).then(itemsOf)
-          : apps.listReplicaSetForAllNamespaces().then(itemsOf),
-      namespace,
-      'ReplicaSet',
-      'apps/v1',
-    ),
+    fetchTyped((ns) => listMeta('apps', 'v1', 'replicasets', ns), namespace, 'ReplicaSet', 'apps/v1'),
     fetchTyped(
       (ns) =>
         ns
@@ -577,15 +602,7 @@ async function fetchNamespaceTopology(namespace: string | null): Promise<Topolog
       'Job',
       'batch/v1',
     ),
-    fetchTyped(
-      (ns) =>
-        ns
-          ? batch.listNamespacedCronJob({ namespace: ns }).then(itemsOf)
-          : batch.listCronJobForAllNamespaces().then(itemsOf),
-      namespace,
-      'CronJob',
-      'batch/v1',
-    ),
+    fetchTyped((ns) => listMeta('batch', 'v1', 'cronjobs', ns), namespace, 'CronJob', 'batch/v1'),
     fetchTyped(
       (ns) =>
         ns
@@ -596,37 +613,15 @@ async function fetchNamespaceTopology(namespace: string | null): Promise<Topolog
       'v1',
     ),
     fetchTyped(
-      (ns) =>
-        ns
-          ? net.listNamespacedIngress({ namespace: ns }).then(itemsOf)
-          : net.listIngressForAllNamespaces().then(itemsOf),
+      (ns) => listMeta('networking.k8s.io', 'v1', 'ingresses', ns),
       namespace,
       'Ingress',
       'networking.k8s.io/v1',
     ),
+    fetchTyped((ns) => listMeta('', 'v1', 'configmaps', ns), namespace, 'ConfigMap', 'v1'),
+    fetchTyped((ns) => listMeta('', 'v1', 'secrets', ns), namespace, 'Secret', 'v1'),
     fetchTyped(
-      (ns) =>
-        ns
-          ? core.listNamespacedConfigMap({ namespace: ns }).then(itemsOf)
-          : core.listConfigMapForAllNamespaces().then(itemsOf),
-      namespace,
-      'ConfigMap',
-      'v1',
-    ),
-    fetchTyped(
-      (ns) =>
-        ns
-          ? core.listNamespacedSecret({ namespace: ns }).then(itemsOf)
-          : core.listSecretForAllNamespaces().then(itemsOf),
-      namespace,
-      'Secret',
-      'v1',
-    ),
-    fetchTyped(
-      (ns) =>
-        ns
-          ? autoscaling.listNamespacedHorizontalPodAutoscaler({ namespace: ns }).then(itemsOf)
-          : autoscaling.listHorizontalPodAutoscalerForAllNamespaces().then(itemsOf),
+      (ns) => listMeta('autoscaling', 'v2', 'horizontalpodautoscalers', ns),
       namespace,
       'HorizontalPodAutoscaler',
       'autoscaling/v2',

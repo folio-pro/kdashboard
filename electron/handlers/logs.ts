@@ -150,16 +150,15 @@ function makeLineSink(
 
   return new Writable({
     write(chunk: Buffer, _enc, cb) {
-      partial += chunk.toString('utf8');
-      let idx = partial.indexOf('\n');
-      while (idx !== -1) {
-        // Strip the trailing '\n' (and a preceding '\r' if present) — the
-        // renderer expects complete lines with no trailing newline.
-        let line = partial.slice(0, idx);
+      // Single split per chunk — re-slicing `partial` per line is O(n²) on
+      // chunks with many lines. The last piece (no trailing '\n') carries over.
+      const pieces = (partial + chunk.toString('utf8')).split('\n');
+      partial = pieces.pop() ?? '';
+      for (let line of pieces) {
+        // Strip a preceding '\r' if present — the renderer expects complete
+        // lines with no trailing newline.
         if (line.endsWith('\r')) line = line.slice(0, -1);
         pushLine(line);
-        partial = partial.slice(idx + 1);
-        idx = partial.indexOf('\n');
       }
       cb();
     },

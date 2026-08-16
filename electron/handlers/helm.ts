@@ -15,11 +15,17 @@
 // helm binary and no extra RBAC beyond "get secrets" in the namespace. Nothing
 // here writes: install/upgrade/rollback stay out of scope.
 
-import { gunzipSync } from 'node:zlib';
+import { gunzip } from 'node:zlib';
+import { promisify } from 'node:util';
+
+// Async gunzip: release payloads carry the full rendered manifest (often MBs);
+// gunzipSync would block the main-process event loop once per release.
+const gunzipAsync = promisify(gunzip);
 
 import { getCoreV1Api } from '../k8s/client.js';
 import { apiGet, META_ACCEPT } from '../k8s/api.js';
 import { k8sErrorMessage } from '../k8s/errors.js';
+import { mapWithConcurrency } from '../util/concurrency.js';
 import type { HandlerMap } from '../dispatch.js';
 
 const HELM_OWNER_SELECTOR = 'owner=helm';
@@ -83,7 +89,7 @@ interface RawRelease {
  * Exported for the tests: this is the one piece of real logic in the module and
  * the double-base64 is exactly the part that silently breaks.
  */
-export function decodeRelease(data: string): RawRelease {
+export async function decodeRelease(data: string): Promise<RawRelease> {
   // Layer 1: the Kubernetes API's own base64 of the Secret value.
   let buf = Buffer.from(data, 'base64');
   // Layer 2: helm's base64, present unless something already unwrapped it.
@@ -93,7 +99,7 @@ export function decodeRelease(data: string): RawRelease {
   // Layer 3: gzip, which helm has used for every release since v3.
   const json =
     buf[0] === GZIP_MAGIC[0] && buf[1] === GZIP_MAGIC[1]
-      ? gunzipSync(buf).toString('utf8')
+      ? (await gunzipAsync(buf)).toString('utf8')
       : buf.toString('utf8');
 
   const parsed = JSON.parse(json) as unknown;
@@ -230,6 +236,10 @@ export function latestPerRelease(secrets: SecretMeta[]): SecretMeta[] {
   return [...best.values()];
 }
 
+/** Cap on simultaneous release-secret reads: N releases used to mean N
+ * parallel requests + N decompressions all at once. */
+const READ_RELEASE_CONCURRENCY = 8;
+
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -238,16 +248,14 @@ async function listHelmReleases(args: Record<string, unknown>): Promise<HelmRele
   const namespace = optNamespace(args);
   const latest = latestPerRelease(await listReleaseSecrets(namespace));
 
-  const releases = await Promise.all(
-    latest.map(async (s) => {
-      try {
-        return releaseSummary(await readRelease(s.namespace, s.name));
-      } catch {
-        // A single unreadable/corrupt release must not blank the whole list.
-        return null;
-      }
-    }),
-  );
+  const releases = await mapWithConcurrency(latest, READ_RELEASE_CONCURRENCY, async (s) => {
+    try {
+      return releaseSummary(await readRelease(s.namespace, s.name));
+    } catch {
+      // A single unreadable/corrupt release must not blank the whole list.
+      return null;
+    }
+  });
 
   return releases
     .filter((r): r is HelmRelease => r !== null)
@@ -275,15 +283,13 @@ async function listHelmReleaseHistory(args: Record<string, unknown>): Promise<He
   const namespace = reqStr(args, 'namespace');
 
   const secrets = await listReleaseSecrets(namespace, name);
-  const revisions = await Promise.all(
-    secrets.map(async (s) => {
-      try {
-        return releaseSummary(await readRelease(s.namespace, s.name));
-      } catch {
-        return null;
-      }
-    }),
-  );
+  const revisions = await mapWithConcurrency(secrets, READ_RELEASE_CONCURRENCY, async (s) => {
+    try {
+      return releaseSummary(await readRelease(s.namespace, s.name));
+    } catch {
+      return null;
+    }
+  });
 
   return revisions
     .filter((r): r is HelmRelease => r !== null)

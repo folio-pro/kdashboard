@@ -31,11 +31,14 @@ import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
 import {
+  getActiveContextName,
   getAuthorizationV1Api,
   getCoreV1Api,
   getKubeconfigPath,
+  onConfigChange,
   setActiveContext,
 } from '../k8s/client';
+import { mapWithConcurrency } from '../util/concurrency';
 
 // ---------------------------------------------------------------------------
 // Return-type aliases — these mirror the Rust `Result<T, String>` payloads.
@@ -88,15 +91,33 @@ interface KubeconfigYaml {
   [key: string]: unknown;
 }
 
+/**
+ * Parsed-kubeconfig cache keyed by (path, mtime, size): get_contexts and
+ * get_current_context both run on the boot path and on every context refresh,
+ * and a multi-cluster kubeconfig is a non-trivial synchronous YAML parse. A
+ * stat per call is cheap and catches external edits immediately.
+ */
+let kubeconfigCache: { file: string; mtimeMs: number; size: number; yaml: KubeconfigYaml } | null =
+  null;
+
 function readKubeconfigYaml(): KubeconfigYaml {
   const file = resolveKubeconfigPath();
+  const stat = fs.statSync(file);
+  if (
+    kubeconfigCache &&
+    kubeconfigCache.file === file &&
+    kubeconfigCache.mtimeMs === stat.mtimeMs &&
+    kubeconfigCache.size === stat.size
+  ) {
+    return kubeconfigCache.yaml;
+  }
   const contents = fs.readFileSync(file, 'utf8');
   const parsed = yamlLoad(contents);
-  if (parsed === null || typeof parsed !== 'object') {
-    // Mirror serde_yaml: an empty/scalar doc has no contexts / current-context.
-    return {};
-  }
-  return parsed as KubeconfigYaml;
+  // Mirror serde_yaml: an empty/scalar doc has no contexts / current-context.
+  const yaml =
+    parsed !== null && typeof parsed === 'object' ? (parsed as KubeconfigYaml) : {};
+  kubeconfigCache = { file, mtimeMs: stat.mtimeMs, size: stat.size, yaml };
+  return yaml;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +198,15 @@ async function listNamespaces(): Promise<NameList> {
   return filterNamespacesByAccess(names);
 }
 
+const ACCESS_REVIEW_TTL_MS = 5 * 60_000;
+// 16 matches the typed client's keepAlive maxSockets: enough parallelism to
+// keep the first namespace load fast, without the old N-simultaneous-requests
+// stampede on big clusters.
+const ACCESS_REVIEW_CONCURRENCY = 16;
+
+const accessReviewCache = new Map<string, { at: number; inputKey: string; visible: string[] }>();
+onConfigChange(() => accessReviewCache.clear());
+
 /**
  * Keep only namespaces the current user can actually work in, probed with a
  * SelfSubjectAccessReview for `list pods` per namespace (the minimal verb the
@@ -186,26 +216,48 @@ async function listNamespaces(): Promise<NameList> {
  */
 async function filterNamespacesByAccess(names: string[]): Promise<string[]> {
   if (names.length === 0) return names;
+
+  // One SelfSubjectAccessReview POST per namespace is an N+1 hot spot on big
+  // clusters (hundreds of simultaneous requests on every namespace refresh).
+  // RBAC changes are rare: cache the verdict per context for a few minutes and
+  // bound the concurrency of the misses.
+  const cacheKey = getActiveContextName() ?? '';
+  const now = Date.now();
+  const hit = accessReviewCache.get(cacheKey);
+  const inputKey = names.join('\n');
+  if (hit && now - hit.at < ACCESS_REVIEW_TTL_MS && hit.inputKey === inputKey) {
+    return hit.visible;
+  }
+
   const auth = getAuthorizationV1Api();
-  const allowed = await Promise.all(
-    names.map(async (namespace) => {
-      try {
-        const review = await auth.createSelfSubjectAccessReview({
-          body: {
-            spec: {
-              resourceAttributes: { namespace, verb: 'list', resource: 'pods' },
-            },
+  let degraded = false;
+  const allowed = await mapWithConcurrency(names, ACCESS_REVIEW_CONCURRENCY, async (namespace) => {
+    try {
+      const review = await auth.createSelfSubjectAccessReview({
+        body: {
+          spec: {
+            resourceAttributes: { namespace, verb: 'list', resource: 'pods' },
           },
-        });
-        return review.status?.allowed ? namespace : null;
-      } catch {
-        return namespace;
-      }
-    }),
-  );
-  const visible = allowed.filter((n): n is string => n !== null);
-  return visible.length > 0 ? visible : names;
+        },
+      });
+      return review.status?.allowed ? namespace : null;
+    } catch {
+      degraded = true;
+      return namespace;
+    }
+  });
+  const filtered = allowed.filter((n): n is string => n !== null);
+  const visible = filtered.length > 0 ? filtered : names;
+  // Only cache clean verdicts: both fail-open paths (a failed review, or a
+  // filter that would hide everything) are transient degradations — pinning
+  // them for the whole TTL would keep the wrong list after the apiserver
+  // recovers.
+  if (!degraded && filtered.length > 0) {
+    accessReviewCache.set(cacheKey, { at: now, inputKey, visible });
+  }
+  return visible;
 }
+
 
 // ---------------------------------------------------------------------------
 // check_connection — probe the apiserver with a limit=1 namespace list.

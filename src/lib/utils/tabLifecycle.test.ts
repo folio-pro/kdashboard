@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test";
 import type { Resource, ResourceList } from "$lib/types";
 import type { Tab } from "$lib/stores/ui.logic";
+import { CachedItems } from "$lib/stores/ui.logic";
 import { handleTabSwitch, type TabLifecycleK8sStore } from "./tabLifecycle";
 
 function mkResource(name: string, namespace = "default"): Resource {
@@ -80,7 +81,7 @@ describe("handleTabSwitch", () => {
 
     handleTabSwitch(fromTab, toTab, k8s);
 
-    expect(fromTab.cachedItems).toBe(items);
+    expect(fromTab.cachedItems?.items).toBe(items);
     expect(fromTab.count).toBe(2);
     expect(fromTab.cacheReady).toBe(true);
   });
@@ -120,7 +121,7 @@ describe("handleTabSwitch", () => {
       type: "table",
       resourceType: "pods",
       namespace: "kube-system",
-      cachedItems,
+      cachedItems: new CachedItems(cachedItems),
       cacheReady: true,
     });
     const restoreResources = mock((_type: string, _items: Resource[]) => {
@@ -150,7 +151,7 @@ describe("handleTabSwitch", () => {
       type: "table",
       resourceType: "pods",
       namespace: "default",
-      cachedItems: [],
+      cachedItems: new CachedItems([]),
       cacheReady: true,
     });
     const k8s = mkStore({ currentNamespace: "default" });
@@ -234,7 +235,7 @@ describe("handleTabSwitch", () => {
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(toTab.cachedItems).toBe(loaded);
+    expect(toTab.cachedItems?.items).toBe(loaded);
     expect(toTab.count).toBe(2);
     expect(toTab.cacheReady).toBe(true);
   });
@@ -396,7 +397,7 @@ describe("handleTabSwitch — crd-table path", () => {
       closable: true,
       resourceType: "foos.example.com",
       namespace: "default",
-      cachedItems: items,
+      cachedItems: new CachedItems(items),
       cacheReady: true,
     };
     const restoreResources = mock((_type: string, _items: Resource[]) => {});

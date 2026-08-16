@@ -137,8 +137,18 @@
     }
   });
 
+  // Key the reload on the resource's IDENTITY, not the object reference:
+  // selectedResource is reassigned on every Applied watch event for this uid,
+  // and reloading then would tear down and rebuild the whole CodeMirror editor
+  // (plus an IPC round-trip) per status churn — discarding in-progress edits.
+  let loadedKey: string | undefined;
   $effect(() => {
-    if (resource) {
+    if (!resource) return;
+    const key =
+      resource.metadata?.uid ??
+      `${resource.kind}/${resource.metadata?.namespace ?? ""}/${resource.metadata?.name ?? ""}`;
+    if (key !== loadedKey) {
+      loadedKey = key;
       loadYaml(resource);
     }
   });
@@ -213,6 +223,10 @@
       error = `Failed to load YAML: ${err}`;
       originalYaml = "";
       currentContent = "";
+      // A failed load must stay retryable: clear the identity key so the next
+      // watch event (or re-selection) for this resource triggers a fresh load
+      // instead of being skipped as "already loaded".
+      loadedKey = undefined;
     } finally {
       isLoading = false;
     }

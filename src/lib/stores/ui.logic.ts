@@ -24,6 +24,19 @@ export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwar
  *    read the new tab's state. No explicit reset of filter/sort/etc — each
  *    tab owns its UI state and survives round-trips.
  */
+/**
+ * Box for a tab's cached resource list. A CLASS on purpose: `tabs` is deep
+ * `$state`, and Svelte 5's proxy wraps plain objects/arrays it encounters —
+ * assigning `k8sStore.resources.items` (deliberately `$state.raw`) straight
+ * onto a tab would deep-proxy every cached resource, and restoring the tab
+ * would feed that proxied array back into the raw store, re-paying per-field
+ * Proxy/signal allocation on every filter/sort/render pass. Class instances
+ * are exempt from Svelte's proxying, so the array inside stays raw.
+ */
+export class CachedItems {
+  constructor(readonly items: Resource[]) {}
+}
+
 export interface Tab {
   id: string;
   type: ActiveView;
@@ -38,7 +51,7 @@ export interface Tab {
   /** Resource count for table/crd tabs */
   count?: number;
   /** Cached resource data — avoids reload on tab switch */
-  cachedItems?: Resource[];
+  cachedItems?: CachedItems;
   /** True once a load has completed for this tab; distinguishes a legitimately
    *  empty result from an in-flight/uninitialized load. */
   cacheReady?: boolean;
@@ -167,12 +180,28 @@ export class UiStoreLogic {
     if (t) t.filter = v;
   }
 
+  // Memoized: these getters are read per visible table row per render, and a
+  // fresh toLowerCase() per read allocates on every one of those reads.
+  #filterLowerSrc = "";
+  #filterLowerVal = "";
   get filterLower(): string {
-    return this.filter.toLowerCase();
+    const src = this.filter;
+    if (src !== this.#filterLowerSrc) {
+      this.#filterLowerSrc = src;
+      this.#filterLowerVal = src.toLowerCase();
+    }
+    return this.#filterLowerVal;
   }
 
+  #debouncedLowerSrc = "";
+  #debouncedLowerVal = "";
   get debouncedFilterLower(): string {
-    return (this.activeTab?._debouncedFilter ?? "").toLowerCase();
+    const src = this.activeTab?._debouncedFilter ?? "";
+    if (src !== this.#debouncedLowerSrc) {
+      this.#debouncedLowerSrc = src;
+      this.#debouncedLowerVal = src.toLowerCase();
+    }
+    return this.#debouncedLowerVal;
   }
 
   get sortColumn(): string {

@@ -13,7 +13,7 @@
 
 import { Metrics, type PodMetric } from '@kubernetes/client-node';
 
-import { kc } from '../k8s/client.js';
+import { kc, onConfigChange } from '../k8s/client.js';
 import { parseCpu, parseMemory } from '../k8s/quantity.js';
 import { getPrometheusUrl } from '../k8s/runtime-config.js';
 import type { HandlerMap } from '../dispatch.js';
@@ -87,8 +87,28 @@ export function podUsageFrom(pm: PodMetric): PodUsageInfo {
   };
 }
 
+/**
+ * Short-lived coalescing cache: two views (pods table + usage card) can ask
+ * for the same namespace's metrics in the same window; metrics-server only
+ * rescrapes every ~60s, so serving the same promise for a few seconds dedupes
+ * the request without visible staleness. Cleared on context switch.
+ */
+const POD_METRICS_COALESCE_MS = 5_000;
+const podMetricsCache = new Map<string, { at: number; promise: Promise<PodMetricsResult> }>();
+onConfigChange(() => podMetricsCache.clear());
+
 async function getPodMetrics(args: Record<string, unknown>): Promise<PodMetricsResult> {
   const namespace = optStr(args, 'namespace');
+  const key = namespace ?? '';
+  const now = Date.now();
+  const hit = podMetricsCache.get(key);
+  if (hit && now - hit.at < POD_METRICS_COALESCE_MS) return hit.promise;
+  const promise = fetchPodMetrics(namespace);
+  podMetricsCache.set(key, { at: now, promise });
+  return promise;
+}
+
+async function fetchPodMetrics(namespace: string | undefined): Promise<PodMetricsResult> {
   try {
     const response = await new Metrics(kc()).getPodMetrics(namespace);
     return { available: true, reason: '', pods: response.items.map(podUsageFrom) };

@@ -12,6 +12,9 @@ export interface WorkloadStat {
 export interface WorkloadStatsResult {
   stats: WorkloadStat[];
   healthSegments: HealthSegment[];
+  /** Pods only: count of pods matching isPodNeedingAttention. Folded into the
+   *  stats pass so the table doesn't walk every containerStatus twice. */
+  needsAttention?: number;
 }
 
 export interface HealthSegment {
@@ -65,7 +68,7 @@ export function isPodNeedingAttention(resource: Resource): boolean {
 }
 
 export function computePodStats(items: Resource[]): WorkloadStatsResult {
-  let running = 0, pending = 0, failed = 0, succeeded = 0, totalRestarts = 0;
+  let running = 0, pending = 0, failed = 0, succeeded = 0, totalRestarts = 0, needsAttention = 0;
 
   for (const item of items) {
     const status = classifyPodStatus(item);
@@ -74,6 +77,7 @@ export function computePodStats(items: Resource[]): WorkloadStatsResult {
     else if (status === "failed") failed++;
     else if (status === "succeeded") succeeded++;
     totalRestarts += getTotalRestarts(item);
+    if (isPodNeedingAttention(item)) needsAttention++;
   }
 
   const total = items.length;
@@ -90,6 +94,7 @@ export function computePodStats(items: Resource[]): WorkloadStatsResult {
       { key: "pending", value: pending, color: "var(--status-pending)" },
       { key: "failed", value: failed, color: "var(--status-failed)" },
     ],
+    needsAttention,
   };
 }
 
