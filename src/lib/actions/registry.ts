@@ -1,7 +1,7 @@
 import {
   FileText, Terminal, Scale, RotateCcw, History, Trash2,
   ClipboardCopy, GitFork, Pencil, Copy, FileJson,
-  ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets,
+  ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets, GitCompare,
 } from "lucide-svelte";
 import type { ActionDef, BulkActionDef } from "./types";
 import type { Resource } from "$lib/types";
@@ -130,6 +130,17 @@ export const resourceActions: ActionDef[] = [
     appliesTo: () => true,
     execute: () => uiStore.showYamlEditor(),
   },
+  {
+    id: "compare-namespaces",
+    label: "Compare Across Namespaces...",
+    icon: GitCompare,
+    tier: "green",
+    group: "navigate",
+    priority: 50,
+    // Only namespaced resources have siblings to diff against.
+    appliesTo: (_rt, resource) => !!resource?.metadata.namespace,
+    execute: (resource) => dialogStore.openCompare(resource),
+  },
   // --- Operations group ---
   {
     id: "scale",
@@ -205,6 +216,37 @@ export const resourceActions: ActionDef[] = [
         await setNodeSchedulable(resource.metadata.name, true);
       } catch (err) {
         toastStore.error("Uncordon failed", String(err));
+      }
+    },
+  },
+  {
+    id: "node-shell",
+    label: "Node Shell",
+    icon: Terminal,
+    tier: "yellow",
+    group: "operations",
+    priority: 33,
+    appliesTo: (rt) => rt === "nodes",
+    execute: async (resource) => {
+      const node = resource.metadata.name;
+      const toastId = toastStore.info("Starting node shell", `Creating a host shell pod on "${node}"…`);
+      try {
+        const { name, namespace } = await invoke<{ name: string; namespace: string }>(
+          "start_node_shell",
+          { nodeName: node },
+        );
+        const pod = await invoke<Resource>("get_resource", {
+          kind: "pod",
+          name,
+          namespace,
+        });
+        uiStore.showDetails(name, "pods", namespace, pod);
+        k8sStore.selectResource(pod);
+        uiStore.detailSubtab = "shell";
+      } catch (err) {
+        toastStore.error("Node shell failed", String(err));
+      } finally {
+        toastStore.dismiss(toastId);
       }
     },
   },

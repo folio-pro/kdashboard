@@ -18,6 +18,7 @@
   import ConnectionErrorOverlay from "$lib/components/common/ConnectionErrorOverlay.svelte";
   import ScaleDialog from "$lib/components/details/ScaleDialog.svelte";
   import DrainDialog from "$lib/components/details/DrainDialog.svelte";
+  import CompareDialog from "$lib/components/details/CompareDialog.svelte";
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -290,6 +291,18 @@
 
 {#if dialogStore.drainOpen && dialogStore.drainNodeName}
   <DrainDialog bind:open={dialogStore.drainOpen} nodeName={dialogStore.drainNodeName} />
+{/if}
+
+{#if dialogStore.compareOpen && dialogStore.compareResource}
+  <!-- Function binding: closing must go through closeCompare() so the stored
+       resource is cleared along with the open flag. -->
+  <CompareDialog
+    bind:open={
+      () => dialogStore.compareOpen,
+      (v) => { if (!v) dialogStore.closeCompare(); }
+    }
+    resource={dialogStore.compareResource}
+  />
 {/if}
 
 {#if dialogStore.deleteOpen && dialogStore.deleteResource}

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Box, Trash2, TerminalSquare } from "lucide-svelte";
+  import { Box, Trash2, TerminalSquare, Bug } from "lucide-svelte";
+  import { toastStore } from "$lib/stores/toast.svelte";
   import { Button } from "$lib/components/ui";
   import { SelectMenu } from "$lib/components/ui/select-menu";
   import { listen } from "$lib/ipc/event";
@@ -32,13 +33,64 @@
   let initPromise: Promise<void> | null = null;
   let initError = $state<string | null>(null);
 
+  // Debug containers started on the current pod — the selected resource is a
+  // snapshot, so freshly added ephemeral containers are not in its status yet.
+  // Cleared when the selection moves to another resource (see the identity
+  // effect below); they belong to one pod only.
+  let debugContainers = $state<string[]>([]);
+  let debugStarting = $state(false);
+
+  // Node-shell pods (start_node_shell) are transient privileged pods that only
+  // sleep; the real shell comes from nsenter-ing the host namespaces. The label
+  // is set by electron/handlers/node-shell.ts.
+  const NODE_SHELL_LABEL = "kdashboard.io/node-shell";
+  const isNodeShell = $derived(
+    k8sStore.selectedResource?.metadata.labels?.[NODE_SHELL_LABEL] === "true",
+  );
+
+  // The node-shell pod this view currently owns. It is a leaked privileged pod
+  // the moment its terminal is gone, so it is deleted when the selection moves
+  // away AND on unmount (the backend's activeDeadlineSeconds is only the
+  // fallback reaper). Plain variable: only the identity effect writes it.
+  let activeNodeShell: { name: string; namespace: string } | null = null;
+
+  function stopNodeShell(pod: { name: string; namespace: string }) {
+    invoke("stop_node_shell", pod).catch(() => {});
+  }
+
+  // React to the selected resource's identity, not a mount-time snapshot:
+  // reset per-pod debug containers and release the previous node-shell pod.
+  let selectedUid: string | undefined;
+  $effect(() => {
+    const resource = k8sStore.selectedResource;
+    const uid = resource?.metadata.uid;
+    if (uid === selectedUid) return;
+    selectedUid = uid;
+
+    debugContainers = [];
+
+    const next = isNodeShell && resource
+      ? { name: resource.metadata.name, namespace: resource.metadata.namespace ?? "" }
+      : null;
+    if (activeNodeShell && activeNodeShell.name !== next?.name) {
+      stopNodeShell(activeNodeShell);
+    }
+    activeNodeShell = next;
+  });
+
   const containers = $derived.by(() => {
     const resource = k8sStore.selectedResource;
+    const names: string[] = [];
     if (resource && resource.kind.toLowerCase() === "pod") {
       const statuses = resource.status?.containerStatuses as Array<{ name: string }> | undefined;
-      if (statuses) return statuses.map((c) => c.name);
+      if (statuses) names.push(...statuses.map((c) => c.name));
+      const ephemeral = resource.status?.ephemeralContainerStatuses as Array<{ name: string }> | undefined;
+      if (ephemeral) names.push(...ephemeral.map((c) => c.name));
     }
-    return [] as string[];
+    for (const name of debugContainers) {
+      if (!names.includes(name)) names.push(name);
+    }
+    return names;
   });
 
   $effect(() => {
@@ -188,7 +240,11 @@
         name: k8sStore.selectedResource.metadata.name,
         namespace: k8sStore.selectedResource.metadata.namespace ?? "",
         container: selectedContainer,
-        command: [selectedShell],
+        // Node-shell pods sleep in a privileged hostPID container; the shell
+        // itself runs in the HOST namespaces via nsenter (busybox applet).
+        command: isNodeShell
+          ? ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", selectedShell]
+          : [selectedShell],
       });
 
       // Send initial resize and focus after connection is established
@@ -219,6 +275,35 @@
     terminal?.write(CLEAR_SEQUENCE);
   }
 
+  /**
+   * kubectl debug: add an ephemeral debug container (busybox) targeting the
+   * selected container's process namespace, then connect the shell to it.
+   * Ephemeral containers cannot be removed — they die with the pod.
+   */
+  async function startDebugContainer() {
+    const resource = k8sStore.selectedResource;
+    if (!resource || debugStarting) return;
+    debugStarting = true;
+    try {
+      const result = await invoke<{ container: string }>("debug_pod", {
+        name: resource.metadata.name,
+        namespace: resource.metadata.namespace ?? "",
+        target: selectedContainer || undefined,
+      });
+      debugContainers = [...debugContainers, result.container];
+      selectedContainer = result.container;
+      toastStore.success(
+        "Debug container started",
+        `${result.container} attached to ${resource.metadata.name}. It lives until the pod is deleted.`,
+      );
+      await connect();
+    } catch (err) {
+      toastStore.error("Debug container failed", String(err));
+    } finally {
+      debugStarting = false;
+    }
+  }
+
   function handleContainerSelect(container: string) {
     selectedContainer = container;
     if (isConnected) connect();
@@ -235,6 +320,10 @@
     return () => {
       destroyed = true;
       disconnect();
+      if (activeNodeShell) {
+        stopNodeShell(activeNodeShell);
+        activeNodeShell = null;
+      }
       // destroy() disconnects the internal ResizeObserver and the input handler.
       terminal?.destroy();
       terminal = null;
@@ -339,6 +428,18 @@
     >
       {#snippet icon()}<TerminalSquare class="h-3 w-3 text-[var(--text-muted)]" />{/snippet}
     </SelectMenu>
+
+    <Button
+      variant="toolbar"
+      size="sm"
+      mono
+      title="Attach an ephemeral debug container (kubectl debug) and open a shell in it"
+      onclick={startDebugContainer}
+      disabled={debugStarting || !k8sStore.selectedResource}
+    >
+      <Bug class="h-3 w-3" />
+      <span>{debugStarting ? "Starting…" : "Debug"}</span>
+    </Button>
 
     <Button
       variant="toolbar"

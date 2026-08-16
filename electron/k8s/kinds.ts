@@ -124,6 +124,10 @@ export const RESOURCE_TYPES: Record<string, ResourceTypeEntry> = {
   priorityclasses: r('priorityclasses', 'scheduling.k8s.io', 'v1', 'priorityclasses', 'PriorityClass', true, synth('value', 'globalDefault', 'preemptionPolicy', 'description'), ['pc']),
   runtimeclasses: r('runtimeclasses', 'node.k8s.io', 'v1', 'runtimeclasses', 'RuntimeClass', true, synth('handler')),
   leases: r('leases', 'coordination.k8s.io', 'v1', 'leases', 'Lease', false, SPEC),
+  // core/v1 Event keeps everything at the top level (no spec/status), so the
+  // table fields ride in via `synth`. The per-resource get_events handler keeps
+  // serving the detail panel; this row is what backs the global Events view.
+  events: r('events', '', 'v1', 'events', 'Event', false, synth('type', 'reason', 'message', 'count', 'source', 'involvedObject', 'firstTimestamp', 'lastTimestamp', 'eventTime', 'series', 'reportingComponent'), ['ev']),
 };
 
 /** Resolve a `resource_type` (exact key, as sent by the frontend). */
@@ -146,9 +150,6 @@ function buildKinds(): Record<string, KindEntry> {
     out[entry.kind.toLowerCase()] = k;
     for (const alias of entry.aliases ?? []) out[alias.toLowerCase()] = k;
   }
-  // Events are addressable by kind (get_resource / YAML) but are not a listable
-  // sidebar resource_type — they have their own get_events handler.
-  out.event = { group: '', version: 'v1', plural: 'events', kind: 'Event', clusterScoped: false };
   return out;
 }
 

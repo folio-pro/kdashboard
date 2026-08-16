@@ -46,6 +46,8 @@ import * as crd from './handlers/crd';
 import * as openapi from './handlers/openapi';
 import * as logs from './handlers/logs';
 import * as terminal from './handlers/terminal';
+import * as debug from './handlers/debug';
+import * as nodeShell from './handlers/node-shell';
 import * as portforward from './handlers/portforward';
 import * as watch from './handlers/watch';
 import * as updater from './handlers/updater';
@@ -306,6 +308,8 @@ function buildHandlerModules(): HandlerModule[] {
     // --- Phase 2: streaming subsystems ---
     logs, // stream_pod_logs, stream_multi_pod_logs, stop_log_stream
     terminal, // start_terminal_exec, send_terminal_input, resize_terminal, stop_terminal_exec
+    debug, // debug_pod (ephemeral debug containers)
+    nodeShell, // start_node_shell, stop_node_shell
     portforward, // start_port_forward, stop_port_forward
     watch, // start_resource_watch, stop_resource_watch
     updater, // __updater_check, __updater_download (+ background update-available notice)

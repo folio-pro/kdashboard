@@ -62,6 +62,9 @@ inspect, debug, and act on workloads.
   posture at a glance.
 - **Diagnostics** — surface events, warnings, and common failure modes for
   each resource.
+- **Cluster events feed** — a kubectl-style Events view in the sidebar:
+  live-updating, newest first, Normal/Warning stat cards that filter on
+  click, and search across reason and message.
 - **CRD-aware** — custom resources are first-class citizens. CRD discovery
   falls back to the discovery API (`/apis`) when listing
   `CustomResourceDefinition` objects is forbidden, so it works without

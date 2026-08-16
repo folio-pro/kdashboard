@@ -182,6 +182,37 @@ describe("getCellValue — nodes", () => {
   });
 });
 
+describe("getCellValue — events", () => {
+  const event = (spec: Record<string, unknown>) => res({ spec });
+
+  test("eventType / eventReason / eventMessage read the synthetic spec", () => {
+    const e = event({ type: "Warning", reason: "BackOff", message: "Back-off restarting container" });
+    expect(getCellValue(e, "eventType")).toBe("Warning");
+    expect(getCellValue(e, "eventReason")).toBe("BackOff");
+    expect(getCellValue(e, "eventMessage")).toBe("Back-off restarting container");
+  });
+
+  test("eventObject renders Kind/name from involvedObject", () => {
+    const e = event({ involvedObject: { kind: "Pod", name: "web-0" } });
+    expect(getCellValue(e, "eventObject")).toBe("Pod/web-0");
+    expect(getCellValue(event({}), "eventObject")).toBe("-");
+  });
+
+  test("eventCount prefers count, falls back to series.count, then 1", () => {
+    expect(getCellValue(event({ count: 7 }), "eventCount")).toBe("7");
+    expect(getCellValue(event({ series: { count: 3 } }), "eventCount")).toBe("3");
+    expect(getCellValue(event({}), "eventCount")).toBe("1");
+  });
+
+  test("eventLastSeen prefers lastTimestamp over the other observation fields", () => {
+    const recent = new Date(Date.now() - 60_000).toISOString();
+    const old = new Date(Date.now() - 3_600_000).toISOString();
+    expect(getCellValue(event({ lastTimestamp: recent, firstTimestamp: old }), "eventLastSeen")).toBe("1m");
+    expect(getCellValue(event({ series: { lastObservedTime: recent } }), "eventLastSeen")).toBe("1m");
+    expect(getCellValue(event({ eventTime: recent }), "eventLastSeen")).toBe("1m");
+  });
+});
+
 describe("column families", () => {
   test("every usage column is routed to the meter renderer", () => {
     for (const key of ["cpuUsage", "memUsage", "podCpu", "podMemory"]) {

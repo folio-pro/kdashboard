@@ -23,6 +23,10 @@ export class DialogStoreLogic {
   // Upsell dialog (feature gate)
   upsellOpen = false;
 
+  // Compare dialog (diff a resource against its sibling in another namespace)
+  compareOpen = false;
+  compareResource: Resource | null = null;
+
   openScale(resource: Resource): void {
     this.scaleResource = {
       kind: resource.kind,
@@ -60,6 +64,16 @@ export class DialogStoreLogic {
 
   openUpsell(): void {
     this.upsellOpen = true;
+  }
+
+  openCompare(resource: Resource): void {
+    this.compareResource = resource;
+    this.compareOpen = true;
+  }
+
+  closeCompare(): void {
+    this.compareOpen = false;
+    this.compareResource = null;
   }
 
   closeUpsell(): void {

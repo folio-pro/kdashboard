@@ -306,6 +306,61 @@ describe("ResourceTable — sorting by type", () => {
   });
 });
 
+describe("ResourceTable — events", () => {
+  const makeEvent = (name: string, spec: Record<string, unknown>): Resource => ({
+    ...makeResource({ name, kind: "Event" }),
+    spec,
+  });
+
+  test("eventLastSeen sorts newest first on asc, oldest first on desc", () => {
+    const items = [
+      makeEvent("old", { lastTimestamp: "2026-01-01T00:00:00Z" }),
+      makeEvent("new", { lastTimestamp: "2026-06-01T00:00:00Z" }),
+      makeEvent("mid", { lastTimestamp: "2026-03-01T00:00:00Z" }),
+    ];
+    expect(sortResources(items, "eventLastSeen", "asc").map((r) => r.metadata.name))
+      .toEqual(["new", "mid", "old"]);
+    expect(sortResources(items, "eventLastSeen", "desc").map((r) => r.metadata.name))
+      .toEqual(["old", "mid", "new"]);
+  });
+
+  test("eventLastSeen compares parsed times, not strings (fractional seconds)", () => {
+    // Lexically "…00.500Z" < "…00Z", but it is the newer instant.
+    const items = [
+      makeEvent("whole", { eventTime: "2026-06-01T00:00:00Z" }),
+      makeEvent("fractional", { eventTime: "2026-06-01T00:00:00.500Z" }),
+    ];
+    expect(sortResources(items, "eventLastSeen", "asc")[0].metadata.name).toBe("fractional");
+  });
+
+  test("eventLastSeen falls back to creation timestamp when unobserved", () => {
+    const items = [
+      makeEvent("observed", { lastTimestamp: "2026-06-01T00:00:00Z" }),
+      { ...makeEvent("bare", {}), metadata: { ...makeResource({ name: "bare" }).metadata, name: "bare", creation_timestamp: "2026-07-01T00:00:00Z" } },
+    ];
+    expect(sortResources(items, "eventLastSeen", "asc")[0].metadata.name).toBe("bare");
+  });
+
+  test("eventReason sorts alphabetically", () => {
+    const items = [
+      makeEvent("b", { reason: "Pulled" }),
+      makeEvent("a", { reason: "BackOff" }),
+    ];
+    expect(sortResources(items, "eventReason", "asc")[0].metadata.name).toBe("a");
+  });
+
+  test("filter matches event reason and message, but only for Events", () => {
+    const items = [
+      makeEvent("ev-1", { reason: "BackOff", message: "Back-off restarting container" }),
+      makeEvent("ev-2", { reason: "Pulled", message: "Container image pulled" }),
+      { ...makeResource({ name: "pod-1" }), spec: { reason: "BackOff" } },
+    ];
+    const hits = filterResources(items, "backoff");
+    expect(hits.map((r) => r.metadata.name)).toEqual(["ev-1"]);
+    expect(filterResources(items, "image pulled").map((r) => r.metadata.name)).toEqual(["ev-2"]);
+  });
+});
+
 describe("ResourceTable — unknown sort column falls back to name", () => {
   test("sorts by name when column is unrecognised", () => {
     const items = [

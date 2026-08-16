@@ -8,7 +8,7 @@ import {
   HardDrive, HardDriveDownload, Archive, Key, Link, KeyRound, Users,
   Shield, ShieldCheck, ShieldAlert, PieChart, SlidersHorizontal, Share2,
   Plug, Route, UserCircle, Cable, Timer, Filter, CheckCircle2, ArrowUpNarrowWide,
-  Cog, Package,
+  Cog, Package, Activity,
 } from "lucide-svelte";
 import type { IconComponent } from "$lib/actions/types";
 
@@ -57,6 +57,7 @@ export const RESOURCE_ICONS: Record<string, IconComponent> = {
   // Cluster
   nodes: Server,
   namespaces: FolderOpen,
+  events: Activity,
   priorityclasses: ArrowUpNarrowWide,
   runtimeclasses: Cog,
   leases: Timer,
