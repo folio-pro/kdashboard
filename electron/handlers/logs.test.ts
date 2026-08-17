@@ -290,6 +290,44 @@ describe('stream_multi_pod_logs', () => {
     expect(statuses()).toEqual([]);
   });
 
+  // reportWhenDrained only subscribes to the drain promises once the whole loop
+  // has finished dialling. A reader that dies inside that window therefore has
+  // no handler attached yet, which under Node's default
+  // --unhandled-rejections=throw takes the main process down with it.
+  test('a pod dropping while another is still connecting is not an unhandled rejection', async () => {
+    const a = stagedBody();
+    const b = stagedBody(60);
+
+    const rejections: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      const pending = handlers.get('stream_multi_pod_logs')!(
+        { pods: ['pod-a', 'pod-b'], namespace: 'default' },
+        ctx,
+      );
+
+      // pod-a's transport dies while pod-b is still dialling.
+      await settle(15);
+      a.fail(new Error('econnreset'));
+      await settle(25);
+
+      await pending;
+      b.push('from b\n');
+      await settle();
+
+      expect(rejections).toEqual([]);
+      // The failure is still reported — swallowing the rejection must not
+      // swallow the reader's outcome.
+      expect(lines()).toContain('[pod-a] [error: econnreset]');
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
   // One pod dropping is not the session failing while its siblings still stream.
   test('one pod erroring does not end the session while another still streams', async () => {
     const a = stagedBody();

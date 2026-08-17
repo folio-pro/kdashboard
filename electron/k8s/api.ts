@@ -88,8 +88,21 @@ export async function apiStream(
   const url = new URL(cluster.server.replace(/\/$/, '') + path);
   url.search = query.toString();
 
-  const headers: Record<string, string> = { ...(await clusterAuthHeaders()) };
-  const resp = await fetch(url.toString(), { method: 'GET', headers, signal });
+  const doFetch = async (): Promise<Response> => {
+    const headers: Record<string, string> = { ...(await clusterAuthHeaders()) };
+    return fetch(url.toString(), { method: 'GET', headers, signal });
+  };
+
+  // Same one-shot refresh as apiGet: exec-credential plugins and short-lived
+  // OIDC tokens rotate inside the auth cache's TTL, and a log stream that dies
+  // on a recoverable 401 surfaces to the user as a stream error.
+  let resp = await doFetch();
+  if (resp.status === 401) {
+    // Release the discarded body — unread, it pins the pooled connection.
+    await resp.body?.cancel().catch(() => {});
+    expireClusterAuth();
+    resp = await doFetch();
+  }
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
     throw new Error(`${resp.status} ${resp.statusText}${body ? `: ${body}` : ''}`);

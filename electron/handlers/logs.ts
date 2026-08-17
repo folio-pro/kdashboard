@@ -369,6 +369,12 @@ async function streamMultiPodLogs(args: Record<string, unknown>, ctx: HandlerCtx
 
     try {
       const { drained } = await openStream(ctx, session, namespace, podName, container, args, podName);
+      // Attach a no-op handler NOW: reportWhenDrained only subscribes once the
+      // whole loop has finished dialling, and a reader that dies in the gap
+      // would be an unhandled rejection — fatal to the main process under
+      // Node's default --unhandled-rejections=throw. allSettled still sees the
+      // original rejection.
+      void drained.catch(() => {});
       drains.push(drained);
     } catch (err) {
       // Emit the per-pod error line and keep going (Rust: continue).

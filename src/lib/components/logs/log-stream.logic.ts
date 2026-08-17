@@ -72,6 +72,10 @@ export class LogStreamLogic {
     // before we touch shared state.
     const gen = this._invalidate();
     this._stopBackendStream();
+    // Drop the previous stream's lines for EITHER outcome. Leaving them on
+    // screen for an unavailable request hides the reason: the empty state is
+    // the only thing that renders it, and a non-empty list never shows it.
+    this._io.onReset();
 
     if (request.kind === "unavailable") {
       this._fail(request.reason);
@@ -80,7 +84,6 @@ export class LogStreamLogic {
 
     this.phase = "connecting";
     this.error = null;
-    this._io.onReset();
 
     // Backstop for the one ending the backend cannot report: the connect itself
     // never settling (unreachable apiserver, hung TLS handshake).

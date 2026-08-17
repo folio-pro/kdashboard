@@ -148,6 +148,16 @@ describe("LogStreamLogic phases", () => {
     expect(h.invoked).not.toContain("stream_pod_logs");
   });
 
+  // The empty state is the only place the reason renders, and it only renders
+  // when the list is empty — so leaving the previous pod's lines on screen
+  // hides the failure entirely.
+  test("an unavailable request still clears the previous stream's output", async () => {
+    const h = harness();
+    await h.stream.start({ kind: "unavailable", reason: "No pod selected." });
+
+    expect(h.resets).toBe(1);
+  });
+
   test("a rejected stream command surfaces the error", async () => {
     const h = harness();
     void h.stream.start(REQUEST);
