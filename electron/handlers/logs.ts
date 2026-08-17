@@ -1,5 +1,4 @@
-// Logs streaming handler — ports the Tauri "logs" subsystem to
-// @kubernetes/client-node's Log streaming API.
+// Logs streaming handler.
 //
 // Rust source ported (faithful): src-tauri/src/k8s/logs.rs
 //
@@ -9,13 +8,19 @@
 //                               line prefixed with `[pod-name] `
 //   - stop_log_stream        -> takes NO args; aborts whatever is streaming
 //
-// Event channel: "log-lines"
-//   PAYLOAD SHAPE: string[]  (a batch of COMPLETE log lines, no trailing
-//   newline per line). The renderer (src/lib/components/logs/LogViewer.svelte)
-//   does listen<string[]>("log-lines", e => for (line of e.payload) ...), so
-//   every emit MUST be a string[].
+// Event channels:
+//   "log-lines"
+//     PAYLOAD SHAPE: string[]  (a batch of COMPLETE log lines, no trailing
+//     newline per line). The renderer (src/lib/components/logs/LogViewer.svelte)
+//     does listen<string[]>("log-lines", e => for (line of e.payload) ...), so
+//     every emit MUST be a string[].
+//   "log-stream-status"
+//     PAYLOAD SHAPE: { state: 'ended' | 'error'; message?: string }
+//     Emitted at most once per logical stream, when EVERY pod reader in it has
+//     settled. A deliberate stop/restart emits nothing — the renderer drove that
+//     transition and must not be told the stream died.
 //
-// Renderer arg keys (source of truth — src/.../LogViewer.svelte ~280-315):
+// Renderer arg keys (source of truth — src/.../log-viewer.ts buildStreamRequest):
 //   stream_pod_logs:       { name, namespace, container, tailLines,
 //                            sinceSeconds, timestamps, previous }
 //   stream_multi_pod_logs: { pods, namespace, container, tailLines,
@@ -24,36 +29,63 @@
 //    sends camelCase tailLines/sinceSeconds.)
 //
 // Session semantics (mirrors the Rust single global STOP_FLAG): there is ONE
-// active logical log stream at a time. Starting a new stream aborts any prior
-// one. stop_log_stream aborts all underlying streams and clears state. Each
-// stream is also cleaned up when it ends/errors on its own.
+// active logical log stream at a time, held in `activeSession`. Starting a new
+// stream aborts any prior one. Session identity IS the staleness check — every
+// callback compares against `activeSession` before emitting anything.
+//
+// WHY THIS DOES NOT USE @kubernetes/client-node's Log helper
+// ----------------------------------------------------------
+// Log.log() does `response.body.pipe(sink)` and hands back only an
+// AbortController — the response body itself stays private. Node's pipe()
+// forwards NOTHING to the destination when the source dies abnormally: a source
+// error emits no 'error', no 'unpipe' and no 'close' on the destination, and
+// the sink's final() (which is what produced the "[stream ended]" marker) only
+// runs on a graceful end().
+//
+// So when a followed log stream dropped mid-flight — pod restarted, apiserver
+// idle timeout, network blip, credentials expired — the renderer was told
+// nothing at all and sat on "Connecting to log stream..." indefinitely. Owning
+// the fetch means we observe all three endings (clean EOF, transport error,
+// abort) and can report the first two.
 
-import { Writable } from 'node:stream';
-
-import { Log } from '@kubernetes/client-node';
+import { AddOptionsToSearchParams, type LogOptions } from '@kubernetes/client-node';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
-import { kc } from '../k8s/client';
+import { apiStream } from '../k8s/api';
 
 const LOG_CHANNEL = 'log-lines';
+const STATUS_CHANNEL = 'log-stream-status';
 
 /** Maximum lines to buffer before emitting a batch (mirrors Rust LOG_BATCH_SIZE). */
 const LOG_BATCH_SIZE = 20;
 /** Maximum time (ms) to wait before flushing a partial batch (mirrors Rust LOG_FLUSH_INTERVAL_MS). */
 const LOG_FLUSH_INTERVAL_MS = 50;
 
+/** Payload of STATUS_CHANNEL. Mirrors StreamStatus in src/.../log-viewer.ts. */
+interface StreamStatus {
+  state: 'ended' | 'error';
+  message?: string;
+}
+
 /**
  * One active logical stream = N underlying abortable per-pod readers. The Rust
  * kept a single global active slot; we do the same with one module-level
- * session object. `epoch` guards against stale callbacks emitting after stop.
+ * session object, and use its identity as the staleness check.
  */
 interface LogSession {
-  epoch: number;
   controllers: AbortController[];
 }
 
 let activeSession: LogSession | null = null;
-let epochCounter = 0;
+
+/** True once this session has been stopped or superseded — emit nothing more. */
+function isStale(session: LogSession): boolean {
+  return activeSession !== session;
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 /** Coerce an optional renderer arg to a string, treating null/'' as absent. */
 function optStr(v: unknown): string | undefined {
@@ -71,19 +103,11 @@ function optBool(v: unknown): boolean | undefined {
 }
 
 /**
- * Build the @kubernetes/client-node Log options from the common optional fields.
- * Mirrors the Rust build_log_params: follow is always true; the rest are only
- * set when present.
+ * Build the log query options from the common optional fields. Mirrors the Rust
+ * build_log_params: follow is always true; the rest are only set when present.
  */
-function buildLogOptions(args: Record<string, unknown>): {
-  follow: true;
-  container?: string;
-  tailLines?: number;
-  sinceSeconds?: number;
-  timestamps?: boolean;
-  previous?: boolean;
-} {
-  const opts: ReturnType<typeof buildLogOptions> = { follow: true };
+function buildLogOptions(args: Record<string, unknown>): LogOptions {
+  const opts: LogOptions = { follow: true };
   const tailLines = optNum(args.tailLines);
   if (tailLines !== undefined) opts.tailLines = tailLines;
   const sinceSeconds = optNum(args.sinceSeconds);
@@ -96,35 +120,29 @@ function buildLogOptions(args: Record<string, unknown>): {
 }
 
 /**
- * A Writable sink that splits the raw byte stream on newlines, batches complete
- * lines, and flushes them as string[] via ctx.emit. Mirrors the Rust
- * spawn_log_reader: coalesce on a batch-size cap OR a short debounce timer, and
- * (for single-pod streams) emit a trailing "[stream ended]" marker on close.
- *
- * `linePrefix`, when set, prefixes each emitted line with `[prefix] ` (multi).
+ * Batches complete log lines and flushes them as string[] over LOG_CHANNEL,
+ * coalescing on a batch-size cap OR a short debounce timer (mirrors the Rust
+ * spawn_log_reader). `linePrefix`, when set, prefixes each line with
+ * `[prefix] ` (multi-pod streams).
  */
-function makeLineSink(
-  ctx: HandlerCtx,
-  session: LogSession,
-  linePrefix: string | undefined,
-): Writable {
-  let partial = '';
+function makeBatcher(ctx: HandlerCtx, session: LogSession, linePrefix: string | undefined) {
   let batch: string[] = [];
   let flushTimer: NodeJS.Timeout | null = null;
 
-  const isStale = () => activeSession !== session || session.epoch !== epochCounter;
+  const decorate = (line: string): string =>
+    linePrefix !== undefined ? `[${linePrefix}] ${line}` : line;
 
-  const clearTimer = () => {
+  const clearTimer = (): void => {
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = null;
     }
   };
 
-  const flush = () => {
+  const flush = (): void => {
     clearTimer();
     if (batch.length === 0) return;
-    if (isStale()) {
+    if (isStale(session)) {
       batch = [];
       return;
     }
@@ -133,9 +151,8 @@ function makeLineSink(
     ctx.emit(LOG_CHANNEL, out);
   };
 
-  const pushLine = (line: string) => {
-    const formatted = linePrefix !== undefined ? `[${linePrefix}] ${line}` : line;
-    batch.push(formatted);
+  const push = (line: string): void => {
+    batch.push(decorate(line));
     if (batch.length >= LOG_BATCH_SIZE) {
       flush();
     } else if (!flushTimer) {
@@ -143,39 +160,139 @@ function makeLineSink(
     }
   };
 
-  const emitOne = (line: string) => {
-    if (isStale()) return;
-    ctx.emit(LOG_CHANNEL, [linePrefix !== undefined ? `[${linePrefix}] ${line}` : line]);
+  const emitOne = (line: string): void => {
+    if (isStale(session)) return;
+    ctx.emit(LOG_CHANNEL, [decorate(line)]);
   };
 
-  return new Writable({
-    write(chunk: Buffer, _enc, cb) {
-      // Single split per chunk — re-slicing `partial` per line is O(n²) on
-      // chunks with many lines. The last piece (no trailing '\n') carries over.
-      const pieces = (partial + chunk.toString('utf8')).split('\n');
-      partial = pieces.pop() ?? '';
-      for (let line of pieces) {
-        // Strip a preceding '\r' if present — the renderer expects complete
-        // lines with no trailing newline.
+  return { push, flush, emitOne, clearTimer };
+}
+
+/**
+ * Read a log response body to completion, splitting on newlines and handing
+ * whole lines to the batcher. Resolves on clean EOF; rejects on transport error
+ * or abort.
+ */
+async function pumpBody(
+  session: LogSession,
+  body: ReadableStream<Uint8Array>,
+  batcher: ReturnType<typeof makeBatcher>,
+): Promise<void> {
+  const decoder = new TextDecoder();
+  const reader = body.getReader();
+  let partial = '';
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // Stop feeding a stream nobody is listening to any more.
+      if (isStale(session)) return;
+      partial += decoder.decode(value, { stream: true });
+      let idx = partial.indexOf('\n');
+      while (idx !== -1) {
+        // Strip the trailing '\n' (and a preceding '\r' if present) — the
+        // renderer expects complete lines with no trailing newline.
+        let line = partial.slice(0, idx);
         if (line.endsWith('\r')) line = line.slice(0, -1);
-        pushLine(line);
+        batcher.push(line);
+        partial = partial.slice(idx + 1);
+        idx = partial.indexOf('\n');
       }
-      cb();
-    },
-    final(cb) {
-      // Flush any buffered complete lines plus a trailing partial line (no
-      // newline terminator from the server, e.g. last line of a non-follow log).
-      if (partial.length > 0) {
-        pushLine(partial);
-        partial = '';
-      }
-      flush();
+    }
+    // A trailing line with no newline terminator from the server.
+    partial += decoder.decode();
+    if (partial.length > 0) batcher.push(partial);
+  } finally {
+    reader.releaseLock();
+    // In the `finally` so a mid-stream failure still delivers what was already
+    // buffered: push() only arms a 50ms debounce, and the caller's rejection
+    // path clears that timer, so anything batched within the last 50ms of a
+    // dropped stream would otherwise be discarded — exactly the lines before a
+    // crash that are worth reading.
+    batcher.flush();
+  }
+}
+
+/**
+ * Open ONE pod's log stream. Awaits only until the response headers arrive, so
+ * the caller's command resolves on a real connection; `drained` then settles
+ * whenever that pod's stream finishes, cleanly or otherwise.
+ */
+async function openStream(
+  ctx: HandlerCtx,
+  session: LogSession,
+  namespace: string,
+  podName: string,
+  container: string,
+  args: Record<string, unknown>,
+  linePrefix: string | undefined,
+): Promise<{ drained: Promise<void> }> {
+  const controller = new AbortController();
+  const query = new URLSearchParams();
+  query.set('container', container);
+  AddOptionsToSearchParams(buildLogOptions(args), query);
+
+  const path = `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(podName)}/log`;
+  const resp = await apiStream(path, query, controller.signal);
+
+  // A stop/restart raced the connect: drop it. There is no reader to wait on,
+  // and the session is already stale so nothing will be reported for it.
+  if (isStale(session)) {
+    controller.abort();
+    void resp.body?.cancel().catch(() => {});
+    return { drained: Promise.resolve() };
+  }
+
+  // Treated as a connect failure rather than a rejected `drained`: an eagerly
+  // rejected promise would be unhandled until allSettled attaches to it.
+  if (!resp.body) {
+    controller.abort();
+    throw new Error('empty log response');
+  }
+
+  session.controllers.push(controller);
+  const batcher = makeBatcher(ctx, session, linePrefix);
+
+  // Deliberately NOT awaited — see the doc comment above.
+  const drained = pumpBody(session, resp.body, batcher).then(
+    () => {
+      batcher.clearTimer();
       // Single-pod streams emit a "[stream ended]" marker (Rust line_prefix.is_none()).
-      if (linePrefix === undefined) {
-        emitOne('[stream ended]');
-      }
-      cb();
+      if (linePrefix === undefined) batcher.emitOne('[stream ended]');
     },
+    (err: unknown) => {
+      batcher.clearTimer();
+      batcher.emitOne(`[error: ${messageOf(err)}]`);
+      // Rethrow so the session's terminal status sees this reader as failed.
+      throw err;
+    },
+  );
+
+  return { drained };
+}
+
+/**
+ * Emit the session's single terminal status once EVERY reader has settled.
+ *
+ * Waiting for all of them is what keeps a multi-pod stream honest: readers are
+ * dialled one after another, so any "are we done yet" counter would see zero
+ * live readers in the gap between one pod finishing and the next connecting,
+ * and would end the session early. Likewise one pod dropping is not the whole
+ * session failing while its siblings are still streaming.
+ */
+function reportWhenDrained(
+  ctx: HandlerCtx,
+  session: LogSession,
+  drains: Array<Promise<void>>,
+): void {
+  void Promise.allSettled(drains).then((results) => {
+    if (isStale(session)) return;
+    const failure = results.find((r) => r.status === 'rejected');
+    const status: StreamStatus = failure
+      ? { state: 'error', message: messageOf(failure.reason) }
+      : { state: 'ended' };
+    ctx.emit(STATUS_CHANNEL, status);
   });
 }
 
@@ -183,9 +300,9 @@ function makeLineSink(
 function stopActive(): void {
   if (!activeSession) return;
   const session = activeSession;
+  // Clear FIRST: every callback checks identity, so this is what makes the
+  // whole session stale before we start aborting.
   activeSession = null;
-  // Bump epoch so any in-flight sink callbacks become stale and stop emitting.
-  epochCounter += 1;
   for (const controller of session.controllers) {
     try {
       controller.abort();
@@ -195,10 +312,18 @@ function stopActive(): void {
   }
 }
 
+/** Replace whatever is streaming with a fresh single-slot session. */
+function beginSession(): LogSession {
+  stopActive();
+  const session: LogSession = { controllers: [] };
+  activeSession = session;
+  return session;
+}
+
 /**
  * Start streaming logs for ONE pod/container. Aborts any prior active stream
- * first (single-slot semantics, like the Rust STOP_FLAG reset). Returns once
- * the stream has been kicked off; lines arrive asynchronously via "log-lines".
+ * first (single-slot semantics, like the Rust STOP_FLAG reset). Resolves once
+ * the stream is established; lines arrive asynchronously via "log-lines".
  */
 async function streamPodLogs(args: Record<string, unknown>, ctx: HandlerCtx): Promise<null> {
   const name = optStr(args.name);
@@ -208,33 +333,17 @@ async function streamPodLogs(args: Record<string, unknown>, ctx: HandlerCtx): Pr
     throw new Error('stream_pod_logs: missing required arg "name"');
   }
 
-  stopActive();
-  const session: LogSession = { epoch: ++epochCounter, controllers: [] };
-  activeSession = session;
+  const session = beginSession();
 
-  const log = new Log(kc());
-  const sink = makeLineSink(ctx, session, undefined);
-  const options = buildLogOptions(args);
-
+  let drained: Promise<void>;
   try {
-    const controller = await log.log(namespace, name, container, sink, options);
-    // If stop arrived while we were awaiting, abort immediately.
-    if (activeSession !== session) {
-      try {
-        controller.abort();
-      } catch {
-        /* ignore */
-      }
-      return null;
-    }
-    session.controllers.push(controller);
+    ({ drained } = await openStream(ctx, session, namespace, name, container, args, undefined));
   } catch (err) {
     if (activeSession === session) activeSession = null;
-    throw new Error(
-      `Failed to start log stream for ${namespace}/${name}: ${(err as Error).message ?? String(err)}`,
-    );
+    throw new Error(`Failed to start log stream for ${namespace}/${name}: ${messageOf(err)}`);
   }
 
+  reportWhenDrained(ctx, session, [drained]);
   return null;
 }
 
@@ -245,41 +354,49 @@ async function streamPodLogs(args: Record<string, unknown>, ctx: HandlerCtx): Pr
  * the whole command.
  */
 async function streamMultiPodLogs(args: Record<string, unknown>, ctx: HandlerCtx): Promise<null> {
-  const pods = Array.isArray(args.pods) ? (args.pods as unknown[]).filter((p): p is string => typeof p === 'string') : [];
+  const pods = Array.isArray(args.pods)
+    ? (args.pods as unknown[]).filter((p): p is string => typeof p === 'string')
+    : [];
   const namespace = optStr(args.namespace) ?? '';
   const container = optStr(args.container) ?? '';
 
-  stopActive();
-  const session: LogSession = { epoch: ++epochCounter, controllers: [] };
-  activeSession = session;
-
-  const log = new Log(kc());
-  const options = buildLogOptions(args);
+  const session = beginSession();
+  const drains: Array<Promise<void>> = [];
 
   for (const podName of pods) {
     // Bail out of the loop if a stop/restart raced in between iterations.
-    if (activeSession !== session) break;
+    if (isStale(session)) return null;
 
-    const sink = makeLineSink(ctx, session, podName);
     try {
-      const controller = await log.log(namespace, podName, container, sink, options);
-      if (activeSession !== session) {
-        try {
-          controller.abort();
-        } catch {
-          /* ignore */
-        }
-        break;
-      }
-      session.controllers.push(controller);
+      const { drained } = await openStream(ctx, session, namespace, podName, container, args, podName);
+      // Attach a no-op handler NOW: reportWhenDrained only subscribes once the
+      // whole loop has finished dialling, and a reader that dies in the gap
+      // would be an unhandled rejection — fatal to the main process under
+      // Node's default --unhandled-rejections=throw. allSettled still sees the
+      // original rejection.
+      void drained.catch(() => {});
+      drains.push(drained);
     } catch (err) {
       // Emit the per-pod error line and keep going (Rust: continue).
-      if (activeSession === session) {
-        ctx.emit(LOG_CHANNEL, [`[${podName}] [error: ${(err as Error).message ?? String(err)}]`]);
+      if (!isStale(session)) {
+        ctx.emit(LOG_CHANNEL, [`[${podName}] [error: ${messageOf(err)}]`]);
       }
     }
   }
 
+  if (isStale(session)) return null;
+
+  if (drains.length === 0) {
+    // Nothing will ever drain, so report now rather than leaving the renderer
+    // waiting on a stream that never was.
+    ctx.emit(STATUS_CHANNEL, {
+      state: 'error',
+      message: pods.length === 0 ? 'No pods to stream' : 'No pod log streams could be started',
+    } satisfies StreamStatus);
+    return null;
+  }
+
+  reportWhenDrained(ctx, session, drains);
   return null;
 }
 
