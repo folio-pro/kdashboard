@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import {
+  type EmptyStateOptions,
   type LogLevel,
   type LogLine,
   detectLevel,
@@ -11,6 +12,7 @@ import {
   filterLogs,
   navigateLog,
   resetLogIdCounter,
+  streamEmptyStateMessage,
 } from "./log-viewer";
 
 // --- Tests ---
@@ -532,5 +534,108 @@ describe("navigateLog", () => {
     const single = [{ id: 0, message: "only", level: "info" as const, isJson: false }];
     expect(navigateLog(single, single[0], 1)).toBe(single[0]);
     expect(navigateLog(single, single[0], -1)).toBe(single[0]);
+  });
+});
+
+describe("streamEmptyStateMessage", () => {
+  function opts(over: Partial<EmptyStateOptions> = {}): EmptyStateOptions {
+    return {
+      phase: "idle",
+      hasLogs: false,
+      levelFilter: "all",
+      filterText: "",
+      isDeployment: false,
+      podsLoading: false,
+      deploymentPodCount: 0,
+      sinceWindowLabel: "1 day",
+      ...over,
+    };
+  }
+
+  test("connecting phase announces the connection attempt", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "connecting" }))).toBe(
+      "Connecting to log stream...",
+    );
+  });
+
+  // The regression this whole change exists for: a connected stream from a pod
+  // that simply has not logged anything must NOT claim to still be connecting.
+  test("live phase with no output does not say 'Connecting'", () => {
+    const msg = streamEmptyStateMessage(opts({ phase: "live" }));
+    expect(msg).not.toContain("Connecting");
+    expect(msg).toContain("Connected");
+    expect(msg).toContain("1 day");
+  });
+
+  test("live phase reflects the selected since-window", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "live", sinceWindowLabel: "15 min" }))).toContain(
+      "15 min",
+    );
+  });
+
+  test("ended phase reports the stream finished", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "ended" }))).toBe("Log stream ended.");
+  });
+
+  test("error phase surfaces the backend message", () => {
+    expect(
+      streamEmptyStateMessage(opts({ phase: "error", errorMessage: "connection reset by peer" })),
+    ).toBe("connection reset by peer");
+  });
+
+  test("error phase falls back when no message is supplied", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "error" }))).toBe(
+      "The log stream stopped unexpectedly.",
+    );
+  });
+
+  test("idle phase prompts the user to start", () => {
+    expect(streamEmptyStateMessage(opts())).toBe("Select a container and press Stream to start");
+  });
+
+  test("idle deployment while pods load", () => {
+    expect(streamEmptyStateMessage(opts({ isDeployment: true, podsLoading: true }))).toBe(
+      "Loading pods...",
+    );
+  });
+
+  test("idle deployment with no pods", () => {
+    expect(streamEmptyStateMessage(opts({ isDeployment: true, deploymentPodCount: 0 }))).toBe(
+      "No pods found for this deployment",
+    );
+  });
+
+  // Filters take precedence over the phase: lines DID arrive, they are just hidden.
+  test("level filter hiding all lines wins over the live phase", () => {
+    expect(
+      streamEmptyStateMessage(opts({ phase: "live", hasLogs: true, levelFilter: "error" })),
+    ).toBe("No logs found for level ERROR.");
+  });
+
+  test("search filter hiding all lines wins over the live phase", () => {
+    expect(
+      streamEmptyStateMessage(opts({ phase: "live", hasLogs: true, filterText: "needle" })),
+    ).toBe("No logs match the current search.");
+  });
+
+  test("level and search filters combined", () => {
+    expect(
+      streamEmptyStateMessage(
+        opts({ phase: "live", hasLogs: true, levelFilter: "warn", filterText: "needle" }),
+      ),
+    ).toBe("No WARN logs match the current search.");
+  });
+
+  test("whitespace-only search is not treated as a filter", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "live", hasLogs: true, filterText: "   " }))).toContain(
+      "Connected",
+    );
+  });
+
+  // With no lines at all the filters are irrelevant — the phase is the story.
+  test("filters are ignored when nothing arrived", () => {
+    expect(
+      streamEmptyStateMessage(opts({ phase: "connecting", hasLogs: false, levelFilter: "error" })),
+    ).toBe("Connecting to log stream...");
   });
 });

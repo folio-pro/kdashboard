@@ -10,7 +10,7 @@
   } from "$lib/components/ui";
   import { SelectMenu } from "$lib/components/ui/select-menu";
   import { shortPodName } from "./log-viewer";
-  import type { LogLevel } from "./log-viewer";
+  import type { LogLevel, StreamPhase } from "./log-viewer";
   import {
     SINCE_OPTIONS,
     TAIL_OPTIONS,
@@ -23,6 +23,7 @@
     containers,
     filterText = $bindable(),
     isStreaming,
+    streamPhase,
     isDeployment,
     deploymentPodNames,
     podsLoading,
@@ -47,6 +48,7 @@
     containers: string[];
     filterText: string;
     isStreaming: boolean;
+    streamPhase: StreamPhase;
     isDeployment: boolean;
     deploymentPodNames: string[];
     podsLoading: boolean;
@@ -217,10 +219,18 @@
     <Trash2 class="h-3 w-3" />
   </Button>
 
-  {#if isStreaming}
+  <!-- The badge reports the stream phase, not merely "a stream exists": a LIVE
+       badge over a viewer that is still dialling is what made a slow connect
+       look like a hung one. -->
+  {#if streamPhase === "live"}
     <div class="flex shrink-0 items-center gap-1.5">
       <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-running)]"></div>
       <span class="font-mono text-[11px] font-semibold text-[var(--status-running)]">LIVE</span>
+    </div>
+  {:else if streamPhase === "connecting"}
+    <div class="flex shrink-0 items-center gap-1.5">
+      <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--text-muted)]"></div>
+      <span class="font-mono text-[11px] font-semibold text-[var(--text-muted)]">CONNECTING</span>
     </div>
   {/if}
 </div>

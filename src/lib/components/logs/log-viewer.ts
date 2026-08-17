@@ -1,5 +1,7 @@
 // Pure logic extracted from LogViewer.svelte — no Svelte imports, no $state/$derived.
 
+import type { Resource } from "$lib/types";
+
 // --- Types ---
 
 export type LogLevel = "all" | "info" | "warn" | "error";
@@ -169,4 +171,152 @@ export function navigateLog(
   const current = selectedLog ? filteredLogs.indexOf(selectedLog) : -1;
   const next = Math.max(0, Math.min(filteredLogs.length - 1, current + direction));
   return filteredLogs[next];
+}
+// --- Stream lifecycle ---
+
+/**
+ * How far along the log stream is, from the renderer's point of view.
+ *
+ * `connecting` covers ONLY the window between asking the backend to start and
+ * the backend confirming the request is established. `live` means the stream is
+ * attached — it may simply not have produced output yet.
+ *
+ * Collapsing those two into one `isStreaming` boolean is what used to pin the
+ * viewer on "Connecting to log stream..." forever: the message was shown for
+ * any stream with zero lines, so a perfectly healthy but quiet pod looked
+ * permanently stuck (while the header showed a LIVE badge at the same time).
+ */
+export type StreamPhase = "idle" | "connecting" | "live" | "ended" | "error";
+
+/** Payload of the backend's `log-stream-status` event. */
+export interface StreamStatus {
+  state: "ended" | "error";
+  message?: string;
+  pod?: string;
+}
+
+/** The backend commands that can serve a log stream. */
+export type StreamCommand = "stream_pod_logs" | "stream_multi_pod_logs";
+
+/**
+ * What to ask the backend for — or why there is nothing to ask for.
+ *
+ * Modelled as a union rather than a nullable so the "nothing streamable" case
+ * carries its own explanation. The viewer used to discover this halfway through
+ * starting a stream and `return` early, leaving the streaming flag set: that is
+ * what pinned the empty state on "Connecting to log stream..." forever.
+ */
+export type StreamRequest =
+  | { kind: "stream"; command: StreamCommand; args: Record<string, unknown> }
+  | { kind: "unavailable"; reason: string };
+
+export interface StreamRequestOptions {
+  resource: Resource | null;
+  isDeployment: boolean;
+  deploymentPodNames: string[];
+  container: string;
+  tailLines: number;
+  sinceSeconds: number | null;
+  timestamps: boolean;
+  previous: boolean;
+}
+
+/** Decide which stream command serves the current selection, if any. */
+export function buildStreamRequest(opts: StreamRequestOptions): StreamRequest {
+  const common = {
+    container: opts.container,
+    tailLines: opts.tailLines,
+    sinceSeconds: opts.sinceSeconds,
+    timestamps: opts.timestamps,
+    previous: opts.previous || null,
+  };
+
+  if (opts.isDeployment) {
+    if (opts.deploymentPodNames.length === 0) {
+      return { kind: "unavailable", reason: "This deployment has no running pods to stream." };
+    }
+    return {
+      kind: "stream",
+      command: "stream_multi_pod_logs",
+      args: {
+        pods: opts.deploymentPodNames,
+        namespace: opts.resource?.metadata?.namespace ?? "",
+        ...common,
+      },
+    };
+  }
+
+  const resource = opts.resource;
+  if (!resource || resource.kind.toLowerCase() !== "pod") {
+    // The selection can vanish mid-start — a watch event dropping the pod nulls
+    // it out from under us.
+    return { kind: "unavailable", reason: "No pod selected to stream logs from." };
+  }
+  return {
+    kind: "stream",
+    command: "stream_pod_logs",
+    args: {
+      name: resource.metadata.name,
+      namespace: resource.metadata.namespace ?? "",
+      ...common,
+    },
+  };
+}
+
+export interface EmptyStateOptions {
+  phase: StreamPhase;
+  /** Whether any line arrived at all, before filtering. */
+  hasLogs: boolean;
+  levelFilter: LogLevel;
+  filterText: string;
+  isDeployment: boolean;
+  podsLoading: boolean;
+  deploymentPodCount: number;
+  /** Duration window phrased for "nothing in the last {…}" — e.g. "1 day". */
+  sinceWindowLabel: string;
+  errorMessage?: string;
+}
+
+/**
+ * The message shown in place of the log list when nothing is visible.
+ *
+ * Only called when the filtered list is empty, so `hasLogs` alone distinguishes
+ * "filters hid everything" from "nothing arrived".
+ */
+export function streamEmptyStateMessage(opts: EmptyStateOptions): string {
+  const hasLevelFilter = opts.levelFilter !== "all";
+  const hasSearchFilter = opts.filterText.trim().length > 0;
+
+  // Lines did arrive but the active filters hide all of them — the filters are
+  // the story, not the stream phase.
+  if (opts.hasLogs) {
+    if (hasLevelFilter && hasSearchFilter) {
+      return `No ${opts.levelFilter.toUpperCase()} logs match the current search.`;
+    }
+    if (hasLevelFilter) {
+      return `No logs found for level ${opts.levelFilter.toUpperCase()}.`;
+    }
+    if (hasSearchFilter) {
+      return "No logs match the current search.";
+    }
+  }
+
+  switch (opts.phase) {
+    case "connecting":
+      return "Connecting to log stream...";
+    case "live":
+      return `Connected — waiting for output. Nothing logged in the last ${opts.sinceWindowLabel}.`;
+    case "ended":
+      return "Log stream ended.";
+    case "error":
+      return opts.errorMessage ?? "The log stream stopped unexpectedly.";
+    case "idle":
+      break;
+  }
+
+  if (opts.isDeployment && opts.podsLoading) return "Loading pods...";
+  if (opts.isDeployment && opts.deploymentPodCount === 0) {
+    return "No pods found for this deployment";
+  }
+  return "Select a container and press Stream to start";
 }
