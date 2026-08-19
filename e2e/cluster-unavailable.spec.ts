@@ -1,7 +1,7 @@
 /**
  * End-to-end specs that exercise the UI's behavior when the Kubernetes cluster
- * is not reachable. Each test installs a Tauri IPC mock via addInitScript BEFORE
- * the app boots, so the connection error path runs from the very first invoke()
+ * is not reachable. Each test installs an IPC mock via addInitScript BEFORE the
+ * app boots, so the connection error path runs from the very first invoke()
  * call. No real cluster is required.
  *
  * These tests require the dev server to be running (the webServer block in

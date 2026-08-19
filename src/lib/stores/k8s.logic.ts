@@ -24,7 +24,7 @@ export interface NavigationEntry {
 export const COUNTABLE_RESOURCE_TYPES: readonly string[] = LISTABLE_RESOURCE_TYPES;
 
 /**
- * Pure logic for K8sStore — no Svelte runes, no Tauri invoke.
+ * Pure logic for K8sStore — no Svelte runes, no backend invoke.
  * Testable in bun test. The Svelte store extends this and adds reactivity.
  */
 export class K8sStoreLogic {
@@ -196,7 +196,7 @@ export class K8sStoreLogic {
     this.resourceCounts = { ...this.resourceCounts, [resourceType]: count };
   }
 
-  /** Synchronous navigate-to-related for testing (no Tauri calls). */
+  /** Synchronous navigate-to-related for testing (no backend calls). */
   navigateToRelatedSync(resourceType: string, target: Resource | null): void {
     if (this.selectedResource) {
       this._navHistory.push({
@@ -213,7 +213,7 @@ export class K8sStoreLogic {
     if (event.resource_type !== this.selectedResourceType) return;
 
     if (event.event_type === "Resync") {
-      // In the real store this triggers a full refresh via Tauri
+      // In the real store this triggers a full refresh via the backend
       return;
     }
 
@@ -247,17 +247,17 @@ export class K8sStoreLogic {
     }
   }
 
-  /** Synchronous port forward add (no Tauri calls). */
+  /** Synchronous port forward add (no backend calls). */
   addPortForwardSync(info: PortForwardInfo): void {
     this.portForwards = [...this.portForwards, info];
   }
 
-  /** Synchronous port forward remove (no Tauri calls). */
+  /** Synchronous port forward remove (no backend calls). */
   removePortForwardSync(sessionId: string): void {
     this.portForwards = this.portForwards.filter((pf) => pf.session_id !== sessionId);
   }
 
-  /** Synchronous portion of resetForUserSwitch (no Tauri calls). */
+  /** Synchronous portion of resetForUserSwitch (no backend calls). */
   resetForUserSwitchSync(): void {
     this._beginScopeChange();
     this.isSwitchingContext = false;

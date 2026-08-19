@@ -1,5 +1,5 @@
-// Ambient declaration for the preload-exposed bridge. Lets the @tauri-apps/*
-// modules (and any src/ code) reference window.electronAPI with full typing.
+// Ambient declaration for the preload-exposed bridge. Lets any src/ code
+// reference window.electronAPI with full typing.
 //
 // Keep this in sync with electron/preload.ts (ElectronAPI).
 

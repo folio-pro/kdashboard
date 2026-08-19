@@ -4,7 +4,7 @@
 // own KubeConfig — this keeps a single source of truth for the active context
 // and the optional kubeconfig path override coming from settings.
 //
-// Mirrors the Rust src-tauri/src/k8s/client.rs behaviour:
+// Behaviour:
 //   - load from default kubeconfig (KUBECONFIG env / ~/.kube/config)
 //   - honor a kubeconfigPath override persisted in settings
 //   - allow switching the active context at runtime (switch_context)

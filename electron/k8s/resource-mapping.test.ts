@@ -2,10 +2,10 @@ import { test, expect, describe } from 'bun:test';
 
 import { metaFrom, dynamicToResource, presentOrUndefined, listProjectionFor } from './resource-mapping';
 
-describe('metaFrom — Rust serde null contract', () => {
+describe('metaFrom — null contract', () => {
   test('absent fields serialize as null, NOT omitted', () => {
-    // The Rust ResourceMetadata struct has no skip_serializing_if, so None ->
-    // JSON null. This is the contract the renderer was built against.
+    // Absent metadata fields must be null, not omitted. This is the contract
+    // the renderer was built against.
     const m = metaFrom(undefined);
     expect(m.name).toBeNull();
     expect(m.namespace).toBeNull();
@@ -61,7 +61,7 @@ describe('metaFrom — Rust serde null contract', () => {
 });
 
 describe('dynamicToResource', () => {
-  test('omits spec/status/data/type when absent (serde skip_serializing_if)', () => {
+  test('omits spec/status/data/type when absent', () => {
     const r = dynamicToResource({ metadata: { name: 'x', uid: 'u' } }, 'v1', 'Pod');
     expect(r.api_version).toBe('v1');
     expect(r.kind).toBe('Pod');

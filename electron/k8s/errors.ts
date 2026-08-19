@@ -76,8 +76,7 @@ export function describeInvokeError(err: unknown): string {
 /**
  * Best-effort human message extracted from a @kubernetes/client-node error.
  * Prefers the apiserver-supplied body.message (a Status object), then the JS
- * Error message, then a stringified fallback. Mirrors the Rust handlers'
- * Result<_, String> messages.
+ * Error message, then a stringified fallback.
  */
 export function k8sErrorMessage(err: unknown): string {
   if (err && typeof err === 'object') {

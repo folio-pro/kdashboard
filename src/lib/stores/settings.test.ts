@@ -4,7 +4,7 @@ import { SettingsStoreLogic, DEFAULT_SETTINGS } from "./settings.logic.js";
 
 /**
  * Testable subclass that tracks applyTheme calls and saveSettings calls
- * without needing Svelte runes or Tauri invoke.
+ * without needing Svelte runes or a backend invoke.
  */
 class TestSettingsStore extends SettingsStoreLogic {
   appliedTheme: string = "";

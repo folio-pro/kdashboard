@@ -1,4 +1,4 @@
-// Kubernetes resource.Quantity parsing (port of the Rust metrics.rs helpers).
+// Kubernetes resource.Quantity parsing.
 //
 // Shared by the cost handlers (which price usage) and the metrics handlers
 // (which display it), so both read a "250m" / "1Gi" string the same way.

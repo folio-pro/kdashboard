@@ -29,14 +29,14 @@ copyright on everything you write.
 
 ## Development setup
 
-kdashboard is a Tauri 2 desktop application with a Rust backend and a Svelte 5
-frontend.
+kdashboard is an Electron desktop application with a TypeScript main process
+and a Svelte 5 frontend.
 
 Requirements:
 
-- Rust stable (see `rust-toolchain.toml` if present; otherwise current stable)
 - Node.js 20 or later, plus [Bun](https://bun.sh)
-- Platform build dependencies per the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+- A reachable cluster — `scripts/dev-cluster.sh` spins up a seeded
+  [Kind](https://kind.sigs.k8s.io) cluster for manual testing
 
 Setup:
 
@@ -44,23 +44,24 @@ Setup:
 git clone https://github.com/folio-pro/kdashboard.git
 cd kdashboard
 bun install
-cargo fetch --manifest-path src-tauri/Cargo.toml
-bun run tauri dev
+bun run dev:electron
 ```
 
 Tests:
 
 ```bash
-bun test                  # Frontend unit tests
-cargo test --manifest-path src-tauri/Cargo.toml
+bun run test              # Frontend + Electron backend unit tests
+bun run test:integration  # Backend integration tests (needs KDASH_TEST_CONTEXT)
+bun run test:e2e          # Playwright E2E
 ```
 
-Before submitting a pull request, run both test suites locally and verify
-that a release build completes:
+Before submitting a pull request, run the unit suites and the backend
+typecheck locally, and verify that a release build completes:
 
 ```bash
-bun run build
-cargo build --manifest-path src-tauri/Cargo.toml --release
+bun run test
+bun run typecheck:electron
+bun run build:electron
 ```
 
 ## Licensing
@@ -93,9 +94,9 @@ We use Conventional Commits with a short, imperative subject:
 feat: add pod log filtering by regex
 fix(topology): handle deployments without replicas
 docs: clarify kubeconfig lookup order
-refactor(k8s): split resources.rs into per-domain modules
+refactor(k8s): split resources.ts into per-domain modules
 test: add integration coverage for cost enricher
-chore: bump kube to 0.98
+chore: bump @kubernetes/client-node to 1.4
 ```
 
 Valid types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`.

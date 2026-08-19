@@ -1,7 +1,7 @@
-// Port-forward streaming subsystem (Tauri -> Electron migration, phase 2).
+// Port-forward streaming subsystem.
 //
-// Ports src-tauri/src/k8s/portforward.rs. For each session the renderer starts,
-// we bind a local TCP listener (net.createServer) and pipe every incoming
+// For each session the renderer starts, we bind a local TCP listener
+// (net.createServer) and pipe every incoming
 // connection through the K8s port-forward WebSocket via @kubernetes/client-node's
 // PortForward. Session state lives in a module-level Map keyed by the sessionId
 // the renderer uses; stop_port_forward (or an unexpected listener death) closes
@@ -13,8 +13,8 @@
 //     localPort, sessionId }  — translated from the snake-case PortForwardInfo by
 //     addPortForward() before invoke(); the frontend is the source of truth.
 //   - stop_port_forward args (camelCase): { sessionId }.
-//   - start returns { session_id, local_port } (snake_case — matches Rust
-//     PortForwardResult and the renderer's invoke<{ session_id; local_port }> ).
+//   - start returns { session_id, local_port } (snake_case — matches the
+//     renderer's invoke<{ session_id; local_port }> ).
 //   - `port-forward-closed` payload === sessionId (string).
 
 import * as net from 'node:net';
@@ -50,9 +50,9 @@ function toPort(value: unknown, label: string): number {
 
 /**
  * Emit `port-forward-closed` for a session at most once and drop it from the
- * map. Mirrors the Rust cleanup: on explicit stop we still tear down the server
- * but suppress the emit (the renderer initiated it); on unexpected death we emit
- * so the UI can removeBySessionId.
+ * map. On an explicit stop we still tear down the server but suppress the emit
+ * (the renderer initiated it); on unexpected death we emit so the UI can
+ * removeBySessionId.
  */
 function finalizeSession(sessionId: string, ctx: HandlerCtx | null, emit: boolean): void {
   const session = sessions.get(sessionId);
@@ -103,7 +103,7 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
       throw new Error(`Port-forward already active for session: ${sessionId}`);
     }
 
-    // Verify the pod exists before binding (mirrors pods.get() in the Rust).
+    // Verify the pod exists before binding.
     await getCoreV1Api().readNamespacedPod({ name: podName, namespace });
 
     const forward = new PortForward(kc());
@@ -137,9 +137,9 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
       socket.on('error', cleanupConnection);
       socket.on('close', cleanupConnection);
 
-      // One WebSocket per TCP connection (matches the Rust per-connection
-      // pods.portforward()). Errors here only kill THIS connection, not the
-      // session — the listener stays up for the next client.
+      // One WebSocket per TCP connection. Errors here only kill THIS
+      // connection, not the session — the listener stays up for the next
+      // client.
       forward
         .portForward(namespace, podName, [containerPort], output, errStream, input)
         .then((ws) => {
@@ -188,7 +188,7 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
       }
     });
 
-    // Same shape as Rust PortForwardResult: snake_case keys.
+    // snake_case keys, as the renderer expects.
     return { session_id: sessionId, local_port: actualPort };
   });
 
@@ -202,7 +202,7 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
     }
 
     // Renderer-initiated stop: tear down WITHOUT emitting port-forward-closed
-    // (the UI already knows; matches the `cancelled` branch in the Rust).
+    // (the UI already knows).
     session.closing = true;
     finalizeSession(sessionId, ctx, false);
     return null;

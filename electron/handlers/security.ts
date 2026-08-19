@@ -1,20 +1,13 @@
-// Security handler group — ports the Tauri "security" commands to
-// @kubernetes/client-node.
+// Security handler group — scanner detection, per-pod posture, image scans.
 //
-// Rust sources ported (faithful 1:1):
-//   - src-tauri/src/k8s/security.rs
-//       get_security_overview (scanner detection + per-pod posture) and
-//       scan_single_image (single-image scan)
-//   - src-tauri/src/commands/k8s_commands.rs (the #[tauri::command] wrappers)
-//
-// Commands implemented (EXACT Tauri command strings):
+// Commands implemented:
 //   - get_security_overview  (args: { namespace?: string | null })
 //   - scan_image             (args: { image: string })
 //
 // Wire-casing notes (frontend is source of truth):
 //   - get_security_overview: AsyncLoadStore._load sends { namespace } (string | null).
-//   - scan_image: arg key `image` (Rust param `image`).
-// Result SHAPES mirror serde wire-casing in src-tauri/src/k8s/security.rs.
+//   - scan_image: arg key `image`.
+// Result shapes are snake_case on the wire.
 
 import { spawn } from 'node:child_process';
 
@@ -24,10 +17,10 @@ import type { HandlerCtx, HandlerMap } from '../dispatch';
 import { getCoreV1Api } from '../k8s/client';
 
 // ===========================================================================
-// Result types — mirror the serde wire-casing of the Rust structs.
+// Result types — snake_case wire casing.
 // ===========================================================================
 
-/** security.rs VulnerabilityCounts (all snake_case, u32 -> number). */
+/** Vulnerability counts by severity. */
 interface VulnerabilityCounts {
   critical: number;
   high: number;
@@ -36,14 +29,12 @@ interface VulnerabilityCounts {
   unknown: number;
 }
 
-/** security.rs ImageScanResult. */
 interface ImageScanResult {
   image: string;
   vulns: VulnerabilityCounts;
   scanned_at: string;
 }
 
-/** security.rs PodSecurityInfo. */
 interface PodSecurityInfo {
   name: string;
   namespace: string;
@@ -52,7 +43,6 @@ interface PodSecurityInfo {
   compliant: boolean;
 }
 
-/** security.rs SecurityOverview. */
 interface SecurityOverview {
   pods: PodSecurityInfo[];
   total_vulns: VulnerabilityCounts;
@@ -138,8 +128,8 @@ const SCANNER_CACHE_TTL_MS = 600_000; // 10 min
 
 let scannerCache: { scanner: Scanner; expiresAt: number } | null = null;
 
-/** Mirror Rust detect_scanner(): probe `trivy --version`, then `grype version`.
- *  The result is cached for SCANNER_CACHE_TTL_MS. */
+/** Probe `trivy --version`, then `grype version`. The result is cached for
+ *  SCANNER_CACHE_TTL_MS. */
 async function detectScanner(): Promise<Scanner> {
   if (scannerCache && scannerCache.expiresAt > Date.now()) {
     return scannerCache.scanner;
@@ -377,7 +367,7 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
           const vulns = await scanImage(scanner, img);
           result = { image: img, vulns, scanned_at: now };
         } catch {
-          // Failed scan -> empty result (faithful to Rust).
+          // Failed scan -> empty result.
           result = { image: img, vulns: emptyCounts(), scanned_at: now };
         }
         imageResults.set(img, result);
@@ -424,7 +414,7 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
   }
 
   // Sort: non-compliant first, then by critical desc, then high desc.
-  // Rust sorts by `compliant` ascending (false < true), so non-compliant first.
+  // `compliant` sorts ascending (false < true), so non-compliant lands first.
   pods.sort((a, b) => {
     const byCompliant = Number(a.compliant) - Number(b.compliant);
     if (byCompliant !== 0) return byCompliant;

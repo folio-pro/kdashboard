@@ -4,7 +4,7 @@
 // UpdateBanner.svelte (the only consumer) does:
 //   const update = await check();              // null when no update
 //   if (update) await update.downloadAndInstall(onEvent);  // Started/Progress/Finished
-//   await relaunch();                          // tauri-process shim
+//   await relaunch();                          // __process_relaunch
 //
 // The backend returns plain JSON ({ version, body, date } | null) — it cannot
 // carry a method — so the Update handle's downloadAndInstall() is synthesized
@@ -28,7 +28,7 @@ export type DownloadEvent =
   | DownloadProgressEvent
   | DownloadFinishedEvent;
 
-/** Mirror of Tauri's Update handle (only the bits UpdateBanner.svelte uses). */
+/** The Update handle (only the bits UpdateBanner.svelte uses). */
 export interface Update {
   version: string;
   /** In-app install unavailable (unsigned macOS build) — update via brew. */

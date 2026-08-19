@@ -1,4 +1,4 @@
-// Shim for `$lib/ipc/event`. Preserves Tauri's listen() contract:
+// Event-channel subscriptions for the renderer:
 //   - the callback receives an event object with a `.payload` field
 //   - listen() resolves to an UnlistenFn that removes the subscription
 //
@@ -6,7 +6,7 @@
 
 export type UnlistenFn = () => void;
 
-/** Minimal Tauri event shape the UI relies on (only `.payload` is used). */
+/** Minimal event shape the UI relies on (only `.payload` is used). */
 export interface Event<T> {
   payload: T;
 }

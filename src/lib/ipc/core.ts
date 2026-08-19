@@ -12,8 +12,8 @@ const IPC_WRAPPER = /^Error invoking remote method '[^']+': (?:Error: )?/;
  * Deep-plain-clone an args object IF it contains a non-plain value (Svelte 5
  * $state proxies above all). ipcRenderer.invoke serializes with the structured
  * clone algorithm, which THROWS "An object could not be cloned" on any Proxy —
- * so e.g. passing `settingsStore.settings` (deep $state) made save_settings
- * fail on every call under Electron (Tauri JSON-serialized, masking this).
+ * so e.g. passing `settingsStore.settings` (deep $state) makes save_settings
+ * fail on every call.
  * JSON round-trip is safe here: IPC payloads are plain JSON data by contract.
  * The common case (plain strings/numbers already) pays only a cheap scan.
  */
@@ -47,8 +47,8 @@ export function readBootSettings(): Record<string, unknown> | null {
 }
 
 /**
- * Invoke a backend command. Mirrors Tauri's invoke<T>(cmd, args?) signature:
- * resolves with the handler's result, rejects with its Error message.
+ * Invoke a backend command: resolves with the handler's result, rejects with
+ * its Error message.
  */
 export async function invoke<T = unknown>(
   cmd: string,
