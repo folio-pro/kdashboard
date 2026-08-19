@@ -154,10 +154,11 @@ function getCurrentContext(): ContextName {
 // the original current-context afterwards) AND call setActiveContext() so the
 // cached KubeConfig is invalidated and re-points immediately.
 //
-// Order matters: setActiveContext() throws 'Context not found: <name>' for an
-// unknown context, so the file is written FIRST and the in-memory sync runs
-// after, swallowing a not-found. Writing an as-yet-unknown context name is
-// deliberate — the file stays the source of truth.
+// Order matters: the file is written FIRST, the in-memory sync runs after.
+// setActiveContext() throws 'Context not found: <name>' for a context absent
+// from the file, and that error is NOT caught — switch_context rejects, but
+// only after the write has already landed. The file stays the source of truth
+// either way.
 // ---------------------------------------------------------------------------
 function setContext(context: string): void {
   const file = resolveKubeconfigPath();
@@ -302,9 +303,9 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
         throw new Error('switch_context requires a `context` string argument');
       }
       setContext(context);
-      // Re-pointing the shared KubeConfig via setActiveContext() already
-      // invalidates the connection; the cached k8s version is owned by the
-      // observability handler group and cleared by that group's switch hook.
+      // setContext() re-points the shared KubeConfig, which invalidates the
+      // cached config and fires the onConfigChange listeners (namespace access
+      // review, cost caches).
       return null;
     },
   );

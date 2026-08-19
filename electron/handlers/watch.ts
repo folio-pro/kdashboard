@@ -316,8 +316,9 @@ async function startResourceWatch(
     };
 
     // Establish (or re-establish) the watch connection. On stream close the JS
-    // Watch does NOT auto-relist, so we reconnect ourselves and emit a Resync
-    // after the first sync, which makes the store do a full refresh.
+    // Watch does NOT auto-relist, so we reconnect ourselves. A Resync (which
+    // makes the store do a full relist) is emitted only for a close that left a
+    // gap — see the close handler below for the exact rule.
     const connect = (): void => {
       if (!isCurrent()) return;
 

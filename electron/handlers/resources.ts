@@ -105,7 +105,7 @@ function apiResourceForType(resourceType: string): ApiResource | undefined {
  * unknown kinds.
  *
  * Returns the kind string verbatim — the caller's casing is preserved in the
- * returned Resource.kind / ApiResource.kind.
+ * returned Resource.kind.
  */
 function apiResourceForKind(kind: string): { ar: ApiResource; clusterScoped: boolean } {
   const k = resolveKindOrThrow(kind);

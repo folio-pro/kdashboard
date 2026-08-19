@@ -221,9 +221,10 @@ const ctx: HandlerCtx = {
 };
 
 /**
- * Internal commands backing the renderer's window/shell/process/updater
- * helpers. They are an implementation detail of that layer and are prefixed
- * with `__` — except close_splashscreen, which the frontend calls by name.
+ * Internal commands backing the renderer's window/shell/process helpers. They
+ * are an implementation detail of that layer and are prefixed with `__` —
+ * except close_splashscreen, which the frontend calls by name. The updater
+ * commands live in electron/handlers/updater.ts, not here.
  */
 const internalModule: HandlerModule = {
   register(handlers): void {
