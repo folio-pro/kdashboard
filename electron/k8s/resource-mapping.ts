@@ -1,12 +1,11 @@
 // Canonical k8s-object -> Resource projection.
 //
-// Port of src-tauri/src/k8s/resources/helpers.rs meta_from + the dynamic-object
-// projection reused by the resources, watch and CRD paths. Previously copied
-// (with subtly divergent null/undefined handling) into three handler files.
+// Shared by the resources, watch and CRD paths. Previously copied (with subtly
+// divergent null/undefined handling) into three handler files.
 //
-// Faithful to Rust serde: metadata fields serialize as `null` when absent (the
-// Rust struct has no skip_serializing_if on them); spec/status/data/type are
-// omitted when absent.
+// NULL CONTRACT: metadata fields serialize as `null` when absent, while
+// spec/status/data/type are OMITTED when absent. The renderer was built against
+// exactly this split — see resource-mapping.test.ts.
 
 import type { RawObject, RawObjectMeta, Resource, ResourceMetadata } from './resource-types';
 import { apiVersionOf, RESOURCE_TYPES, type ListFields } from './kinds';
@@ -23,7 +22,7 @@ export function metaFrom(m: RawObjectMeta | undefined): ResourceMetadata {
     labels: meta.labels ?? null,
     annotations: meta.annotations ?? null,
     creation_timestamp: meta.creationTimestamp ?? null,
-    // Only included when non-empty (matches the Rust filter on !refs.is_empty()).
+    // Only included when non-empty.
     owner_references: owners && owners.length > 0 ? owners : null,
   };
 }
@@ -49,7 +48,7 @@ export function listMetaFrom(m: RawObjectMeta | undefined): ResourceMetadata {
   return meta;
 }
 
-/** Drop a value if it is null/undefined (Rust's `.filter(|v| !v.is_null())`). */
+/** Drop a value if it is null/undefined. */
 export function presentOrUndefined<T>(v: T | null | undefined): T | undefined {
   return v === null || v === undefined ? undefined : v;
 }
@@ -140,7 +139,7 @@ export function projectGeneric(
 }
 
 // ---------------------------------------------------------------------------
-// Pod projection — port of listing.rs list_pods_projected.
+// Pod projection
 //
 // The pods table only reads a handful of fields; project them so we never ship
 // the full spec/status. The keys MUST match what TableRow.getCellValue +
@@ -185,7 +184,7 @@ interface RawPodStatus {
   initContainerStatuses?: RawContainerStatus[];
 }
 
-/** Drop undefined-valued keys so the object matches serde skip_serializing_if. */
+/** Drop undefined-valued keys, so absent fields are omitted rather than null. */
 function compact<T extends Record<string, unknown>>(o: T): Partial<T> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(o)) {
@@ -252,8 +251,7 @@ export function projectSecret(obj: RawObject): Resource {
   let data: Record<string, string> | undefined;
   if (obj.data && typeof obj.data === 'object') {
     // Secret.data values arrive already base64-encoded from the JSON API, so
-    // pass them through verbatim — matches the Rust output (which base64s the
-    // decoded bytes back to the same string).
+    // pass them through verbatim.
     data = obj.data as Record<string, string>;
   } else if (obj.stringData) {
     data = obj.stringData;

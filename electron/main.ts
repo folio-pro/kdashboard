@@ -1,4 +1,4 @@
-// Electron main process — the Tauri `run()` equivalent.
+// Electron main process — app bootstrap and the IPC entry point.
 //
 // Responsibilities:
 //   1. Create the main window (hidden, 1280x800, min 900x600), painted in the
@@ -6,7 +6,7 @@
 //   2. Register ONE ipcMain.handle('k8s:invoke', dispatch) that routes every
 //      renderer invoke() through the dispatcher.
 //   3. Register the internal window/shell/process/updater bridge commands the
-//      Tauri shims call (__window_show, __shell_open, …).
+//      renderer's IPC layer calls (__window_show, __shell_open, …).
 //   4. Import + register all handler modules that currently exist (the Wire
 //      phase extends the marked block below).
 //   5. Reveal the window when the renderer is ready, capped by a 5s safety net.
@@ -128,7 +128,7 @@ function createMainWindow(): BrowserWindow {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    show: false, // mirrors tauri.conf.json `visible: false`
+    show: false, // revealed once the renderer is ready — see revealMainWindow
     title: '',
     // VSCode-style custom title bar: hide the native chrome so the in-app
     // TitleBar.svelte (bg-[var(--bg-primary)]) becomes the visible top bar and
@@ -221,14 +221,13 @@ const ctx: HandlerCtx = {
 };
 
 /**
- * Internal commands backing the Tauri API shims (window/shell/process/updater)
- * and the splash. These are NOT real Tauri commands; they are an
- * implementation detail of the shim layer, prefixed with `__` (except
- * close_splashscreen, which is a genuine Tauri command the frontend calls).
+ * Internal commands backing the renderer's window/shell/process/updater
+ * helpers. They are an implementation detail of that layer and are prefixed
+ * with `__` — except close_splashscreen, which the frontend calls by name.
  */
 const internalModule: HandlerModule = {
   register(handlers): void {
-    // --- reveal (genuine Tauri command, kept for the renderer's initApp) ---
+    // --- reveal (called by the renderer's initApp) ---
     // Named for the splash window it used to close. There is no splash any
     // more, but App.svelte still calls it to say "I am ready to be seen", which
     // is a useful signal alongside ready-to-show.
@@ -237,7 +236,7 @@ const internalModule: HandlerModule = {
       return null;
     });
 
-    // --- window (tauri-window shim) ---
+    // --- window ---
     handlers.set('__window_show', () => {
       revealMainWindow();
       return null;
@@ -253,7 +252,7 @@ const internalModule: HandlerModule = {
       return null;
     });
 
-    // --- shell (tauri-shell shim, via preload.openExternal) ---
+    // --- shell (via preload.openExternal) ---
     handlers.set('__shell_open', async (args) => {
       const url = String(args.url ?? '');
       if (!url) throw new Error('open: missing url');
@@ -261,7 +260,7 @@ const internalModule: HandlerModule = {
       return null;
     });
 
-    // --- process (tauri-process shim) ---
+    // --- process ---
     handlers.set('__process_exit', (args) => {
       const code = typeof args.code === 'number' ? args.code : 0;
       app.exit(code);
@@ -273,7 +272,7 @@ const internalModule: HandlerModule = {
       return null;
     });
 
-    // --- updater (tauri-updater shim) ---
+    // --- updater ---
     // __updater_check / __updater_download are owned by the updater handler
     // module (electron/handlers/updater.ts), registered in buildHandlerModules.
   },
@@ -410,8 +409,7 @@ function bootstrap(): void {
     return dispatch(cmd, args);
   });
 
-  // Revalidate cached pricing datasets once a day in the background (mirrors
-  // the Rust spawn_periodic_refresh in setup()).
+  // Revalidate cached pricing datasets once a day in the background.
   cost.startPeriodicRefresh();
 
   createWindows();

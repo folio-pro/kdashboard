@@ -5,7 +5,7 @@ import { CachedItems, RESOURCE_TAB_TYPES } from "$lib/stores/ui.logic";
 /**
  * Minimal k8s store surface used by the tab lifecycle. Kept narrow so the
  * logic can be unit-tested against a hand-rolled fake without importing
- * the real store (and its Tauri dependency).
+ * the real store (and its backend dependency).
  */
 export interface TabLifecycleK8sStore {
   selectedResource: Resource | null;

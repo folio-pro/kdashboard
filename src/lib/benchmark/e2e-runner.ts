@@ -1,10 +1,10 @@
 /**
  * End-to-end list benchmark runner.
  *
- * Activated only when the Rust `bench_config` command reports `enabled` (env
+ * Activated only when the `bench_config` command reports `enabled` (env
  * KDASH_BENCH=1). Drives the REAL backend + IPC + render path:
  *
- *   backendMs = time of invoke("list_resources")  (kube list + Rust serialize + IPC + JS parse)
+ *   backendMs = time of invoke("list_resources")  (kube list + serialize + IPC + JS parse)
  *   e2eMs     = backendMs + time to flush Svelte reactivity and paint the virtual table
  *
  * Results are printed to the console (sentinel line) and persisted to JSON via

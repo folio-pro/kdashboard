@@ -1,7 +1,5 @@
 // Handler module: resource watch (streaming).
 //
-// Ports src-tauri/src/k8s/watch.rs to @kubernetes/client-node's Watch.
-//
 // Commands:
 //   - start_resource_watch   begin watching one resource type (single active
 //                            slot — replaces any existing watch)
@@ -11,27 +9,27 @@
 //   - resource-watch-event   emits an ARRAY of WatchEvent (the renderer handles
 //                            both a single object and an array; we always batch).
 //
-// WatchEvent wire shape (must match src/lib/stores/k8s.logic.ts WatchEvent and
-// the Rust WatchEvent struct — NO serde rename_all, so snake_case top-level):
+// WatchEvent wire shape (must match src/lib/stores/k8s.logic.ts WatchEvent —
+// snake_case top-level):
 //   { event_type: "Applied" | "Deleted" | "Resync",
 //     resource_type: string,
 //     resource: Resource }
 //
-// The embedded Resource matches the Rust Resource struct (snake_case top-level:
-// api_version, metadata.{name,namespace,uid,resource_version,creation_timestamp,
-// labels,annotations,owner_references}; `type` renamed from type_). The renderer
-// only reads resource.metadata.uid, but we project the full struct faithfully so
-// the upsert replaces the list item with the same shape list_resources produced.
+// The embedded Resource is snake_case top-level: api_version,
+// metadata.{name,namespace,uid,resource_version,creation_timestamp,labels,
+// annotations,owner_references}, type. The renderer only reads
+// resource.metadata.uid, but we project the full shape so the upsert replaces
+// the list item with exactly what list_resources produced.
 //
 // PROJECTION NOTE: watch events use the SAME per-kind lean projection as
 // list_resources (listProjectionFor) — a watch event replaces a list row
 // wholesale in the store, so anything fatter than the list shape only bloats
 // IPC payloads and renderer-resident memory as the cluster churns.
 //
-// TYPE TRANSLATION: the kube `watcher` runtime the Rust used emits desired-state
-// events (Apply/Delete) and skips the initial list. The JS Watch is a RAW watch
-// stream of verbs (ADDED/MODIFIED/DELETED/BOOKMARK/ERROR), so the initial connect
-// replays the current list as ADDED. We map ADDED/MODIFIED -> "Applied" and
+// TYPE TRANSLATION: the JS Watch is a RAW watch stream of verbs
+// (ADDED/MODIFIED/DELETED/BOOKMARK/ERROR), and the initial connect replays the
+// current list as ADDED. The store speaks desired state instead, so we map
+// ADDED/MODIFIED -> "Applied" and
 // DELETED -> "Deleted". Replaying the initial ADDEDs is harmless: the renderer's
 // handleWatchEvent upserts by uid, so items already loaded are simply re-applied.
 
@@ -46,7 +44,7 @@ import type { Handler, HandlerCtx, HandlerMap } from '../dispatch';
 
 const WATCH_CHANNEL = 'resource-watch-event';
 
-/** Max watch events to buffer before flushing a batch (mirrors watch.rs). */
+/** Max watch events to buffer before flushing a batch. */
 const WATCH_BATCH_SIZE = 20;
 /** Max time (ms) to hold a partial batch before flushing it. */
 const WATCH_FLUSH_INTERVAL_MS = 50;
@@ -93,8 +91,8 @@ function apiResourceForType(resourceType: string): ApiResource | undefined {
  * REST list path for the watch (the Watch API appends ?watch=true itself).
  * Core-group resources live under /api/v1/...; grouped under /apis/{g}/{v}/...
  * Namespaced kinds scope to the namespace only when one is provided AND the
- * kind is namespaced (mirrors watch.rs: namespaced_with when Some(ns), else
- * all_with — i.e. cluster-scoped, or namespaced with no ns = all namespaces).
+ * kind is namespaced. Cluster-scoped kinds, and namespaced kinds with no
+ * namespace, watch across all namespaces.
  */
 function watchPath(ar: ApiResource, namespace?: string): string {
   const base = ar.group === '' ? `/api/${ar.version}` : `/apis/${ar.group}/${ar.version}`;
@@ -105,7 +103,7 @@ function watchPath(ar: ApiResource, namespace?: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Projection — port of helpers.rs meta_from + watch.rs dynamic_to_resource.
+// Projection
 // ---------------------------------------------------------------------------
 
 // Projections live in electron/k8s/resource-mapping.ts (shared with the
@@ -113,7 +111,7 @@ function watchPath(ar: ApiResource, namespace?: string): string {
 // shape; dynamicToResource is the verbatim fallback for unknown kinds.
 
 // ---------------------------------------------------------------------------
-// Single active watch slot (mirrors watch.rs WATCHER_ABORT / WATCHER_RUNNING).
+// Single active watch slot.
 // ---------------------------------------------------------------------------
 
 interface ActiveWatch {
@@ -182,7 +180,7 @@ async function startResourceWatch(
   listResourceVersion: string | undefined,
   ctx: HandlerCtx,
 ): Promise<void> {
-  // Stop any existing watcher first (single active slot, like watch.rs).
+  // Stop any existing watcher first (single active slot).
   clearActive();
 
   const ar = apiResourceForType(resourceType);
@@ -318,9 +316,8 @@ async function startResourceWatch(
     };
 
     // Establish (or re-establish) the watch connection. On stream close the JS
-    // Watch does NOT auto-relist (unlike the kube `watcher` runtime), so we
-    // reconnect ourselves and emit a Resync after the first sync — mirroring
-    // watch.rs's InitDone-on-resync behaviour so the store does a full refresh.
+    // Watch does NOT auto-relist, so we reconnect ourselves and emit a Resync
+    // after the first sync, which makes the store do a full refresh.
     const connect = (): void => {
       if (!isCurrent()) return;
 

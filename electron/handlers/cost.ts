@@ -1,18 +1,14 @@
-// Cost handlers — port of src-tauri/src/k8s/cost/* to @kubernetes/client-node.
+// Cost handlers — node pricing, pod usage, and the per-namespace cost overview.
 //
 // Commands: get_cost_overview, get_node_costs, get_node_metrics, refresh_pricing
 //
-// Faithful port notes (Rust is the contract for shapes; frontend is the
-// contract for arg keys + return casing — see src/lib/types/cost.ts):
+// Notes:
 //   - Wire shapes (CostOverview / NamespaceCostSummary / ResourceCost /
-//     NodeCostInfo / NodeMetricsInfo) use snake_case field names because the
-//     Rust serde structs do NOT set rename_all — the renderer's TS interfaces
-//     in src/lib/types/cost.ts mirror that snake_case exactly.
+//     NodeCostInfo / NodeMetricsInfo) use snake_case field names; the renderer's
+//     TS interfaces in src/lib/types/cost.ts mirror that casing exactly.
 //   - Pricing datasets fetched from the GitHub release assets with If-None-Match
 //     conditional GET; cached in memory (24h TTL) + on disk under userData.
-//   - get_node_metrics uses metrics.k8s.io NodeMetrics via the client-node
-//     Metrics helper (equivalent to the raw /apis/metrics.k8s.io/... request the
-//     Rust issues through kube::api::Request).
+//   - get_node_metrics reads metrics.k8s.io NodeMetrics.
 //   - get_cost_overview joins node costs + pod usage (or pod requests fallback).
 
 import { promises as fs } from 'node:fs';
@@ -32,7 +28,7 @@ import { getCoreV1Api, kc, onConfigChange } from '../k8s/client';
 import { parseCpu, parseMemory } from '../k8s/quantity';
 
 // ---------------------------------------------------------------------------
-// Public wire types (match src/lib/types/cost.ts + the Rust serde structs).
+// Public wire types (match src/lib/types/cost.ts).
 // ---------------------------------------------------------------------------
 
 interface ResourceCost {
@@ -109,7 +105,7 @@ interface PodUsage {
 }
 
 // ---------------------------------------------------------------------------
-// Constants (mirrors calculations.rs / nodes.rs)
+// Constants
 // ---------------------------------------------------------------------------
 
 const HOURS_PER_MONTH = 730.0;
@@ -118,7 +114,7 @@ const FALLBACK_MEM_RATE = 0.0044; // $/GB/hr
 const COST_CACHE_TTL_MS = 300_000; // 5 minutes
 
 // ---------------------------------------------------------------------------
-// metrics-availability backoff (port of metrics_availability.rs)
+// metrics-availability backoff
 // ---------------------------------------------------------------------------
 
 type MetricsKind = 'pods' | 'nodes';
@@ -157,7 +153,7 @@ function markMetricsUnavailable(kind: MetricsKind): number {
 }
 
 // ---------------------------------------------------------------------------
-// Node info retrieval (port of nodes.rs get_node_info + detect_provider)
+// Node info retrieval
 // ---------------------------------------------------------------------------
 
 function detectProvider(labels: Record<string, string>, instanceType: string): string {
@@ -253,8 +249,8 @@ async function fetchNodeInfo(): Promise<NodeInfo[]> {
 }
 
 /**
- * Derive per-core and per-GB rates from cloud pricing (port of
- * nodes.rs resolve_node_rates). Splits node price 60/40 CPU/memory.
+ * Derive per-core and per-GB rates from cloud pricing. Splits the node price
+ * 60/40 across CPU and memory.
  */
 function resolveNodeRates(
   nodes: NodeInfo[],
@@ -276,7 +272,7 @@ function resolveNodeRates(
 }
 
 // ---------------------------------------------------------------------------
-// Pod usage retrieval (metrics-server + requests fallback) — port of metrics.rs
+// Pod usage retrieval (metrics-server + requests fallback)
 // ---------------------------------------------------------------------------
 
 async function fetchPodMetrics(namespace: string | undefined): Promise<PodUsage[]> {
@@ -330,7 +326,7 @@ async function getPodRequests(namespace: string | undefined): Promise<PodUsage[]
 }
 
 // ---------------------------------------------------------------------------
-// Pricing resolver (port of pricing.rs)
+// Pricing resolver
 // ---------------------------------------------------------------------------
 
 const PRICING_BASE_URL =
@@ -393,7 +389,7 @@ function nowEpochSeconds(): number {
 }
 
 function metaIsFresh(meta: DatasetMeta): boolean {
-  // Rust uses saturating_sub: a future fetched_at clamps age to 0 (treated fresh).
+  // A future fetched_at clamps the age to 0, i.e. it counts as fresh.
   const age = Math.max(0, nowEpochSeconds() - meta.fetched_at);
   return age < DATASET_TTL_MS / 1000;
 }
@@ -513,7 +509,7 @@ function memoryHasFresh(provider: string): boolean {
   return ds !== undefined && ds.expiresAt > Date.now();
 }
 
-// --- ensure_dataset_loaded main path (port of pricing.rs) ---
+// --- ensure_dataset_loaded main path ---
 
 async function ensureDatasetLoaded(provider: string): Promise<boolean> {
   if (memoryHasFresh(provider)) return true;
@@ -583,7 +579,7 @@ async function ensureDatasetLoaded(provider: string): Promise<boolean> {
 /**
  * Resolve `(provider, region, instance_type) -> $/hour` for the requested
  * nodes. Returns null when nothing usable could be loaded (caller falls back to
- * hardcoded rates). Port of pricing.rs resolve_pricing + lookup_prices.
+ * hardcoded rates).
  */
 async function resolvePricing(nodes: NodeInfo[]): Promise<Map<string, number> | null> {
   if (nodes.length === 0) return null;
@@ -618,7 +614,7 @@ async function resolvePricing(nodes: NodeInfo[]): Promise<Map<string, number> | 
 }
 
 // ---------------------------------------------------------------------------
-// Cost overview build + cache (port of calculations.rs)
+// Cost overview build + cache
 // ---------------------------------------------------------------------------
 
 interface CostCacheEntry {
@@ -781,7 +777,7 @@ async function getCostOverview(namespace: string | null | undefined): Promise<Co
 }
 
 // ---------------------------------------------------------------------------
-// Node metrics (port of node_metrics.rs get_node_metrics)
+// Node metrics
 // ---------------------------------------------------------------------------
 
 async function getNodeMetrics(): Promise<NodeMetricsInfo[]> {
@@ -830,7 +826,7 @@ async function getNodeMetrics(): Promise<NodeMetricsInfo[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Node costs (port of node_metrics.rs get_node_costs)
+// Node costs
 // ---------------------------------------------------------------------------
 
 async function getNodeCosts(): Promise<NodeCostInfo[]> {
@@ -852,7 +848,7 @@ async function getNodeCosts(): Promise<NodeCostInfo[]> {
 }
 
 // ---------------------------------------------------------------------------
-// refresh_pricing (port of pricing.rs refresh_pricing)
+// refresh_pricing
 // ---------------------------------------------------------------------------
 
 function refreshPricing(): void {
@@ -863,10 +859,9 @@ function refreshPricing(): void {
 }
 
 /**
- * Background pricing revalidation — port of pricing.rs spawn_periodic_refresh.
- * Every 24h, conditionally re-fetch each ALREADY-CACHED provider's dataset
- * (cheap 304 when unchanged) so pricing never goes stale. Providers that were
- * never loaded are skipped (mirrors Rust known_providers()), so a GCP-only
+ * Background pricing revalidation. Every 24h, conditionally re-fetch each
+ * ALREADY-CACHED provider's dataset (cheap 304 when unchanged) so pricing never
+ * goes stale. Providers that were never loaded are skipped, so a GCP-only
  * cluster never fetches aws/azure. The first tick is at +24h; startup itself
  * loads lazily on the first cost request. Returns a stop function.
  */
@@ -915,7 +910,7 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
 
   handlers.set('refresh_pricing', async () => {
     refreshPricing();
-    // Rust returns Result<(), String> -> unit; the renderer ignores the value.
+    // The renderer ignores the value.
     return null;
   });
 }

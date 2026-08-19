@@ -40,7 +40,7 @@ export class SettingsStoreLogic {
 
   /**
    * Persist settings. No-op in the logic class; overridden in the Svelte store
-   * to call Tauri invoke.
+   * to call the backend.
    */
   saveSettings(): void {
     // no-op — overridden in SvelteStore subclass

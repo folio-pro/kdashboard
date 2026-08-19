@@ -1,8 +1,7 @@
 // Shared JSON-coercion primitives for the topology + diagnostics handlers.
 //
-// k8s list/object bodies arrive as loose JSON (the Rust port used
-// serde_json::Value); these are the typed accessors both the graph-building and
-// the diagnostics code use to read them safely.
+// k8s list/object bodies arrive as loose JSON; these are the typed accessors
+// both the graph-building and the diagnostics code use to read them safely.
 
 /** Loose JSON object alias — k8s items are serialized to plain JSON. */
 export type JsonValue = unknown;

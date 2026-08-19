@@ -1,7 +1,7 @@
 # List benchmark harness
 
-End-to-end benchmark for the resource-list path: it drives the **real** Tauri
-backend (kube list → Rust serialize → IPC → Svelte render) against a local
+End-to-end benchmark for the resource-list path: it drives the **real**
+backend (kube list → serialize → IPC → Svelte render) against a local
 `kind` cluster, with no WebDriver.
 
 ## How it works
@@ -17,7 +17,7 @@ backend (kube list → Rust serialize → IPC → Svelte render) against a local
 
 Two numbers per type:
 
-- **backendMs** — time of `invoke("list_resources")` alone: kube list + Rust
+- **backendMs** — time of `invoke("list_resources")` alone: kube list +
   serialize + IPC + JS parse. This is the accurate, focus-independent metric.
 - **e2eMs** — backendMs plus the time to flush Svelte reactivity and paint the
   virtual table. Note: `requestAnimationFrame` is throttled when the window is

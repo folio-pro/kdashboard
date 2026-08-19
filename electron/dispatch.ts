@@ -1,10 +1,10 @@
 // Central command dispatcher for the Electron backend.
 //
-// The renderer (Svelte UI) calls invoke(cmd, args) through the Tauri shim,
+// The renderer (Svelte UI) calls invoke(cmd, args) through src/lib/ipc/core.ts,
 // which forwards to window.electronAPI.invoke -> ipcMain.handle('k8s:invoke').
 // That handler delegates here. Each handler module under electron/handlers/
-// exports a `register(handlers, ctx)` function that populates the Map with
-// the EXACT Tauri command strings (snake_case) used by the frontend.
+// exports a `register(handlers, ctx)` function that populates the Map with the
+// EXACT command strings (snake_case) the frontend uses.
 
 import type { BrowserWindow } from 'electron';
 
@@ -24,8 +24,8 @@ export interface HandlerCtx {
 /**
  * A single command handler. Receives the args object the renderer passed to
  * invoke() (keys are exactly what the frontend sends — often camelCase) plus
- * the shared ctx. Must return a JSON-serializable value matching the Rust
- * return shape, or throw new Error(message) to reject the renderer promise.
+ * the shared ctx. Must return a JSON-serializable value in the shape the
+ * renderer expects, or throw new Error(message) to reject its promise.
  */
 export type Handler = (args: Record<string, unknown>, ctx: HandlerCtx) => Promise<unknown> | unknown;
 

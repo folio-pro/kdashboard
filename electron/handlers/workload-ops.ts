@@ -1,7 +1,5 @@
 // Handler module: workload-ops
 //
-// Ports src-tauri/src/k8s/resources/operations.rs to @kubernetes/client-node.
-//
 // Commands:
 //   apply_yaml               -> apply (create-or-update) a resource from a YAML string (server-side apply)
 //   delete_resource          -> delete a single resource by kind/name/namespace (+ uid/resourceVersion preconditions)
@@ -10,8 +8,7 @@
 //   rollback_deployment      -> copy a target ReplicaSet's pod template onto the Deployment
 //   list_deployment_revisions-> list owned ReplicaSets as revisions, newest first
 //
-// All field projections, serde wire casing, and error messages mirror the Rust
-// originals. The Svelte UI (src/lib/components/details/revision-history-card.logic.ts)
+// The Svelte UI (src/lib/components/details/revision-history-card.logic.ts)
 // consumes RevisionInfo with snake_case fields — matched exactly below.
 
 import {
@@ -34,8 +31,8 @@ import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 
 /**
  * Summary of a Deployment revision surfaced in the UI for rollback selection.
- * Field names are snake_case to match the Rust serde output and the TS
- * interface in src/lib/components/details/revision-history-card.logic.ts.
+ * Field names are snake_case to match the TS interface in
+ * src/lib/components/details/revision-history-card.logic.ts.
  */
 export interface RevisionInfo {
   revision: number;
@@ -59,7 +56,7 @@ interface KindInfo {
 
 /**
  * Resolve apiVersion + Kind for a kind string, via the canonical kind registry
- * (electron/k8s/kinds.ts). Throws the same unsupported-kind error as Rust.
+ * (electron/k8s/kinds.ts). Throws on an unsupported kind.
  */
 function apiResourceForKind(kind: string): KindInfo {
   const entry = resolveKindOrThrow(kind);
@@ -96,7 +93,7 @@ function appsApi(): AppsV1Api {
 }
 
 // ---------------------------------------------------------------------------
-// ReplicaSet revision helpers (ported from operations.rs)
+// ReplicaSet revision helpers
 // ---------------------------------------------------------------------------
 
 const REVISION_ANNOTATION = 'deployment.kubernetes.io/revision';
@@ -105,7 +102,7 @@ const REVISION_ANNOTATION = 'deployment.kubernetes.io/revision';
 function rsRevision(rs: V1ReplicaSet): number {
   const raw = rs.metadata?.annotations?.[REVISION_ANNOTATION];
   if (raw === undefined) return 0;
-  // Rust parses into u64 — reject anything that isn't a clean non-negative integer.
+  // Reject anything that isn't a clean non-negative integer.
   if (!/^\d+$/.test(raw.trim())) return 0;
   const n = Number(raw);
   return Number.isFinite(n) ? n : 0;
@@ -211,7 +208,7 @@ async function applyYaml(args: Record<string, unknown>): Promise<string> {
     throw new Error('YAML must contain metadata.name');
   }
 
-  // namespace defaults to "default" (mirrors the Rust unwrap_or("default")).
+  // namespace defaults to "default".
   if (metaObj && typeof metaObj.namespace !== 'string') {
     metaObj.namespace = 'default';
   }

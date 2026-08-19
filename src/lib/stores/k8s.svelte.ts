@@ -80,7 +80,7 @@ class K8sStore extends K8sStoreLogic {
   override crdCounts = $state<Record<string, number>>({});
   override selectedCrd = $state<CrdInfo | null>(null);
 
-  // Private members that require Tauri / browser APIs (not in logic class)
+  // Private members that require backend / browser APIs (not in logic class)
   private _ageInterval: ReturnType<typeof setInterval> | null = null;
   private _watchUnlisten: UnlistenFn | null = null;
   private _watchActive = false;
@@ -396,7 +396,7 @@ class K8sStore extends K8sStoreLogic {
     settingsStore.updateConnection("", "default");
   }
 
-  /** Load counts for all resource types via a single batch Tauri command. */
+  /** Load counts for all resource types via a single batch command. */
   async loadAllResourceCounts(scopeGeneration = this._scopeGeneration): Promise<void> {
     const gen = ++this._countGeneration;
     const namespace = this.currentNamespace;

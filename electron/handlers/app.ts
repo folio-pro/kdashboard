@@ -1,19 +1,16 @@
 // App / settings / metadata / benchmark / kubectl command handlers.
 //
-// Ports src-tauri/src/commands/app_commands.rs (+ settings.rs, state.rs, and
-// the metadata cache helpers in lib.rs) to the Electron Node backend.
-//
 // Commands implemented here:
 //   - get_settings
-//   - save_settings        (mirrors Rust: updates kubeconfig override on change)
+//   - save_settings        (updates the kubeconfig override on change)
 //   - get_app_metadata     (cached hostname / os version / k8s server version)
 //   - run_kubectl          (spawns the kubectl binary; same flag blocklist)
-//   - bench_config         (env-driven; matches BenchConfig serde shape)
+//   - bench_config         (env-driven)
 //   - write_bench_results  (path must match KDASH_BENCH_OUT)
 //
-// NOTE: `close_splashscreen` is a genuine Tauri command but is already owned by
-// the internal module in electron/main.ts (it needs the window-reveal logic
-// that lives there). We deliberately do NOT re-register it here.
+// NOTE: `close_splashscreen` is owned by the internal module in
+// electron/main.ts (it needs the window-reveal logic that lives there). We
+// deliberately do NOT re-register it here.
 
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -27,14 +24,13 @@ import { getKubeconfigPath, setKubeconfigPath, getVersionApi } from '../k8s/clie
 import { setPrometheusUrl } from '../k8s/runtime-config.js';
 
 // ===========================================================================
-// Settings — shape mirrors src-tauri/src/settings.rs AppSettings (serde
-// keeps snake_case; all fields optional via #[serde(default)]).
+// Settings — snake_case keys, every field optional.
 //
-// The renderer's TS type (src/lib/types/settings.ts -> AppSettings) also carries
-// `pinned_resources`, which the Rust struct does not model. Because we persist
-// exactly the object the renderer sends and echo it back on read, any extra
-// keys (like pinned_resources) round-trip transparently — matching the
-// renderer's expectations without us hard-coding them.
+// The renderer's TS type (src/lib/types/settings.ts -> AppSettings) carries
+// keys this interface does not model, `pinned_resources` among them. Because we
+// persist exactly the object the renderer sends and echo it back on read, any
+// extra key round-trips transparently — matching the renderer's expectations
+// without us hard-coding them.
 // ===========================================================================
 
 interface ContextCustomization {
@@ -54,16 +50,15 @@ interface AppSettings {
   [key: string]: unknown;
 }
 
-/** Path to the settings file under Electron's userData dir (replaces the Rust
- *  ~/.config/kdashboard/settings.json location). */
+/** Path to the settings file under Electron's userData dir. */
 function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
-/** In-memory mirror of persisted settings (parallels the Rust AppState mutex). */
+/** In-memory mirror of persisted settings. */
 let settingsState: AppSettings | null = null;
 
-/** Load settings from disk; returns {} (the serde Default) if absent/unreadable. */
+/** Load settings from disk; returns {} if absent/unreadable. */
 function loadSettings(): AppSettings {
   const file = settingsPath();
   if (!fs.existsSync(file)) {
@@ -77,7 +72,7 @@ function loadSettings(): AppSettings {
     }
     return {};
   } catch {
-    // Tolerate a corrupt file the same way Rust's load() falls back to default.
+    // Tolerate a corrupt file: fall back to defaults rather than failing boot.
     return {};
   }
 }
@@ -89,8 +84,7 @@ function persistSettings(settings: AppSettings): void {
 }
 
 /** Lazily get the current in-memory settings, hydrating from disk once.
- *  Also applies the kubeconfig override at first load (Rust does this at
- *  startup in AppState::new + the bootstrap path). */
+ *  Also applies the kubeconfig override at first load. */
 function currentSettings(): AppSettings {
   if (settingsState === null) {
     settingsState = loadSettings();
@@ -122,9 +116,8 @@ export function getSettingsSync(): AppSettings {
 }
 
 // ===========================================================================
-// App metadata — replicates the cached values from src-tauri/src/lib.rs
-// (hostname + os version never change; k8s version cached, cleared elsewhere
-// on context switch). AppMetadata serde shape = snake_case below.
+// App metadata — hostname and os version never change; the k8s version is
+// cached and cleared elsewhere on context switch. Wire shape is snake_case.
 // ===========================================================================
 
 interface AppMetadata {
@@ -158,7 +151,7 @@ function getOsVersion(): string {
     return cachedOsVersion;
   }
   // os.release() is the kernel/OS release across platforms — a faithful,
-  // dependency-free stand-in for the Rust sw_vers / /etc/os-release lookups.
+  // dependency-free stand-in for the sw_vers / /etc/os-release lookups.
   try {
     const release = os.release();
     cachedOsVersion = release && release.trim().length > 0 ? release.trim() : 'unknown';
@@ -168,7 +161,7 @@ function getOsVersion(): string {
   return cachedOsVersion;
 }
 
-/** Map Node's process.platform to the Rust std::env::consts::OS string. */
+/** Map Node's process.platform to the OS name reported in app metadata. */
 function getOsName(): string {
   switch (process.platform) {
     case 'darwin':
@@ -176,11 +169,11 @@ function getOsName(): string {
     case 'win32':
       return 'windows';
     default:
-      return process.platform; // 'linux', 'freebsd', etc. — matches Rust naming.
+      return process.platform; // 'linux', 'freebsd', etc.
   }
 }
 
-/** Map Node's process.arch to the Rust std::env::consts::ARCH string. */
+/** Map Node's process.arch to the arch name reported in app metadata. */
 function getArch(): string {
   switch (process.arch) {
     case 'x64':
@@ -215,12 +208,12 @@ async function getK8sVersionCached(): Promise<string | null> {
 }
 
 function appVersion(): string {
-  // app.getVersion() reads package.json "version" (= Rust CARGO_PKG_VERSION).
+  // app.getVersion() reads package.json "version".
   return app.getVersion();
 }
 
 // ===========================================================================
-// Benchmark mode — env-driven, matching BenchConfig serde shape exactly.
+// Benchmark mode — env-driven.
 // ===========================================================================
 
 interface BenchConfig {
@@ -246,7 +239,7 @@ function optEnv(key: string): string | null {
 }
 
 // ===========================================================================
-// kubectl — same security blocklist + timeout semantics as the Rust command.
+// kubectl — security blocklist + timeout semantics.
 // ===========================================================================
 
 interface KubectlResult {
@@ -256,7 +249,7 @@ interface KubectlResult {
 }
 
 /** Flags that could redirect kubectl to a different cluster or read arbitrary
- *  files. Mirrors BLOCKED_KUBECTL_FLAGS in app_commands.rs (9 entries). */
+ *  files. */
 const BLOCKED_KUBECTL_FLAGS = [
   '--kubeconfig',
   '--server',
@@ -330,7 +323,7 @@ function runKubectl(args: string[]): Promise<KubectlResult> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      // ENOENT etc. — same message prefix as the Rust spawn-failure branch.
+      // ENOENT etc.
       reject(new Error(`Failed to run kubectl: ${e.message}`));
     });
 
@@ -341,8 +334,7 @@ function runKubectl(args: string[]): Promise<KubectlResult> {
       resolve({
         stdout,
         stderr,
-        // Rust uses output.status.code().unwrap_or(-1) — null (killed by signal)
-        // maps to -1 here.
+        // null (killed by signal) maps to -1.
         exit_code: code ?? -1,
       });
     });
@@ -368,8 +360,8 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
     }
     const next = incoming as AppSettings;
 
-    // Mirror the Rust behaviour: when kubeconfig_path changes, push the override
-    // into the shared k8s client so subsequent Api calls use the new file.
+    // When kubeconfig_path changes, push the override into the shared k8s
+    // client so subsequent Api calls use the new file.
     const old = currentSettings();
     const oldPath = (old.kubeconfig_path ?? null) as string | null;
     const newPath = (next.kubeconfig_path ?? null) as string | null;
