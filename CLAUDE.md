@@ -167,16 +167,17 @@ correctly with nothing registered.
 
 - The preload bundles to **CJS** (`out/preload/index.cjs`). The renderer runs
   sandboxed, and Electron's sandboxed-preload loader only understands CommonJS.
-- Main/preload bundle all deps; only `electron` and Node built-ins are external.
-  electron-vite 5 externalizes everything under `dependencies` by default, so
-  that is enforced through package.json: `dependencies` holds **only**
-  `electron-updater` (`handlers/updater.ts` require()s it at runtime, so it must
-  exist as files in the asar) and every other package lives in
-  `devDependencies`. Moving a package back into `dependencies` un-bundles it
-  from main/preload and makes electron-builder copy it into `app.asar` — that
-  regression is invisible in a dev run and in a packaged app launched from
-  inside the repo, because Node resolves the missing module from the checkout's
-  own `node_modules`. Test packaged builds from outside the repo tree.
+- Main/preload bundle every dep except `electron`, Node built-ins, and
+  `electron-updater`. electron-vite 5 externalizes everything under
+  `dependencies` by default, so that split is enforced through package.json:
+  `dependencies` holds **only** `electron-updater` (`handlers/updater.ts`
+  require()s it at runtime, so it must exist as files in the asar) and every
+  other package lives in `devDependencies`. Moving a package back into
+  `dependencies` un-bundles it from main/preload and makes electron-builder copy
+  it into `app.asar` — that regression is invisible in a dev run and in a
+  packaged app launched from inside the repo, because Node resolves the missing
+  module from the checkout's own `node_modules`. Test packaged builds from
+  outside the repo tree.
 - `codemirrorDedupe` in `vite.shared.ts` prevents "Unrecognized extension value"
   from duplicated CodeMirror copies.
 - Two Vite configs on purpose: `electron.vite.config.ts` (app) and
