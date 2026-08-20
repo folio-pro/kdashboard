@@ -20,6 +20,17 @@ import { rendererAlias, codemirrorDedupe, vendorChunks, rendererPort } from "./v
 export default defineConfig({
   main: {
     build: {
+      // ws probes for two optional native accelerators (bufferutil,
+      // utf-8-validate) inside a try/catch and falls back to pure JS when they
+      // are absent — which they are here, deliberately: they are native, and
+      // bundling exists to keep native modules out of the asar. Left to
+      // itself the bundler replaces the unresolved import with a stub that
+      // THROWS AT MODULE SCOPE, hoisting the failure out of ws's try/catch and
+      // killing the main process on load. `ignore` leaves the two require()
+      // calls alone so they fail where ws expects them to, inside the catch.
+      commonjsOptions: {
+        ignore: ["bufferutil", "utf-8-validate"],
+      },
       rollupOptions: {
         input: { index: path.resolve("electron/main.ts") },
         external: ["electron"],
