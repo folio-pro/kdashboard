@@ -94,26 +94,37 @@ export const columnsByType: Record<string, Column[]> = {
     { key: "data", label: "Data", sortable: true, width: "80px" },
     { key: "age", label: "Age", sortable: true, width: "80px" },
   ],
+  // HPA and WPA answer the same question and get the same columns: what it
+  // watches, where that reading sits against its target, and how many pods
+  // that is asking for right now.
   hpa: [
     { key: "name", label: "Name", sortable: true },
     { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
-    { key: "hpaReference", label: "Reference", sortable: false },
-    { key: "hpaMinPods", label: "Min Pods", sortable: false, width: "90px" },
-    { key: "hpaMaxPods", label: "Max Pods", sortable: false, width: "90px" },
-    { key: "hpaCurrentReplicas", label: "Current Replicas", sortable: false, width: "130px" },
+    { key: "autoscalerReference", label: "Reference", sortable: false, width: "180px" },
+    { key: "autoscalerTargets", label: "Targets", sortable: false, width: "230px" },
+    { key: "autoscalerMin", label: "Min", sortable: false, width: "70px" },
+    { key: "autoscalerMax", label: "Max", sortable: false, width: "70px" },
+    { key: "autoscalerReplicas", label: "Replicas", sortable: false, width: "110px" },
     { key: "age", label: "Age", sortable: true, width: "80px" },
   ],
+  // A VPA changes requests, not replica counts, so it trades the pod columns
+  // for its update mode and shows the recommendation in the Targets column.
   vpa: [
     { key: "name", label: "Name", sortable: true },
     { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
-    { key: "vpaTarget", label: "Target", sortable: false },
+    { key: "autoscalerReference", label: "Target", sortable: false, width: "180px" },
     { key: "vpaUpdateMode", label: "Update Mode", sortable: false, width: "120px" },
+    { key: "autoscalerTargets", label: "Recommendation", sortable: false, width: "340px" },
     { key: "age", label: "Age", sortable: true, width: "80px" },
   ],
   wpa: [
     { key: "name", label: "Name", sortable: true },
     { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
-    { key: "vpaTarget", label: "Target", sortable: false },
+    { key: "autoscalerReference", label: "Reference", sortable: false, width: "180px" },
+    { key: "autoscalerTargets", label: "Watermarks", sortable: false, width: "230px" },
+    { key: "autoscalerMin", label: "Min", sortable: false, width: "70px" },
+    { key: "autoscalerMax", label: "Max", sortable: false, width: "70px" },
+    { key: "autoscalerReplicas", label: "Replicas", sortable: false, width: "110px" },
     { key: "age", label: "Age", sortable: true, width: "80px" },
   ],
   nodes: [

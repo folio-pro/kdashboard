@@ -14,15 +14,19 @@
   import { KIND_TO_RESOURCE_TYPE } from "$lib/resource-catalog";
   import { openRelatedResourceTab } from "$lib/actions/navigation";
   import {
+    autoscalerPressure,
     getCellValue,
+    isAutoscalerTargetsColumn,
     isContainersColumn,
     isMonoColumn,
     isStatusColumn,
     isTagColumn,
     isUsageColumn,
-    usageBarColor,
     usageMeter,
   } from "./cell-values";
+  import { usageBarColor } from "$lib/stores/metrics.logic";
+  import { autoscalerFlavor, autoscalerSummary } from "$lib/utils/autoscaler";
+  import { liveValues, NO_FLASH } from "$lib/stores/live-values.svelte";
 
   interface Props {
     resource: Resource;
@@ -45,6 +49,10 @@
 
   let rowHeight = $derived(density === "compact" ? "h-8" : "h-11");
 
+  // Non-null only on the three autoscaler tables; everywhere else it short
+  // circuits the normalizing and the flash lookups below.
+  let flavor = $derived(autoscalerFlavor(resourceType));
+
   // Everything the cell accessors need from the stores, gathered once per row
   // so cell-values.ts can stay a pure module.
   let cellCtx = $derived({
@@ -52,7 +60,22 @@
     nodeCost: costStore.getNodeCost(resource.metadata.name),
     nodeMetrics: costStore.getNodeMetrics(resource.metadata.name),
     podUsage: metricsStore.getPodUsage(resource.metadata.namespace, resource.metadata.name),
+    autoscaler: flavor ? autoscalerSummary(resource, flavor) : undefined,
   });
+
+  // Which of this row's values moved on the last watch delta. Bailing out
+  // before rowFlash() is deliberate: rowFlash subscribes to the store, so a row
+  // on any other table must not call it — otherwise a flash on the autoscaler
+  // table re-renders the pods table behind it.
+  let flashes = $derived(
+    flavor ? liveValues.rowFlash(resource.metadata.uid, Date.now()) : NO_FLASH,
+  );
+
+  /** Rising pressure is the direction that costs money, so it takes the warn
+   *  tone; falling takes the healthy one. */
+  function flashColor(direction: "up" | "down"): string {
+    return direction === "up" ? "var(--status-pending)" : "var(--status-running)";
+  }
 
   // Precompute the lowercased name once per row instead of re-lowercasing the
   // cell value inline on every render of the name-column filter highlight.
@@ -216,6 +239,63 @@
             {/if}
           </div>
         </div>
+      {:else if isAutoscalerTargetsColumn(column.key)}
+        {@const pressure = autoscalerPressure(cellCtx.autoscaler)}
+        <!-- Same shape as a usage meter, because it answers the same question:
+             the reading above, and how close it is to the number that makes the
+             autoscaler act below. The arrow only appears for the moment after
+             the value moved, which is what makes a live table readable. -->
+        <div class="flex w-full flex-col justify-center gap-1" title={pressure?.title ?? ""}>
+          <div class="flex items-baseline gap-1 overflow-hidden font-mono text-[11px] leading-none tabular-nums">
+            {#if pressure}
+              <!-- Name elastic, reading pinned: an external metric name
+                   ("nginx.net.request_per_s") is long enough to push the
+                   numbers off the end of the cell otherwise. -->
+              {#each pressure.parts as part, i (part.name)}
+                <!-- The separator rides on the value rather than being its own
+                     element, so the flex gap cannot open a space before it. -->
+                <span class="truncate text-[var(--text-muted)]">{part.name}:</span>
+                <span class={cn("shrink-0 text-[var(--text-primary)]", flashes.targets && "animate-value-flash")}
+                  >{part.value}{i < pressure.parts.length - 1 ? "," : ""}</span>
+              {/each}
+              {#if flashes.targets}
+                <span class="shrink-0 leading-none" style:color={flashColor(flashes.targets)}>
+                  {flashes.targets === "up" ? "\u25b2" : "\u25bc"}
+                </span>
+              {/if}
+            {:else}
+              <span class="text-[var(--text-muted)]">\u2014</span>
+            {/if}
+          </div>
+          {#if pressure?.meter}
+            <div class="relative h-[3px] w-full overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
+              {#if pressure.percent !== null}
+                <div
+                  class="h-full rounded-full transition-all duration-300"
+                  style="width: {Math.min(pressure.percent, 100)}%; background-color: {usageBarColor(pressure.percent)}"
+                ></div>
+              {/if}
+              {#if pressure.lowPercent !== null}
+                <!-- A watermark autoscaler does nothing between its two marks;
+                     the tick is where "too low, scale down" begins. -->
+                <div
+                  class="absolute inset-y-0 w-px bg-[var(--text-muted)]"
+                  style="left: {Math.min(pressure.lowPercent, 100)}%"
+                ></div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {:else if column.key === "autoscalerReplicas"}
+        {@const replicas = getCellValue(resource, column.key, cellCtx)}
+        <span class="flex items-baseline gap-1 font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">
+          <span class={cn(flashes.replicas && "animate-value-flash", replicas.includes("\u2192") && "text-[var(--status-pending)]")}>{replicas}</span>
+          {#if flashes.replicas}
+            <span class="shrink-0 leading-none" style:color={flashColor(flashes.replicas)}>
+              {flashes.replicas === "up" ? "\u25b2" : "\u25bc"}
+            </span>
+          {/if}
+        </span>
       {:else if isStatusColumn(column.key)}
         {@const val = getCellValue(resource, column.key, cellCtx)}
         {#if val !== "-"}
