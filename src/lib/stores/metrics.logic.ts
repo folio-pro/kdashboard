@@ -164,6 +164,17 @@ export function memoryCell(resource: Resource, usage: PodUsageInfo | undefined):
   );
 }
 
+/**
+ * Bar colour for a usage meter: green under pressure, amber when tight, red
+ * when over. Lives here with the rest of the usage formatting so a detail
+ * panel does not have to reach into the table layer for it.
+ */
+export function usageBarColor(percent: number): string {
+  if (percent >= 90) return "var(--status-failed)";
+  if (percent >= 70) return "var(--status-pending)";
+  return "var(--status-running)";
+}
+
 export class MetricsStoreLogic {
   /** Pod usage keyed by `${namespace}/${name}`. */
   podUsage: Record<string, PodUsageInfo> = {};

@@ -2,13 +2,17 @@ import { test, expect, describe } from "bun:test";
 
 import type { Resource } from "$lib/types";
 import {
+  autoscalerPressure,
   getCellValue as rawGetCellValue,
+  isAutoscalerTargetsColumn,
   isMonoColumn,
   isTagColumn,
   isUsageColumn,
   usageMeter,
   type CellContext,
 } from "./cell-values";
+import { columnsByType } from "./table-columns";
+import { autoscalerSummary } from "$lib/utils/autoscaler";
 
 /** Store-derived context; the tests that care pass their own. */
 const NO_CONTEXT: CellContext = { ageTick: 0 };
@@ -221,11 +225,141 @@ describe("column families", () => {
     expect(isUsageColumn("name")).toBe(false);
   });
 
-  test("mono and tag families do not overlap", () => {
-    const both = ["age", "type", "roles", "vpaTarget", "pcGlobalDefault"].filter(
-      (k) => isMonoColumn(k) && isTagColumn(k),
+  test("no declared column belongs to two render families", () => {
+    // Each family is a branch in TableRow's cell markup, and the branches are
+    // tried in order — a key in two families renders as whichever branch comes
+    // first, which is a silent, type-checked-clean way to lose a column.
+    const families = [isMonoColumn, isTagColumn, isUsageColumn, isAutoscalerTargetsColumn];
+    const overlapping = [...new Set(Object.values(columnsByType).flat().map((c) => c.key))].filter(
+      (key) => families.filter((inFamily) => inFamily(key)).length > 1,
     );
-    expect(both).toEqual([]);
+    expect(overlapping).toEqual([]);
+  });
+
+  test("the autoscaler targets column is routed to its own renderer", () => {
+    expect(isAutoscalerTargetsColumn("autoscalerTargets")).toBe(true);
+    expect(isAutoscalerTargetsColumn("autoscalerReplicas")).toBe(false);
+  });
+});
+
+describe("autoscaler cells", () => {
+  const hpa = res({
+    spec: {
+      scaleTargetRef: { kind: "Deployment", name: "api" },
+      minReplicas: 2,
+      maxReplicas: 10,
+      metrics: [
+        { type: "Resource", resource: { name: "cpu", target: { averageUtilization: 80 } } },
+      ],
+    },
+    status: {
+      currentReplicas: 3,
+      desiredReplicas: 5,
+      currentMetrics: [
+        { type: "Resource", resource: { name: "cpu", current: { averageUtilization: 60 } } },
+      ],
+    },
+  });
+  const ctx: CellContext = { ageTick: 0, autoscaler: autoscalerSummary(hpa, "hpa") };
+
+  test("reads every column off the row's summary", () => {
+    expect(getCellValue(hpa, "autoscalerReference", ctx)).toBe("Deployment/api");
+    expect(getCellValue(hpa, "autoscalerMin", ctx)).toBe("2");
+    expect(getCellValue(hpa, "autoscalerMax", ctx)).toBe("10");
+    expect(getCellValue(hpa, "autoscalerReplicas", ctx)).toBe("3 → 5");
+    expect(getCellValue(hpa, "autoscalerTargets", ctx)).toBe("cpu: 60%/80%");
+  });
+
+  test("renders as empty on a row that is not an autoscaler", () => {
+    // The summary is only built for the three autoscaler tables; without it
+    // the columns must degrade to "-" rather than throw.
+    for (const key of ["autoscalerReference", "autoscalerMin", "autoscalerReplicas", "autoscalerTargets"]) {
+      expect(getCellValue(res({}), key)).toBe("-");
+    }
+  });
+
+  test("the pressure bar tracks the metric that is furthest along", () => {
+    const twoMetrics = res({
+      spec: {
+        metrics: [
+          { type: "Resource", resource: { name: "cpu", target: { averageUtilization: 80 } } },
+          { type: "Resource", resource: { name: "memory", target: { averageUtilization: 50 } } },
+        ],
+      },
+      status: {
+        currentMetrics: [
+          { type: "Resource", resource: { name: "cpu", current: { averageUtilization: 20 } } },
+          { type: "Resource", resource: { name: "memory", current: { averageUtilization: 45 } } },
+        ],
+      },
+    });
+    const pressure = autoscalerPressure(autoscalerSummary(twoMetrics, "hpa"))!;
+    // memory is at 90% of its target, cpu at 25% — the bar follows memory.
+    expect(pressure.percent).toBe(90);
+    expect(pressure.title).toContain("memory: 45% of 50%");
+    // Every metric is split, so the row can pin each reading and let only the
+    // names give up width.
+    expect(pressure.parts).toEqual([
+      { name: "cpu", value: "20%/80%" },
+      { name: "memory", value: "45%/50%" },
+    ]);
+  });
+
+  test("splits a metric so the reading can be protected from truncation", () => {
+    // An external metric name is long enough to push the numbers out of the
+    // cell; the split lets the row truncate the name and keep the value.
+    const wpa = res({
+      spec: {
+        metrics: [{
+          type: "External",
+          external: { metricName: "nginx.net.request_per_s", highWatermark: "80", lowWatermark: "40" },
+        }],
+      },
+      status: {
+        currentMetrics: [{ type: "External", external: { metricName: "nginx.net.request_per_s", currentValue: "62" } }],
+      },
+    });
+    const pressure = autoscalerPressure(autoscalerSummary(wpa, "wpa"))!;
+    expect(pressure.parts).toEqual([{ name: "nginx.net.request_per_s", value: "62/40 – 80" }]);
+    expect(pressure.meter).toBe(true);
+  });
+
+  test("a VPA row draws no track, having no ceiling to fill towards", () => {
+    const vpa = res({
+      status: {
+        recommendation: {
+          containerRecommendations: [
+            { containerName: "app", target: { cpu: "250m" }, lowerBound: { cpu: "100m" }, upperBound: { cpu: "1" } },
+          ],
+        },
+      },
+    });
+    const pressure = autoscalerPressure(autoscalerSummary(vpa, "vpa"))!;
+    expect(pressure.meter).toBe(false);
+    expect(pressure.percent).toBeNull();
+  });
+
+  test("names a dry run in the tooltip, since the row's numbers are advisory", () => {
+    const dry = res({
+      spec: {
+        dryRun: true,
+        metrics: [{ type: "Resource", resource: { name: "cpu", highWatermark: "80", lowWatermark: "30" } }],
+      },
+    });
+    expect(autoscalerPressure(autoscalerSummary(dry, "wpa"))!.title).toContain("dry run");
+  });
+
+  test("names the limit in the tooltip when the autoscaler is capped", () => {
+    const capped = res({
+      spec: { metrics: [{ type: "Resource", resource: { name: "cpu", target: { averageUtilization: 80 } } }] },
+      status: { conditions: [{ type: "ScalingLimited", status: "True", reason: "TooManyReplicas" }] },
+    });
+    expect(autoscalerPressure(autoscalerSummary(capped, "hpa"))!.title).toContain("limited: TooManyReplicas");
+  });
+
+  test("has nothing to paint for an autoscaler with no metrics", () => {
+    expect(autoscalerPressure(undefined)).toBeNull();
+    expect(autoscalerPressure(autoscalerSummary(res({}), "hpa"))).toBeNull();
   });
 });
 

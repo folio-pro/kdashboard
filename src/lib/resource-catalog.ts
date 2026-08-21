@@ -132,6 +132,27 @@ export const LISTABLE_RESOURCE_TYPES: string[] = RESOURCE_ITEMS.filter((i) => !i
   (i) => i.type,
 );
 
+/**
+ * resource_type -> the name the sidebar shows. The view header used to
+ * capitalize the type instead, which rendered the acronyms as "Hpa"/"Wpa" and
+ * the long plurals as "Persistentvolumeclaims"; the catalog already knows what
+ * each view is called, so the header and the sidebar now agree.
+ */
+export const RESOURCE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  RESOURCE_ITEMS.map((i) => [i.type, i.name]),
+);
+
+/**
+ * How a resource type reads in the view header. Falls back to capitalizing the
+ * type for anything outside the catalog (a CRD the user navigated to).
+ */
+export function resourceTypeLabel(resourceType: string): string {
+  return (
+    RESOURCE_TYPE_LABELS[resourceType] ??
+    resourceType.charAt(0).toUpperCase() + resourceType.slice(1)
+  );
+}
+
 /** PascalCase Kind -> resource_type, for navigating from an object reference. */
 export const KIND_TO_RESOURCE_TYPE: Record<string, string> = Object.fromEntries(
   RESOURCE_ITEMS.filter((i) => i.kind).map((i) => [i.kind as string, i.type]),
