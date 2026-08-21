@@ -55,6 +55,10 @@ export class K8sStoreLogic {
    * delayed 200ms to avoid flicker, which flashed "No pods found" on boot.
    */
   viewLoaded: boolean = false;
+  /** Epoch ms of the last list or watch delta applied to `resources`. 0 = never. */
+  lastUpdatedAt: number = 0;
+  /** True while the backend watcher for the current view is running. */
+  watching: boolean = false;
 
   // CRD state
   crdGroups: CrdGroup[] = [];

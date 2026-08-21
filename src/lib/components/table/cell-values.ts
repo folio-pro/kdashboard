@@ -362,9 +362,22 @@ export function usageMeter(resource: Resource, key: string, ctx: CellContext): U
     : podMeter(resource, ctx.podUsage, key);
 }
 
-/** Bar colour: green under pressure, amber when tight, red when over. */
+/**
+ * Bar colour: neutral while there is headroom, amber when tight, red when
+ * over. Healthy rows stay monochrome on purpose — a table of green bars says
+ * nothing, and the one amber bar in it would get lost.
+ */
 export function usageBarColor(percent: number): string {
   if (percent >= 90) return "var(--status-failed)";
   if (percent >= 70) return "var(--status-pending)";
-  return "var(--status-running)";
+  return "color-mix(in srgb, var(--text-primary) 38%, var(--bg-primary))";
 }
+
+/** Whether the bar's percent label should take the bar's colour (only when it is warning anyone). */
+export function usagePercentIsLoud(percent: number): boolean {
+  return percent >= 70;
+}
+
+/** Counts and ages read right-aligned, so digits line up down the column. */
+const RIGHT_ALIGNED_COLUMNS = new Set(["restarts", "age", "eventCount"]);
+export const isRightAlignedColumn = (key: string): boolean => RIGHT_ALIGNED_COLUMNS.has(key);

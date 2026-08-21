@@ -2,6 +2,7 @@
   import { cn } from "$lib/utils";
   import { ChevronsUpDown, ArrowUp, ArrowDown } from "lucide-svelte";
   import type { Column, SortDirection } from "$lib/types";
+  import { isRightAlignedColumn } from "./cell-values";
 
   interface Props {
     column: Column;
@@ -17,6 +18,7 @@
   const MIN_COL_WIDTH = 40;
 
   let isActive = $derived(sortColumn === column.key);
+  let alignRight = $derived(isRightAlignedColumn(column.key));
 
   let thEl: HTMLTableCellElement | undefined = $state();
   let dragCleanup: (() => void) | null = null;
@@ -66,33 +68,41 @@
   });
 </script>
 
+<!-- 32px, 10px uppercase: the header labels the data, it is not data. The
+     active sort column is the one exception — it reads in the primary colour
+     so you can tell at a glance what order the list is in. -->
 <th
   bind:this={thEl}
   class={cn(
-    "relative h-10 overflow-hidden whitespace-nowrap px-4 text-left text-[11px] font-medium text-[var(--text-muted)]",
+    "relative h-8 overflow-hidden whitespace-nowrap px-3.5 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]",
+    alignRight ? "text-right" : "text-left",
     column.sortable && "cursor-pointer select-none hover:text-[var(--text-secondary)]"
   )}
   style={computedStyle}
+  data-testid="table-header"
+  aria-sort={isActive ? (sortDirection === "asc" ? "ascending" : "descending") : undefined}
 >
   {#if column.sortable}
     <button
       class={cn(
-        "inline-flex items-center gap-1.5 transition-colors",
+        "inline-flex items-center gap-1 uppercase tracking-[0.06em] transition-colors",
+        alignRight && "flex-row-reverse",
         isActive && "text-[var(--text-primary)]"
       )}
       onclick={() => onclick(column.key)}
+      data-testid="header-{column.key}"
     >
       <span>{column.label}</span>
       {#if isActive && sortDirection === "asc"}
-        <ArrowUp class="h-3 w-3 text-[var(--accent)]" />
+        <ArrowUp class="h-[11px] w-[11px] text-[var(--accent)]" />
       {:else if isActive}
-        <ArrowDown class="h-3 w-3 text-[var(--accent)]" />
+        <ArrowDown class="h-[11px] w-[11px] text-[var(--accent)]" />
       {:else}
-        <ChevronsUpDown class="h-3.5 w-3.5 text-[var(--text-muted)]" />
+        <ChevronsUpDown class="h-3 w-3 text-[var(--text-muted)] opacity-60" />
       {/if}
     </button>
   {:else}
-    <span>{column.label}</span>
+    <span data-testid="header-{column.key}">{column.label}</span>
   {/if}
   <!-- Resize handle -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->

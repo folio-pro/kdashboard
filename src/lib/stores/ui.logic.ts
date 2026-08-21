@@ -1,4 +1,5 @@
-import type { SortDirection, Resource } from "../types/index.js";
+import type { SortDirection, Resource, Facet } from "../types/index.js";
+import { facetKey } from "../utils/facets.js";
 
 export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "helm" | "crd-table";
 
@@ -59,8 +60,10 @@ export interface Tab {
   cachedResource?: Resource;
 
   // Per-tab UI state. All optional — absent means "default" via getter fallback.
-  /** Search filter text. */
+  /** Search filter text (free text; typed `key:value` terms live in `facets`). */
   filter?: string;
+  /** Typed filter terms, each shown as a chip ahead of the search text. */
+  facets?: Facet[];
   /** Debounced filter value (committed 150ms after last keystroke). */
   _debouncedFilter?: string;
   /** Active sort column. */
@@ -73,9 +76,12 @@ export interface Tab {
   selectedRows?: Set<string>;
   /** Keyboard-focused row index; -1 = no focus. */
   selectedRowIndex?: number;
+  /** Table views: the detail aside is open for the selected resource (ephemeral). */
+  previewOpen?: boolean;
 }
 
 const EMPTY_SELECTED_ROWS: Set<string> = new Set();
+const EMPTY_FACETS: Facet[] = [];
 
 /**
  * Sort column a tab starts on before the user picks one. Events lead with the
@@ -204,6 +210,57 @@ export class UiStoreLogic {
     return this.#debouncedLowerVal;
   }
 
+  get facets(): Facet[] {
+    return this.activeTab?.facets ?? EMPTY_FACETS;
+  }
+  set facets(v: Facet[]) {
+    const t = this.activeTab;
+    if (t) t.facets = v;
+  }
+
+  addFacets(facets: Facet[]): void {
+    const t = this.activeTab;
+    if (!t || facets.length === 0) return;
+    const seen = new Set((t.facets ?? []).map(facetKey));
+    const fresh = facets.filter((f) => !seen.has(facetKey(f)));
+    if (fresh.length === 0) return;
+    t.facets = [...(t.facets ?? []), ...fresh];
+  }
+
+  removeFacet(index: number): void {
+    const t = this.activeTab;
+    if (!t?.facets) return;
+    t.facets = t.facets.filter((_, i) => i !== index);
+  }
+
+  /** Drop the last chip — what Backspace on an empty search box does. */
+  popFacet(): Facet | undefined {
+    const t = this.activeTab;
+    if (!t?.facets?.length) return undefined;
+    const last = t.facets[t.facets.length - 1];
+    t.facets = t.facets.slice(0, -1);
+    return last;
+  }
+
+  /**
+   * Replace the tab's whole filter state at once — what applying a saved
+   * view does. The debounced text is committed synchronously so the table
+   * does not show the old text's results for a frame.
+   */
+  applyFilterState(state: { facets: Facet[]; text: string; statFilter: string | null }): void {
+    const t = this.activeTab;
+    if (!t) return;
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+      this._debounceTarget = null;
+    }
+    t.facets = state.facets.map((f) => ({ ...f }));
+    t.filter = state.text;
+    t._debouncedFilter = state.text;
+    t.statFilter = state.statFilter;
+  }
+
   get sortColumn(): string {
     return this.activeTab?.sortColumn ?? defaultSortColumn(this.activeTab);
   }
@@ -234,6 +291,14 @@ export class UiStoreLogic {
   set selectedRows(v: Set<string>) {
     const t = this.activeTab;
     if (t) t.selectedRows = v;
+  }
+
+  get previewOpen(): boolean {
+    return this.activeTab?.previewOpen ?? false;
+  }
+  set previewOpen(v: boolean) {
+    const t = this.activeTab;
+    if (t) t.previewOpen = v;
   }
 
   get selectedRowIndex(): number {
@@ -571,7 +636,7 @@ export class UiStoreLogic {
 // ── Tab persistence (serialization) ──────────────────────────────────────
 // Saved to storage (survives restart):
 //   id, type, label, closable, resourceName, resourceType, namespace,
-//   filter, sortColumn, sortDirection, statFilter
+//   filter, facets, sortColumn, sortDirection, statFilter
 // NOT saved (ephemeral — reloaded fresh from cluster or recomputed):
 //   cachedItems, cachedResource, cacheReady, count, _debouncedFilter,
 //   selectedRows, selectedRowIndex
@@ -595,6 +660,7 @@ interface SerializableTab {
   resourceType?: string;
   namespace?: string;
   filter?: string;
+  facets?: Facet[];
   sortColumn?: string;
   sortDirection?: SortDirection;
   statFilter?: string | null;
@@ -618,6 +684,7 @@ export function serializeTabs(tabs: Tab[], activeTabId: string): SerializedTabsS
     if (t.resourceType !== undefined) st.resourceType = t.resourceType;
     if (t.namespace !== undefined) st.namespace = t.namespace;
     if (t.filter !== undefined && t.filter !== "") st.filter = t.filter;
+    if (t.facets !== undefined && t.facets.length > 0) st.facets = t.facets.map((f) => ({ ...f }));
     if (t.sortColumn !== undefined && t.sortColumn !== "name") st.sortColumn = t.sortColumn;
     if (t.sortDirection !== undefined && t.sortDirection !== "asc") st.sortDirection = t.sortDirection;
     if (t.statFilter !== undefined && t.statFilter !== null) st.statFilter = t.statFilter;
@@ -661,6 +728,10 @@ export function deserializeTabs(raw: string | null): SerializedTabsState | null 
     if (typeof r.resourceType === "string") st.resourceType = r.resourceType;
     if (typeof r.namespace === "string") st.namespace = r.namespace;
     if (typeof r.filter === "string") st.filter = r.filter;
+    if (Array.isArray(r.facets)) {
+      const facets = r.facets.filter(isSerializedFacet).map((f) => ({ key: f.key, op: f.op, value: f.value }));
+      if (facets.length > 0) st.facets = facets;
+    }
     if (typeof r.sortColumn === "string") st.sortColumn = r.sortColumn;
     if (r.sortDirection === "asc" || r.sortDirection === "desc") st.sortDirection = r.sortDirection;
     if (typeof r.statFilter === "string" || r.statFilter === null) st.statFilter = r.statFilter as string | null;
@@ -677,6 +748,14 @@ export function deserializeTabs(raw: string | null): SerializedTabsState | null 
     : tabs[0].id;
 
   return { version: TABS_STORAGE_VERSION, tabs, activeTabId };
+}
+
+const FACET_OPS = new Set([":", "!:", ">", "<", ">=", "<="]);
+function isSerializedFacet(v: unknown): v is Facet {
+  if (!v || typeof v !== "object") return false;
+  const f = v as Record<string, unknown>;
+  return typeof f.key === "string" && typeof f.value === "string" &&
+    typeof f.op === "string" && FACET_OPS.has(f.op);
 }
 
 /**
@@ -698,6 +777,7 @@ export function restoreTab(st: SerializableTab): Tab {
     namespace: st.namespace || undefined,
     filter: st.filter,
     _debouncedFilter: st.filter,
+    facets: st.facets,
     sortColumn: st.sortColumn,
     sortDirection: st.sortDirection,
     statFilter: st.statFilter,

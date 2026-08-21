@@ -1,4 +1,4 @@
-import type { AppSettings, ContextCustomization, PinnedResource } from "../types/index.js";
+import { isTableDensity, type AppSettings, type ContextCustomization, type PinnedResource, type SavedView, type TableDensity } from "../types/index.js";
 
 export type { AppSettings, ContextCustomization, PinnedResource };
 
@@ -26,6 +26,9 @@ export class SettingsStoreLogic {
       ...DEFAULT_SETTINGS,
       ...result,
       context_customizations: result.context_customizations ?? {},
+      // Validated here, once: a settings file written by an older build (or by
+      // hand) may carry a value the density union does not know.
+      table_density: isTableDensity(result.table_density) ? result.table_density : DEFAULT_SETTINGS.table_density,
     };
     this.applyTheme(this.settings.theme_mode);
   }
@@ -52,7 +55,7 @@ export class SettingsStoreLogic {
     this.saveSettings();
   }
 
-  updateDensity(density: "comfortable" | "compact"): void {
+  updateDensity(density: TableDensity): void {
     this.settings.table_density = density;
     this.saveSettings();
   }
@@ -83,6 +86,22 @@ export class SettingsStoreLogic {
 
   getContextCustomization(context: string): ContextCustomization | undefined {
     return this.settings.context_customizations?.[context];
+  }
+
+  private static readonly EMPTY_VIEWS: SavedView[] = [];
+
+  get savedViews(): SavedView[] {
+    return this.settings.saved_views ?? SettingsStoreLogic.EMPTY_VIEWS;
+  }
+
+  addSavedView(view: SavedView): void {
+    this.settings.saved_views = [...this.savedViews.filter((v) => v.id !== view.id), view];
+    this.saveSettings();
+  }
+
+  removeSavedView(id: string): void {
+    this.settings.saved_views = this.savedViews.filter((v) => v.id !== id);
+    this.saveSettings();
   }
 
   get pinnedResources(): PinnedResource[] {

@@ -31,12 +31,10 @@
   <table class="w-full" style="table-layout: fixed;">
     <thead class="sticky top-0 z-10 bg-[var(--bg-primary)]">
       <tr class="border-b border-[var(--border-color)]">
-        <th class="h-10 px-4 text-center" style="width: 40px;">
-          <Skeleton class="mx-auto h-3.5 w-3.5 rounded-sm" />
-        </th>
+        <th class="h-8 p-0" style="width: 28px;"></th>
         {#each columns as column}
           <th
-            class="h-10 overflow-hidden px-4 text-left"
+            class="h-8 overflow-hidden px-3.5 text-left"
             style={column.width ? `width: ${column.width}` : ""}
           >
             <Skeleton class="h-3 w-16" />
@@ -47,15 +45,13 @@
     <tbody>
       {#each Array(12) as _, i}
         <tr
-          class="h-11 border-b border-[var(--border-color)]"
+          class="h-9 border-b border-[var(--hairline)]"
           style="opacity: {Math.max(0.1, 1 - i * 0.06)}"
         >
-          <td class="px-4 text-center" style="width: 40px;">
-            <Skeleton class="mx-auto h-3.5 w-3.5 rounded-sm" />
-          </td>
+          <td class="p-0" style="width: 28px;"></td>
           {#each columns as column, j}
             <td
-              class="overflow-hidden px-4"
+              class="overflow-hidden px-3.5"
               style={column.width ? `width: ${column.width}` : ""}
             >
               <Skeleton class="h-3 {j === 0 ? 'w-3/4' : 'w-1/2'}" />
@@ -92,9 +88,9 @@
           Clear stat filter
         </Button>
       {:else if hasTextFilter}
-        <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">No resources match your search.</p>
+        <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">No resources match your search and filters.</p>
         <Button variant="link" size="inline-sm" class="mt-1" onclick={onclearTextFilter}>
-          Clear filter
+          Clear filters
         </Button>
       {:else}
         <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">There are none in this namespace. Try switching namespace or context to see results.</p>

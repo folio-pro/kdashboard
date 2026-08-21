@@ -67,6 +67,8 @@ class K8sStore extends K8sStoreLogic {
   override portForwards = $state<PortForwardInfo[]>([]);
   override ageTick = $state(0);
   override viewLoaded = $state(false);
+  override lastUpdatedAt = $state(0);
+  override watching = $state(false);
 
   // CRD state
   override crdGroups = $state<CrdGroup[]>([]);
@@ -242,6 +244,7 @@ class K8sStore extends K8sStoreLogic {
       if (this.pendingResourceType !== resourceType) return;
       this.selectedResourceType = resourceType;
       this.resources = result;
+      this.lastUpdatedAt = Date.now();
       this._setCount(resourceType, result.items.length);
       this._startWatch(resourceType, this.currentNamespace, result.resource_version);
     } catch (err) {
@@ -472,6 +475,7 @@ class K8sStore extends K8sStoreLogic {
           resourceVersion: resourceVersion ?? null,
         });
         this._watchActive = true;
+        this.watching = true;
       } catch (err) {
         if (import.meta.env.DEV) console.warn("Failed to start resource watch:", err);
       }
@@ -498,6 +502,7 @@ class K8sStore extends K8sStoreLogic {
       }
       this._watchActive = false;
     }
+    this.watching = false;
     if (this._watchUnlisten) {
       this._watchUnlisten();
       this._watchUnlisten = null;
@@ -620,6 +625,7 @@ class K8sStore extends K8sStoreLogic {
       const items = Array.from(byUid.values());
       // Trigger Svelte 5 reactivity ONCE for the entire batch
       this.resources = { items, resource_type: this.resources.resource_type };
+      this.lastUpdatedAt = Date.now();
       this._setCount(this.selectedResourceType, items.length);
     }
 
@@ -632,6 +638,7 @@ class K8sStore extends K8sStoreLogic {
     try {
       const result = await this._listResources(this.selectedResourceType);
       this.resources = result;
+      this.lastUpdatedAt = Date.now();
       this._setCount(this.selectedResourceType, result.items.length);
     } catch (err) {
       if (import.meta.env.DEV) console.warn("Failed to refresh after resync:", err);

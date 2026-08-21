@@ -82,6 +82,10 @@ export function runEscape(target: EventTarget | null, isInput: boolean): void {
     uiStore.backToTable();
     return;
   }
+  if (uiStore.previewOpen) {
+    uiStore.previewOpen = false;
+    return;
+  }
   if (uiStore.selectedRowIndex >= 0) uiStore.resetSelection();
 }
 
