@@ -55,8 +55,11 @@ k() { kubectl --context "$CTX" "$@"; }
 if [[ "${1:-}" == "--clean" ]]; then
   info "Removing autoscaler fixtures..."
   k delete -n "$NS" hpa web-api worker redis-cache load-demo --ignore-not-found
-  k delete -n "$NS" wpa web-api worker --ignore-not-found
-  k delete -n "$NS" vpa web-api redis-cache --ignore-not-found
+  # --ignore-not-found covers a missing object, not a missing TYPE: with the
+  # CRDs already gone kubectl exits non-zero and set -e would abandon the rest
+  # of the cleanup.
+  k delete -n "$NS" wpa web-api worker --ignore-not-found || true
+  k delete -n "$NS" vpa web-api redis-cache --ignore-not-found || true
   k delete -n "$NS" deploy load-demo --ignore-not-found
   k delete crd watermarkpodautoscalers.datadoghq.com --ignore-not-found
   k delete crd verticalpodautoscalers.autoscaling.k8s.io \
@@ -88,6 +91,11 @@ info "Installing the WatermarkPodAutoscaler CRD (DataDog/watermarkpodautoscaler)
 curl -sSL --max-time 60 "$WPA_CRD_URL" | k apply -f - >/dev/null
 info "Installing the VerticalPodAutoscaler CRDs (kubernetes/autoscaler)..."
 curl -sSL --max-time 60 "$VPA_CRD_URL" | k apply -f - >/dev/null
+# apply returns before the apiserver serves the new types; without this the
+# WPA/VPA objects below race it and fail with "no matches for kind".
+k wait --for=condition=established --timeout=60s \
+  crd/watermarkpodautoscalers.datadoghq.com \
+  crd/verticalpodautoscalers.autoscaling.k8s.io >/dev/null
 ok "CRDs installed"
 
 # ---------------------------------------------------------------------------

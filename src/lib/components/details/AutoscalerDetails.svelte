@@ -187,7 +187,7 @@
       <p class="text-[12px] text-[var(--text-muted)]">{copy.empty}</p>
     {:else}
       <div class="flex flex-col gap-2">
-        {#each summary.targets as target (target.source + target.name)}
+        {#each summary.targets as target, i (`${i}:${target.source}:${target.name}`)}
           <div class="flex flex-col gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
             <div class="flex items-center justify-between gap-3">
               <div class="flex min-w-0 items-center gap-2.5">

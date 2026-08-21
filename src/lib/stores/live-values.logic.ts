@@ -137,6 +137,21 @@ export class LiveValuesLogic {
     return this._flashes.size > 0;
   }
 
+  /**
+   * When the next flash expires, or null when none is pending. The sweep timer
+   * uses this instead of another full `FLASH_MS`: flashes recorded at
+   * different moments expire at different moments, and waiting a whole window
+   * from the last sweep would leave the second one's arrow up long after it
+   * should have gone.
+   */
+  nextExpiry(): number | null {
+    let earliest: number | null = null;
+    for (const flash of this._flashes.values()) {
+      if (earliest === null || flash.at < earliest) earliest = flash.at;
+    }
+    return earliest === null ? null : earliest + FLASH_MS;
+  }
+
   clear(): void {
     if (this._flashes.size === 0) return;
     this._flashes.clear();

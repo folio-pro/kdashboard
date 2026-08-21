@@ -1,4 +1,4 @@
-import { LiveValuesLogic, FLASH_MS } from "./live-values.logic";
+import { LiveValuesLogic } from "./live-values.logic";
 import { unshadowState } from "./_unshadow.js";
 
 export type { ChangeDirection, RowFlash, RowSignals, SignalReader } from "./live-values.logic";
@@ -28,13 +28,19 @@ class LiveValuesStore extends LiveValuesLogic {
 
   private _scheduleSweep(): void {
     if (this._sweepTimer !== null) return;
+    const expiry = this.nextExpiry();
+    if (expiry === null) return;
+    // Wake at the OLDEST flash's expiry, not a fresh full window: a flash
+    // recorded late shares this timer, and sweeping on its own schedule would
+    // leave the earlier one's arrow up for almost another FLASH_MS.
+    const delay = Math.max(0, expiry - Date.now());
     this._sweepTimer = setTimeout(() => {
       this._sweepTimer = null;
       this.sweep(Date.now());
       // A flash recorded late in the window outlives this sweep; keep going
       // until the last one has expired.
       if (this.pending) this._scheduleSweep();
-    }, FLASH_MS);
+    }, delay);
   }
 
   override clear(): void {

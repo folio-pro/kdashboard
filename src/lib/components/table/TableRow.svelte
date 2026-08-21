@@ -251,7 +251,7 @@
               <!-- Name elastic, reading pinned: an external metric name
                    ("nginx.net.request_per_s") is long enough to push the
                    numbers off the end of the cell otherwise. -->
-              {#each pressure.parts as part, i (part.name)}
+              {#each pressure.parts as part, i (`${i}:${part.name}`)}
                 <!-- The separator rides on the value rather than being its own
                      element, so the flex gap cannot open a space before it. -->
                 <span class="truncate text-[var(--text-muted)]">{part.name}:</span>
@@ -264,7 +264,7 @@
                 </span>
               {/if}
             {:else}
-              <span class="text-[var(--text-muted)]">\u2014</span>
+              <span class="text-[var(--text-muted)]">&mdash;</span>
             {/if}
           </div>
           {#if pressure?.meter}

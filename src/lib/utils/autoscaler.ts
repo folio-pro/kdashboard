@@ -330,6 +330,14 @@ function hpaTargets(spec: Json, status: Json): AutoscalerTarget[] {
 // VPA (autoscaling.k8s.io VerticalPodAutoscaler)
 // ---------------------------------------------------------------------------
 
+/** "100m – 1", "≤ 1", "≥ 100m", or `UNKNOWN` when the recommender gave neither. */
+function boundsLabel(lower: string | null, upper: string | null): string {
+  if (lower && upper) return `${lower} – ${upper}`;
+  if (upper) return `≤ ${upper}`;
+  if (lower) return `≥ ${lower}`;
+  return UNKNOWN;
+}
+
 /**
  * A VPA never changes the replica count, so it has no meter to fill: what
  * changes over time is the recommendation itself. Each container/resource pair
@@ -354,8 +362,9 @@ function vpaTargets(status: Json): AutoscalerTarget[] {
         name: container ? `${container}/${resourceName}` : resourceName,
         source: "Recommendation",
         currentLabel: targetLabel,
-        targetLabel:
-          lowerLabel && upperLabel ? `${lowerLabel} – ${upperLabel}` : (upperLabel ?? ""),
+        // A one-sided recommendation still has to read as a bound: the bare
+        // number would render as "250m/100m", which looks like a target.
+        targetLabel: boundsLabel(lowerLabel, upperLabel),
         // No ceiling to fill towards: the recommendation IS the value.
         percent: null,
         lowPercent: null,

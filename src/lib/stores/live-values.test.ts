@@ -134,6 +134,23 @@ describe("LiveValuesLogic", () => {
     expect(live.rowFlash(undefined, 0)).toEqual(NO_FLASH);
   });
 
+  test("nextExpiry tracks the oldest pending flash, not the newest", () => {
+    const live = new LiveValuesLogic();
+    expect(live.nextExpiry()).toBeNull();
+
+    live.compare("u1", { a: 1 }, { a: 2 }, 0);
+    live.compare("u2", { a: 1 }, { a: 2 }, 500);
+    // The second flash must not push the sweep out to 500 + FLASH_MS, or the
+    // first one's arrow stays up for 500ms after it expired.
+    expect(live.nextExpiry()).toBe(FLASH_MS);
+
+    live.sweep(FLASH_MS);
+    expect(live.nextExpiry()).toBe(500 + FLASH_MS);
+
+    live.sweep(500 + FLASH_MS);
+    expect(live.nextExpiry()).toBeNull();
+  });
+
   test("clear drops everything, and is a no-op when already empty", () => {
     const live = new LiveValuesLogic();
     live.compare("u1", { a: 1 }, { a: 2 }, 0);

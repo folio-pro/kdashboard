@@ -315,6 +315,21 @@ describe("vpa", () => {
     expect(formatTargets(s)).toBe("app/cpu: 250m/100m – 1, app/memory: 512Mi/256Mi – 1Gi");
   });
 
+  test("marks a one-sided recommendation as a bound instead of a bare number", () => {
+    const s = vpa({}, {
+      recommendation: {
+        containerRecommendations: [
+          { containerName: "app", target: { cpu: "250m" }, lowerBound: { cpu: "100m" } },
+          { containerName: "sidecar", target: { cpu: "50m" }, upperBound: { cpu: "1" } },
+          { containerName: "bare", target: { cpu: "10m" } },
+        ],
+      },
+    });
+    expect(s.targets.map((t) => t.targetLabel)).toEqual(["≥ 100m", "≤ 1", UNKNOWN]);
+    // No dangling separator: the cell used to read "250m/".
+    expect(formatTargets(s)).toBe("app/cpu: 250m/≥ 100m, sidecar/cpu: 50m/≤ 1 +1");
+  });
+
   test("skips a resource the recommender has no target for", () => {
     const s = vpa({}, {
       recommendation: { containerRecommendations: [{ containerName: "app", target: { cpu: "250m" } }] },
