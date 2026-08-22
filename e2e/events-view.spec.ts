@@ -87,7 +87,8 @@ test("lists events with kubectl-style columns, newest first", async ({ page }) =
   // Event-specific columns render from the synthetic spec.
   await expect(rows.nth(0)).toContainText("Pod/web-0");
   await expect(rows.nth(0)).toContainText("Back-off restarting failed container");
-  await expect(rows.nth(0)).toContainText("warning");
+  // The Type column paints a Warning pill (capitalised, from the status category).
+  await expect(rows.nth(0)).toContainText("Warning");
 });
 
 test("the Object column deep-links to the involved resource", async ({ page }) => {
@@ -97,7 +98,8 @@ test("the Object column deep-links to the involved resource", async ({ page }) =
 });
 
 test("filter matches event reason and message", async ({ page }) => {
-  const filter = page.getByPlaceholder("Search events...");
+  // The shared table search box (typed filters + free text).
+  const filter = page.locator("#resource-filter");
   await filter.fill("backoff");
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await expect(page.locator("tbody tr").first()).toContainText("BackOff");
