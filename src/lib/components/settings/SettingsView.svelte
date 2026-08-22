@@ -1,9 +1,7 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { ArrowLeft } from "lucide-svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
-  import { extensions } from "$lib/extensions";
+    import { extensions } from "$lib/extensions";
   import { TABS, type TabId } from "./settings-constants";
   import GeneralTab from "./GeneralTab.svelte";
   import KubernetesTab from "./KubernetesTab.svelte";
@@ -19,17 +17,11 @@
 
   let activeExtensionTab = $derived(extensions.tabs.find((t) => t.id === activeTab));
 
-  function goBack() {
-    uiStore.backToPrevious();
-  }
 </script>
 
 <div class="flex h-full flex-col">
   <!-- Header -->
   <div class="flex h-11 shrink-0 items-center gap-3 border-b border-[var(--border-color)] px-4">
-    <Button variant="muted" size="icon-md" onclick={goBack} aria-label="Go back">
-      <ArrowLeft class="h-4 w-4" />
-    </Button>
     <h1 class="text-[13px] font-medium text-[var(--text-primary)]">Settings</h1>
   </div>
 

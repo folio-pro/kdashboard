@@ -6,8 +6,7 @@
   import { costStore } from "$lib/stores/cost.svelte";
   import { rightsizingStore } from "$lib/stores/rightsizing.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
-  import { formatCpu, formatBytes } from "$lib/stores/metrics.logic";
+    import { formatCpu, formatBytes } from "$lib/stores/metrics.logic";
   import RightsizingPanel from "./RightsizingPanel.svelte";
 
   let expandedNamespaces = $state<Set<string>>(new Set());
@@ -20,12 +19,6 @@
       ? { isLoading: costStore.isLoading, error: costStore.error, hasData: !!costStore.overview }
       : { isLoading: rightsizingStore.isLoading && !rightsizingStore.overview, error: rightsizingStore.error, hasData: !!rightsizingStore.overview },
   );
-
-  function handleBack() {
-    costStore.reset();
-    rightsizingStore.reset();
-    uiStore.backToPrevious();
-  }
 
   function handleRefresh() {
     if (mode === "rightsizing") rightsizingStore.loadRightsizing(k8sStore.currentNamespace);
@@ -64,7 +57,6 @@
   isLoading={panel.isLoading}
   error={panel.error}
   hasData={panel.hasData}
-  onBack={handleBack}
   onRefresh={handleRefresh}
   loadingMessage="Loading cost data..."
   errorMessage="Failed to load cost data"

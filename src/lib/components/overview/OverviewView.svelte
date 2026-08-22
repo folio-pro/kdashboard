@@ -5,8 +5,7 @@
   import { LayoutDashboard, AlertTriangle, ArrowRight, Server, Activity, Flame } from "lucide-svelte";
   import { overviewStore } from "$lib/stores/overview.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
-  import { openAppView, openRelatedResourceTab } from "$lib/actions/navigation";
+    import { openAppView, openRelatedResourceTab } from "$lib/actions/navigation";
   import { formatCpu, formatBytes } from "$lib/stores/metrics.logic";
   import { kindToResourceType } from "$lib/utils/related-resources";
   import { formatAge } from "$lib/utils/age";
@@ -21,10 +20,6 @@
   let topPods = $derived(overview ? (topMode === "cpu" ? overview.top_pods_cpu : overview.top_pods_memory) : []);
   let topMax = $derived(topPods.reduce((m, p) => Math.max(m, topMode === "cpu" ? p.cpu_usage : p.memory_usage), 0));
 
-  function handleBack() {
-    overviewStore.reset();
-    uiStore.backToPrevious();
-  }
   function handleRefresh() {
     overviewStore.loadOverview(k8sStore.currentNamespace);
   }
@@ -58,7 +53,6 @@
   isLoading={overviewStore.isLoading}
   error={overviewStore.error}
   hasData={!!overview}
-  onBack={handleBack}
   onRefresh={handleRefresh}
   loadingMessage="Reading the cluster…"
   errorMessage="Could not build the overview"

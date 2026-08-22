@@ -6,8 +6,7 @@
   import { securityStore } from "$lib/stores/security.svelte";
   import { rbacStore } from "$lib/stores/rbac.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
-  import RbacPanel from "./RbacPanel.svelte";
+    import RbacPanel from "./RbacPanel.svelte";
 
   let expandedPods = $state<Set<string>>(new Set());
   /** "posture" = image scans and compliance; "permissions" = the RBAC explorer. */
@@ -20,12 +19,6 @@
       ? { isLoading: securityStore.isLoading, error: securityStore.error, hasData: !!securityStore.overview }
       : { isLoading: false, error: null, hasData: true },
   );
-
-  function handleBack() {
-    securityStore.reset();
-    rbacStore.reset();
-    uiStore.backToPrevious();
-  }
 
   function handleRefresh() {
     if (mode === "permissions") {
@@ -87,7 +80,6 @@
   isLoading={panel.isLoading}
   error={panel.error}
   hasData={panel.hasData}
-  onBack={handleBack}
   onRefresh={handleRefresh}
   loadingMessage="Scanning images..."
   errorMessage="Failed to load security data"

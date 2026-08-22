@@ -9,8 +9,7 @@
   import { topologyStore } from "$lib/stores/topology.svelte";
   import { netpolStore } from "$lib/stores/netpol.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
-  import NetpolPanel from "./NetpolPanel.svelte";
+    import NetpolPanel from "./NetpolPanel.svelte";
   import { buildOverlay } from "./netpol-layer.logic";
 
   let searchFilter = $state("");
@@ -53,11 +52,6 @@
   let overlay = $derived(showPolicies && filteredGraph && netpolStore.overview ? buildOverlay(filteredGraph, netpolStore.overview) : null);
   let selectedStatus = $derived(overlay && topologyStore.selectedNodeId ? overlay.status.get(topologyStore.selectedNodeId) ?? null : null);
 
-  function handleBack() {
-    topologyStore.reset();
-    uiStore.backToPrevious();
-  }
-
   function handleRefresh() {
     const ns = k8sStore.currentNamespace;
     if (topologyStore.focusedResourceUid) {
@@ -75,7 +69,6 @@
   isLoading={topologyStore.isLoading}
   error={topologyStore.error}
   hasData={!!topologyStore.graph}
-  onBack={handleBack}
   onRefresh={handleRefresh}
   loadingMessage="Loading topology..."
   errorMessage="Failed to load topology"

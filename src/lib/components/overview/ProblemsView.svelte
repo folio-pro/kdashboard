@@ -30,9 +30,6 @@
     if (selected) overviewStore.diagnose(selected);
   });
 
-  function handleBack() {
-    uiStore.backToPrevious();
-  }
   function handleRefresh() {
     overviewStore.loadOverview(k8sStore.currentNamespace);
   }
@@ -77,7 +74,6 @@
   isLoading={overviewStore.isLoading}
   error={overviewStore.error}
   hasData={!!overview}
-  onBack={handleBack}
   onRefresh={handleRefresh}
   loadingMessage="Looking for trouble…"
   errorMessage="Could not scan the cluster"
