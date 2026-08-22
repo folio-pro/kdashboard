@@ -7,7 +7,6 @@
 import { promises as fs } from 'node:fs';
 import * as nodePath from 'node:path';
 import * as os from 'node:os';
-import { app } from 'electron';
 import type { V1Node } from '@kubernetes/client-node';
 
 import { atomicWrite } from '../util/fs-atomic.js';
@@ -189,24 +188,32 @@ function pricingBaseUrl(): string {
   return process.env['KDASHBOARD_PRICING_URL'] ?? PRICING_BASE_URL;
 }
 
-function cacheRoot(): string {
-  // Prompt directive: cache under Electron userData. Falls back to the OS
-  // temp/home dir if the app isn't ready (e.g. unit invocation outside Electron).
-  let base: string;
+/**
+ * Cache under Electron's userData. Resolved lazily and through a dynamic
+ * import: this module is reached from handlers the integration suite loads
+ * under plain Node, where a static `import { app } from 'electron'` fails at
+ * link time. Outside Electron the cache lands under the home directory.
+ */
+let cacheRootCached: string | null = null;
+async function cacheRoot(): Promise<string> {
+  if (cacheRootCached) return cacheRootCached;
+  let base = os.homedir();
   try {
-    base = app.getPath('userData');
+    const electron = (await import('electron')) as { app?: { getPath(name: string): string } };
+    if (electron.app) base = electron.app.getPath('userData');
   } catch {
-    base = os.homedir();
+    // plain Node — keep the home directory
   }
-  return nodePath.join(base, DISK_CACHE_SUBDIR);
+  cacheRootCached = nodePath.join(base, DISK_CACHE_SUBDIR);
+  return cacheRootCached;
 }
 
-function datasetPath(provider: string): string {
-  return nodePath.join(cacheRoot(), `${provider}.json`);
+async function datasetPath(provider: string): Promise<string> {
+  return nodePath.join(await cacheRoot(), `${provider}.json`);
 }
 
-function metaPath(provider: string): string {
-  return nodePath.join(cacheRoot(), `${provider}.meta.json`);
+async function metaPath(provider: string): Promise<string> {
+  return nodePath.join(await cacheRoot(), `${provider}.meta.json`);
 }
 
 function nowEpochSeconds(): number {
@@ -225,7 +232,7 @@ const DEFAULT_META: DatasetMeta = { etag: null, fetched_at: 0 };
 
 async function readDiskMeta(provider: string): Promise<DatasetMeta | null> {
   try {
-    const raw = await fs.readFile(metaPath(provider), 'utf8');
+    const raw = await fs.readFile(await metaPath(provider), 'utf8');
     const parsed = JSON.parse(raw) as Partial<DatasetMeta>;
     return {
       etag: typeof parsed.etag === 'string' ? parsed.etag : null,
@@ -237,19 +244,19 @@ async function readDiskMeta(provider: string): Promise<DatasetMeta | null> {
 }
 
 async function writeDiskMeta(provider: string, meta: DatasetMeta): Promise<void> {
-  await atomicWrite(metaPath(provider), JSON.stringify(meta));
+  await atomicWrite(await metaPath(provider), JSON.stringify(meta));
 }
 
 async function readDiskBody(provider: string): Promise<string | null> {
   try {
-    return await fs.readFile(datasetPath(provider), 'utf8');
+    return await fs.readFile(await datasetPath(provider), 'utf8');
   } catch {
     return null;
   }
 }
 
 async function writeDiskBody(provider: string, body: string): Promise<void> {
-  await atomicWrite(datasetPath(provider), body);
+  await atomicWrite(await datasetPath(provider), body);
 }
 
 interface FetchedDataset {

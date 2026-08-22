@@ -4,6 +4,7 @@
 
 import * as fs from 'node:fs';
 import { promises as fsp } from 'node:fs';
+import * as path from 'node:path';
 
 let counter = 0;
 
@@ -12,6 +13,7 @@ function tempPath(target: string): string {
 }
 
 export async function atomicWrite(target: string, contents: string, mode?: number): Promise<void> {
+  await fsp.mkdir(path.dirname(target), { recursive: true });
   const tmp = tempPath(target);
   try {
     await fsp.writeFile(tmp, contents, mode !== undefined ? { encoding: 'utf8', mode } : 'utf8');
@@ -23,6 +25,7 @@ export async function atomicWrite(target: string, contents: string, mode?: numbe
 }
 
 export function atomicWriteSync(target: string, contents: string, mode?: number): void {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
   const tmp = tempPath(target);
   try {
     fs.writeFileSync(tmp, contents, mode !== undefined ? { encoding: 'utf8', mode } : 'utf8');
