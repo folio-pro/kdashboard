@@ -9,7 +9,7 @@ import {
   nodePressure,
   overviewTiles,
   pct,
-  problemResourceType,
+  restartTargetFor,
   topReasons,
 } from "./overview.logic";
 
@@ -59,9 +59,12 @@ describe("problem helpers", () => {
     expect(filterProblems(list, { ...EMPTY_PROBLEM_FILTER, text: "SHOP" }).map((p) => p.name)).toEqual(["web"]);
     expect(filterProblems(list, { ...EMPTY_PROBLEM_FILTER, text: "notready" }).map((p) => p.name)).toEqual(["ip-1"]);
   });
-  test("problemResourceType maps kinds to plurals", () => {
-    expect(problemResourceType("Deployment")).toBe("deployments");
-    expect(problemResourceType("Node")).toBe("nodes");
+  test("restartTargetFor: workloads roll themselves, pods roll their owner, nodes/bare pods nothing", () => {
+    expect(restartTargetFor(problem({ kind: "Deployment", name: "web" }))).toEqual({ kind: "Deployment", name: "web" });
+    expect(restartTargetFor(problem({ kind: "Pod", owner: "Deployment/web" }))).toEqual({ kind: "Deployment", name: "web" });
+    expect(restartTargetFor(problem({ kind: "Pod", owner: "Job/export-1" }))).toBeNull();
+    expect(restartTargetFor(problem({ kind: "Pod", owner: null }))).toBeNull();
+    expect(restartTargetFor(problem({ kind: "Node", name: "n" }))).toBeNull();
   });
 });
 

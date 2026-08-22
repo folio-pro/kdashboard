@@ -35,12 +35,12 @@ export interface ExtensionContext {
     readonly namespace: string;
     readonly selectedResource: Resource | null;
   };
-  /** Notifications in the app's own toast stack. */
+  /** Notifications in the app's own toast stack (returns the toast id). */
   toast: {
-    success(title: string, description?: string): void;
-    error(title: string, description?: string): void;
-    warning(title: string, description?: string): void;
-    info(title: string, description?: string): void;
+    success(title: string, description?: string): string;
+    error(title: string, description?: string): string;
+    warning(title: string, description?: string): string;
+    info(title: string, description?: string): string;
   };
   /** Open a resource's detail tab (fetches it first). */
   openResource(resourceType: string, name: string, namespace?: string): Promise<void>;

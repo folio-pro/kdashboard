@@ -87,7 +87,6 @@ class K8sStore extends K8sStoreLogic {
   private _ageInterval: ReturnType<typeof setInterval> | null = null;
   private _watchUnlisten: UnlistenFn | null = null;
   private _watchActive = false;
-  private _pfUnlisten: UnlistenFn | null = null;
   // Pending watch deltas, COALESCED BY uid. _flushWatchEvents is a last-write-
   // wins upsert per uid, so keeping only the newest event per resource yields
   // exactly the same result as replaying every event — while bounding the buffer
@@ -204,7 +203,6 @@ class K8sStore extends K8sStoreLogic {
       this._persistSelection();
       // Refresh sidebar counts in background for new context
       void this.loadAllResourceCounts(scopeGeneration);
-      this.onContextConnected?.(context);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
       this.error = `Failed to switch context: ${errMsg(err)}`;
@@ -321,6 +319,20 @@ class K8sStore extends K8sStoreLogic {
       // Unknown type or list failed — leave selection unset (view shows empty).
     }
     return null;
+  }
+
+  /**
+   * One object by Kind, or null when it does not exist. Any other failure
+   * (RBAC, network) throws — callers that poll must tell "gone" from "could
+   * not ask" apart.
+   */
+  async getResource(kind: string, name: string, namespace?: string): Promise<Resource | null> {
+    try {
+      return await invoke<Resource>("get_resource", { kind, name, namespace: namespace ?? "" });
+    } catch (err) {
+      if (/not found|404/i.test(errMsg(err))) return null;
+      throw err;
+    }
   }
 
   /** @deprecated Use openRelatedResourceTab() or openResourceDetail() instead */
@@ -653,35 +665,8 @@ class K8sStore extends K8sStoreLogic {
     }
   }
 
-  /**
-   * Hook for the saved-forwards store: called with the session the backend
-   * reported closed; return true when it took over (a reconnect is scheduled)
-   * so the generic "stopped" toast stays quiet. Set by port-forwards.svelte.ts
-   * — a property rather than an import, which would be circular.
-   */
-  onPortForwardClosed: ((pf: PortForwardInfo) => boolean) | null = null;
-  /** Hook fired once a context switch has connected (saved forwards auto-start). */
-  onContextConnected: ((context: string) => void) | null = null;
-
-  private async _ensurePortForwardListener(): Promise<void> {
-    if (this._pfUnlisten) return;
-    this._pfUnlisten = await listen<string>("port-forward-closed", (event) => {
-      const sessionId = event.payload;
-      const pf = this.portForwards.find((p) => p.session_id === sessionId);
-      if (pf) {
-        this.portForwards = this.portForwards.filter((p) => p.session_id !== sessionId);
-        if (this.onPortForwardClosed?.(pf)) return;
-        toastStore.warning(
-          "Port forward stopped",
-          `Forward to ${pf.pod_name}:${pf.container_port} ended unexpectedly`,
-        );
-      }
-    });
-  }
-
   /** Start a session; throws with the backend's message on failure. */
   async startPortForward(info: PortForwardInfo): Promise<PortForwardInfo> {
-    await this._ensurePortForwardListener();
     const result = await invoke<{ session_id: string; local_port: number }>(
       "start_port_forward",
       {
@@ -706,9 +691,15 @@ class K8sStore extends K8sStoreLogic {
     }
   }
 
+  /** Forget a session the backend reported closed; returns it so the caller can explain. */
+  dropPortForward(sessionId: string): PortForwardInfo | undefined {
+    const pf = this.portForwards.find((p) => p.session_id === sessionId);
+    if (pf) this.portForwards = this.portForwards.filter((p) => p.session_id !== sessionId);
+    return pf;
+  }
+
   /** Link (or unlink) an active session to a saved forward. */
-  adoptPortForward(sessionId: string | undefined, savedId: string | undefined): void {
-    if (!sessionId) return;
+  adoptPortForward(sessionId: string, savedId: string | undefined): void {
     this.portForwards = this.portForwards.map((pf) =>
       pf.session_id === sessionId ? { ...pf, saved_id: savedId } : pf,
     );

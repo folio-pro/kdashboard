@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 import type { ExtensionContext } from "./api";
 import { loadExtensions, moduleOf, type ExtensionSource } from "./loader";
 
-const src = (id: string, source: string | null = "x", over: Partial<ExtensionSource> = {}): ExtensionSource => ({
-  manifest: { id, name: id, version: "1", main: "index.js", api: 1 },
+const src = (id: string, source = "x", api = 1): ExtensionSource => ({
+  ok: true,
+  manifest: { id, name: id, version: "1", main: "index.js", api },
   dir: `/ext/${id}`,
   source,
-  error: null,
-  ...over,
 });
+const broken = (dir: string, error: string): ExtensionSource => ({ ok: false, dir, manifest: null, error });
 
 function ctx(id: string, registered: string[]): ExtensionContext {
   return {
@@ -23,7 +23,7 @@ function ctx(id: string, registered: string[]): ExtensionContext {
     on: (t) => registered.push(`on:${t}`),
     invoke: (async () => undefined) as ExtensionContext["invoke"],
     cluster: { context: "c", namespace: "n", selectedResource: null },
-    toast: { success() {}, error() {}, warning() {}, info() {} },
+    toast: { success: () => "", error: () => "", warning: () => "", info: () => "" },
     openResource: async () => {},
     openExternal: async () => {},
     storage: { get: () => undefined, set() {} },
@@ -50,7 +50,7 @@ describe("loadExtensions", () => {
       return { default: { activate: (c: ExtensionContext) => { c.registerCommand({ id: `${c.id}.hello`, label: "Hello", category: "Ext", action() {} }); c.onStartup(() => {}); } } };
     };
     const statuses = await loadExtensions(
-      [src("good"), src("boom", "boom"), src("throws", "throws"), src("noact", "noact"), src("broken", null, { manifest: null, error: "manifest.json is not an object" }), src("good")],
+      [src("good"), src("boom", "boom"), src("throws", "throws"), src("noact", "noact"), broken("/ext/broken", "manifest.json is not an object"), src("good")],
       { importer, makeContext: ctx },
     );
     expect(statuses.map((s) => [s.id, s.state])).toEqual([
@@ -69,7 +69,7 @@ describe("loadExtensions", () => {
   });
   test("an extension for another API version is refused before import", async () => {
     let imported = false;
-    const statuses = await loadExtensions([src("old", "x", { manifest: { id: "old", name: "old", version: "1", main: "index.js", api: 2 } })], { importer: async () => { imported = true; return {}; }, makeContext: ctx });
+    const statuses = await loadExtensions([src("old", "x", 2)], { importer: async () => { imported = true; return {}; }, makeContext: ctx });
     expect(statuses[0].state).toBe("invalid");
     expect(imported).toBe(false);
   });

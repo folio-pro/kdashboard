@@ -57,8 +57,6 @@ export interface WatchedResource {
   id: string;
   context: string;
   kind: string;
-  /** Plural resource_type, for get_resource_events and navigation. */
-  resourceType: string;
   name: string;
   namespace?: string;
 }

@@ -198,13 +198,11 @@ describe("ResourceSearchIndex", () => {
     expect(index.search("   ")).toEqual([]);
   });
 
-  test("invalidate drops the cache and bumps the version", async () => {
+  test("invalidate drops the cache", async () => {
     const { listFn, calls } = clusterWideList();
     const index = new ResourceSearchIndex(listFn, { types: ["nodes"] });
     await index.ensureLoaded([]);
-    const v = index.version;
     index.invalidate();
-    expect(index.version).toBeGreaterThan(v);
     expect(index.search("ip-10")).toEqual([]);
     await index.ensureLoaded([]);
     expect(calls).toHaveLength(2);

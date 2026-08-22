@@ -1,6 +1,7 @@
 // Pure helpers for the Overview and Problems views.
 
 import type { ClusterOverview, NodeSummary, Problem, ProblemKind, ProblemSeverity } from "$lib/types";
+import { parseWorkloadRef, type WorkloadRef } from "$lib/utils/pod-status";
 
 export interface Tile {
   label: string;
@@ -104,15 +105,12 @@ export function topReasons(reasons: readonly string[], limit: number): string {
     .join(" · ");
 }
 
-/** The resource_type a problem's detail tab opens on. */
-export function problemResourceType(kind: ProblemKind): string {
-  const map: Record<ProblemKind, string> = {
-    Pod: "pods",
-    Deployment: "deployments",
-    StatefulSet: "statefulsets",
-    DaemonSet: "daemonsets",
-    Job: "jobs",
-    Node: "nodes",
-  };
-  return map[kind];
+const RESTARTABLE: ReadonlySet<string> = new Set(["Deployment", "StatefulSet", "DaemonSet"]);
+
+/** The workload a problem's Restart action rolls: the workload itself, or a pod's owner. */
+export function restartTargetFor(p: Problem): WorkloadRef | null {
+  if (RESTARTABLE.has(p.kind)) return { kind: p.kind, name: p.name };
+  if (p.kind !== "Pod") return null;
+  const owner = parseWorkloadRef(p.owner);
+  return owner && RESTARTABLE.has(owner.kind) ? owner : null;
 }

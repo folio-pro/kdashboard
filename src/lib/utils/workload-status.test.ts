@@ -18,31 +18,31 @@ const prog = (status: string, reason?: string) => ({ type: "Progressing", status
 describe("deploymentStatus", () => {
   test("Available when every replica is ready and up to date", () => {
     const d = deploy({ replicas: 3 }, { replicas: 3, readyReplicas: 3, updatedReplicas: 3, availableReplicas: 3, conditions: [avail("True"), prog("True", "NewReplicaSetAvailable")] });
-    expect(deploymentStatus(d)).toEqual({ label: "Available" });
+    expect(deploymentStatus(d)).toEqual({ label: "Available", tone: "ok" });
   });
 
   test("Progressing while updated replicas trail the desired count", () => {
     const d = deploy({ replicas: 3 }, { replicas: 4, readyReplicas: 3, updatedReplicas: 1, conditions: [avail("True"), prog("True", "ReplicaSetUpdated")] });
-    expect(deploymentStatus(d)).toEqual({ label: "Progressing", detail: "ReplicaSetUpdated" });
+    expect(deploymentStatus(d)).toEqual({ label: "Progressing", detail: "ReplicaSetUpdated", tone: "transient" });
   });
 
   test("Unavailable carries the Available condition's reason", () => {
     const d = deploy({ replicas: 2 }, { replicas: 2, readyReplicas: 0, updatedReplicas: 2, conditions: [avail("False", "MinimumReplicasUnavailable"), prog("True")] });
-    expect(deploymentStatus(d)).toEqual({ label: "Unavailable", detail: "MinimumReplicasUnavailable" });
+    expect(deploymentStatus(d)).toEqual({ label: "Unavailable", detail: "MinimumReplicasUnavailable", tone: "bad" });
   });
 
   test("a rollout past its deadline is Failed, a ReplicaFailure is its own word", () => {
-    expect(deploymentStatus(deploy({ replicas: 2 }, { conditions: [prog("False", "ProgressDeadlineExceeded")] }))).toEqual({ label: "Failed", detail: "ProgressDeadlineExceeded" });
-    expect(deploymentStatus(deploy({ replicas: 2 }, { conditions: [{ type: "ReplicaFailure", status: "True", reason: "FailedCreate" }] }))).toEqual({ label: "ReplicaFailure", detail: "FailedCreate" });
+    expect(deploymentStatus(deploy({ replicas: 2 }, { conditions: [prog("False", "ProgressDeadlineExceeded")] }))).toEqual({ label: "Failed", detail: "ProgressDeadlineExceeded", tone: "bad" });
+    expect(deploymentStatus(deploy({ replicas: 2 }, { conditions: [{ type: "ReplicaFailure", status: "True", reason: "FailedCreate" }] }))).toEqual({ label: "ReplicaFailure", detail: "FailedCreate", tone: "bad" });
   });
 
   test("Paused and Scaled to 0 are deliberate states, checked first", () => {
-    expect(deploymentStatus(deploy({ replicas: 4, paused: true }, { readyReplicas: 4, updatedReplicas: 4, replicas: 4 }))).toEqual({ label: "Paused" });
-    expect(deploymentStatus(deploy({ replicas: 0 }, { conditions: [avail("False")] }))).toEqual({ label: "Scaled to 0" });
+    expect(deploymentStatus(deploy({ replicas: 4, paused: true }, { readyReplicas: 4, updatedReplicas: 4, replicas: 4 }))).toEqual({ label: "Paused", tone: "ok" });
+    expect(deploymentStatus(deploy({ replicas: 0 }, { conditions: [avail("False")] }))).toEqual({ label: "Scaled to 0", tone: "ok" });
   });
 
   test("spec.replicas omitted defaults to 1", () => {
-    expect(deploymentStatus(deploy({}, { replicas: 1, readyReplicas: 1, updatedReplicas: 1 }))).toEqual({ label: "Available" });
+    expect(deploymentStatus(deploy({}, { replicas: 1, readyReplicas: 1, updatedReplicas: 1 }))).toEqual({ label: "Available", tone: "ok" });
   });
 });
 

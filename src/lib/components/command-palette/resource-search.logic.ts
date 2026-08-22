@@ -10,7 +10,7 @@
 // it already holds; everything here is unit-testable under `bun test`.
 
 import type { Resource } from "$lib/types";
-import { RESOURCE_ITEMS, KIND_TO_RESOURCE_TYPE } from "$lib/resource-catalog";
+import { RESOURCE_ITEMS } from "$lib/resource-catalog";
 
 /** Kinds the search covers, in result-group order. A deliberate subset: the
  *  kinds people look up by name. Leases, EndpointSlices and friends would only
@@ -55,11 +55,7 @@ export interface ParsedSearchQuery {
 export function resolveKindFilter(value: string): string | undefined {
   const v = value.toLowerCase();
   if (!v) return undefined;
-  for (const item of RESOURCE_ITEMS) {
-    if (item.virtual) continue;
-    if (item.type === v || item.short === v || item.kind?.toLowerCase() === v) return item.type;
-  }
-  return KIND_TO_RESOURCE_TYPE[value];
+  return RESOURCE_ITEMS.find((item) => !item.virtual && (item.type === v || item.short === v || item.kind?.toLowerCase() === v))?.type;
 }
 
 export function parseSearchQuery(query: string): ParsedSearchQuery {
@@ -143,9 +139,6 @@ export class ResourceSearchIndex {
   private readonly now: () => number;
   private readonly maxNamespaces: number;
   readonly types: readonly string[];
-  /** Bumped whenever the cache changes, so a reactive caller can re-rank. */
-  version = 0;
-
   constructor(private readonly listFn: ListFn, opts: ResourceSearchIndexOptions = {}) {
     this.ttlMs = opts.ttlMs ?? 30_000;
     this.now = opts.now ?? (() => Date.now());
@@ -167,7 +160,6 @@ export class ResourceSearchIndex {
     this.cache.clear();
     this.clusterScopeRefused.clear();
     this.errors.clear();
-    this.version++;
   }
 
   /**
@@ -175,15 +167,10 @@ export class ResourceSearchIndex {
    * a kind the user cannot list simply contributes no hits). `onProgress`
    * fires after each type lands so the UI can rank what it has so far.
    */
-  async ensureLoaded(
-    namespaces: readonly string[],
-    onProgress?: () => void,
-    only?: string,
-  ): Promise<void> {
-    const wanted = only ? this.types.filter((t) => t === only) : this.types;
+  async ensureLoaded(namespaces: readonly string[], onProgress?: () => void): Promise<void> {
     const now = this.now();
     const loads: Promise<void>[] = [];
-    for (const type of wanted) {
+    for (const type of this.types) {
       const entry = this.cache.get(type);
       if (entry && now - entry.loadedAt < this.ttlMs) continue;
       loads.push(this.loadType(type, namespaces, onProgress));
@@ -205,7 +192,6 @@ export class ResourceSearchIndex {
         if (!this.cache.has(type)) this.cache.set(type, { items: [], loadedAt: this.now() });
       } finally {
         this.inflight.delete(type);
-        this.version++;
         onProgress?.();
       }
     })();

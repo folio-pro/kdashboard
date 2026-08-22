@@ -8,15 +8,19 @@ import { costStore } from "$lib/stores/cost.svelte";
 import { securityStore } from "$lib/stores/security.svelte";
 import { helmStore } from "$lib/stores/helm.svelte";
 import { overviewStore } from "$lib/stores/overview.svelte";
+import { portForwardStore } from "$lib/stores/port-forwards.svelte";
 import type { ActiveView } from "$lib/stores/ui.logic";
+
+/** The standalone views: catalog `type` === view name. */
+export type AppViewType = Extract<ActiveView, "portforwards" | "topology" | "cost" | "security" | "helm" | "overview" | "problems">;
 
 /**
  * Catalog entries that are standalone views rather than resource lists. The
- * catalog `type` IS the view name; the value is what the view needs loaded on
- * entry, or null if it loads itself. One table for the sidebar, the palette
- * and anything else that opens a view by name.
+ * value is what the view needs loaded on entry, or null if it loads itself.
+ * One table for the sidebar, the palette and anything else that opens a view
+ * by name.
  */
-export const APP_VIEWS: Record<string, ((namespace: string) => void) | null> = {
+export const APP_VIEWS: Record<AppViewType, ((namespace: string) => void) | null> = {
   portforwards: null,
   topology: (ns) => topologyStore.loadNamespaceTopology(ns),
   cost: (ns) => costStore.loadCostOverview(ns),
@@ -26,13 +30,13 @@ export const APP_VIEWS: Record<string, ((namespace: string) => void) | null> = {
   problems: (ns) => overviewStore.loadOverview(ns),
 };
 
-export function isAppView(type: string): boolean {
-  return type in APP_VIEWS;
+export function isAppView(type: string): type is AppViewType {
+  return Object.prototype.hasOwnProperty.call(APP_VIEWS, type);
 }
 
 /** Open a standalone view and kick off its load. */
-export function openAppView(type: string, namespace: string = k8sStore.currentNamespace): void {
-  uiStore.showView(type as ActiveView);
+export function openAppView(type: AppViewType, namespace: string = k8sStore.currentNamespace): void {
+  uiStore.showView(type);
   APP_VIEWS[type]?.(namespace);
 }
 
@@ -67,6 +71,9 @@ export async function switchContext(contextName: string): Promise<void> {
   k8sStore.setResourceType(DEFAULT_RESOURCE_TYPE);
   await extensions.emit({ type: "context-changed", contextName });
   await k8sStore.switchContext(contextName);
+  if (k8sStore.currentContext === contextName && k8sStore.connectionStatus === "connected") {
+    portForwardStore.onContextConnected(contextName);
+  }
 }
 
 /**

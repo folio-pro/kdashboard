@@ -26,6 +26,7 @@
   import { uiStore, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { portForwardStore } from "$lib/stores/port-forwards.svelte";
+  import { alertStore } from "$lib/stores/alerts.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { deleteResource } from "$lib/actions/registry";
   import { initKeyboardShortcuts } from "$lib/utils/keyboard";
@@ -145,8 +146,10 @@
       console.error("[initApp] loadAllResourceCounts failed", err);
     });
 
-    // Saved forwards flagged auto-start come up with the restored context.
-    void portForwardStore.autoStart(k8sStore.currentContext);
+    // Saved forwards flagged auto-start come up with the restored context;
+    // alert polling starts only if something is watched.
+    portForwardStore.onContextConnected(k8sStore.currentContext);
+    alertStore.ensurePolling();
   }
 
   /**

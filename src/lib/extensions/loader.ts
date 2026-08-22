@@ -6,12 +6,19 @@
 import type { ExtensionContext, ExtensionModule } from "./api";
 import { API_VERSION } from "./api";
 
-export interface ExtensionSource {
-  manifest: { id: string; name: string; version: string; description?: string; main: string; api: number } | null;
-  dir: string;
-  source: string | null;
-  error: string | null;
+export interface ExtensionManifest {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  main: string;
+  api: number;
 }
+
+/** One discovered extension directory, as the main process reports it. */
+export type ExtensionSource =
+  | { ok: true; dir: string; manifest: ExtensionManifest; source: string }
+  | { ok: false; dir: string; manifest: ExtensionManifest | null; error: string };
 
 export interface ExtensionStatus {
   id: string;
@@ -64,8 +71,8 @@ export async function loadExtensions(sources: readonly ExtensionSource[], deps: 
   for (const src of sources) {
     const id = src.manifest?.id ?? src.dir.split(/[\\/]/).pop() ?? "unknown";
     const base = { id, name: src.manifest?.name ?? id, version: src.manifest?.version ?? "?", description: src.manifest?.description, dir: src.dir };
-    if (!src.manifest || src.error || !src.source) {
-      out.push({ ...base, state: "invalid", error: src.error ?? "no source", registered: [] });
+    if (!src.ok) {
+      out.push({ ...base, state: "invalid", error: src.error, registered: [] });
       continue;
     }
     if (seen.has(id)) {

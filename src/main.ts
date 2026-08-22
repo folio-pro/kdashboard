@@ -2,7 +2,7 @@ import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
 import { extensions } from "$lib/extensions";
-import { loadUserExtensions } from "$lib/extensions/host";
+import { loadUserExtensions } from "$lib/extensions/host.svelte";
 import { readBootSettings } from "$lib/ipc/core";
 
 // Apply the persisted theme BEFORE mounting. settingsStore.loadSettings() sets

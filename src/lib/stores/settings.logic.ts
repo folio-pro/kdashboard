@@ -2,6 +2,8 @@ import { isTableDensity, type AppSettings, type ContextCustomization, type Pinne
 
 export type { AppSettings, ContextCustomization, PinnedResource };
 
+type IdListKey = "saved_views" | "saved_port_forwards" | "watched_resources";
+
 export const DEFAULT_SETTINGS: AppSettings = {
   context: "",
   namespace: "default",
@@ -88,62 +90,47 @@ export class SettingsStoreLogic {
     return this.settings.context_customizations?.[context];
   }
 
-  private static readonly EMPTY_VIEWS: SavedView[] = [];
+  // --- id-keyed lists (saved views, saved forwards, watched resources) -------
+  // Three lists, one shape: `{id}` items, insert-or-replace by id, remove by
+  // id, and a stable empty reference so `$derived` readers do not re-run.
 
-  get savedViews(): SavedView[] {
-    return this.settings.saved_views ?? SettingsStoreLogic.EMPTY_VIEWS;
+  private static readonly EMPTY: readonly never[] = [];
+
+  private list<K extends IdListKey>(key: K): NonNullable<AppSettings[K]> {
+    return (this.settings[key] ?? SettingsStoreLogic.EMPTY) as NonNullable<AppSettings[K]>;
   }
 
-  addSavedView(view: SavedView): void {
-    this.settings.saved_views = [...this.savedViews.filter((v) => v.id !== view.id), view];
+  private upsert<K extends IdListKey>(key: K, item: NonNullable<AppSettings[K]>[number]): void {
+    const rest = (this.list(key) as Array<{ id: string }>).filter((x) => x.id !== item.id);
+    (this.settings as Record<K, unknown>)[key] = [...rest, item];
     this.saveSettings();
   }
 
-  removeSavedView(id: string): void {
-    this.settings.saved_views = this.savedViews.filter((v) => v.id !== id);
+  private removeById(key: IdListKey, id: string): void {
+    (this.settings as Record<IdListKey, unknown>)[key] = (this.list(key) as Array<{ id: string }>).filter((x) => x.id !== id);
     this.saveSettings();
   }
 
-  private static readonly EMPTY_FORWARDS: SavedPortForward[] = [];
+  get savedViews(): SavedView[] { return this.list("saved_views"); }
+  addSavedView(view: SavedView): void { this.upsert("saved_views", view); }
+  removeSavedView(id: string): void { this.removeById("saved_views", id); }
 
-  get savedPortForwards(): SavedPortForward[] {
-    return this.settings.saved_port_forwards ?? SettingsStoreLogic.EMPTY_FORWARDS;
-  }
-
+  get savedPortForwards(): SavedPortForward[] { return this.list("saved_port_forwards"); }
   /** Insert or replace by id. */
-  upsertSavedPortForward(forward: SavedPortForward): void {
-    const rest = this.savedPortForwards.filter((f) => f.id !== forward.id);
-    this.settings.saved_port_forwards = [...rest, forward];
-    this.saveSettings();
-  }
+  upsertSavedPortForward(forward: SavedPortForward): void { this.upsert("saved_port_forwards", forward); }
+  removeSavedPortForward(id: string): void { this.removeById("saved_port_forwards", id); }
 
-  removeSavedPortForward(id: string): void {
-    this.settings.saved_port_forwards = this.savedPortForwards.filter((f) => f.id !== id);
-    this.saveSettings();
-  }
-
-  private static readonly EMPTY_WATCHED: WatchedResource[] = [];
-
-  get watchedResources(): WatchedResource[] {
-    return this.settings.watched_resources ?? SettingsStoreLogic.EMPTY_WATCHED;
-  }
-
+  get watchedResources(): WatchedResource[] { return this.list("watched_resources"); }
   findWatched(context: string, kind: string, name: string, namespace?: string): WatchedResource | undefined {
     return this.watchedResources.find(
       (w) => w.context === context && w.kind === kind && w.name === name && (w.namespace ?? "") === (namespace ?? ""),
     );
   }
-
   watchResource(watched: WatchedResource): void {
     if (this.findWatched(watched.context, watched.kind, watched.name, watched.namespace)) return;
-    this.settings.watched_resources = [...this.watchedResources, watched];
-    this.saveSettings();
+    this.upsert("watched_resources", watched);
   }
-
-  unwatchResource(id: string): void {
-    this.settings.watched_resources = this.watchedResources.filter((w) => w.id !== id);
-    this.saveSettings();
-  }
+  unwatchResource(id: string): void { this.removeById("watched_resources", id); }
 
   getExtensionValue(key: string): unknown {
     return this.settings.extensions?.[key];

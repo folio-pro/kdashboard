@@ -180,7 +180,41 @@ export function podOwner(resource: Resource): PodOwner | null {
   return { kind: ref.kind, name: ref.name, short: OWNER_SHORT[ref.kind] ?? ref.kind.toLowerCase() };
 }
 
+export interface WorkloadRef {
+  kind: string;
+  name: string;
+}
+
+/**
+ * The workload behind an owner reference: a ReplicaSet is (by convention) a
+ * Deployment's and is named `<deployment>-<pod-template-hash>`, so the
+ * Deployment is the name minus its last segment; anything else is itself.
+ * Mirror of electron/k8s/owners.ts — edit both together.
+ */
+export function controllerWorkload(ref: WorkloadRef): WorkloadRef {
+  if (ref.kind === "ReplicaSet") {
+    const idx = ref.name.lastIndexOf("-");
+    return { kind: "Deployment", name: idx > 0 ? ref.name.slice(0, idx) : ref.name };
+  }
+  return { kind: ref.kind, name: ref.name };
+}
+
+/** The workload a pod belongs to, or the pod itself when nothing owns it. */
+export function podWorkload(resource: Pick<Resource, "metadata">): WorkloadRef {
+  const owner = podOwner(resource as Resource);
+  return owner ? controllerWorkload(owner) : { kind: "Pod", name: resource.metadata.name };
+}
+
+/** "Kind/name" → ref, the shape the overview reports owners in. Null when malformed. */
+export function parseWorkloadRef(text: string | null | undefined): WorkloadRef | null {
+  if (!text) return null;
+  const slash = text.indexOf("/");
+  if (slash <= 0) return null;
+  return { kind: text.slice(0, slash), name: text.slice(slash + 1) };
+}
+
 /** Which container state reasons mean "this is broken", as opposed to "still coming up". */
+// Mirror of electron/k8s/overview.ts BROKEN_REASON / podProblem — edit both together.
 const BROKEN_REASON = /error|crash|backoff|oom|invalid|cannotrun|deadline|killed/i;
 
 export interface PodProblem {

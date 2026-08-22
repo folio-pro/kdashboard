@@ -21,7 +21,7 @@ function res(kind: string, extra: Partial<Resource> = {}): Resource {
   };
 }
 
-const watched: WatchedResource = { id: "w1", context: "prod", kind: "Pod", resourceType: "pods", name: "web", namespace: "billing" };
+const watched: WatchedResource = { id: "w1", context: "prod", kind: "Pod", name: "web", namespace: "billing" };
 
 const runningPod = res("Pod", {
   status: { phase: "Running", containerStatuses: [{ name: "app", ready: true, restartCount: 0, state: { running: {} } }] },
@@ -63,8 +63,8 @@ describe("healthOf", () => {
   test("statefulsets, daemonsets, jobs and nodes", () => {
     expect(healthOf(res("StatefulSet", { spec: { replicas: 3 }, status: { readyReplicas: 2 } }))).toEqual({ ok: false, label: "2/3 ready" });
     expect(healthOf(res("StatefulSet", { spec: { replicas: 0 }, status: {} })).ok).toBe(true);
-    expect(healthOf(res("DaemonSet", { status: { desiredNumberScheduled: 6, numberReady: 6 } })).ok).toBe(true);
-    expect(healthOf(res("DaemonSet", { status: { desiredNumberScheduled: 6, numberReady: 5 } })).ok).toBe(false);
+    expect(healthOf(res("DaemonSet", { status: { desiredNumberScheduled: 6, numberAvailable: 6 } })).ok).toBe(true);
+    expect(healthOf(res("DaemonSet", { status: { desiredNumberScheduled: 6, numberAvailable: 5 } })).ok).toBe(false);
     expect(healthOf(res("Job", { status: { failed: 1 } })).ok).toBe(false);
     expect(healthOf(res("Job", { status: { conditions: [{ type: "Complete", status: "True" }] } })).label).toBe("Complete");
     expect(healthOf(res("Node", { status: { conditions: [{ type: "Ready", status: "True" }] } })).ok).toBe(true);

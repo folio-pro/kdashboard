@@ -6,6 +6,7 @@
 import { invoke } from "$lib/ipc/core";
 import type { Event as K8sEvent, Resource, WatchedResource } from "$lib/types";
 import { kindToResourceType } from "$lib/utils/related-resources";
+import { notifyDesktop } from "$lib/utils/desktop-notify";
 import { k8sStore } from "./k8s.svelte";
 import { settingsStore } from "./settings.svelte";
 import { toastStore } from "./toast.svelte";
@@ -24,21 +25,11 @@ class AlertStore {
   unread = $state(0);
 
   private readonly monitor = new AlertMonitor({
-    getResource: (w) =>
-      invoke<Resource | null>("get_resource", { kind: w.kind, name: w.name, namespace: w.namespace ?? "" }).catch((err) => {
-        // 404 = gone (an alert); anything else = transient (retry next tick).
-        const msg = String(err);
-        if (/not found|404/i.test(msg)) return null;
-        throw err;
-      }),
+    getResource: (w) => k8sStore.getResource(w.kind, w.name, w.namespace),
     getEvents: (w) =>
-      invoke<K8sEvent[]>("get_resource_events", { resourceType: w.resourceType, name: w.name, namespace: w.namespace ?? "" }),
+      invoke<K8sEvent[]>("get_resource_events", { resourceType: kindToResourceType(w.kind), name: w.name, namespace: w.namespace ?? "" }),
   });
   private timer: ReturnType<typeof setInterval> | null = null;
-
-  constructor() {
-    this.timer = setInterval(() => void this.tick(), ALERT_POLL_MS);
-  }
 
   /** Watched resources for the connected context. */
   get watched(): WatchedResource[] {
@@ -56,28 +47,37 @@ class AlertStore {
       id: crypto.randomUUID(),
       context: k8sStore.currentContext,
       kind: resource.kind,
-      resourceType: kindToResourceType(resource.kind),
       name: resource.metadata.name,
       namespace: resource.metadata.namespace,
     };
     settingsStore.watchResource(w);
+    this.ensurePolling();
     void this.monitor.poll(w).then((alerts) => this.report(alerts));
   }
 
   unwatch(resource: Resource): void {
     const w = settingsStore.findWatched(k8sStore.currentContext, resource.kind, resource.metadata.name, resource.metadata.namespace);
-    if (!w) return;
-    settingsStore.unwatchResource(w.id);
-    this.monitor.forget(w.id);
+    if (w) this.unwatchById(w.id);
   }
 
   unwatchById(id: string): void {
     settingsStore.unwatchResource(id);
     this.monitor.forget(id);
+    this.ensurePolling();
   }
 
   markRead(): void {
     this.unread = 0;
+  }
+
+  /** Call once settings are loaded: polls only while something is watched. */
+  ensurePolling(): void {
+    const wanted = settingsStore.watchedResources.length > 0;
+    if (wanted && !this.timer) this.timer = setInterval(() => void this.tick(), ALERT_POLL_MS);
+    if (!wanted && this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
   }
 
   async tick(): Promise<void> {
@@ -101,34 +101,11 @@ class AlertStore {
       if (a.level === "error") toastStore.error(a.title, a.body);
       else if (a.level === "warning") toastStore.warning(a.title, a.body);
       else toastStore.info(a.title, a.body);
-      // Baseline "Watching…" is feedback for a click the user just made;
-      // everything else may arrive while they are elsewhere.
-      if (!a.title.startsWith("Watching ")) notifyDesktop(a);
+      // The baseline is feedback for a click the user just made; everything
+      // else may arrive while they are elsewhere.
+      if (a.kind !== "baseline") notifyDesktop(a.title, a.body, { tag: `kdash-${a.watchedId}-${a.title}`, silent: a.level === "info" });
     }
   }
-}
-
-/** Native OS notification via the renderer's Notification API (Electron routes
- *  it to the platform notifier). Silently skipped where unavailable or denied. */
-function notifyDesktop(a: Alert): void {
-  try {
-    if (typeof Notification === "undefined") return;
-    if (Notification.permission === "denied") return;
-    if (Notification.permission !== "granted") {
-      void Notification.requestPermission().then((p) => {
-        if (p === "granted") show(a);
-      });
-      return;
-    }
-    show(a);
-  } catch {
-    // notifications are best effort
-  }
-}
-
-function show(a: Alert): void {
-  const n = new Notification(a.title, { body: a.body, tag: `kdash-${a.watchedId}-${a.title}`, silent: a.level === "info" });
-  n.onclick = () => window.focus();
 }
 
 export const alertStore = new AlertStore();

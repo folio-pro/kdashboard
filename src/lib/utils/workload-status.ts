@@ -13,11 +13,15 @@ interface Condition {
   message?: string;
 }
 
+/** ok = healthy or deliberately idle · transient = on its way · bad = needs a look. */
+export type StatusTone = "ok" | "transient" | "bad";
+
 export interface WorkloadStatus {
-  /** "Available" · "Progressing" · "Unavailable" · "Paused" · "Scaled to 0" · "Failed" · "ReplicaFailure". */
+  /** "Available" · "Progressing" · "Unavailable" · "Paused" · "Scaled to 0" · "Failed" · "ReplicaFailure" · "2/3 ready" · "NotReady" … */
   label: string;
   /** The condition reason behind a non-healthy label (MinimumReplicasUnavailable, ProgressDeadlineExceeded…). */
   detail?: string;
+  tone: StatusTone;
 }
 
 function conditions(resource: Resource): Condition[] {
@@ -43,20 +47,73 @@ export function deploymentStatus(resource: Resource): WorkloadStatus {
   const current = num(status.replicas);
   const cond = (type: string) => conditions(resource).find((c) => c.type === type);
 
-  if (spec.paused === true) return { label: "Paused" };
-  if (desired === 0) return { label: "Scaled to 0" };
+  if (spec.paused === true) return { label: "Paused", tone: "ok" };
+  if (desired === 0) return { label: "Scaled to 0", tone: "ok" };
 
   const failure = cond("ReplicaFailure");
-  if (failure?.status === "True") return { label: "ReplicaFailure", detail: failure.reason };
+  if (failure?.status === "True") return { label: "ReplicaFailure", detail: failure.reason, tone: "bad" };
   const progressing = cond("Progressing");
-  if (progressing?.status === "False") return { label: "Failed", detail: progressing.reason };
+  if (progressing?.status === "False") return { label: "Failed", detail: progressing.reason, tone: "bad" };
   const available = cond("Available");
-  if (available?.status === "False") return { label: "Unavailable", detail: available.reason };
+  if (available?.status === "False") return { label: "Unavailable", detail: available.reason, tone: "bad" };
 
   if (updated < desired || current > desired || ready < desired) {
-    return { label: "Progressing", detail: progressing?.reason };
+    return { label: "Progressing", detail: progressing?.reason, tone: "transient" };
   }
-  return { label: "Available" };
+  return { label: "Available", tone: "ok" };
+}
+
+/** StatefulSet: ready against desired; scaled to zero is deliberate. */
+export function statefulSetStatus(resource: Resource): WorkloadStatus {
+  const spec = (resource.spec ?? {}) as Json;
+  const status = (resource.status ?? {}) as Json;
+  const desired = spec.replicas === undefined ? 1 : num(spec.replicas);
+  const ready = num(status.readyReplicas);
+  if (desired === 0) return { label: "Scaled to 0", tone: "ok" };
+  return { label: `${ready}/${desired} ready`, tone: ready >= desired ? "ok" : "bad" };
+}
+
+/** DaemonSet: available against desired; a misscheduled pod is wrong by definition. */
+export function daemonSetStatus(resource: Resource): WorkloadStatus {
+  const status = (resource.status ?? {}) as Json;
+  const desired = num(status.desiredNumberScheduled);
+  const available = num(status.numberAvailable);
+  const mis = num(status.numberMisscheduled);
+  if (mis > 0) return { label: "Misscheduled", detail: `${mis} pod${mis === 1 ? "" : "s"} on nodes they should not run on`, tone: "bad" };
+  if (desired > 0 && available < desired) return { label: `${available}/${desired} available`, tone: "bad" };
+  return { label: `${available}/${desired} available`, tone: "ok" };
+}
+
+/** Job: Failed condition or failed pods; Complete; else running or waiting. */
+export function jobStatus(resource: Resource): WorkloadStatus {
+  const status = (resource.status ?? {}) as Json;
+  const cond = (type: string) => conditions(resource).find((c) => c.type === type && c.status === "True");
+  const failed = cond("Failed");
+  if (failed || num(status.failed) > 0) return { label: "Failed", detail: failed?.reason, tone: "bad" };
+  if (cond("Complete")) return { label: "Complete", tone: "ok" };
+  return { label: num(status.active) > 0 ? "Running" : "Pending", tone: "transient" };
+}
+
+/** Node: Ready, then any pressure condition that is true. */
+export function nodeStatus(resource: Resource): WorkloadStatus {
+  const conds = conditions(resource);
+  const ready = conds.find((c) => c.type === "Ready");
+  if (!ready || ready.status !== "True") return { label: "NotReady", detail: ready?.reason, tone: "bad" };
+  const pressure = conds.find((c) => (c.type ?? "").endsWith("Pressure") && c.status === "True");
+  if (pressure) return { label: pressure.type ?? "Pressure", detail: pressure.reason, tone: "bad" };
+  return { label: "Ready", tone: "ok" };
+}
+
+/** One verdict for any kind this module knows; null for kinds without a notion of health. */
+export function workloadStatus(resource: Resource): WorkloadStatus | null {
+  switch (resource.kind) {
+    case "Deployment": return deploymentStatus(resource);
+    case "StatefulSet": return statefulSetStatus(resource);
+    case "DaemonSet": return daemonSetStatus(resource);
+    case "Job": return jobStatus(resource);
+    case "Node": return nodeStatus(resource);
+    default: return null;
+  }
 }
 
 export interface ReplicaSegments {

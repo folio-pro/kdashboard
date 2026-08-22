@@ -12,22 +12,34 @@ import { extensions } from "./registry.svelte";
 import { API_VERSION, type ExtensionContext } from "./api";
 import { blobImporter, loadExtensions, type ExtensionSource, type ExtensionStatus } from "./loader";
 
-/** Status of every discovered extension, for Settings → Extensions. Filled once at boot. */
-export const extensionStatuses: ExtensionStatus[] = [];
-/** Where the app looks for extensions (from the main process). */
-export let extensionsDirectory = "";
+/** What Settings → Extensions shows. Filled once at boot, before mount. */
+class ExtensionHostState {
+  statuses = $state.raw<ExtensionStatus[]>([]);
+  /** Where the app looks for extensions (from the main process). */
+  directory = $state("");
+}
+export const extensionHost = new ExtensionHostState();
+
+function makeLogger(prefix: string): ExtensionContext["log"] {
+  return {
+    info: (m, ...r) => console.info(prefix, m, ...r),
+    warn: (m, ...r) => console.warn(prefix, m, ...r),
+    error: (m, ...r) => console.error(prefix, m, ...r),
+  };
+}
 
 function makeContext(id: string, registered: string[]): ExtensionContext {
-  const prefix = `[ext:${id}]`;
-  const storageKey = (k: string) => `${id}.${k}`;
+  /** Forward to the registry and remember what was registered, for the Settings tab. */
+  const track = <A extends unknown[]>(label: (...args: A) => string, fn: (...args: A) => void) =>
+    (...args: A) => { fn(...args); registered.push(label(...args)); };
   return {
     id,
     apiVersion: API_VERSION,
-    registerAction: (a) => { extensions.registerAction(a); registered.push(`action ${a.label}`); },
-    registerCommand: (c) => { extensions.registerCommand(c); registered.push(`command ${c.label}`); },
-    registerSettingsTab: (t) => { extensions.registerSettingsTab(t); registered.push(`settings tab ${t.label}`); },
-    registerMount: (m) => { extensions.registerMount(m); registered.push(`slot ${m.slot}`); },
-    registerKbdHint: (h) => { extensions.registerKbdHint(h); registered.push(`hint ${h.label}`); },
+    registerAction: track((a) => `action ${a.label}`, (a) => extensions.registerAction(a)),
+    registerCommand: track((c) => `command ${c.label}`, (c) => extensions.registerCommand(c)),
+    registerSettingsTab: track((t) => `settings tab ${t.label}`, (t) => extensions.registerSettingsTab(t)),
+    registerMount: track((m) => `slot ${m.slot}`, (m) => extensions.registerMount(m)),
+    registerKbdHint: track((h) => `hint ${h.label}`, (h) => extensions.registerKbdHint(h)),
     onStartup: (hook) => { extensions.onStartup(hook); registered.push("startup hook"); },
     on: (type, handler) => { extensions.on(type, handler); registered.push(`on ${type}`); },
     invoke: (command, args = {}) => invoke(command, args),
@@ -36,23 +48,14 @@ function makeContext(id: string, registered: string[]): ExtensionContext {
       get namespace() { return k8sStore.currentNamespace; },
       get selectedResource() { return k8sStore.selectedResource; },
     },
-    toast: {
-      success: (t, d) => { toastStore.success(t, d); },
-      error: (t, d) => { toastStore.error(t, d); },
-      warning: (t, d) => { toastStore.warning(t, d); },
-      info: (t, d) => { toastStore.info(t, d); },
-    },
+    toast: toastStore,
     openResource: (resourceType, name, namespace) => openRelatedResourceTab(resourceType, name, namespace),
     openExternal: (url) => shellOpen(url),
     storage: {
-      get: <T,>(key: string) => settingsStore.getExtensionValue(storageKey(key)) as T | undefined,
-      set: (key, value) => settingsStore.setExtensionValue(storageKey(key), value),
+      get: <T,>(key: string) => settingsStore.getExtensionValue(`${id}.${key}`) as T | undefined,
+      set: (key, value) => settingsStore.setExtensionValue(`${id}.${key}`, value),
     },
-    log: {
-      info: (m, ...r) => console.info(prefix, m, ...r),
-      warn: (m, ...r) => console.warn(prefix, m, ...r),
-      error: (m, ...r) => console.error(prefix, m, ...r),
-    },
+    log: makeLogger(`ext:${id}`),
   };
 }
 
@@ -66,15 +69,14 @@ export async function loadUserExtensions(): Promise<ExtensionStatus[]> {
     const result = await invoke<{ dir: string; extensions: ExtensionSource[] }>("list_extensions", {});
     if (result && Array.isArray(result.extensions)) {
       sources = result.extensions;
-      extensionsDirectory = result.dir ?? "";
+      extensionHost.directory = result.dir ?? "";
     }
   } catch {
-    return extensionStatuses;
+    return extensionHost.statuses;
   }
-  const statuses = await loadExtensions(sources, { importer: blobImporter, makeContext });
-  extensionStatuses.splice(0, extensionStatuses.length, ...statuses);
-  for (const s of statuses) {
+  extensionHost.statuses = await loadExtensions(sources, { importer: blobImporter, makeContext });
+  for (const s of extensionHost.statuses) {
     if (s.state !== "active") console.warn(`[extensions] ${s.id}: ${s.state} — ${s.error}`);
   }
-  return extensionStatuses;
+  return extensionHost.statuses;
 }

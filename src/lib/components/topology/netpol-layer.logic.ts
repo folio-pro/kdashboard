@@ -1,6 +1,7 @@
 // Pure mapping from the NetworkPolicy overview onto topology node ids.
 
 import type { AllowedFlow, NetworkPolicyOverview, TopologyGraph, WorkloadPolicyStatus } from "$lib/types";
+import { controllerWorkload } from "$lib/utils/pod-status";
 
 export type IsolationBadge = "isolated" | "partial" | "open";
 
@@ -19,28 +20,22 @@ export function badgeFor(w: WorkloadPolicyStatus): IsolationBadge {
   return "open";
 }
 
-/** Deployment pods are owned by ReplicaSets named `<deploy>-<hash>`; strip the hash. */
+const WORKLOAD_KINDS: ReadonlySet<string> = new Set(["Deployment", "StatefulSet", "DaemonSet", "Job"]);
+
+/** The workload node key ("Kind/name") a topology node belongs to: pods via their owner edge, ReplicaSets via their Deployment. */
 function workloadKeyOfNode(node: TopologyGraph["nodes"][number], graph: TopologyGraph): string | null {
   if (node.kind === "Pod") {
-    // Walk the owner edge (ReplicaSet/StatefulSet/DaemonSet → Pod) to the workload.
     const owner = graph.edges.find((e) => e.to === node.id && e.edge_type === "owns");
     const parent = owner ? graph.nodes.find((n) => n.id === owner.from) : undefined;
     if (!parent) return `Pod/${node.name}`;
-    if (parent.kind === "ReplicaSet") {
-      const grand = graph.edges.find((e) => e.to === parent.id && e.edge_type === "owns");
-      const gp = grand ? graph.nodes.find((n) => n.id === grand.from) : undefined;
-      if (gp) return `${gp.kind}/${gp.name}`;
-      const idx = parent.name.lastIndexOf("-");
-      return `Deployment/${idx > 0 ? parent.name.slice(0, idx) : parent.name}`;
-    }
-    return `${parent.kind}/${parent.name}`;
+    const w = controllerWorkload(parent);
+    return `${w.kind}/${w.name}`;
   }
   if (node.kind === "ReplicaSet") {
-    const idx = node.name.lastIndexOf("-");
-    return `Deployment/${idx > 0 ? node.name.slice(0, idx) : node.name}`;
+    const w = controllerWorkload(node);
+    return `${w.kind}/${w.name}`;
   }
-  if (node.kind === "Deployment" || node.kind === "StatefulSet" || node.kind === "DaemonSet" || node.kind === "Job") return `${node.kind}/${node.name}`;
-  return null;
+  return WORKLOAD_KINDS.has(node.kind) ? `${node.kind}/${node.name}` : null;
 }
 
 export function buildOverlay(graph: TopologyGraph, overview: NetworkPolicyOverview): NetpolOverlay {
@@ -83,4 +78,11 @@ export function unusedPolicies(overview: NetworkPolicyOverview): string[] {
 
 export function flowsTouching(flows: AllowedFlow[], key: string): AllowedFlow[] {
   return flows.filter((f) => f.from === key || f.to === key);
+}
+
+/** How many workloads are isolated both ways, one way, or not at all. */
+export function isolationCounts(overview: NetworkPolicyOverview): { isolated: number; partial: number; open: number } {
+  const c = { isolated: 0, partial: 0, open: 0 };
+  for (const w of overview.workloads) c[badgeFor(w)]++;
+  return c;
 }

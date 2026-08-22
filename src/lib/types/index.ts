@@ -10,3 +10,4 @@ export * from './overview';
 export * from './rightsizing';
 export * from './rbac';
 export * from './netpol';
+export * from './kubeconfig';

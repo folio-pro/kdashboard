@@ -162,12 +162,17 @@ describe("SavedForwardKeeper", () => {
     const states: Array<[string, SavedForwardState]> = [];
     let attempts = 0;
     const keeper = new SavedForwardKeeper({
-      start: startImpl ?? (async () => ({ sessionId: `s${++attempts}`, podName: `pod-${attempts}` })),
+      start: async (s) => { const r = await (startImpl ?? (async () => ({ sessionId: `s${++attempts}`, podName: `pod-${attempts}` })))(s); return r; },
       stop: async (id) => { stopped.push(id); },
       setTimeout: (fn, ms) => { const id = nextTimer++; timers.push({ fn, ms, id }); return id; },
       clearTimeout: (h) => { const i = timers.findIndex((t) => t.id === h); if (i >= 0) timers.splice(i, 1); },
-      onState: (id, st) => states.push([id, st]),
-    });
+    }, new Proxy(new Map<string, SavedForwardState>(), {
+      get(target, prop, receiver) {
+        if (prop === "set") return (k: string, v: SavedForwardState) => { states.push([k, v]); return target.set(k, v); };
+        if (prop === "delete") return (k: string) => { states.push([k, { kind: "idle" }]); return target.delete(k); };
+        const v = Reflect.get(target, prop, receiver); return typeof v === "function" ? v.bind(target) : v;
+      },
+    }));
     const fire = async () => { const t = timers.shift(); if (t) { t.fn(); await Promise.resolve(); await Promise.resolve(); } };
     return { keeper, timers, stopped, states, fire, attempts: () => attempts };
   }

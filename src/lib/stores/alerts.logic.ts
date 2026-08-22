@@ -8,7 +8,7 @@
 
 import type { Event as K8sEvent, Resource, WatchedResource } from "$lib/types";
 import { podProblem, podStatus } from "$lib/utils/pod-status";
-import { deploymentStatus } from "$lib/utils/workload-status";
+import { workloadStatus } from "$lib/utils/workload-status";
 
 export interface Health {
   ok: boolean;
@@ -18,7 +18,6 @@ export interface Health {
 }
 
 type Json = Record<string, unknown>;
-const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
 /**
  * Is the object in a state worth waking someone up for? Transient states
@@ -28,58 +27,29 @@ const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v)
  * Warning events.
  */
 export function healthOf(resource: Resource): Health {
-  const status = (resource.status ?? {}) as Json;
-  const spec = (resource.spec ?? {}) as Json;
-  switch (resource.kind) {
-    case "Pod": {
-      const problem = podProblem(resource);
-      if (problem) {
-        const where = problem.container ? `${problem.container}: ` : "";
-        return { ok: false, label: problem.reason, detail: `${where}${problem.message ?? ""}`.trim() || undefined };
-      }
-      const phase = String(status.phase ?? "");
-      if (phase === "Failed" || phase === "Unknown") return { ok: false, label: phase };
-      return { ok: true, label: podStatus(resource).label };
+  if (resource.kind === "Pod") {
+    const problem = podProblem(resource);
+    if (problem) {
+      const where = problem.container ? `${problem.container}: ` : "";
+      return { ok: false, label: problem.reason, detail: `${where}${problem.message ?? ""}`.trim() || undefined };
     }
-    case "Deployment": {
-      const st = deploymentStatus(resource);
-      const bad = st.label === "Failed" || st.label === "Unavailable" || st.label === "ReplicaFailure";
-      return { ok: !bad, label: st.label, detail: st.detail };
-    }
-    case "StatefulSet": {
-      const desired = spec.replicas === undefined ? 1 : num(spec.replicas);
-      const ready = num(status.readyReplicas);
-      return { ok: desired === 0 || ready >= desired, label: `${ready}/${desired} ready` };
-    }
-    case "DaemonSet": {
-      const desired = num(status.desiredNumberScheduled);
-      const ready = num(status.numberReady);
-      return { ok: desired === 0 || ready >= desired, label: `${ready}/${desired} ready` };
-    }
-    case "Job": {
-      const conds = (status.conditions as Array<{ type: string; status: string; reason?: string }> | undefined) ?? [];
-      const failed = conds.find((c) => c.type === "Failed" && c.status === "True");
-      if (failed || num(status.failed) > 0) return { ok: false, label: "Failed", detail: failed?.reason };
-      if (conds.some((c) => c.type === "Complete" && c.status === "True")) return { ok: true, label: "Complete" };
-      return { ok: true, label: num(status.active) > 0 ? "Running" : "Pending" };
-    }
-    case "Node": {
-      const conds = (status.conditions as Array<{ type: string; status: string; reason?: string }> | undefined) ?? [];
-      const ready = conds.find((c) => c.type === "Ready");
-      if (!ready || ready.status !== "True") return { ok: false, label: "NotReady", detail: ready?.reason };
-      const pressure = conds.find((c) => c.type.endsWith("Pressure") && c.status === "True");
-      if (pressure) return { ok: false, label: pressure.type, detail: pressure.reason };
-      return { ok: true, label: "Ready" };
-    }
-    default:
-      return { ok: true, label: "—" };
+    const phase = String(((resource.status ?? {}) as Json).phase ?? "");
+    if (phase === "Failed" || phase === "Unknown") return { ok: false, label: phase };
+    return { ok: true, label: podStatus(resource).label };
   }
+  const st = workloadStatus(resource);
+  if (!st) return { ok: true, label: "—" };
+  return { ok: st.tone !== "bad", label: st.label, detail: st.detail };
 }
 
 export type AlertLevel = "warning" | "error" | "info";
 
+/** What kind of thing happened — the store decides how loud to be from this, not from the title. */
+export type AlertKind = "baseline" | "transition" | "event" | "presence";
+
 export interface Alert {
   watchedId: string;
+  kind: AlertKind;
   level: AlertLevel;
   title: string;
   body: string;
@@ -155,19 +125,20 @@ export class AlertMonitor {
     if (!resource) {
       if (!t.missing) {
         t.missing = true;
-        alerts.push({ watchedId: w.id, level: "error", title: `${name} is gone`, body: "The watched object no longer exists.", at });
+        alerts.push({ watchedId: w.id, kind: "presence", level: "error", title: `${name} is gone`, body: "The watched object no longer exists.", at });
       }
       return alerts;
     }
     if (t.missing) {
       t.missing = false;
-      alerts.push({ watchedId: w.id, level: "info", title: `${name} is back`, body: "The watched object exists again.", at });
+      alerts.push({ watchedId: w.id, kind: "presence", level: "info", title: `${name} is back`, body: "The watched object exists again.", at });
     }
 
     const health = healthOf(resource);
     if (first) {
       alerts.push({
         watchedId: w.id,
+        kind: "baseline",
         level: health.ok ? "info" : "warning",
         title: `Watching ${name}`,
         body: health.ok ? `Currently ${health.label}.` : `Currently ${health.label}${health.detail ? ` — ${health.detail}` : ""}.`,
@@ -176,12 +147,12 @@ export class AlertMonitor {
     } else if (t.lastOk !== null && health.ok !== t.lastOk) {
       alerts.push(
         health.ok
-          ? { watchedId: w.id, level: "info", title: `${name} recovered`, body: `Now ${health.label}.`, at }
-          : { watchedId: w.id, level: "error", title: `${name} is ${health.label}`, body: health.detail ?? `Was ${t.lastLabel}.`, at },
+          ? { watchedId: w.id, kind: "transition", level: "info", title: `${name} recovered`, body: `Now ${health.label}.`, at }
+          : { watchedId: w.id, kind: "transition", level: "error", title: `${name} is ${health.label}`, body: health.detail ?? `Was ${t.lastLabel}.`, at },
       );
     } else if (!health.ok && health.label !== t.lastLabel) {
       // Still unhealthy, differently: CrashLoopBackOff → ImagePullBackOff.
-      alerts.push({ watchedId: w.id, level: "warning", title: `${name} is ${health.label}`, body: health.detail ?? `Was ${t.lastLabel}.`, at });
+      alerts.push({ watchedId: w.id, kind: "transition", level: "warning", title: `${name} is ${health.label}`, body: health.detail ?? `Was ${t.lastLabel}.`, at });
     }
     t.lastOk = health.ok;
     t.lastLabel = health.label;
@@ -199,6 +170,7 @@ export class AlertMonitor {
       if (first || e.type !== "Warning") continue;
       alerts.push({
         watchedId: w.id,
+        kind: "event",
         level: "warning",
         title: `${name}: ${e.reason}`,
         body: `${e.message}${e.count && e.count > 1 ? ` (×${e.count})` : ""}`,

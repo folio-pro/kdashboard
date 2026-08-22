@@ -1,10 +1,12 @@
 // Saved port forwards — the Svelte store. Behaviour lives in
 // port-forwards.logic.ts (SavedForwardKeeper, resolveForward); this file wires
-// it to the k8s store (sessions, the closed channel, context switches), the
-// settings store (persistence) and IPC (target resolution).
+// it to the k8s store (sessions), the `port-forward-closed` channel, context
+// switches, the settings store (persistence) and IPC (target resolution).
 
+import { SvelteMap } from "svelte/reactivity";
 import { invoke } from "$lib/ipc/core";
-import type { PortForwardInfo, Resource, ResourceList, SavedPortForward } from "$lib/types";
+import { listen } from "$lib/ipc/event";
+import type { ForwardTargetKind, PortForwardInfo, Resource, ResourceList, SavedPortForward } from "$lib/types";
 import { k8sStore } from "./k8s.svelte";
 import { settingsStore } from "./settings.svelte";
 import { toastStore } from "./toast.svelte";
@@ -19,44 +21,34 @@ import {
   savedFromActive,
   type SavedForwardState,
 } from "./port-forwards.logic";
-import type { ForwardTargetKind } from "$lib/types";
-
-const IDLE: SavedForwardState = { kind: "idle" };
 
 class PortForwardStore {
-  /** Live state per saved-forward id. Replaced wholesale so `$state` notices. */
-  states = $state<Record<string, SavedForwardState>>({});
+  /** Live state per saved-forward id — reactive, owned by the keeper. */
+  readonly states = new SvelteMap<string, SavedForwardState>();
 
-  private readonly keeper = new SavedForwardKeeper({
-    start: (saved) => this._startSession(saved),
-    stop: (sessionId) => k8sStore.removePortForward(sessionId),
-    setTimeout: (fn, ms) => setTimeout(fn, ms),
-    clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
-    onState: (id, state) => {
-      const next = { ...this.states };
-      if (state.kind === "idle") delete next[id];
-      else next[id] = state;
-      this.states = next;
+  private readonly keeper = new SavedForwardKeeper(
+    {
+      start: (saved) => this._startSession(saved),
+      stop: (sessionId) => k8sStore.removePortForward(sessionId),
+      setTimeout: (fn, ms) => setTimeout(fn, ms),
+      clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
     },
-  });
+    this.states,
+  );
 
   constructor() {
-    k8sStore.onPortForwardClosed = (pf) => {
+    // The backend says a session died: a saved forward reconnects, anything
+    // else is reported — the one place that knows both.
+    void listen<string>("port-forward-closed", (event) => {
+      const pf = k8sStore.dropPortForward(event.payload);
+      if (!pf) return;
       const saved = savedForSession(settingsStore.savedPortForwards, pf);
-      const id = this.keeper.sessionClosed(pf.session_id, saved);
-      if (!id || !saved) return false;
-      toastStore.info(
-        "Reconnecting port forward",
-        `${describeTarget(saved)} → localhost:${saved.local_port} dropped; retrying.`,
-      );
-      return true;
-    };
-    k8sStore.onContextConnected = (context) => {
-      // Sessions died with the old context (the k8s store stops them all);
-      // forget their state and bring up whatever this context wants running.
-      this.keeper.reset();
-      void this.autoStart(context);
-    };
+      if (saved && this.keeper.sessionClosed(pf.session_id, saved)) {
+        toastStore.info("Reconnecting port forward", `${describeTarget(saved)} → localhost:${saved.local_port} dropped; retrying.`);
+      } else {
+        toastStore.warning("Port forward stopped", `Forward to ${pf.pod_name}:${pf.container_port} ended unexpectedly`);
+      }
+    });
   }
 
   /** Saved forwards for the connected context. */
@@ -65,7 +57,7 @@ class PortForwardStore {
   }
 
   stateOf(id: string): SavedForwardState {
-    return this.states[id] ?? IDLE;
+    return this.keeper.stateOf(id);
   }
 
   /** The saved forward an active session belongs to, if any. */
@@ -101,8 +93,9 @@ class PortForwardStore {
 
   /** Drop the saved entry. A running session keeps running (now unsaved). */
   forget(id: string): void {
+    const st = this.stateOf(id);
     this.keeper.release(id);
-    k8sStore.adoptPortForward(this._sessionOf(id), undefined);
+    if (st.kind === "active") k8sStore.adoptPortForward(st.sessionId, undefined);
     settingsStore.removeSavedPortForward(id);
   }
 
@@ -119,21 +112,20 @@ class PortForwardStore {
     await this.keeper.stop(id);
   }
 
-  /** Start every auto-start forward saved for `context`. */
-  async autoStart(context: string): Promise<void> {
+  /**
+   * A context is connected (boot or switch): sessions of the previous one
+   * are gone, so forget their state and bring up this context's auto-start
+   * forwards.
+   */
+  onContextConnected(context: string): void {
+    this.keeper.reset();
     const wanted = savedForwardsFor(settingsStore.savedPortForwards, context).filter((s) => s.auto_start);
-    await Promise.allSettled(wanted.map((s) => this.keeper.start(s)));
-  }
-
-  private _sessionOf(id: string): string | undefined {
-    const st = this.stateOf(id);
-    return st.kind === "active" ? st.sessionId : undefined;
+    void Promise.allSettled(wanted.map((s) => this.keeper.start(s)));
   }
 
   private async _startSession(saved: SavedPortForward): Promise<{ sessionId: string; podName: string }> {
     const { podName, containerPort } = await resolveForward(saved, {
-      getResource: (kind, name, namespace) =>
-        invoke<Resource | null>("get_resource", { kind, name, namespace }).catch(() => null),
+      getResource: (kind, name, namespace) => k8sStore.getResource(kind, name, namespace),
       listPodsBySelector: (namespace, selector) =>
         invoke<ResourceList>("list_pods_by_selector", { namespace, selector }).then((r) => r.items),
     });

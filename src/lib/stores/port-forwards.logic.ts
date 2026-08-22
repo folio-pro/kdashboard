@@ -8,6 +8,7 @@
 // the timers, so the behaviour is unit-tested here.
 
 import type { ForwardTargetKind, PortForwardInfo, Resource, SavedPortForward } from "$lib/types";
+import { podWorkload } from "$lib/utils/pod-status";
 
 // ---------------------------------------------------------------------------
 // Saved-forward bookkeeping
@@ -71,25 +72,16 @@ export function describeTarget(f: Pick<SavedPortForward, "target_kind" | "target
   return `${short[f.target_kind] ?? f.target_kind.toLowerCase()}/${f.target_name}`;
 }
 
+const FORWARDABLE: ReadonlySet<string> = new Set(["Deployment", "StatefulSet", "DaemonSet"]);
+
 /**
- * The workload a pod belongs to, read off its owner references: StatefulSet
- * and DaemonSet own pods directly; a ReplicaSet is (almost always) a
- * Deployment's, and Deployment-owned ReplicaSets are named
- * `<deployment>-<pod-template-hash>`, so stripping the last segment gives the
- * Deployment. Falls back to the pod itself (a bare pod, a Job, an unknown
- * controller) — which still forwards, it just will not survive the pod.
+ * What a saved forward should point at for this pod: its Deployment /
+ * StatefulSet / DaemonSet when it has one (so the forward survives the pod),
+ * else the pod itself (a bare pod, a Job's pod).
  */
 export function inferForwardTarget(pod: Pick<Resource, "metadata">): { kind: ForwardTargetKind; name: string } {
-  for (const owner of pod.metadata.owner_references ?? []) {
-    if (owner.kind === "StatefulSet" || owner.kind === "DaemonSet") {
-      return { kind: owner.kind, name: owner.name };
-    }
-    if (owner.kind === "ReplicaSet") {
-      const idx = owner.name.lastIndexOf("-");
-      if (idx > 0) return { kind: "Deployment", name: owner.name.slice(0, idx) };
-    }
-  }
-  return { kind: "Pod", name: pod.metadata.name };
+  const w = podWorkload(pod);
+  return FORWARDABLE.has(w.kind) ? { kind: w.kind as ForwardTargetKind, name: w.name } : { kind: "Pod", name: pod.metadata.name };
 }
 
 // ---------------------------------------------------------------------------
@@ -200,8 +192,6 @@ export interface KeeperDeps {
   stop: (sessionId: string) => Promise<void>;
   setTimeout: (fn: () => void, ms: number) => unknown;
   clearTimeout: (handle: unknown) => void;
-  /** Called whenever a forward's state changes, so the store can re-render. */
-  onState?: (id: string, state: SavedForwardState) => void;
 }
 
 /**
@@ -210,12 +200,18 @@ export interface KeeperDeps {
  * it `sessionClosed` from the `port-forward-closed` channel.
  */
 export class SavedForwardKeeper {
-  readonly states = new Map<string, SavedForwardState>();
   private readonly timers = new Map<string, unknown>();
   /** Generation per forward — a stop or restart invalidates in-flight work. */
   private readonly gen = new Map<string, number>();
 
-  constructor(private readonly deps: KeeperDeps) {}
+  /**
+   * `states` is injected so the Svelte store can hand in a reactive map
+   * (`SvelteMap`) and read it directly — no mirror to keep in sync.
+   */
+  constructor(
+    private readonly deps: KeeperDeps,
+    readonly states: Map<string, SavedForwardState> = new Map(),
+  ) {}
 
   stateOf(id: string): SavedForwardState {
     return this.states.get(id) ?? { kind: "idle" };
@@ -224,7 +220,6 @@ export class SavedForwardKeeper {
   private setState(id: string, state: SavedForwardState): void {
     if (state.kind === "idle") this.states.delete(id);
     else this.states.set(id, state);
-    this.deps.onState?.(id, state);
   }
 
   private bump(id: string): number {
@@ -267,12 +262,11 @@ export class SavedForwardKeeper {
         this.setState(saved.id, { kind: "error", message });
         return;
       }
-      this.scheduleRetry(saved, gen, retry + 1, message);
+      this.scheduleRetry(saved, gen, retry + 1);
     }
   }
 
-  private scheduleRetry(saved: SavedPortForward, gen: number, retry: number, lastError?: string): void {
-    void lastError;
+  private scheduleRetry(saved: SavedPortForward, gen: number, retry: number): void {
     this.setState(saved.id, { kind: "reconnecting", attempt: retry });
     const handle = this.deps.setTimeout(() => {
       this.timers.delete(saved.id);
@@ -327,5 +321,16 @@ export class SavedForwardKeeper {
       this.clearTimer(id);
       this.setState(id, { kind: "idle" });
     }
+  }
+}
+
+/** How a saved forward's state reads in the UI. */
+export function describeState(state: SavedForwardState): { label: string; tone: "success" | "warning" | "error" | "muted" } {
+  switch (state.kind) {
+    case "active": return { label: `active · ${state.podName}`, tone: "success" };
+    case "starting": return { label: "starting…", tone: "warning" };
+    case "reconnecting": return { label: `reconnecting (try ${state.attempt})`, tone: "warning" };
+    case "error": return { label: state.message, tone: "error" };
+    default: return { label: "stopped", tone: "muted" };
   }
 }
