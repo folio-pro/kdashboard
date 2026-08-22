@@ -537,8 +537,13 @@ export function matchesStatFilter(resource: Resource, resourceType: string, filt
   switch (resourceType) {
     case "pods":
       return classifyPodStatus(resource) === filterKey;
-    case "deployments":
-      return classifyDeployment(resource) === filterKey;
+    case "deployments": {
+      const c = classifyDeployment(resource);
+      // "unhealthy" is the saved view's question — anything short of healthy
+      // that is not a rollout in progress — so it spans degraded and failing.
+      if (filterKey === "unhealthy") return c === "degraded" || c === "failing";
+      return c === filterKey;
+    }
     case "services": {
       const type = (resource.spec?.type as string) ?? "ClusterIP";
       if (filterKey === "clusterIP") return type === "ClusterIP";

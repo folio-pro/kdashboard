@@ -90,6 +90,42 @@ describe("getCellValue — pods and workloads", () => {
 });
 
 describe("getCellValue — services and endpoints", () => {
+  test("pods: effective status, ready fraction, owner", () => {
+    const crashing = res({
+      status: { phase: "Running", containerStatuses: [{ name: "a", ready: true, restartCount: 0, state: { running: {} } }, { name: "b", ready: false, restartCount: 3, state: { waiting: { reason: "CrashLoopBackOff" } } }] },
+    });
+    crashing.kind = "Pod";
+    expect(getCellValue(crashing, "status")).toBe("CrashLoopBackOff");
+    expect(getCellValue(crashing, "podReady")).toBe("1/2");
+    const notPod = res({ status: { phase: "Running" } });
+    expect(getCellValue(notPod, "status")).toBe("Running");
+    const owned = res({});
+    owned.metadata.owner_references = [{ api_version: "apps/v1", kind: "ReplicaSet", name: "api-7d9f", uid: "o", controller: true }];
+    expect(getCellValue(owned, "controlledBy")).toBe("rs/api-7d9f");
+    expect(getCellValue(res({}), "controlledBy")).toBe("-");
+  });
+
+  test("deployments: derived status, images, pod count", () => {
+    const d = res({
+      spec: { replicas: 3, template: { spec: { containers: [{ image: "ghcr.io/shop/api:2.4.1" }, { image: "otel/collector:0.98.0" }] } } },
+      status: { replicas: 4, readyReplicas: 3, updatedReplicas: 1, conditions: [{ type: "Progressing", status: "True", reason: "ReplicaSetUpdated" }] },
+    });
+    expect(getCellValue(d, "deployStatus")).toBe("Progressing");
+    expect(getCellValue(d, "images")).toBe("api:2.4.1, collector:0.98.0");
+    expect(getCellValue(d, "pods")).toBe("4");
+    expect(getCellValue(res({}), "images")).toBe("-");
+  });
+
+  test("services: external pending, ports with targets, endpoints from context", () => {
+    expect(getCellValue(res({ spec: { type: "LoadBalancer" } }), "externalIP")).toBe("<pending>");
+    expect(getCellValue(res({ spec: { ports: [{ port: 80, targetPort: 8080 }, { port: 443, targetPort: 443, nodePort: 30443 }] } }), "ports")).toBe("80→8080/TCP, 443/TCP :30443");
+    expect(getCellValue(res({ spec: { selector: { app: "web" } } }), "selector")).toBe("app=web");
+    const svc = res({});
+    expect(getCellValue(svc, "endpoints")).toBe("");
+    expect(getCellValue(svc, "endpoints", { ageTick: 0, endpoints: null })).toBe("-");
+    expect(getCellValue(svc, "endpoints", { ageTick: 0, endpoints: { ready: 2, total: 3, terminating: 0 } })).toBe("2/3");
+  });
+
   test("externalIP prefers the load balancer, then spec.externalIPs", () => {
     const lb = res({ status: { loadBalancer: { ingress: [{ ip: "1.2.3.4" }] } } });
     expect(getCellValue(lb, "externalIP")).toBe("1.2.3.4");

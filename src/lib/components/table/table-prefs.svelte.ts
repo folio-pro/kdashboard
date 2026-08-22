@@ -8,7 +8,11 @@ export const ASIDE_MIN_WIDTH = 320;
 export const ASIDE_DEFAULT_WIDTH = 440;
 
 interface Prefs {
-  /** Hidden column keys, per resource type. */
+  /**
+   * Column keys the user toggled away from their default, per resource type.
+   * For a column shown by default that means hidden; for one the type ships
+   * hidden (`Column.defaultHidden`) it means shown.
+   */
   hidden: Record<string, string[]>;
   /** Preferred width of the docked detail aside, in px; the aside caps it to the room it has. */
   asideWidth: number;
@@ -44,8 +48,9 @@ class TablePrefs {
     return this.prefs.asideWidth;
   }
 
-  isHidden(resourceType: string, key: string): boolean {
-    return this.prefs.hidden[resourceType]?.includes(key) ?? false;
+  isHidden(resourceType: string, key: string, defaultHidden = false): boolean {
+    const toggled = this.prefs.hidden[resourceType]?.includes(key) ?? false;
+    return toggled !== defaultHidden;
   }
 
   hiddenCount(resourceType: string): number {

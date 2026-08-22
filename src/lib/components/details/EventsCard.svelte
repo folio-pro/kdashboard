@@ -15,20 +15,21 @@
   let eventsLoading = $state(false);
   let error = $state<string | null>(null);
 
-  let eventKey = $derived(`${resource.kind}:${resource.metadata.name}:${resource.metadata.namespace}`);
+  // Primitive deriveds: the `resource` prop is replaced on every watch delta
+  // (same pod, new object), and an effect that read its fields directly
+  // re-ran each time — cancelling the in-flight fetch and never showing
+  // anything for a pod that updates often. These only notify on a real change.
+  let resourceType = $derived(kindToResourceType(resource.kind));
+  let resourceName = $derived(resource.metadata.name);
+  let resourceNamespace = $derived(resource.metadata.namespace ?? "");
 
   $effect(() => {
-    // Track key so the fetch re-runs when the resource changes.
-    void eventKey;
+    const args = { resourceType, name: resourceName, namespace: resourceNamespace };
     let cancelled = false;
 
     eventsLoading = true;
     error = null;
-    invoke<K8sEvent[]>("get_resource_events", {
-      resourceType: kindToResourceType(resource.kind),
-      name: resource.metadata.name,
-      namespace: resource.metadata.namespace ?? "",
-    }).then((result) => {
+    invoke<K8sEvent[]>("get_resource_events", args).then((result) => {
       if (!cancelled) {
         events = result;
       }

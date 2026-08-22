@@ -12,6 +12,8 @@ export interface ResourceMetadata {
   namespace?: string;
   uid: string;
   creation_timestamp: string;
+  /** Present once the object is being deleted — the row reads "Terminating". */
+  deletion_timestamp?: string | null;
   labels: Record<string, string>;
   annotations: Record<string, string>;
   owner_references: OwnerReference[];
@@ -92,6 +94,8 @@ export interface Column {
   label: string;
   sortable: boolean;
   width?: string;
+  /** Off by default; the column picker can turn it on. */
+  defaultHidden?: boolean;
 }
 
 export interface ContainerStatus {
@@ -100,6 +104,7 @@ export interface ContainerStatus {
   ready: boolean;
   restartCount: number;
   state: Record<string, unknown>;
+  lastState?: Record<string, unknown>;
   started?: boolean;
 }
 

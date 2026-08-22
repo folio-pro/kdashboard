@@ -10,6 +10,21 @@ describe("status category", () => {
     expect(statusCategory("Terminating")).toBe("orange");
     expect(statusCategory("whatever")).toBe("muted");
   });
+  test("derived pod and workload statuses", () => {
+    expect(statusCategory("Init:1/2")).toBe("warning");
+    expect(statusCategory("Init:CrashLoopBackOff")).toBe("error");
+    expect(statusCategory("Init:Error")).toBe("error");
+    expect(statusCategory("ExitCode:137")).toBe("error");
+    expect(statusCategory("Signal:9")).toBe("error");
+    expect(statusCategory("NotReady")).toBe("warning");
+    expect(statusCategory("CreateContainerConfigError")).toBe("error");
+    expect(statusCategory("Progressing")).toBe("warning");
+    expect(statusCategory("Paused")).toBe("warning");
+    expect(statusCategory("Unavailable")).toBe("error");
+    expect(statusCategory("Scaled to 0")).toBe("muted");
+    expect(statusCategory("SomethingBackOff")).toBe("error");
+    expect(statusCategory("ContainerCreating")).toBe("warning");
+  });
   test("healthy and finished rows are quiet; problems are not", () => {
     expect(isQuietStatus("success")).toBe(true);
     expect(isQuietStatus("info")).toBe(true);

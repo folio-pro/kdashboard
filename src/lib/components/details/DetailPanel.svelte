@@ -191,9 +191,9 @@
          Logs / Shell / Edit already have subtabs below. -->
     <div class="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border-color)] bg-[var(--bg-primary)] pl-4 pr-2">
       <div class="flex min-w-0 flex-1 flex-col">
-        <span class="truncate text-[13px] font-semibold leading-4 text-[var(--text-primary)]" title={resource.metadata.name}>{resource.metadata.name}</span>
+        <span class="truncate text-[13px] font-semibold leading-4 text-[var(--text-primary)]" title={resource.metadata.name} data-testid="detail-resource-name">{resource.metadata.name}</span>
         <span class="truncate text-[10px] leading-[14px] text-[var(--text-muted)]">
-          {resource.kind}{#if resource.metadata.namespace} · {resource.metadata.namespace}{/if}{#if nodeName} · {nodeName}{/if}
+          {resource.kind}{#if resource.metadata.namespace}{" · "}{resource.metadata.namespace}{/if}{#if nodeName}{" · "}{nodeName}{/if}
         </span>
       </div>
       <div class="flex shrink-0 items-center gap-0.5">
@@ -253,7 +253,7 @@
             {/if}
           </div>
         {:else}
-          <span class="truncate text-[15px] font-semibold text-[var(--text-primary)]">{resource.metadata.name}</span>
+          <span class="truncate text-[15px] font-semibold text-[var(--text-primary)]" data-testid="detail-resource-name">{resource.metadata.name}</span>
           <div class="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
             <span class="text-[var(--text-muted)]">{resource.kind}</span>
             {#if resource.metadata.namespace}
@@ -371,9 +371,9 @@
       {#if activeSubtab === "overview"}
         <ScrollArea class="h-full select-text">
           {#if kind === "pod"}
-            <PodDetails {resource} />
+            <PodDetails {resource} layout={aside ? "aside" : "page"} />
           {:else if kind === "deployment"}
-            <DeploymentDetails {resource} />
+            <DeploymentDetails {resource} layout={aside ? "aside" : "page"} />
           {:else if kind === "statefulset"}
             <StatefulSetDetails {resource} />
           {:else if kind === "daemonset"}
@@ -383,7 +383,7 @@
           {:else if kind === "cronjob"}
             <CronJobDetails {resource} />
           {:else if kind === "service"}
-            <ServiceDetails {resource} />
+            <ServiceDetails {resource} layout={aside ? "aside" : "page"} />
           {:else if kind === "ingress"}
             <IngressDetails {resource} />
           {:else if autoscalerKind}
