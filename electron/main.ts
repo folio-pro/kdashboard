@@ -34,6 +34,7 @@ import { fixPathEnv } from './path-fix';
 // Handler modules — each exports register(handlers, ctx). See dispatch.ts.
 import * as appHandlers from './handlers/app';
 import * as connection from './handlers/connection';
+import * as kubeconfig from './handlers/kubeconfig';
 import * as resources from './handlers/resources';
 import * as workloadOps from './handlers/workload-ops';
 import * as nodeOps from './handlers/node-ops';
@@ -295,6 +296,7 @@ function buildHandlerModules(): HandlerModule[] {
     internalModule,
     appHandlers, // get_settings, save_settings, get_app_metadata, run_kubectl, bench_config, write_bench_results
     connection, // get_contexts, get_current_context, get_namespaces, switch_context, check_connection
+    kubeconfig, // preview_kubeconfig, import_kubeconfig, remove_kubeconfig_context, pick_kubeconfig_file
     resources, // list_resources, list_pods_by_selector, get_resource_counts, get_resource_yaml, get_resource, get_events, get_resource_events
     workloadOps, // apply_yaml, delete_resource, scale_workload, restart_workload, rollback_deployment, list_deployment_revisions
     nodeOps, // cordon_node, drain_node

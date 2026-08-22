@@ -69,7 +69,7 @@ function defaultKubeconfigPath(): string {
 }
 
 /** Resolved path of the active kubeconfig file (mirrors resolve_kubeconfig_path). */
-function resolveKubeconfigPath(): string {
+export function resolveKubeconfigPath(): string {
   const override = getKubeconfigPath();
   return override ? expandTilde(override) : defaultKubeconfigPath();
 }

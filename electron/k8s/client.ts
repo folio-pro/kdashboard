@@ -67,6 +67,12 @@ function invalidateConfig(): void {
   }
 }
 
+/** The kubeconfig file changed on disk (import / context removal): drop every
+ *  cached config so the next call re-reads it. */
+export function reloadKubeconfig(): void {
+  invalidateConfig();
+}
+
 /**
  * Set (or clear) the kubeconfig file path override. Pass null to fall back to
  * the default loader. Invalidates the cached config so the next kc() reloads.
