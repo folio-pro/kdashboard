@@ -1,7 +1,7 @@
 import {
   FileText, Terminal, Scale, RotateCcw, History, Trash2,
   ClipboardCopy, GitFork, Pencil, Copy, FileJson,
-  ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets, GitCompare, Bell, BellOff,
+  ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets, GitCompare, Bell, BellOff, PencilLine,
 } from "lucide-svelte";
 import type { ActionDef, BulkActionDef } from "./types";
 import type { Resource } from "$lib/types";
@@ -11,6 +11,7 @@ import { toastStore } from "$lib/stores/toast.svelte";
 import { topologyStore } from "$lib/stores/topology.svelte";
 import { settingsStore } from "$lib/stores/settings.svelte";
 import { alertStore } from "$lib/stores/alerts.svelte";
+import { QUICK_EDIT_TYPES } from "$lib/components/details/quick-edit.logic";
 import { kindToResourceType } from "$lib/utils/related-resources";
 import { dialogStore } from "$lib/stores/dialogs.svelte";
 import { isCordoned, setNodeSchedulable } from "./node-ops";
@@ -153,6 +154,16 @@ export const resourceActions: ActionDef[] = [
     priority: 10,
     appliesTo: (rt) => SCALABLE_TYPES.includes(rt),
     execute: (resource) => dialogStore.openScale(resource),
+  },
+  {
+    id: "quick-edit",
+    label: "Quick Edit...",
+    icon: PencilLine,
+    tier: "yellow",
+    group: "operations",
+    priority: 12,
+    appliesTo: (rt) => QUICK_EDIT_TYPES.includes(rt),
+    execute: (resource) => dialogStore.openQuickEdit(resource),
   },
   {
     id: "restart",

@@ -19,6 +19,7 @@
   import ScaleDialog from "$lib/components/details/ScaleDialog.svelte";
   import DrainDialog from "$lib/components/details/DrainDialog.svelte";
   import CompareDialog from "$lib/components/details/CompareDialog.svelte";
+  import QuickEditDialog from "$lib/components/details/QuickEditDialog.svelte";
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -301,6 +302,16 @@
 <!-- Global dialogs (triggered from context menu, command palette, or detail panel) -->
 {#if dialogStore.scaleOpen && dialogStore.scaleResource}
   <ScaleDialog bind:open={dialogStore.scaleOpen} resource={dialogStore.scaleResource} />
+{/if}
+
+{#if dialogStore.quickEditOpen && dialogStore.quickEditResource}
+  <QuickEditDialog
+    bind:open={
+      () => dialogStore.quickEditOpen,
+      (v) => { if (!v) dialogStore.closeQuickEdit(); }
+    }
+    resource={dialogStore.quickEditResource}
+  />
 {/if}
 
 {#if dialogStore.drainOpen && dialogStore.drainNodeName}
