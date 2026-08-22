@@ -24,6 +24,7 @@
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
+  import { portForwardStore } from "$lib/stores/port-forwards.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { deleteResource } from "$lib/actions/registry";
   import { initKeyboardShortcuts } from "$lib/utils/keyboard";
@@ -142,6 +143,9 @@
     void k8sStore.loadAllResourceCounts().catch((err) => {
       console.error("[initApp] loadAllResourceCounts failed", err);
     });
+
+    // Saved forwards flagged auto-start come up with the restored context.
+    void portForwardStore.autoStart(k8sStore.currentContext);
   }
 
   /**

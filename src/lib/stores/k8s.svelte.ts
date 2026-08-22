@@ -204,6 +204,7 @@ class K8sStore extends K8sStoreLogic {
       this._persistSelection();
       // Refresh sidebar counts in background for new context
       void this.loadAllResourceCounts(scopeGeneration);
+      this.onContextConnected?.(context);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
       this.error = `Failed to switch context: ${errMsg(err)}`;
@@ -652,6 +653,16 @@ class K8sStore extends K8sStoreLogic {
     }
   }
 
+  /**
+   * Hook for the saved-forwards store: called with the session the backend
+   * reported closed; return true when it took over (a reconnect is scheduled)
+   * so the generic "stopped" toast stays quiet. Set by port-forwards.svelte.ts
+   * — a property rather than an import, which would be circular.
+   */
+  onPortForwardClosed: ((pf: PortForwardInfo) => boolean) | null = null;
+  /** Hook fired once a context switch has connected (saved forwards auto-start). */
+  onContextConnected: ((context: string) => void) | null = null;
+
   private async _ensurePortForwardListener(): Promise<void> {
     if (this._pfUnlisten) return;
     this._pfUnlisten = await listen<string>("port-forward-closed", (event) => {
@@ -659,6 +670,7 @@ class K8sStore extends K8sStoreLogic {
       const pf = this.portForwards.find((p) => p.session_id === sessionId);
       if (pf) {
         this.portForwards = this.portForwards.filter((p) => p.session_id !== sessionId);
+        if (this.onPortForwardClosed?.(pf)) return;
         toastStore.warning(
           "Port forward stopped",
           `Forward to ${pf.pod_name}:${pf.container_port} ended unexpectedly`,
@@ -667,26 +679,39 @@ class K8sStore extends K8sStoreLogic {
     });
   }
 
-  async addPortForward(info: PortForwardInfo): Promise<void> {
+  /** Start a session; throws with the backend's message on failure. */
+  async startPortForward(info: PortForwardInfo): Promise<PortForwardInfo> {
     await this._ensurePortForwardListener();
+    const result = await invoke<{ session_id: string; local_port: number }>(
+      "start_port_forward",
+      {
+        podName: info.pod_name,
+        namespace: info.namespace,
+        containerPort: info.container_port,
+        localPort: info.local_port,
+        sessionId: info.session_id,
+      }
+    );
+    const started = { ...info, local_port: result.local_port, session_id: result.session_id };
+    this.portForwards = [...this.portForwards, started];
+    return started;
+  }
+
+  /** Like startPortForward, but reports failure through `error` (detail panels read it). */
+  async addPortForward(info: PortForwardInfo): Promise<void> {
     try {
-      const result = await invoke<{ session_id: string; local_port: number }>(
-        "start_port_forward",
-        {
-          podName: info.pod_name,
-          namespace: info.namespace,
-          containerPort: info.container_port,
-          localPort: info.local_port,
-          sessionId: info.session_id,
-        }
-      );
-      this.portForwards = [
-        ...this.portForwards,
-        { ...info, local_port: result.local_port, session_id: result.session_id },
-      ];
+      await this.startPortForward(info);
     } catch (err) {
       this.error = `Failed to start port forward: ${errMsg(err)}`;
     }
+  }
+
+  /** Link (or unlink) an active session to a saved forward. */
+  adoptPortForward(sessionId: string | undefined, savedId: string | undefined): void {
+    if (!sessionId) return;
+    this.portForwards = this.portForwards.map((pf) =>
+      pf.session_id === sessionId ? { ...pf, saved_id: savedId } : pf,
+    );
   }
 
   async removePortForward(sessionId: string): Promise<void> {

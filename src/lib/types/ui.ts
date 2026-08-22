@@ -20,6 +20,31 @@ export interface PortForwardInfo {
   namespace: string;
   container_port: number;
   local_port: number;
+  /** Set when this session was started from a saved forward. */
+  saved_id?: string;
+}
+
+/** Kinds a saved forward can point at. Anything but Pod is resolved to one of
+ *  its running pods each time the forward starts, so it survives restarts. */
+export type ForwardTargetKind = "Pod" | "Service" | "Deployment" | "StatefulSet" | "DaemonSet";
+
+/**
+ * A port forward the user asked to keep: re-creatable on demand, optionally
+ * started when its context connects, reconnected when the pod behind it goes
+ * away. Persisted in settings (`saved_port_forwards`), snake_case like the
+ * rest of the settings file.
+ */
+export interface SavedPortForward {
+  id: string;
+  context: string;
+  namespace: string;
+  target_kind: ForwardTargetKind;
+  target_name: string;
+  /** Port on the pod (or, for a Service, the service port). */
+  container_port: number;
+  local_port: number;
+  /** Start automatically when the context connects. */
+  auto_start: boolean;
 }
 
 

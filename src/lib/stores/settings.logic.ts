@@ -1,4 +1,4 @@
-import { isTableDensity, type AppSettings, type ContextCustomization, type PinnedResource, type SavedView, type TableDensity } from "../types/index.js";
+import { isTableDensity, type AppSettings, type ContextCustomization, type PinnedResource, type SavedPortForward, type SavedView, type TableDensity } from "../types/index.js";
 
 export type { AppSettings, ContextCustomization, PinnedResource };
 
@@ -101,6 +101,24 @@ export class SettingsStoreLogic {
 
   removeSavedView(id: string): void {
     this.settings.saved_views = this.savedViews.filter((v) => v.id !== id);
+    this.saveSettings();
+  }
+
+  private static readonly EMPTY_FORWARDS: SavedPortForward[] = [];
+
+  get savedPortForwards(): SavedPortForward[] {
+    return this.settings.saved_port_forwards ?? SettingsStoreLogic.EMPTY_FORWARDS;
+  }
+
+  /** Insert or replace by id. */
+  upsertSavedPortForward(forward: SavedPortForward): void {
+    const rest = this.savedPortForwards.filter((f) => f.id !== forward.id);
+    this.settings.saved_port_forwards = [...rest, forward];
+    this.saveSettings();
+  }
+
+  removeSavedPortForward(id: string): void {
+    this.settings.saved_port_forwards = this.savedPortForwards.filter((f) => f.id !== id);
     this.saveSettings();
   }
 

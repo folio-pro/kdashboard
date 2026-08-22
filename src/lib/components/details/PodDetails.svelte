@@ -237,6 +237,7 @@
         <DetailSection title="Port Forwarding" icon={Unplug}>
           <PodPortForwarding
             {allPorts}
+            pod={resource}
             podName={resource.metadata.name}
             namespace={resource.metadata.namespace ?? "default"}
             {specContainerMap}
