@@ -124,6 +124,44 @@ test.describe("CommandPalette", () => {
     await expect(emptyState).toBeVisible();
   });
 
+  test.describe("Global resource search", () => {
+    test("finds objects by name across kinds and opens the detail tab", async ({ page }) => {
+      await page.keyboard.press("Meta+k");
+      await page.waitForTimeout(300);
+
+      const searchInput = page.locator('[data-testid="command-input"]');
+      await searchInput.fill("api-server");
+
+      // The group label is a sibling of the items container, so assert on
+      // the label and on the items themselves.
+      await expect(page.locator('[data-testid="command-group-label"]', { hasText: "Search Results" })).toBeVisible();
+      const hits = page.locator('[data-testid="command-item"]');
+      // The Deployment (exact match) ranks above its pod; the Pod row shows
+      // its kind, namespace and status.
+      await expect(hits.first()).toContainText("api-server");
+      await expect(hits.first()).toContainText("Deployments · default");
+      await expect(hits.nth(1)).toContainText(/api-server-v2.*Pods · default · Running/);
+
+      await hits.filter({ hasText: "api-server-v2" }).first().click();
+      await page.waitForTimeout(300);
+      await expect(page.locator('[data-testid="command-palette"]')).not.toBeVisible();
+      await expect(page.locator("body")).toContainText("api-server-v2");
+    });
+
+    test("ns: and kind: narrow the hits", async ({ page }) => {
+      await page.keyboard.press("Meta+k");
+      await page.waitForTimeout(300);
+
+      const searchInput = page.locator('[data-testid="command-input"]');
+      await searchInput.fill("kind:pod ns:kube-system redis");
+
+      await expect(page.locator('[data-testid="command-group-label"]', { hasText: "Search Results" })).toBeVisible();
+      const hits = page.locator('[data-testid="command-item"]');
+      await expect(hits).toHaveCount(1);
+      await expect(hits.first()).toContainText("cache-redis");
+    });
+  });
+
   test.describe("Resource Actions", () => {
     test("shows resource actions when a resource is selected", async ({ page }) => {
       await page.goto("/");

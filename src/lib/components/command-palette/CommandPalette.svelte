@@ -21,18 +21,71 @@
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { extensions } from "$lib/extensions";
   import { restartWorkload, rollbackDeployment, SCALABLE_TYPES, RESTARTABLE_TYPES } from "$lib/actions/registry";
-  import { navigateToResourceTable, navigateToCrdTable, switchContext } from "$lib/actions/navigation";
+  import { navigateToResourceTable, navigateToCrdTable, switchContext, openResourceDetail } from "$lib/actions/navigation";
   import { toastStore } from "$lib/stores/toast.svelte";
-  import type { CommandPaletteItem } from "$lib/types";
+  import type { CommandPaletteItem, ResourceList } from "$lib/types";
+  import { getCellValue } from "$lib/components/table/cell-values";
+  import { resourceTypeLabel } from "$lib/resource-catalog";
   import {
     CATEGORY_ORDER,
     filterCommandItems,
     groupByCategory,
     orderGroups,
   } from "./command-palette";
+  import { MIN_SEARCH_LENGTH, ResourceSearchIndex } from "./resource-search.logic";
 
   let query = $state("");
   let selectedIndex = $state(0);
+
+  // --- Global resource search -----------------------------------------------
+  // Objects by name across kinds and namespaces. The index lists lazily (only
+  // while the palette is open with a query) and caches per type for 30s, so
+  // typing costs one round of lists per session, not one per keystroke.
+  const searchIndex = new ResourceSearchIndex((resourceType, namespace) =>
+    invoke<ResourceList>("list_resources", { resourceType, namespace }).then((r) => r.items),
+  );
+  let searchVersion = $state(0);
+  let searchLoading = $state(false);
+
+  const searchable = $derived(query.trim().length >= MIN_SEARCH_LENGTH);
+
+  // A context switch changes what every name refers to. (Assign from the
+  // index's own counter rather than `searchVersion++` — an effect that reads
+  // the state it writes re-runs itself forever.)
+  $effect(() => {
+    k8sStore.currentContext;
+    searchIndex.invalidate();
+    searchVersion = searchIndex.version;
+  });
+
+  $effect(() => {
+    if (!uiStore.commandPaletteOpen || !searchable) return;
+    const namespaces = k8sStore.namespaces;
+    searchLoading = true;
+    void searchIndex
+      .ensureLoaded(namespaces, () => { searchVersion = searchIndex.version; })
+      .finally(() => { searchLoading = false; });
+  });
+
+  let searchItems = $derived.by((): CommandPaletteItem[] => {
+    searchVersion;
+    if (!searchable) return [];
+    return searchIndex.search(query).map(({ resource, resourceType }) => {
+      const ns = resource.metadata.namespace;
+      const status = getCellValue(resource, "status", { ageTick: 0 });
+      const where = [resourceTypeLabel(resourceType), ns].filter(Boolean).join(" · ");
+      return {
+        id: `search:${resourceType}:${ns ?? ""}/${resource.metadata.name}`,
+        label: resource.metadata.name,
+        description: status && status !== "-" ? `${where} · ${status}` : where,
+        category: "Search Results",
+        action: () => {
+          openResourceDetail(resource, resourceType);
+          close();
+        },
+      };
+    });
+  });
 
   const resourceTypes = RESOURCE_ITEMS.filter((i) => !i.virtual);
 
@@ -286,7 +339,9 @@
     return items;
   });
 
-  let filteredItems = $derived.by(() => filterCommandItems(allItems, query));
+  // Search hits are already ranked against the query (including its ns:/kind:
+  // filters), so they bypass the token filter the static items go through.
+  let filteredItems = $derived.by(() => [...searchItems, ...filterCommandItems(allItems, query)]);
 
   let groupedItems = $derived.by(() => groupByCategory(filteredItems));
 
@@ -342,6 +397,9 @@
       const type = item.id.replace("resource-", "");
       return resourceIcon(type);
     }
+    if (item.category === "Search Results") {
+      return resourceIcon(item.id.split(":")[1] ?? "");
+    }
     if (item.category === "Contexts") return Server;
     if (item.category === "Namespaces") return FolderOpen;
     // Resource Actions
@@ -368,13 +426,17 @@
     <div onkeydown={handleKeydown}>
       <Command>
         <CommandInput
-          placeholder="Search resources, contexts, actions..."
+          placeholder="Search by name across the cluster, or contexts and actions… (ns: kind:)"
           value={query}
           oninput={(e: Event) => { query = (e.target as HTMLInputElement).value; }}
         />
         <CommandList class="max-h-[50vh]">
           {#if filteredItems.length === 0}
-            <CommandEmpty>No results found — try different keywords</CommandEmpty>
+            {#if searchable && searchLoading}
+              <CommandEmpty>Searching the cluster…</CommandEmpty>
+            {:else}
+              <CommandEmpty>No results found — try different keywords</CommandEmpty>
+            {/if}
           {/if}
           {#each orderedGroups as [category, items], groupIdx}
             {#if groupIdx > 0}
@@ -416,6 +478,11 @@
         <span class="flex items-center gap-1.5"><Kbd class="px-1">↑↓</Kbd> Navigate</span>
         <span class="flex items-center gap-1.5"><Kbd class="px-1">↵</Kbd> Open</span>
         <span class="flex items-center gap-1.5"><Kbd class="px-1">esc</Kbd> Close</span>
+        {#if searchable}
+          <span class="ml-auto">
+            {#if searchLoading}Searching…{:else}{searchItems.length} resource{searchItems.length === 1 ? "" : "s"} matched{/if}
+          </span>
+        {/if}
       </div>
     </div>
   </DialogContent>
