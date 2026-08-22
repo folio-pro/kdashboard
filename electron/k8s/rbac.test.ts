@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { canI, collectSubjects, effectivePermissions, flattenRows, implicitGroups, type RbacInput } from './rbac';
+import { collectSubjects, effectivePermissions, flattenRows, implicitGroups, type RbacInput } from './rbac';
 
 const INPUT: RbacInput = {
   clusterRoles: [
@@ -74,18 +74,5 @@ describe('effectivePermissions', () => {
       { scope: 'a', binding_kind: 'RoleBinding', binding: 'b2', role_kind: 'Role', role: 'r2', via: { kind: 'User', name: 'u' }, rules: [{ api_groups: [''], resources: ['pods'], verbs: ['delete', 'get'], resource_names: [], non_resource_urls: [] }] },
     ]);
     expect(rows).toEqual([{ api_group: '', resource: 'pods', verbs: ['get', 'list', 'delete'], scopes: ['cluster', 'a'], resource_names: null }]);
-  });
-});
-
-describe('canI', () => {
-  const ci = effectivePermissions(INPUT, { kind: 'ServiceAccount', name: 'ci', namespace: 'billing' });
-  test('answers per namespace, honouring cluster grants and wildcards', () => {
-    expect(canI(ci, 'patch', 'deployments', 'apps', 'billing').map((g) => g.role)).toEqual(['deployer']);
-    expect(canI(ci, 'patch', 'deployments', 'apps', 'shop')).toEqual([]);
-    expect(canI(ci, 'list', 'pods', '', 'shop').map((g) => g.role)).toEqual(['view']);
-    expect(canI(ci, 'delete', 'pods', '', 'billing')).toEqual([]);
-    const alice = effectivePermissions(INPUT, { kind: 'User', name: 'alice' });
-    expect(canI(alice, 'delete', 'nodes', '', null)).toHaveLength(1);
-    expect(canI(ci, 'list', 'nodes', '', null)).toEqual([]);
   });
 });

@@ -21,6 +21,7 @@ import * as path from 'node:path';
 import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
+import type { KubeconfigDoc } from '../k8s/kubeconfig-merge';
 import {
   getActiveContextName,
   getAuthorizationV1Api,
@@ -53,7 +54,7 @@ type Connected = boolean;
 // ---------------------------------------------------------------------------
 
 /** Expand a leading `~` to the user's home directory (mirrors expand_tilde). */
-function expandTilde(p: string): string {
+export function expandTilde(p: string): string {
   if (p.startsWith('~')) {
     const home = os.homedir();
     if (home) {
@@ -64,7 +65,7 @@ function expandTilde(p: string): string {
 }
 
 /** Default kubeconfig location: ~/.kube/config (mirrors default_kubeconfig_path). */
-function defaultKubeconfigPath(): string {
+export function defaultKubeconfigPath(): string {
   return path.join(os.homedir() || '.', '.kube', 'config');
 }
 
@@ -74,11 +75,17 @@ export function resolveKubeconfigPath(): string {
   return override ? expandTilde(override) : defaultKubeconfigPath();
 }
 
-/** Minimal shape of the kubeconfig YAML we touch. */
-interface KubeconfigYaml {
-  'current-context'?: unknown;
-  contexts?: Array<{ name?: unknown } | null> | unknown;
-  [key: string]: unknown;
+/** The parsed kubeconfig document — shared with the merge/remove logic. */
+type KubeconfigYaml = KubeconfigDoc;
+
+/**
+ * The active kubeconfig as a document, for handlers that rewrite it
+ * (import, remove context). A missing file reads as an empty document.
+ */
+export function readKubeconfigDoc(): { file: string; doc: KubeconfigDoc; exists: boolean } {
+  const file = resolveKubeconfigPath();
+  if (!fs.existsSync(file)) return { file, doc: {}, exists: false };
+  return { file, doc: readKubeconfigYaml(), exists: true };
 }
 
 /**

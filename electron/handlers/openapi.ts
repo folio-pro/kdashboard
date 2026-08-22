@@ -44,6 +44,7 @@ import {
   type OpenApiSchemaResult,
 } from '../k8s/openapi-schema.js';
 import type { HandlerMap } from '../dispatch.js';
+import { atomicWrite } from '../util/fs-atomic';
 
 // Wire shapes and the pure lookup helpers live in k8s/openapi-schema.ts so they
 // stay testable outside Electron. The renderer mirror is
@@ -160,16 +161,6 @@ function cacheDir(): string {
 
 let tempCounter = 0;
 
-async function atomicWrite(target: string, contents: string): Promise<void> {
-  await fs.mkdir(nodePath.dirname(target), { recursive: true });
-  const tmp = `${target}.tmp.${process.pid}.${tempCounter++}`;
-  try {
-    await fs.writeFile(tmp, contents);
-    await fs.rename(tmp, target);
-  } catch {
-    await fs.rm(tmp, { force: true }).catch(() => {});
-  }
-}
 
 /** Cached apiserver gitVersion for this session; the disk cache key. */
 let gitVersionCache: string | null = null;

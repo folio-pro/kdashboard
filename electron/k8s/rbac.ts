@@ -223,27 +223,3 @@ function sortVerbs(verbs: string[]): string[] {
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
   });
 }
-
-/**
- * Answer "can subject VERB RESOURCE [in NAMESPACE]?" from resolved grants:
- * a cluster grant covers every namespace; a namespace grant only its own.
- * Wildcards on group, resource and verb count. Returns the grants that say yes.
- */
-export function canI(
-  perms: EffectivePermissions,
-  verb: string,
-  resource: string,
-  apiGroup = '',
-  namespace: string | null = null,
-): Grant[] {
-  return perms.grants.filter((g) => {
-    if (g.scope !== 'cluster' && namespace !== null && g.scope !== namespace) return false;
-    if (g.scope !== 'cluster' && namespace === null) return false; // cluster-scoped question
-    return g.rules.some(
-      (r) =>
-        (r.api_groups.includes('*') || r.api_groups.includes(apiGroup)) &&
-        (r.resources.includes('*') || r.resources.includes(resource)) &&
-        (r.verbs.includes('*') || r.verbs.includes(verb)),
-    );
-  });
-}

@@ -1,53 +1,48 @@
 // RBAC explorer — who can do what.
 //
 // Commands:
-//   - get_rbac_subjects          {} -> RbacSubject[]   (every subject any binding names)
-//   - get_effective_permissions  { kind, name, namespace?, groups? } -> EffectivePermissions
+//   - get_rbac_subjects          { namespace? } -> RbacSubject[]   (every subject any binding names)
+//   - get_effective_permissions  { kind, name, subjectNamespace?, namespace?, groups? } -> EffectivePermissions
 //
 // Both read the four RBAC kinds through the typed client (cluster-wide; Roles
 // and RoleBindings fall back to the given namespace when the cluster list is
 // refused) and hand them to electron/k8s/rbac.ts, which does the resolving.
+// The listing is cached per context+namespace for 30 s as a promise, so the
+// two commands the view fires together share one round of lists.
 
-import type { V1Role, V1RoleBinding } from '@kubernetes/client-node';
-
-import type { HandlerCtx, HandlerMap } from '../dispatch';
-import { getRbacAuthorizationV1Api } from '../k8s/client';
+import { optStr, type HandlerCtx, type HandlerMap } from '../dispatch';
+import { getActiveContextName, getRbacAuthorizationV1Api, onConfigChange } from '../k8s/client';
+import { listScoped } from '../k8s/list-scope';
 import { collectSubjects, effectivePermissions, type RbacInput, type SubjectKind } from '../k8s/rbac';
 
 const CACHE_TTL_MS = 30_000;
-let cache: { at: number; ns: string | null; input: RbacInput } | null = null;
+const cache = new Map<string, { at: number; promise: Promise<RbacInput> }>();
+onConfigChange(() => cache.clear());
 
-async function loadRbac(namespace: string | null): Promise<RbacInput> {
-  if (cache && cache.ns === namespace && Date.now() - cache.at < CACHE_TTL_MS) return cache.input;
+async function fetchRbac(namespace: string | null): Promise<RbacInput> {
   const api = getRbacAuthorizationV1Api();
-  const [clusterRoles, clusterRoleBindings] = await Promise.all([
-    api.listClusterRole().then((l) => l.items).catch(() => []),
-    api.listClusterRoleBinding().then((l) => l.items).catch(() => []),
+  const [clusterRoles, clusterRoleBindings, roles, roleBindings] = await Promise.all([
+    listScoped(() => api.listClusterRole(), null, null),
+    listScoped(() => api.listClusterRoleBinding(), null, null),
+    listScoped(() => api.listRoleForAllNamespaces(), (ns) => api.listNamespacedRole({ namespace: ns }), namespace),
+    listScoped(() => api.listRoleBindingForAllNamespaces(), (ns) => api.listNamespacedRoleBinding({ namespace: ns }), namespace),
   ]);
-  let roles: V1Role[] = [];
-  let roleBindings: V1RoleBinding[] = [];
-  try {
-    [roles, roleBindings] = await Promise.all([
-      api.listRoleForAllNamespaces().then((l) => l.items),
-      api.listRoleBindingForAllNamespaces().then((l) => l.items),
-    ]);
-  } catch {
-    if (namespace) {
-      [roles, roleBindings] = await Promise.all([
-        api.listNamespacedRole({ namespace }).then((l) => l.items).catch(() => []),
-        api.listNamespacedRoleBinding({ namespace }).then((l) => l.items).catch(() => []),
-      ]);
-    }
-  }
-  const input = { clusterRoles, roles, clusterRoleBindings, roleBindings };
-  cache = { at: Date.now(), ns: namespace, input };
-  return input;
+  return { clusterRoles: clusterRoles.items, clusterRoleBindings: clusterRoleBindings.items, roles: roles.items, roleBindings: roleBindings.items };
+}
+
+function loadRbac(namespace: string | null): Promise<RbacInput> {
+  const key = `${getActiveContextName() ?? ''}|${namespace ?? ''}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
+  const promise = fetchRbac(namespace);
+  cache.set(key, { at: Date.now(), promise });
+  promise.catch(() => cache.delete(key));
+  return promise;
 }
 
 export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
   handlers.set('get_rbac_subjects', async (args) => {
-    const ns = typeof args.namespace === 'string' && args.namespace ? args.namespace : null;
-    const input = await loadRbac(ns);
+    const input = await loadRbac(optStr(args, 'namespace') ?? null);
     return collectSubjects(input.clusterRoleBindings, input.roleBindings);
   });
 
@@ -57,10 +52,8 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
     if (!['User', 'Group', 'ServiceAccount'].includes(kind) || !name) {
       throw new Error('get_effective_permissions: kind (User|Group|ServiceAccount) and name are required');
     }
-    const subjectNs = typeof args.subjectNamespace === 'string' && args.subjectNamespace ? args.subjectNamespace : null;
-    const scopeNs = typeof args.namespace === 'string' && args.namespace ? args.namespace : null;
     const groups = Array.isArray(args.groups) ? args.groups.filter((g): g is string => typeof g === 'string') : [];
-    const input = await loadRbac(scopeNs);
-    return effectivePermissions(input, { kind, name, namespace: subjectNs, groups });
+    const input = await loadRbac(optStr(args, 'namespace') ?? null);
+    return effectivePermissions(input, { kind, name, namespace: optStr(args, 'subjectNamespace') ?? null, groups });
   });
 }

@@ -5,7 +5,10 @@
 
 import type { V1Pod } from '@kubernetes/client-node';
 
+import { workloadOf, type WorkloadRef } from './owners';
 import { parseCpu, parseMemory } from './quantity';
+
+export { workloadOf };
 
 // ---------------------------------------------------------------------------
 // Wire types (mirrored in src/lib/types/rightsizing.ts)
@@ -90,22 +93,6 @@ export interface UsageSample {
 
 export function usageKey(namespace: string, pod: string, container: string): string {
   return `${namespace}/${pod}/${container}`;
-}
-
-export interface WorkloadRef {
-  kind: string;
-  name: string;
-}
-
-/** The workload a pod belongs to: Deployment via its ReplicaSet, STS/DS/Job directly, else the pod itself. */
-export function workloadOf(pod: V1Pod): WorkloadRef {
-  const ref = pod.metadata?.ownerReferences?.find((r) => r.controller) ?? pod.metadata?.ownerReferences?.[0];
-  if (!ref) return { kind: 'Pod', name: pod.metadata?.name ?? '' };
-  if (ref.kind === 'ReplicaSet') {
-    const idx = ref.name.lastIndexOf('-');
-    return { kind: 'Deployment', name: idx > 0 ? ref.name.slice(0, idx) : ref.name };
-  }
-  return { kind: ref.kind, name: ref.name };
 }
 
 // ---------------------------------------------------------------------------

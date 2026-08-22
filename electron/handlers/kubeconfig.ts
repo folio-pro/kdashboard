@@ -20,7 +20,7 @@ import * as path from 'node:path';
 import { dump as yamlDump } from 'js-yaml';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
-import { getActiveContextName, reloadKubeconfig } from '../k8s/client';
+import { getActiveContextName, invalidateConfig } from '../k8s/client';
 import {
   mergeKubeconfig,
   parseKubeconfig,
@@ -28,23 +28,8 @@ import {
   removeContext,
   type KubeconfigDoc,
 } from '../k8s/kubeconfig-merge';
-import { resolveKubeconfigPath } from './connection';
-
-function expandTilde(p: string): string {
-  if (p.startsWith('~')) {
-    const home = os.homedir();
-    if (home) return path.join(home, p.slice(1).replace(/^\/+/, ''));
-  }
-  return p;
-}
-
-/** The active kubeconfig as a document; a missing file reads as empty. */
-function readActive(): { file: string; doc: KubeconfigDoc; exists: boolean } {
-  const file = resolveKubeconfigPath();
-  if (!fs.existsSync(file)) return { file, doc: {}, exists: false };
-  const text = fs.readFileSync(file, 'utf8');
-  return { file, doc: text.trim() ? parseKubeconfig(text) : {}, exists: true };
-}
+import { atomicWriteSync } from '../util/fs-atomic';
+import { expandTilde, readKubeconfigDoc as readActive } from './connection';
 
 /** The kubeconfig the user is importing: a path on disk or pasted YAML. */
 function readSource(args: Record<string, unknown>): { doc: KubeconfigDoc; label: string } {
@@ -73,10 +58,8 @@ function backupAndWrite(file: string, doc: KubeconfigDoc, exists: boolean): stri
   } else {
     fs.mkdirSync(path.dirname(file), { recursive: true });
   }
-  const tmp = `${file}.kdash-tmp-${process.pid}`;
-  fs.writeFileSync(tmp, yamlDump(doc, { lineWidth: -1, noRefs: true }), { encoding: 'utf8', mode });
-  fs.renameSync(tmp, file);
-  reloadKubeconfig();
+  atomicWriteSync(file, yamlDump(doc, { lineWidth: -1, noRefs: true }), mode);
+  invalidateConfig();
   return backup;
 }
 

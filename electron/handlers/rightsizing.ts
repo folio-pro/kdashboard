@@ -8,11 +8,14 @@
 // listed cluster-wide with a per-namespace fallback. The arithmetic lives in
 // electron/k8s/rightsizing.ts.
 
-import { Metrics, type V1Pod } from '@kubernetes/client-node';
+import type { V1Pod } from '@kubernetes/client-node';
 
-import type { HandlerCtx, HandlerMap } from '../dispatch';
-import { getCoreV1Api, kc } from '../k8s/client';
-import { parseCpu, parseMemory } from '../k8s/quantity';
+import { optStr, type HandlerCtx, type HandlerMap } from '../dispatch';
+import { getCoreV1Api } from '../k8s/client';
+import { listScoped } from '../k8s/list-scope';
+import { podUsageScoped } from '../k8s/metrics-source';
+import { currentRates } from '../k8s/pricing';
+import { promQuery } from '../k8s/prometheus';
 import {
   buildRightsizing,
   summarize,
@@ -21,74 +24,45 @@ import {
   type UsageSample,
 } from '../k8s/rightsizing';
 import { getPrometheusUrl } from '../k8s/runtime-config.js';
-import { currentRates } from './cost';
 
-const PROM_TIMEOUT_MS = 20_000;
 const PROM_WINDOW = '7d';
 
-interface PromVectorResponse {
-  status?: string;
-  error?: string;
-  data?: { result?: Array<{ metric?: Record<string, string>; value?: [number, string] }> };
+interface PromVector {
+  metric?: Record<string, string>;
+  value?: [number, string];
 }
 
-async function promInstant(base: string, query: string): Promise<Array<{ metric: Record<string, string>; value: number }>> {
-  const url = new URL(`${base}/api/v1/query`);
-  url.searchParams.set('query', query);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PROM_TIMEOUT_MS);
-  try {
-    const resp = await fetch(url.toString(), { signal: controller.signal });
-    if (!resp.ok) throw new Error(`Prometheus returned ${resp.status}`);
-    const body = (await resp.json()) as PromVectorResponse;
-    if (body.status !== 'success') throw new Error(body.error ?? 'query failed');
-    return (body.data?.result ?? []).map((r) => ({ metric: r.metric ?? {}, value: Number.parseFloat(r.value?.[1] ?? '0') || 0 }));
-  } finally {
-    clearTimeout(timer);
+function vectorToMap(rows: PromVector[], into: Map<string, UsageSample>, set: (s: UsageSample, v: number) => void): void {
+  for (const r of rows) {
+    const m = r.metric ?? {};
+    const key = usageKey(m.namespace ?? '', m.pod ?? '', m.container ?? '');
+    let s = into.get(key);
+    if (!s) {
+      s = { namespace: m.namespace ?? '', pod: m.pod ?? '', container: m.container ?? '', cpu: null, memory: null };
+      into.set(key, s);
+    }
+    set(s, Number.parseFloat(r.value?.[1] ?? '0') || 0);
   }
 }
 
 /** P95 over the window of each container's CPU rate and working-set memory. */
-async function usageFromPrometheus(base: string, namespace: string | null): Promise<Map<string, UsageSample>> {
+async function usageFromPrometheus(namespace: string | null): Promise<Map<string, UsageSample>> {
   const sel = `container!="",container!="POD"${namespace ? `,namespace="${namespace}"` : ''}`;
   const [cpu, mem] = await Promise.all([
-    promInstant(base, `quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{${sel}}[5m])[${PROM_WINDOW}:5m])`),
-    promInstant(base, `quantile_over_time(0.95, container_memory_working_set_bytes{${sel}}[${PROM_WINDOW}:5m])`),
+    promQuery<PromVector>('query', { query: `quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{${sel}}[5m])[${PROM_WINDOW}:5m])` }, 20_000),
+    promQuery<PromVector>('query', { query: `quantile_over_time(0.95, container_memory_working_set_bytes{${sel}}[${PROM_WINDOW}:5m])` }, 20_000),
   ]);
   const map = new Map<string, UsageSample>();
-  const get = (m: Record<string, string>) => {
-    const key = usageKey(m.namespace ?? '', m.pod ?? '', m.container ?? '');
-    let s = map.get(key);
-    if (!s) {
-      s = { namespace: m.namespace ?? '', pod: m.pod ?? '', container: m.container ?? '', cpu: null, memory: null };
-      map.set(key, s);
-    }
-    return s;
-  };
-  for (const r of cpu) get(r.metric).cpu = r.value;
-  for (const r of mem) get(r.metric).memory = r.value;
+  vectorToMap(cpu, map, (s, v) => { s.cpu = v; });
+  vectorToMap(mem, map, (s, v) => { s.memory = v; });
   return map;
 }
 
 async function usageFromMetricsServer(namespace: string | null): Promise<Map<string, UsageSample>> {
-  const metrics = new Metrics(kc());
-  let list;
-  try {
-    list = await metrics.getPodMetrics();
-  } catch (err) {
-    if (!namespace) throw err;
-    list = await metrics.getPodMetrics(namespace);
-  }
   const map = new Map<string, UsageSample>();
-  for (const pm of list.items) {
-    for (const c of pm.containers) {
-      map.set(usageKey(pm.metadata.namespace, pm.metadata.name, c.name), {
-        namespace: pm.metadata.namespace,
-        pod: pm.metadata.name,
-        container: c.name,
-        cpu: parseCpu(c.usage.cpu),
-        memory: parseMemory(c.usage.memory),
-      });
+  for (const p of await podUsageScoped(namespace)) {
+    for (const c of p.containers) {
+      map.set(usageKey(p.namespace, p.name, c.name), { namespace: p.namespace, pod: p.name, container: c.name, cpu: c.cpu_cores, memory: c.memory_bytes });
     }
   }
   return map;
@@ -96,23 +70,19 @@ async function usageFromMetricsServer(namespace: string | null): Promise<Map<str
 
 export async function getRightsizing(namespace: string | null): Promise<RightsizingOverview> {
   const core = getCoreV1Api();
-  let pods: V1Pod[];
-  let scope: RightsizingOverview['scope'] = 'cluster';
-  try {
-    pods = (await core.listPodForAllNamespaces()).items;
-  } catch (err) {
-    if (!namespace) throw err;
-    pods = (await core.listNamespacedPod({ namespace })).items;
-    scope = 'namespace';
-  }
+  const [pods, rates] = await Promise.all([
+    listScoped<V1Pod>(() => core.listPodForAllNamespaces(), (ns) => core.listNamespacedPod({ namespace: ns }), namespace),
+    currentRates(),
+  ]);
+  if (pods.scope === null) throw new Error('Cannot list pods in this cluster or namespace');
+  const scopeNs = pods.scope === 'namespace' ? namespace : null;
 
   let usage = new Map<string, UsageSample>();
   let source = 'none';
   let window = '';
-  const prom = getPrometheusUrl();
-  if (prom) {
+  if (getPrometheusUrl()) {
     try {
-      usage = await usageFromPrometheus(prom, scope === 'namespace' ? namespace : null);
+      usage = await usageFromPrometheus(scopeNs);
       source = 'prometheus-p95-7d';
       window = '7d P95';
     } catch {
@@ -121,7 +91,7 @@ export async function getRightsizing(namespace: string | null): Promise<Rightsiz
   }
   if (usage.size === 0) {
     try {
-      usage = await usageFromMetricsServer(scope === 'namespace' ? namespace : null);
+      usage = await usageFromMetricsServer(scopeNs);
       source = 'metrics-server';
       window = 'now';
     } catch {
@@ -130,11 +100,10 @@ export async function getRightsizing(namespace: string | null): Promise<Rightsiz
     }
   }
 
-  const rates = await currentRates();
-  const workloads = buildRightsizing(pods, usage, { cpu: rates.cpu, memory: rates.memory });
+  const workloads = buildRightsizing(pods.items, usage, { cpu: rates.cpu, memory: rates.memory });
   return {
-    scope,
-    namespace: scope === 'namespace' ? namespace : null,
+    scope: pods.scope,
+    namespace: scopeNs,
     workloads,
     usage_source: source,
     usage_window: window,
@@ -146,8 +115,5 @@ export async function getRightsizing(namespace: string | null): Promise<Rightsiz
 }
 
 export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
-  handlers.set('get_rightsizing', async (args) => {
-    const ns = typeof args.namespace === 'string' && args.namespace.length > 0 ? args.namespace : null;
-    return getRightsizing(ns);
-  });
+  handlers.set('get_rightsizing', async (args) => getRightsizing(optStr(args, 'namespace') ?? null));
 }

@@ -55,7 +55,8 @@ export function onConfigChange(listener: () => void): void {
   configChangeListeners.add(listener);
 }
 
-function invalidateConfig(): void {
+/** Drop every cached config (path/context change, or the file changed on disk). */
+export function invalidateConfig(): void {
   cachedConfig = null;
   peerConfigs.clear();
   for (const listener of configChangeListeners) {
@@ -65,12 +66,6 @@ function invalidateConfig(): void {
       // a broken listener must not break context switching
     }
   }
-}
-
-/** The kubeconfig file changed on disk (import / context removal): drop every
- *  cached config so the next call re-reads it. */
-export function reloadKubeconfig(): void {
-  invalidateConfig();
 }
 
 /**
@@ -133,6 +128,7 @@ const peerConfigs = new Map<string, KubeConfig>();
  * context, else a cached peer config. Throws when the context does not exist.
  */
 export function kcFor(contextName: string): KubeConfig {
+  if (activeContextOverride === contextName || (cachedConfig && cachedConfig.getCurrentContext() === contextName)) return kc();
   let cfg = peerConfigs.get(contextName);
   if (cfg) return cfg;
   // buildConfig (not kc()) so the peer path never installs the TLS dispatcher

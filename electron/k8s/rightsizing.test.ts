@@ -10,10 +10,10 @@ import {
   summarize,
   usageKey,
   verdictFor,
-  workloadOf,
   worstVerdict,
   type UsageSample,
 } from './rightsizing';
+import { workloadOf } from './owners';
 
 const MI = 1024 * 1024;
 const pod = (name: string, ns: string, owner: { kind: string; name: string } | null, containers: Array<{ name: string; cpu?: string; memory?: string; cpuLimit?: string }>, phase = 'Running'): V1Pod =>

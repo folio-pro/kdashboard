@@ -5,7 +5,7 @@
 //   - open_extensions_dir {} -> null  (creates the directory and reveals it)
 //
 // Each extension is a directory with a manifest.json (see
-// electron/k8s/extension-manifest.ts) and an ES module entry. The main
+// electron/extensions/manifest.ts) and an ES module entry. The main
 // process only reads files; the renderer evaluates the module (as a blob URL)
 // and hands it the extension API. A broken manifest is reported per
 // extension, never as a failure of the whole list.
@@ -16,15 +16,12 @@ import * as path from 'node:path';
 import { app, shell } from 'electron';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
-import { parseManifest, type ExtensionManifest } from '../k8s/extension-manifest';
+import { parseManifest, type ExtensionManifest } from '../extensions/manifest';
 
-export interface LoadedExtensionSource {
-  manifest: ExtensionManifest | null;
-  dir: string;
-  /** ES module source text; null when the manifest failed or the entry is missing. */
-  source: string | null;
-  error: string | null;
-}
+/** One discovered extension directory: loadable, or why not. */
+export type LoadedExtensionSource =
+  | { ok: true; dir: string; manifest: ExtensionManifest; source: string }
+  | { ok: false; dir: string; manifest: ExtensionManifest | null; error: string };
 
 export function extensionsDir(): string {
   return path.join(app.getPath('userData'), 'extensions');
@@ -42,12 +39,12 @@ export function readExtensions(root: string): LoadedExtensionSource[] {
       const manifest = parseManifest(JSON.parse(fs.readFileSync(manifestPath, 'utf8')), entry.name);
       const entryPath = path.join(dir, manifest.main);
       if (!fs.existsSync(entryPath)) {
-        out.push({ manifest, dir, source: null, error: `${manifest.main} not found` });
+        out.push({ ok: false, dir, manifest, error: `${manifest.main} not found` });
         continue;
       }
-      out.push({ manifest, dir, source: fs.readFileSync(entryPath, 'utf8'), error: null });
+      out.push({ ok: true, dir, manifest, source: fs.readFileSync(entryPath, 'utf8') });
     } catch (err) {
-      out.push({ manifest: null, dir, source: null, error: err instanceof Error ? err.message : String(err) });
+      out.push({ ok: false, dir, manifest: null, error: err instanceof Error ? err.message : String(err) });
     }
   }
   return out.sort((a, b) => (a.manifest?.id ?? a.dir).localeCompare(b.manifest?.id ?? b.dir));

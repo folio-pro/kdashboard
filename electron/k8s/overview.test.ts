@@ -77,7 +77,7 @@ describe('pods', () => {
         containerStatuses: [{ name: 'app', ready: false, restartCount: 14, state: { waiting: { reason: 'CrashLoopBackOff', message: 'back-off 5m' } }, lastState: { terminated: { exitCode: 1, reason: 'Error', finishedAt: new Date('2026-08-22T10:42:11Z') } } }],
       },
     }));
-    expect(p).toMatchObject({ severity: 'critical', kind: 'Pod', reason: 'CrashLoopBackOff', detail: 'container app — back-off 5m', owner: 'ReplicaSet/web-7f9c8d', restarts: 14, since: '2026-08-22T10:42:11.000Z' });
+    expect(p).toMatchObject({ severity: 'critical', kind: 'Pod', reason: 'CrashLoopBackOff', detail: 'container app — back-off 5m', owner: 'Deployment/web', restarts: 14, since: '2026-08-22T10:42:11.000Z' });
     expect(p?.id).toBe('Pod/billing/web-7f9c8d-x2k');
   });
 
@@ -155,13 +155,13 @@ describe('ordering and folding', () => {
     expect(ordered.map((p) => p.name)).toEqual(['d', 'p-old', 'p-new', 'n', 'p1']);
   });
 
-  test('pods whose Deployment / StatefulSet is already listed are folded away, bare pods stay', () => {
+  test('pods whose owning workload is already listed are folded away, bare pods stay', () => {
     const mk = (kind: 'Pod' | 'Deployment' | 'StatefulSet', name: string, owner: string | null) =>
       ({ id: `${kind}/ns/${name}`, severity: 'critical', kind, name, namespace: 'ns', reason: 'r', detail: null, owner, since: null, restarts: 0, ready: null, desired: null }) as const;
     const out = foldPodsIntoOwners([
       mk('Deployment', 'web', null),
-      mk('Pod', 'web-7f9c8d-a', 'ReplicaSet/web-7f9c8d'),
-      mk('Pod', 'other-1', 'ReplicaSet/other-abc'),
+      mk('Pod', 'web-7f9c8d-a', 'Deployment/web'),
+      mk('Pod', 'other-1', 'Deployment/other'),
       mk('StatefulSet', 'kafka', null),
       mk('Pod', 'kafka-2', 'StatefulSet/kafka'),
       mk('Pod', 'bare', null),

@@ -13,6 +13,7 @@ import type {
   V1StatefulSet,
 } from '@kubernetes/client-node';
 
+import { controllerRef, workloadKey, workloadOf } from './owners';
 import { parseCpu, parseMemory } from './quantity';
 
 // ---------------------------------------------------------------------------
@@ -111,6 +112,7 @@ export interface ClusterOverview {
 // ---------------------------------------------------------------------------
 
 const PRESSURE_CONDITIONS = new Set(['MemoryPressure', 'DiskPressure', 'PIDPressure', 'NetworkUnavailable']);
+// Mirror of src/lib/utils/pod-status.ts BROKEN_REASON / podProblem — edit both together.
 const BROKEN_REASON = /error|crash|backoff|oom|invalid|cannotrun|deadline|killed/i;
 
 function num(v: unknown): number {
@@ -123,14 +125,12 @@ function iso(d: Date | string | undefined | null): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+/** Sum of the app containers' requests — what the scheduler reserves for the
+ *  pod's lifetime (init containers run and release before). */
 export function podRequests(pod: V1Pod): { cpu: number; memory: number } {
   let cpu = 0;
   let memory = 0;
-  for (const c of [...(pod.spec?.containers ?? []), ...(pod.spec?.initContainers ?? [])]) {
-    // Init containers request sequentially; the pod's effective request is
-    // max(init, sum(app)). Approximate with app containers only — that is what
-    // the scheduler reserves for the pod's lifetime.
-    if (pod.spec?.initContainers?.includes(c)) continue;
+  for (const c of pod.spec?.containers ?? []) {
     const r = c.resources?.requests;
     if (r?.cpu) cpu += parseCpu(r.cpu);
     if (r?.memory) memory += parseMemory(r.memory);
@@ -255,9 +255,10 @@ function problem(
   };
 }
 
+/** The workload behind a pod as "Kind/name" (Deployment for a ReplicaSet's pods), null for a bare pod. */
 function podOwner(pod: V1Pod): string | null {
-  const ref = pod.metadata?.ownerReferences?.find((r) => r.controller) ?? pod.metadata?.ownerReferences?.[0];
-  return ref ? `${ref.kind}/${ref.name}` : null;
+  const w = workloadOf(pod);
+  return w.kind === 'Pod' ? null : workloadKey(w);
 }
 
 /** The first thing wrong with a pod, or null. Mirrors the renderer's podProblem. */
@@ -359,8 +360,9 @@ export function workloadProblems(lists: Partial<WorkloadLists>): Problem[] {
     if (failed || num(j.status?.failed) > 0) {
       const complete = conds.some((c) => c.type === 'Complete' && c.status === 'True');
       if (complete) continue;
+      const ownerRef = controllerRef(j.metadata);
       out.push(problem(failed ? 'critical' : 'warning', 'Job', j.metadata?.name ?? '', j.metadata?.namespace ?? null, failed?.reason ?? `${num(j.status?.failed)} failed`, failed?.message ?? null, iso(failed?.lastTransitionTime ?? j.status?.startTime), {
-        owner: j.metadata?.ownerReferences?.[0] ? `${j.metadata.ownerReferences[0].kind}/${j.metadata.ownerReferences[0].name}` : null,
+        owner: ownerRef ? `${ownerRef.kind}/${ownerRef.name}` : null,
       }));
     }
   }
@@ -419,19 +421,14 @@ export function orderProblems(problems: Problem[]): Problem[] {
 /**
  * Hide pod problems that a workload problem already explains: a Deployment
  * reported 1/3 ready does not need its two CrashLoopBackOff pods listed
- * separately, but a crashing bare pod does.
+ * separately, but a crashing bare pod does. `Problem.owner` already names the
+ * workload ("Deployment/web"), so this is a set lookup.
  */
 export function foldPodsIntoOwners(problems: Problem[]): Problem[] {
   const workloadIds = new Set(problems.filter((p) => p.kind !== 'Pod' && p.kind !== 'Node').map((p) => `${p.kind}/${p.namespace ?? ''}/${p.name}`));
   return problems.filter((p) => {
     if (p.kind !== 'Pod' || !p.owner) return true;
     const [ownerKind, ownerName] = p.owner.split('/');
-    // ReplicaSets belong to Deployments: `<deploy>-<hash>`.
-    if (ownerKind === 'ReplicaSet') {
-      const idx = ownerName.lastIndexOf('-');
-      const deploy = idx > 0 ? ownerName.slice(0, idx) : ownerName;
-      return !workloadIds.has(`Deployment/${p.namespace ?? ''}/${deploy}`);
-    }
     return !workloadIds.has(`${ownerKind}/${p.namespace ?? ''}/${ownerName}`);
   });
 }

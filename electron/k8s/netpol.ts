@@ -5,7 +5,7 @@
 
 import type { V1LabelSelector, V1NetworkPolicy, V1NetworkPolicyPeer, V1NetworkPolicyPort, V1Pod } from '@kubernetes/client-node';
 
-import { workloadOf } from './rightsizing';
+import { workloadOf } from './owners';
 
 // ---------------------------------------------------------------------------
 // Wire types (mirrored in src/lib/types/netpol.ts)

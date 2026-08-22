@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { EXTENSION_API_VERSION, parseManifest } from './extension-manifest';
+import { EXTENSION_API_VERSION, parseManifest } from './manifest';
 
 describe('parseManifest', () => {
   test('fills defaults and keeps fields', () => {
