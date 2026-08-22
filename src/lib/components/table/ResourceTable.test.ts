@@ -510,7 +510,9 @@ describe("ResourceTable — filter pipeline", () => {
     expect(applyFilterState(items, { statFilter: "needsAttention", facets: [], text: "" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-2"]);
     expect(applyFilterState(items, { statFilter: null, facets: [{ key: "restarts", op: ">", value: "0" }], text: "" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-2"]);
     expect(applyFilterState(items, { statFilter: null, facets: [], text: "job" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["job-1"]);
-    expect(applyFilterState(items, { statFilter: null, facets: [{ key: "status", op: ":", value: "running" }], text: "api-2" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-2"]);
+    // Status is the effective state, so api-2 (CrashLoopBackOff) is no longer "running".
+    expect(applyFilterState(items, { statFilter: null, facets: [{ key: "status", op: ":", value: "running" }], text: "api" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-1"]);
+    expect(applyFilterState(items, { statFilter: null, facets: [{ key: "status", op: ":", value: "crash" }], text: "api" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-2"]);
   });
   test("countActiveFilters counts each kind once", () => {
     expect(countActiveFilters({ facets: [], text: "", statFilter: null })).toBe(0);

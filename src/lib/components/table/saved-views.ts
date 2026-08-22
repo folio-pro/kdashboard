@@ -20,7 +20,10 @@ const BUILTINS: Record<string, Array<Omit<SavedView, "resourceType">>> = {
   ],
   deployments: [
     ALL,
-    { id: "degraded", name: "Degraded", facets: [], text: "", statFilter: "degraded", builtin: true },
+    // "Degraded" alone missed the deployments with zero available replicas
+    // (classified as failing), which is the first thing the view is for.
+    { id: "unhealthy", name: "Unhealthy", facets: [], text: "", statFilter: "unhealthy", builtin: true },
+    { id: "rolling-out", name: "Rolling out", facets: [], text: "", statFilter: "rollingOut", builtin: true },
   ],
   nodes: [
     ALL,

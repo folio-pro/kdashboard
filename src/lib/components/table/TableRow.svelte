@@ -7,6 +7,7 @@
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { costStore } from "$lib/stores/cost.svelte";
   import { metricsStore } from "$lib/stores/metrics.svelte";
+  import { endpointsStore } from "$lib/stores/endpoints.svelte";
   import { extensions } from "$lib/extensions";
   import { KIND_TO_RESOURCE_TYPE } from "$lib/resource-catalog";
   import { openRelatedResourceTab } from "$lib/actions/navigation";
@@ -20,7 +21,13 @@
     isStatusColumn,
     isTagColumn,
     isUsageColumn,
+    statusDetail,
   } from "./cell-values";
+  import { podReadyCount, podRestarts } from "$lib/utils/pod-status";
+  import { replicaSegments, shortImage, templateImages } from "$lib/utils/workload-status";
+  import { serviceExternal } from "$lib/utils/service-info";
+  import { formatAge } from "$lib/utils/age";
+  import ReplicaBar from "$lib/components/common/ReplicaBar.svelte";
   import { statusCategory, statusColor, isQuietStatus, rowSeverity } from "./status-category";
   import { splitPodName } from "./table-filter";
   import { ROW_HEIGHT, DENSITY_CLASSES } from "./table-density";
@@ -73,6 +80,9 @@
     nodeMetrics: costStore.getNodeMetrics(resource.metadata.name),
     podUsage: metricsStore.getPodUsage(resource.metadata.namespace, resource.metadata.name),
     autoscaler: flavor ? autoscalerSummary(resource, flavor) : undefined,
+    endpoints: resourceType === "services"
+      ? endpointsStore.summaryFor(resource.metadata.namespace, resource.metadata.name)
+      : undefined,
   });
 
   // Which of this row's values moved on the last watch delta. Bailing out
@@ -235,19 +245,103 @@
             </span>
           {/if}
         </span>
+      {:else if column.key === "podReady"}
+        <!-- Tiles say which container; the fraction says how many. Amber when
+             not every container is ready, so a 1/2 stands out from a 2/2. -->
+        {@const ready = podReadyCount(resource)}
+        <div class="flex items-center gap-2 overflow-hidden">
+          <ContainersCell {resource} {density} />
+          <span
+            class="shrink-0 font-mono tabular-nums"
+            style:color={ready.total > 0 && ready.ready < ready.total ? "var(--status-pending)" : "var(--text-secondary)"}
+          >{ready.ready}/{ready.total}</span>
+        </div>
+      {:else if column.key === "deployReady"}
+        {@const seg = replicaSegments(resource)}
+        <div class="flex items-center gap-2.5 overflow-hidden">
+          <span
+            class="shrink-0 font-mono tabular-nums"
+            style:color={seg.ready < seg.desired ? "var(--status-pending)" : "var(--text-secondary)"}
+          >{seg.ready}/{seg.desired}</span>
+          <ReplicaBar ready={seg.ready} pending={seg.pending} missing={seg.missing} />
+        </div>
+      {:else if column.key === "images"}
+        {@const images = templateImages(resource)}
+        {#if images.length === 0}
+          <span class="text-[var(--text-muted)]">—</span>
+        {:else}
+          <div class="flex items-center gap-1.5 overflow-hidden">
+            {#each images.slice(0, 2) as image (image)}
+              <Badge appearance="surface" size="sm" bordered mono class="max-w-[220px] truncate px-1.5" title={image}>{shortImage(image)}</Badge>
+            {/each}
+            {#if images.length > 2}
+              <Badge appearance="surface" size="sm" bordered mono class="px-1.5" title={images.slice(2).join(", ")}>+{images.length - 2}</Badge>
+            {/if}
+          </div>
+        {/if}
+      {:else if column.key === "endpoints"}
+        {@const summary = cellCtx.endpoints}
+        {#if summary === undefined}
+          <!-- Slices not loaded yet: blank rather than a wrong zero. -->
+          <span></span>
+        {:else if summary === null}
+          <span class="text-[var(--text-muted)]" title="No EndpointSlice for this service">—</span>
+        {:else if summary.total === 0}
+          <span class="inline-flex items-center gap-1.5" title="No endpoints: nothing backs this service">
+            <span class="h-[5px] w-[5px] shrink-0 rounded-full bg-[var(--status-failed)]"></span>
+            <span class="font-mono tabular-nums text-[var(--status-failed)]">0</span>
+            <span class="truncate text-[11px] text-[var(--status-failed)]">no backends</span>
+          </span>
+        {:else}
+          <span
+            class="font-mono tabular-nums"
+            style:color={summary.ready < summary.total ? "var(--status-pending)" : "var(--text-secondary)"}
+            title="{summary.ready} ready of {summary.total}{summary.terminating ? ` · ${summary.terminating} terminating` : ''}"
+          >{summary.ready}/{summary.total}</span>
+        {/if}
+      {:else if column.key === "externalIP"}
+        {@const external = serviceExternal(resource)}
+        {#if external.label}
+          <span class="block truncate font-mono tabular-nums text-[var(--text-secondary)]" title={external.label}>{external.label}</span>
+        {:else if external.pending}
+          <span class="inline-flex max-w-full items-center gap-1.5 overflow-hidden" title="LoadBalancer has no address yet">
+            <span
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-[11px] font-medium leading-4"
+              style="color: var(--status-pending); background-color: color-mix(in srgb, var(--status-pending) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-pending) 25%, transparent);"
+            >
+              <span class="h-[5px] w-[5px] rounded-full bg-[var(--status-pending)]"></span>Pending
+            </span>
+            <span class="truncate text-[11px] text-[var(--text-muted)]">no address yet</span>
+          </span>
+        {:else}
+          <span class="text-[var(--text-muted)]">—</span>
+        {/if}
+      {:else if column.key === "controlledBy"}
+        {@const owner = getCellValue(resource, column.key, cellCtx)}
+        {#if owner === "-"}
+          <span class="text-[var(--text-muted)]">—</span>
+        {:else}
+          {@const slash = owner.indexOf("/")}
+          <span class="flex items-center gap-1.5 overflow-hidden" title={owner}>
+            <span class="shrink-0 text-[10px] font-medium uppercase tracking-[0.04em] text-[var(--text-muted)]">{owner.slice(0, slash)}</span>
+            <span class="truncate font-mono text-[11px] text-[var(--text-secondary)]">{owner.slice(slash + 1)}</span>
+          </span>
+        {/if}
       {:else if isStatusColumn(column.key)}
         {@const val = getCellValue(resource, column.key, cellCtx)}
+        {@const detail = statusDetail(resource, column.key)}
         {#if val === "-"}
           <span class="text-[var(--text-muted)]">-</span>
         {:else}
           {@const category = statusCategory(val)}
+          <span class="flex items-center gap-1.5 overflow-hidden">
           {#if isQuietStatus(category)}
             <!-- Healthy / finished: plain muted text. Colour is reserved for
                  rows that need a look. -->
-            <span class="block truncate text-[var(--text-muted)]" title={val}>{val}</span>
+            <span class="truncate text-[var(--text-muted)]" title={val}>{val}</span>
           {:else if d.pill}
             <span
-              class="inline-flex max-w-full items-center gap-1.5 truncate rounded-sm px-1.5 text-[11px] font-medium leading-4"
+              class="inline-flex max-w-full shrink-0 items-center gap-1.5 truncate rounded-sm px-1.5 text-[11px] font-medium leading-4"
               style="color: {statusColor(category)}; background-color: color-mix(in srgb, {statusColor(category)} 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, {statusColor(category)} 25%, transparent);"
               title={val}
             >
@@ -255,19 +349,33 @@
               <span class="truncate">{val}</span>
             </span>
           {:else}
-            <span class="block truncate font-medium" style="color: {statusColor(category)}" title={val}>{val}</span>
+            <span class="truncate font-medium" style="color: {statusColor(category)}" title={val}>{val}</span>
           {/if}
+          {#if detail}
+            <!-- The reason behind the word: Unschedulable, MinimumReplicasUnavailable… -->
+            <span class="truncate text-[11px] text-[var(--text-muted)]" title={detail}>{detail}</span>
+          {/if}
+          </span>
         {/if}
       {:else if column.key === "restarts"}
-        {@const restarts = parseInt(getCellValue(resource, "restarts", cellCtx), 10) || 0}
-        <span
-          class={cn("font-mono tabular-nums", restarts > 5 && "font-medium")}
-          style:color={restarts > 5
-            ? "var(--status-failed)"
-            : restarts > 0
-              ? "var(--status-pending)"
-              : "color-mix(in srgb, var(--text-muted) 55%, var(--bg-primary))"}
-        >{restarts}</span>
+        {@const restartInfo = podRestarts(resource)}
+        {@const restarts = restartInfo.count}
+        <span class="inline-flex items-baseline justify-end gap-1.5 overflow-hidden">
+          <span
+            class={cn("font-mono tabular-nums", restarts > 5 && "font-medium")}
+            style:color={restarts > 5
+              ? "var(--status-failed)"
+              : restarts > 0
+                ? "var(--status-pending)"
+                : "color-mix(in srgb, var(--text-muted) 55%, var(--bg-primary))"}
+          >{restarts}</span>
+          {#if restarts > 0 && restartInfo.lastAt}
+            <!-- When the last one happened: 7 restarts three days ago is not
+                 7 restarts in the last hour. ageTick keeps it live. -->
+            {@const _tick = cellCtx.ageTick}
+            <span class="shrink-0 font-mono text-[10px] text-[var(--text-muted)]" title="Last restart {restartInfo.lastAt}">↻ {formatAge(restartInfo.lastAt)}</span>
+          {/if}
+        </span>
       {:else if column.key === "eventObject" && eventObjectTarget}
         {@const label = getCellValue(resource, column.key, cellCtx)}
         {@const target = eventObjectTarget}

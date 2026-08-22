@@ -6,32 +6,50 @@ import { clampColumnWidth } from "./resource-table";
 // ---------------------------------------------------------------------------
 
 export const columnsByType: Record<string, Column[]> = {
+  // Pods read like `kubectl get pods -o wide`, plus live usage: the Ready
+  // column carries the container tiles with the fraction, Status is the
+  // effective state (CrashLoopBackOff, Init:1/2, Terminating — not the phase),
+  // Restarts says when the last one happened, and the owner is visible so a
+  // long list groups by eye.
   pods: [
     { key: "name", label: "Name", sortable: true },
-    { key: "containers", label: "Containers", sortable: false, width: "120px" },
     { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
-    { key: "status", label: "Status", sortable: true, width: "120px" },
-    { key: "podCpu", label: "CPU", sortable: false, width: "140px" },
-    { key: "podMemory", label: "Memory", sortable: false, width: "150px" },
-    { key: "restarts", label: "Restarts", sortable: true, width: "90px" },
+    { key: "podReady", label: "Ready", sortable: true, width: "112px" },
+    { key: "status", label: "Status", sortable: true, width: "160px" },
+    { key: "restarts", label: "Restarts", sortable: true, width: "110px" },
+    { key: "podCpu", label: "CPU", sortable: false, width: "160px" },
+    { key: "podMemory", label: "Memory", sortable: false, width: "160px" },
     { key: "age", label: "Age", sortable: true, width: "70px" },
-    { key: "node", label: "Node", sortable: true },
+    { key: "controlledBy", label: "Controlled by", sortable: true, width: "170px" },
+    { key: "node", label: "Node", sortable: true, width: "150px" },
+    { key: "ip", label: "IP", sortable: false, width: "120px", defaultHidden: true },
   ],
+  // One Ready cell (fraction + ready/pending/missing bar) and one Status word
+  // from the conditions replace three bare counts, which stay one click away
+  // in the column picker.
   deployments: [
     { key: "name", label: "Name", sortable: true },
     { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
-    { key: "deployReady", label: "Ready", sortable: false, width: "80px" },
-    { key: "upToDate", label: "Up-to-date", sortable: false, width: "90px" },
-    { key: "available", label: "Available", sortable: false, width: "90px" },
+    { key: "deployReady", label: "Ready", sortable: true, width: "150px" },
+    { key: "deployStatus", label: "Status", sortable: true, width: "170px" },
+    { key: "images", label: "Images", sortable: false },
+    { key: "pods", label: "Pods", sortable: true, width: "80px" },
+    { key: "upToDate", label: "Up-to-date", sortable: false, width: "90px", defaultHidden: true },
+    { key: "available", label: "Available", sortable: false, width: "90px", defaultHidden: true },
     { key: "age", label: "Age", sortable: true, width: "80px" },
   ],
+  // Endpoints ready/total comes from EndpointSlices (see endpointsStore): a
+  // service with no backends is the first thing to look for and the one
+  // thing the spec cannot tell you.
   services: [
     { key: "name", label: "Name", sortable: true },
     { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
-    { key: "type", label: "Type", sortable: true, width: "100px" },
+    { key: "type", label: "Type", sortable: true, width: "120px" },
     { key: "clusterIP", label: "Cluster IP", sortable: false, width: "130px" },
-    { key: "externalIP", label: "External IP", sortable: false, width: "130px" },
+    { key: "externalIP", label: "External", sortable: false, width: "200px" },
     { key: "ports", label: "Ports", sortable: false },
+    { key: "endpoints", label: "Endpoints", sortable: true, width: "130px" },
+    { key: "selector", label: "Selector", sortable: false, defaultHidden: true },
     { key: "age", label: "Age", sortable: true, width: "80px" },
   ],
   replicasets: [
@@ -264,6 +282,23 @@ export const defaultColumns: Column[] = [
   { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
   { key: "age", label: "Age", sortable: true, width: "80px" },
 ];
+
+/**
+ * Migrate v1 column preferences. v1 stored the keys the user hid, when every
+ * column was shown by default; today a key in the list means "toggled away
+ * from the default", so a v1 entry for a column that is now `defaultHidden`
+ * (Up-to-date, Available, IP, Selector) would read as "shown" — the opposite
+ * of what the user chose. Dropping those entries keeps the column hidden.
+ */
+export function migrateHiddenPrefs(hidden: Record<string, string[]>): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [type, keys] of Object.entries(hidden)) {
+    const columns = columnsByType[type] ?? defaultColumns;
+    const kept = keys.filter((key) => !columns.find((c) => c.key === key)?.defaultHidden);
+    if (kept.length > 0) out[type] = kept;
+  }
+  return out;
+}
 
 /** Width of the leading gutter column (severity bar + checkbox). */
 export const GUTTER_WIDTH = 28;

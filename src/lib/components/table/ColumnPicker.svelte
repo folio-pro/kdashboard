@@ -62,7 +62,7 @@
           title={autoHidden ? "Hidden while one namespace is selected" : undefined}
         >
           <Checkbox
-            checked={!tablePrefs.isHidden(resourceType, column.key) && !autoHidden}
+            checked={!tablePrefs.isHidden(resourceType, column.key, column.defaultHidden) && !autoHidden}
             disabled={locked || autoHidden}
             onCheckedChange={() => tablePrefs.toggleColumn(resourceType, column.key)}
             aria-label="Show {column.label} column"

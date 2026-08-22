@@ -11,6 +11,9 @@ import { formatAge } from "$lib/utils/age";
 import { cpuCell, memoryCell, formatCpu, formatBytes } from "$lib/stores/metrics.logic";
 import type { AutoscalerSummary } from "$lib/utils/autoscaler";
 import { formatReplicas, formatTargets } from "$lib/utils/autoscaler";
+import { podOwner, podReadyCount, podStatus } from "$lib/utils/pod-status";
+import { deploymentStatus, shortImage, templateImages } from "$lib/utils/workload-status";
+import { serviceExternal, servicePortsLabel, serviceSelector, type EndpointSummary } from "$lib/utils/service-info";
 
 /**
  * Everything a cell needs that does not live on the Resource itself. The row
@@ -33,6 +36,11 @@ export interface CellContext {
    * for the same answer.
    */
   autoscaler?: AutoscalerSummary;
+  /**
+   * EndpointSlice summary for a Service row: undefined while the slices for
+   * its namespace are not loaded, null when it has none.
+   */
+  endpoints?: EndpointSummary | null;
 }
 
 /** Placeholder for "this resource has no such value". */
@@ -99,6 +107,9 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
       return formatAge(meta.creation_timestamp);
     case "status":
     case "phase":
+      // A pod's status is what kubectl prints, not its phase: a Running pod
+      // with a crash-looping container reads CrashLoopBackOff.
+      if (resource.kind === "Pod") return podStatus(resource).label;
       return str(status.phase ?? status.status);
     case "data": {
       const data = resource.data ?? spec.data ?? status.data;
@@ -116,6 +127,14 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
       if (!statuses) return "0";
       return statuses.reduce((sum, c) => sum + (c.restartCount ?? 0), 0).toString();
     }
+    case "podReady": {
+      const { ready: r, total } = podReadyCount(resource);
+      return `${r}/${total}`;
+    }
+    case "controlledBy": {
+      const owner = podOwner(resource);
+      return owner ? `${owner.short}/${owner.name}` : NONE;
+    }
     case "node":
       return str(spec.nodeName ?? status.nodeName);
     case "ip":
@@ -124,6 +143,12 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
     // --- Workloads ---------------------------------------------------------
     case "deployReady":
       return `${(status.readyReplicas as number) ?? 0}/${(spec.replicas as number) ?? 0}`;
+    case "deployStatus":
+      return deploymentStatus(resource).label;
+    case "images":
+      return summarize(templateImages(resource).map(shortImage), 3);
+    case "pods":
+      return ((status.replicas as number) ?? 0).toString();
     case "upToDate":
       return ((status.updatedReplicas as number) ?? 0).toString();
     case "available":
@@ -135,14 +160,20 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
     case "clusterIP":
       return str(spec.clusterIP);
     case "externalIP": {
-      const lb = status.loadBalancer as { ingress?: Array<{ ip: string }> } | undefined;
-      if (lb?.ingress?.length) return lb.ingress.map((e) => e.ip).join(", ");
-      return (spec.externalIPs as string[])?.join(", ") ?? NONE;
+      const external = serviceExternal(resource);
+      if (external.label) return external.label;
+      return external.pending ? "<pending>" : NONE;
     }
-    case "ports": {
-      const ports = spec.ports as Array<{ port: number; protocol?: string }> | undefined;
-      if (!ports) return NONE;
-      return ports.map((p) => `${p.port}/${p.protocol ?? "TCP"}`).join(", ");
+    case "ports":
+      return servicePortsLabel(resource) || NONE;
+    case "selector":
+      return summarize(serviceSelector(resource), 3);
+    case "endpoints": {
+      // Blank (not "-") until the slices are loaded, so a half-rendered table
+      // never claims a service has no backends.
+      if (ctx.endpoints === undefined) return "";
+      if (ctx.endpoints === null) return NONE;
+      return `${ctx.endpoints.ready}/${ctx.endpoints.total}`;
     }
     case "endpointAddresses": {
       // Endpoints keeps addresses under subsets[]; show the first few with the
@@ -287,7 +318,7 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
 
 /** Numeric / identifier cells, rendered in monospace tabular figures. */
 const MONO_COLUMNS = new Set([
-  "age", "ready", "deployReady", "upToDate", "available",
+  "age", "ready", "podReady", "controlledBy", "deployReady", "upToDate", "available", "pods", "endpoints", "selector",
   "rsDesired", "rsCurrent", "rsReady", "stsReady",
   "dsDesired", "dsCurrent", "dsReady", "dsAvailable",
   "jobCompletions", "jobDuration", "cjSchedule", "cjActive", "cjLastSchedule",
@@ -318,7 +349,18 @@ export const isMonoColumn = (key: string): boolean => MONO_COLUMNS.has(key);
 export const isTagColumn = (key: string): boolean => TAG_COLUMNS.has(key);
 export const isUsageColumn = (key: string): boolean => USAGE_COLUMNS.has(key);
 export const isStatusColumn = (key: string): boolean =>
-  key === "status" || key === "phase" || key === "eventType";
+  key === "status" || key === "phase" || key === "eventType" || key === "deployStatus";
+
+/**
+ * The muted note a status cell carries after its pill: why a pod is Pending
+ * (Unschedulable), the condition reason behind a Deployment's state
+ * (MinimumReplicasUnavailable). Empty when the word says it all.
+ */
+export function statusDetail(resource: Resource, key: string): string {
+  if (key === "deployStatus") return deploymentStatus(resource).detail ?? "";
+  if ((key === "status" || key === "phase") && resource.kind === "Pod") return podStatus(resource).reason ?? "";
+  return "";
+}
 export const isContainersColumn = (key: string): boolean => key === "containers";
 
 // ---------------------------------------------------------------------------

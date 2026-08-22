@@ -22,6 +22,7 @@ export function metaFrom(m: RawObjectMeta | undefined): ResourceMetadata {
     labels: meta.labels ?? null,
     annotations: meta.annotations ?? null,
     creation_timestamp: meta.creationTimestamp ?? null,
+    deletion_timestamp: meta.deletionTimestamp ?? null,
     // Only included when non-empty.
     owner_references: owners && owners.length > 0 ? owners : null,
   };
@@ -146,8 +147,8 @@ export function projectGeneric(
 // container status rendering read (and src/lib/types PodStatus/ContainerStatus):
 //   spec.nodeName, spec.containers[].{name,image}, spec.initContainers[].{name,image}
 //   status.{phase,podIP,hostIP,startTime}
-//   status.conditions[].{type,status}
-//   status.containerStatuses[].{name,ready,restartCount,image,state,started}
+//   status.conditions[].{type,status,reason}
+//   status.containerStatuses[].{name,ready,restartCount,image,state,lastState,started}
 //   status.initContainerStatuses[...]
 // ---------------------------------------------------------------------------
 
@@ -160,6 +161,8 @@ interface RawContainer {
 interface RawCondition {
   type?: string;
   status?: string;
+  /** Why a condition is False — "Unschedulable" is what a Pending row shows. */
+  reason?: string;
 }
 interface RawContainerStatus {
   name?: string;
@@ -167,6 +170,8 @@ interface RawContainerStatus {
   restartCount?: number;
   image?: string;
   state?: unknown;
+  /** The previous termination: its finishedAt is when the last restart happened. */
+  lastState?: unknown;
   started?: boolean;
 }
 interface RawPodSpec {
@@ -204,6 +209,7 @@ function projectContainerStatus(cs: RawContainerStatus): Partial<RawContainerSta
     restartCount: cs.restartCount,
     image: cs.image,
     state: cs.state,
+    lastState: presentOrUndefined(cs.lastState),
     started: cs.started,
   });
 }
@@ -229,7 +235,7 @@ export function projectPod(obj: RawObject): Resource {
       podIP: rawStatus.podIP,
       hostIP: rawStatus.hostIP,
       startTime: rawStatus.startTime,
-      conditions: rawStatus.conditions?.map((c) => compact({ type: c.type, status: c.status })),
+      conditions: rawStatus.conditions?.map((c) => compact({ type: c.type, status: c.status, reason: c.reason })),
       containerStatuses: rawStatus.containerStatuses?.map(projectContainerStatus),
       initContainerStatuses: rawStatus.initContainerStatuses?.map(projectContainerStatus),
     });

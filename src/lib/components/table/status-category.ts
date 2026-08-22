@@ -26,10 +26,32 @@ const STATUS_CATEGORY: Record<string, StatusCategory> = {
   "false": "error",
   terminating: "orange",
   unknown: "muted",
+  // Pods: what podStatus() derives from container states
+  notready: "warning",
+  podinitializing: "warning",
+  unschedulable: "warning",
+  createcontainerconfigerror: "error",
+  createcontainererror: "error",
+  invalidimagename: "error",
+  runcontainererror: "error",
+  containercannotrun: "error",
+  deadlineexceeded: "error",
+  nodelost: "error",
+  shutdown: "error",
+  // Workloads: deploymentStatus()
+  progressing: "warning",
+  paused: "warning",
+  unavailable: "error",
+  replicafailure: "error",
+  "scaled to 0": "muted",
   // core/v1 Event types (global Events view)
   normal: "muted",
   warning: "warning",
 };
+
+/** Reasons the map does not spell out, by shape. */
+const ERROR_SHAPE = /error|backoff|crash|oom|fail|invalid|exceeded|killed/;
+const WARNING_SHAPE = /pending|waiting|creating|initializing|progressing|terminat/;
 
 const CATEGORY_COLOR: Record<StatusCategory, string> = {
   success: "var(--status-running)",
@@ -41,7 +63,18 @@ const CATEGORY_COLOR: Record<StatusCategory, string> = {
 };
 
 export function statusCategory(status: string): StatusCategory {
-  return STATUS_CATEGORY[status.toLowerCase()] ?? "muted";
+  const lower = status.toLowerCase();
+  const known = STATUS_CATEGORY[lower];
+  if (known) return known;
+  // "Init:CrashLoopBackOff" takes its inner reason's colour; "Init:1/2" is progress.
+  if (lower.startsWith("init:")) {
+    const inner = lower.slice(5);
+    return STATUS_CATEGORY[inner] ?? (ERROR_SHAPE.test(inner) ? "error" : "warning");
+  }
+  if (lower.startsWith("exitcode:") || lower.startsWith("signal:")) return "error";
+  if (ERROR_SHAPE.test(lower)) return "error";
+  if (WARNING_SHAPE.test(lower)) return "warning";
+  return "muted";
 }
 
 export function statusColor(category: StatusCategory): string {

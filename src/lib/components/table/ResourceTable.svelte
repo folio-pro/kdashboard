@@ -22,6 +22,7 @@
   import { isInputElement } from "$lib/utils/keyboard";
   import { costStore } from "$lib/stores/cost.svelte";
   import { metricsStore, POD_METRICS_TTL_MS } from "$lib/stores/metrics.svelte";
+  import { endpointsStore, ENDPOINTS_TTL_MS } from "$lib/stores/endpoints.svelte";
   import { liveValues } from "$lib/stores/live-values.svelte";
   import { resourceTypeLabel as catalogLabel } from "$lib/resource-catalog";
   import { contextMenuStore } from "$lib/stores/context-menu.svelte";
@@ -46,7 +47,7 @@
   let namespaceAutoHidden = $derived(!!k8sStore.currentNamespace && allColumns.some((c) => c.key === "namespace"));
   let columns = $derived(
     allColumns.filter(
-      (c) => !(c.key === "namespace" && namespaceAutoHidden) && !tablePrefs.isHidden(k8sStore.selectedResourceType, c.key),
+      (c) => !(c.key === "namespace" && namespaceAutoHidden) && !tablePrefs.isHidden(k8sStore.selectedResourceType, c.key, c.defaultHidden),
     ),
   );
 
@@ -64,6 +65,7 @@
     if (prevCtx && (ctx !== prevCtx || ns !== prevNs)) {
       costStore.reset();
       metricsStore.reset();
+      endpointsStore.reset();
       // Flashes are keyed by uid; a uid from the cluster we just left would
       // highlight an unrelated row that happens to reuse the key.
       liveValues.clear();
@@ -99,6 +101,19 @@
     return () => clearInterval(timer);
   });
 
+  // EndpointSlices back the Services table's Endpoints column: fetched on
+  // entry, then polled at the store's TTL while the view stays open.
+  $effect(() => {
+    if (k8sStore.selectedResourceType !== "services") return;
+    const ns = k8sStore.currentNamespace;
+    void endpointsStore.load(ns, true);
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      void endpointsStore.load(ns);
+    }, ENDPOINTS_TTL_MS);
+    return () => clearInterval(timer);
+  });
+
   // Track resized column widths per resource type: { [resourceType]: { [colKey]: widthPx } }
   let columnWidthOverrides: Record<string, Record<string, number>> = $state({});
 
@@ -119,6 +134,7 @@
       nodeMetrics: costStore.getNodeMetrics(r.metadata.name),
       nodeCost: costStore.getNodeCost(r.metadata.name),
       podUsage: metricsStore.getPodUsage(r.metadata.namespace, r.metadata.name),
+      endpoints: endpointsStore.summaryFor(r.metadata.namespace, r.metadata.name),
     };
   }
 

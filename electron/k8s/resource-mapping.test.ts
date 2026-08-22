@@ -14,6 +14,7 @@ describe('metaFrom — null contract', () => {
     expect(m.labels).toBeNull();
     expect(m.annotations).toBeNull();
     expect(m.creation_timestamp).toBeNull();
+    expect(m.deletion_timestamp).toBeNull();
     expect(m.owner_references).toBeNull();
     // Every field present in the serialized JSON (none dropped):
     const json = JSON.parse(JSON.stringify(m));
@@ -21,6 +22,7 @@ describe('metaFrom — null contract', () => {
       [
         'annotations',
         'creation_timestamp',
+        'deletion_timestamp',
         'labels',
         'name',
         'namespace',
@@ -47,6 +49,7 @@ describe('metaFrom — null contract', () => {
       uid: 'u1',
       resource_version: '42',
       creation_timestamp: '2024-01-01T00:00:00Z',
+      deletion_timestamp: null,
       labels: { app: 'web' },
       annotations: { a: 'b' },
       owner_references: null,

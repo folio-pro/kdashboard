@@ -24,6 +24,13 @@ const KEY_ALIASES: Record<string, string> = {
   cpu: "podCpu",
   mem: "podMemory",
   memory: "podMemory",
+  ready: "podReady",
+  owner: "controlledBy",
+  controller: "controlledBy",
+  image: "images",
+  ep: "endpoints",
+  endpoint: "endpoints",
+  external: "externalIP",
 };
 
 /** Accessors that work whether or not the type shows them as a column. */

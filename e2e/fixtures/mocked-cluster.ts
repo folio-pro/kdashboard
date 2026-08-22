@@ -38,10 +38,13 @@ interface Fixtures {
   mockInvoke: (handlerSource: string) => Promise<void>;
 }
 
-export const test = base.extend<Fixtures>({
-  mockInvoke: async ({ page }, use) => {
-    const install = async (handlerSource: string) => {
-      await page.addInitScript(`
+/**
+ * Install `handlerSource` as the page's window.electronAPI.invoke before any
+ * app script runs. Shared by the `mockInvoke` fixture and by e2e/helpers.ts,
+ * whose default `page` boots the app against a small mock cluster.
+ */
+export async function installMockInvoke(page: Page, handlerSource: string): Promise<void> {
+  await page.addInitScript(`
         (function () {
           const handler = ${handlerSource};
           const fakeInvoke = async (cmd, args) => {
@@ -68,8 +71,11 @@ export const test = base.extend<Fixtures>({
           });
         })();
       `);
-    };
-    await use(install);
+}
+
+export const test = base.extend<Fixtures>({
+  mockInvoke: async ({ page }, use) => {
+    await use((handlerSource: string) => installMockInvoke(page, handlerSource));
   },
 });
 

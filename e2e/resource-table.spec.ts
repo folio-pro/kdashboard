@@ -1,252 +1,108 @@
-import { test, expect } from "./helpers";
-import { MOCK_DEPLOYMENTS_LIST, MOCK_PODS_LIST } from "./fixtures/mock-k8s";
+/**
+ * The resource table against the default mock cluster (see helpers.ts): rows,
+ * headers, the search box, sorting, namespace scoping, row preview and bulk
+ * selection. Pods is the view the app boots into.
+ */
+import { test, expect, tableRows, selectNamespace } from "./helpers";
+import { MOCK_PODS_LIST } from "./fixtures/mock-k8s";
+
+// The app boots scoped to the "default" namespace.
+const POD_NAMES = MOCK_PODS_LIST.items.filter((p) => p.metadata.namespace === "default").map((p) => p.metadata.name);
 
 test.describe("ResourceTable", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+  test("renders one row per pod with name and status", async ({ page }) => {
+    const rows = tableRows(page);
+    await expect(rows).toHaveCount(POD_NAMES.length);
+    await expect(rows.first().locator('[data-testid="cell-name"]')).toBeVisible();
+    // Status is the effective state derived from the container statuses.
+    await expect(rows.first().locator('[data-testid="cell-status"]')).toHaveText(/Running/);
   });
 
-  test("displays resource rows", async ({ page }) => {
-    const rows = page.locator('[data-testid="resource-row"]');
-    await expect(rows.first()).toBeVisible();
-  });
-
-  test("displays column headers", async ({ page }) => {
+  test("shows the column headers for pods", async ({ page }) => {
     const headers = page.locator('[data-testid="table-header"]');
     await expect(headers.first()).toBeVisible();
+    await expect(headers.filter({ hasText: /^Name/ })).toHaveCount(1);
+    await expect(headers.filter({ hasText: /^Status/ })).toHaveCount(1);
+    await expect(headers.filter({ hasText: /^Ready/ })).toHaveCount(1);
   });
 
-  test("displays resource name", async ({ page }) => {
-    const firstRow = page.locator('[data-testid="resource-row"]').first();
-    const nameCell = firstRow.locator('[data-testid="cell-name"]');
-    await expect(nameCell).toBeVisible();
-    const name = await nameCell.textContent();
-    expect(name).toBeTruthy();
+  test("filters rows by name and clears", async ({ page }) => {
+    const search = page.locator("#resource-filter");
+    await search.fill("api");
+    await expect(tableRows(page)).toHaveCount(1);
+    await expect(tableRows(page).first().locator('[data-testid="cell-name"]')).toContainText("api-server-v2");
+    await search.fill("");
+    await expect(tableRows(page)).toHaveCount(POD_NAMES.length);
   });
 
-  test("displays resource status", async ({ page }) => {
-    const firstRow = page.locator('[data-testid="resource-row"]').first();
-    const statusCell = firstRow.locator('[data-testid="cell-status"]');
-    await expect(statusCell).toBeVisible();
-  });
-
-  test("filters resources by name", async ({ page }) => {
-    const filterInput = page.locator('[data-testid="filter-input"]');
-    await filterInput.fill("api");
-
-    await page.waitForTimeout(300);
-
-    const rows = page.locator('[data-testid="resource-row"]');
-    const count = await rows.count();
-    expect(count).toBeGreaterThan(0);
-
-    for (let i = 0; i < count; i++) {
-      const nameCell = rows.nth(i).locator('[data-testid="cell-name"]');
-      const name = await nameCell.textContent();
-      expect(name?.toLowerCase()).toContain("api");
-    }
-  });
-
-  test("clears filter and shows all resources", async ({ page }) => {
-    const filterInput = page.locator('[data-testid="filter-input"]');
-    await filterInput.fill("api");
-
-    await page.waitForTimeout(300);
-
-    const clearButton = page.locator('[data-testid="filter-clear"]');
-    await clearButton.click();
-
-    await page.waitForTimeout(300);
-
-    const rows = page.locator('[data-testid="resource-row"]');
-    const allRowsCount = await rows.count();
-    expect(allRowsCount).toBeGreaterThan(1);
+  test("a typed facet narrows by status", async ({ page }) => {
+    const search = page.locator("#resource-filter");
+    await search.fill("status:running ");
+    await expect(tableRows(page)).toHaveCount(POD_NAMES.length);
+    await search.fill("status:crash ");
+    await expect(tableRows(page)).toHaveCount(0);
   });
 
   test.describe("Sorting", () => {
-    test("sorts by name ascending", async ({ page }) => {
-      const nameHeader = page.locator('[data-testid="header-name"]');
-      await nameHeader.click();
-
-      await page.waitForTimeout(200);
-
-      const rows = page.locator('[data-testid="resource-row"]');
-      const names = await rows.all();
-      const nameTexts: string[] = [];
-
-      for (const row of names) {
-        const nameCell = row.locator('[data-testid="cell-name"]');
-        const text = await nameCell.textContent();
-        if (text) nameTexts.push(text);
-      }
-
-      const sorted = [...nameTexts].sort((a, b) => a.localeCompare(b));
-      expect(nameTexts).toEqual(sorted);
+    test("clicking Name toggles ascending and descending", async ({ page }) => {
+      const names = async () => (await tableRows(page).locator('[data-testid="cell-name"]').allTextContents()).map((n) => n.trim());
+      const sorted = [...POD_NAMES].sort();
+      const header = page.locator('[data-testid="header-name"]');
+      // Whatever the boot order, one click per direction.
+      await header.click();
+      const first = await names();
+      const ascendingFirst = first[0] === sorted[0];
+      expect(first).toEqual(ascendingFirst ? sorted : [...sorted].reverse());
+      await header.click();
+      expect(await names()).toEqual(ascendingFirst ? [...sorted].reverse() : sorted);
     });
+  });
 
-    test("sorts by name descending after second click", async ({ page }) => {
-      const nameHeader = page.locator('[data-testid="header-name"]');
-      await nameHeader.click();
-      await nameHeader.click();
-
-      await page.waitForTimeout(200);
-
-      const rows = page.locator('[data-testid="resource-row"]');
-      const names = await rows.all();
-      const nameTexts: string[] = [];
-
-      for (const row of names) {
-        const nameCell = row.locator('[data-testid="cell-name"]');
-        const text = await nameCell.textContent();
-        if (text) nameTexts.push(text);
-      }
-
-      const sorted = [...nameTexts].sort((a, b) => b.localeCompare(a));
-      expect(nameTexts).toEqual(sorted);
+  test.describe("Namespace scoping", () => {
+    test("one namespace hides the column and the other namespaces' rows", async ({ page }) => {
+      await selectNamespace(page, "kube-system");
+      await expect(tableRows(page)).toHaveCount(1);
+      await expect(tableRows(page).first().locator('[data-testid="cell-name"]')).toContainText("cache-redis");
+      await expect(page.getByText("Namespace column hidden")).toBeVisible();
+      await selectNamespace(page, "default");
+      await expect(tableRows(page)).toHaveCount(POD_NAMES.length);
     });
   });
 
   test.describe("Selection", () => {
-    test("selects a resource on click", async ({ page }) => {
-      const row = page.locator('[data-testid="resource-row"]').first();
-      await row.click();
-
-      await page.waitForTimeout(200);
-
-      await expect(row).toHaveAttribute("data-selected", "true");
+    test("click previews the row in the docked detail panel", async ({ page }) => {
+      const first = tableRows(page).first();
+      const name = await first.locator('[data-testid="cell-name"]').textContent();
+      await first.click();
+      const panel = page.locator('[data-testid="detail-panel"]');
+      await expect(panel).toBeVisible();
+      await expect(panel.locator('[data-testid="detail-resource-name"]')).toHaveText(name?.trim() ?? "");
+      // Escape closes the preview.
+      await page.keyboard.press("Escape");
+      await expect(panel).toBeHidden();
     });
 
-    test("opens detail panel on double click", async ({ page }) => {
-      const row = page.locator('[data-testid="resource-row"]').first();
-      await row.dblclick();
-
-      await page.waitForTimeout(300);
-
-      const detailPanel = page.locator('[data-testid="detail-panel"]');
-      await expect(detailPanel).toBeVisible();
-    });
-  });
-
-  test.describe("Bulk Selection", () => {
-    test("shows bulk action bar when resources are selected", async ({ page }) => {
-      const firstRow = page.locator('[data-testid="resource-row"]').first();
-      const checkbox = firstRow.locator('[data-testid="row-checkbox"]');
-      await checkbox.click();
-
-      await page.waitForTimeout(200);
-
-      const bulkActionBar = page.locator('[data-testid="bulk-action-bar"]');
-      await expect(bulkActionBar).toBeVisible();
-    });
-
-    test("hides bulk action bar when no resources selected", async ({ page }) => {
-      const bulkActionBar = page.locator('[data-testid="bulk-action-bar"]');
-      const isVisible = await bulkActionBar.isVisible().catch(() => false);
-
-      if (isVisible) {
-        const checkbox = page.locator('[data-testid="row-checkbox"]').first();
-        await checkbox.click();
-        await page.waitForTimeout(200);
-      }
-
-      await expect(bulkActionBar).not.toBeVisible();
-    });
-
-    test("select all checkbox selects all visible resources", async ({ page }) => {
-      const selectAllCheckbox = page.locator('[data-testid="select-all-checkbox"]');
-      await selectAllCheckbox.click();
-
-      await page.waitForTimeout(200);
-
-      const rows = page.locator('[data-testid="resource-row"]');
-      const count = await rows.count();
-
-      for (let i = 0; i < count; i++) {
-        const row = rows.nth(i);
-        await expect(row).toHaveAttribute("data-selected", "true");
-      }
+    test("double click opens the row in its own tab", async ({ page }) => {
+      const first = tableRows(page).first();
+      const name = (await first.locator('[data-testid="cell-name"]').textContent())?.trim() ?? "";
+      await first.dblclick();
+      await expect(page.locator('[data-testid="detail-panel"] [data-testid="detail-resource-name"]')).toHaveText(name);
+      // The table is gone: the tab shows the page variant with labelled actions.
+      await expect(page.getByRole("button", { name: "Shell", exact: true }).first()).toBeVisible();
     });
   });
 
-  test.describe("Namespace Filtering", () => {
-    test("filters by namespace", async ({ page }) => {
-      const namespaceSelector = page.locator('[data-testid="namespace-filter"]');
-      await namespaceSelector.click();
-
-      await page.waitForTimeout(200);
-
-      const namespaceOption = page.locator('[data-testid="namespace-option"]').filter({ hasText: "default" }).first();
-      await namespaceOption.click();
-
-      await page.waitForTimeout(300);
-
-      const rows = page.locator('[data-testid="resource-row"]');
-      const count = await rows.count();
-
-      for (let i = 0; i < count; i++) {
-        const row = rows.nth(i);
-        const namespaceCell = row.locator('[data-testid="cell-namespace"]');
-        const namespace = await namespaceCell.textContent();
-        expect(namespace?.trim()).toBe("default");
-      }
+  test.describe("Bulk selection", () => {
+    test("checking rows shows the bulk action bar with the count", async ({ page }) => {
+      await tableRows(page).nth(0).locator('[data-testid="row-checkbox"]').click({ force: true });
+      await expect(page.getByText("1 resource selected")).toBeVisible();
+      await tableRows(page).nth(1).locator('[data-testid="row-checkbox"]').click({ force: true });
+      await expect(page.getByText("2 resources selected")).toBeVisible();
     });
 
-    test("shows resources from all namespaces", async ({ page }) => {
-      const namespaceSelector = page.locator('[data-testid="namespace-filter"]');
-      await namespaceSelector.click();
-
-      await page.waitForTimeout(200);
-
-      const allNamespacesOption = page.locator('[data-testid="namespace-option"]').filter({ hasText: /all namespaces/i });
-      await allNamespacesOption.click();
-
-      await page.waitForTimeout(300);
-
-      const rows = page.locator('[data-testid="resource-row"]');
-      const count = await rows.count();
-      expect(count).toBeGreaterThan(0);
-    });
-  });
-
-  test.describe("Pagination", () => {
-    test("displays pagination controls", async ({ page }) => {
-      const pagination = page.locator('[data-testid="pagination"]');
-      const isVisible = await pagination.isVisible().catch(() => false);
-
-      if (isVisible) {
-        await expect(pagination).toBeVisible();
-      }
-    });
-
-    test("navigates to next page", async ({ page }) => {
-      const pagination = page.locator('[data-testid="pagination"]');
-      const isVisible = await pagination.isVisible().catch(() => false);
-
-      if (!isVisible) {
-        return;
-      }
-
-      const nextButton = pagination.locator('[data-testid="page-next"]');
-      const isNextVisible = await nextButton.isVisible().catch(() => false);
-
-      if (isNextVisible) {
-        const prevCount = await page.locator('[data-testid="resource-row"]').count();
-        await nextButton.click();
-        await page.waitForTimeout(300);
-
-        const newCount = await page.locator('[data-testid="resource-row"]').count();
-        expect(newCount).toBe(prevCount);
-      }
-    });
-  });
-
-  test.describe("Virtual Scrolling", () => {
-    test("renders only visible rows for large datasets", async ({ page }) => {
-      const rows = page.locator('[data-testid="resource-row"]');
-      const visibleCount = await rows.count();
-
-      expect(visibleCount).toBeLessThan(100);
+    test("the header checkbox selects every visible row", async ({ page }) => {
+      await page.locator('[data-testid="select-all-checkbox"]').click({ force: true });
+      await expect(page.getByText(`${POD_NAMES.length} resources selected`)).toBeVisible();
     });
   });
 });

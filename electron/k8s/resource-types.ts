@@ -16,6 +16,8 @@ export interface ResourceMetadata {
   labels?: Record<string, string> | null;
   annotations?: Record<string, string> | null;
   creation_timestamp?: string | null;
+  /** Set once the object is being deleted; the renderer shows it as Terminating. */
+  deletion_timestamp?: string | null;
   owner_references?: unknown;
 }
 
@@ -46,6 +48,7 @@ export interface RawObjectMeta {
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   creationTimestamp?: string;
+  deletionTimestamp?: string;
   ownerReferences?: unknown[];
   managedFields?: unknown;
   [k: string]: unknown;
