@@ -1,5 +1,5 @@
 import type { SortDirection, Resource, Facet } from "../types/index.js";
-import { facetKey } from "../utils/facets.js";
+import { dedupeFacets, facetKey } from "../utils/facets.js";
 
 export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "helm" | "crd-table";
 
@@ -215,14 +215,25 @@ export class UiStoreLogic {
   }
   set facets(v: Facet[]) {
     const t = this.activeTab;
-    if (t) t.facets = v;
+    if (t) t.facets = dedupeFacets(v);
   }
 
+  /**
+   * Append the facets not already on the tab. A facet's identity is key+op+
+   * value; one batch can repeat itself (`ns:kube ns:kube`), so `seen` grows as
+   * the batch is walked — the chip list is keyed by that identity.
+   */
   addFacets(facets: Facet[]): void {
     const t = this.activeTab;
     if (!t || facets.length === 0) return;
     const seen = new Set((t.facets ?? []).map(facetKey));
-    const fresh = facets.filter((f) => !seen.has(facetKey(f)));
+    const fresh: Facet[] = [];
+    for (const f of facets) {
+      const k = facetKey(f);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      fresh.push(f);
+    }
     if (fresh.length === 0) return;
     t.facets = [...(t.facets ?? []), ...fresh];
   }
@@ -255,7 +266,7 @@ export class UiStoreLogic {
       this._debounceTimer = null;
       this._debounceTarget = null;
     }
-    t.facets = state.facets.map((f) => ({ ...f }));
+    t.facets = dedupeFacets(state.facets).map((f) => ({ ...f }));
     t.filter = state.text;
     t._debouncedFilter = state.text;
     t.statFilter = state.statFilter;
@@ -729,7 +740,7 @@ export function deserializeTabs(raw: string | null): SerializedTabsState | null 
     if (typeof r.namespace === "string") st.namespace = r.namespace;
     if (typeof r.filter === "string") st.filter = r.filter;
     if (Array.isArray(r.facets)) {
-      const facets = r.facets.filter(isSerializedFacet).map((f) => ({ key: f.key, op: f.op, value: f.value }));
+      const facets = dedupeFacets(r.facets.filter(isSerializedFacet).map((f) => ({ key: f.key, op: f.op, value: f.value })));
       if (facets.length > 0) st.facets = facets;
     }
     if (typeof r.sortColumn === "string") st.sortColumn = r.sortColumn;

@@ -242,6 +242,38 @@ describe("UiStore", () => {
     });
   });
 
+  describe("facets", () => {
+    const ns = { key: "namespace", op: ":" as const, value: "kube" };
+    const rst = { key: "restarts", op: ">" as const, value: "2" };
+
+    test("addFacets appends new identities only", () => {
+      store.addFacets([ns]);
+      store.addFacets([ns, rst]);
+      expect(store.facets).toEqual([ns, rst]);
+    });
+
+    test("addFacets drops repeats inside one batch", () => {
+      // `ns:kube ns:kube` committed at once: the chip list is keyed by identity.
+      store.addFacets([ns, { ...ns }, rst, { ...ns }]);
+      expect(store.facets).toEqual([ns, rst]);
+    });
+
+    test("the setter and applyFilterState never store a duplicate", () => {
+      store.facets = [ns, ns];
+      expect(store.facets).toEqual([ns]);
+      store.applyFilterState({ facets: [rst, rst, ns], text: "", statFilter: null });
+      expect(store.facets).toEqual([rst, ns]);
+    });
+
+    test("removeFacet and popFacet work by position", () => {
+      store.addFacets([ns, rst]);
+      expect(store.popFacet()).toEqual(rst);
+      store.removeFacet(0);
+      expect(store.facets).toEqual([]);
+      expect(store.popFacet()).toBeUndefined();
+    });
+  });
+
   describe("tab system", () => {
     test("starts with the pods table tab active", () => {
       expect(store.tabs.length).toBe(1);

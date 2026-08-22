@@ -99,9 +99,10 @@
 
   // Row severity comes from the status cell: a 2px bar in the gutter for
   // problem rows only, so a scroll through 300 pods lands on the red ones.
-  let statusValue = $derived(
-    columns.some((c) => isStatusColumn(c.key)) ? getCellValue(resource, "status", cellCtx) : "-",
-  );
+  // The table says which column is its status (Events use `eventType`), so the
+  // gutter reads that one rather than assuming "status".
+  let statusColumn = $derived(columns.find((c) => isStatusColumn(c.key)));
+  let statusValue = $derived(statusColumn ? getCellValue(resource, statusColumn.key, cellCtx) : "-");
   let severity = $derived(statusValue === "-" ? null : rowSeverity(statusCategory(statusValue)));
 
   // Events: the Object column deep-links to the involved resource when its

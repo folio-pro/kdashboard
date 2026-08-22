@@ -482,7 +482,6 @@
   <TableToolbar
     {resourceTypeLabel}
     resourceType={k8sStore.selectedResourceType}
-    count={filteredResources.length}
     isLoading={k8sStore.isLoading}
     {allColumns}
     {namespaceAutoHidden}

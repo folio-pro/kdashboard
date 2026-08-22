@@ -15,8 +15,6 @@
   interface Props {
     resourceTypeLabel: string;
     resourceType: string;
-    /** Rows after filtering — announced, not shown (the views carry the counts). */
-    count: number;
     isLoading: boolean;
     /** Every column the type defines, shown or hidden. */
     allColumns: Column[];
@@ -28,13 +26,8 @@
   }
 
   let {
-    resourceTypeLabel, resourceType, count, isLoading, allColumns, namespaceAutoHidden, viewCounts, onrefresh, oncreate,
+    resourceTypeLabel, resourceType, isLoading, allColumns, namespaceAutoHidden, viewCounts, onrefresh, oncreate,
   }: Props = $props();
-
-  // resourceTypeLabel is already plural ("Pods"): depluralise for one.
-  let noun = $derived(
-    count === 1 ? resourceTypeLabel.toLowerCase().replace(/s$/, "") : resourceTypeLabel.toLowerCase(),
-  );
 </script>
 
 <header
@@ -46,8 +39,6 @@
   </h1>
 
   <NamespacePicker />
-
-  <span class="sr-only" aria-live="polite">{count} {noun}</span>
 
   <span class="h-[18px] w-px shrink-0 bg-[var(--border-color)]" aria-hidden="true"></span>
 

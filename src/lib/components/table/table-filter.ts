@@ -78,28 +78,37 @@ function leadingNumber(value: string): number {
   return m ? Number(m[0]) : NaN;
 }
 
-/** The value a facet compares against for a given column. */
+/** The text a `:` / `!:` facet matches against for a given column. */
 function facetCellValue(resource: Resource, key: string, ctx: CellContext): string {
-  if (isUsageColumn(key)) {
-    // `cpu:>80` reads as percent of the limit/request, which is what the bar
-    // shows; the raw label ("142m") is what text ops match on.
-    const meter = usageMeter(resource, key, ctx);
-    return meter ? `${meter.percent ?? ""} ${meter.label}` : "";
-  }
+  // Usage columns match on the raw reading ("142m"); the percent is what the
+  // comparison operators read, below.
+  if (isUsageColumn(key)) return usageMeter(resource, key, ctx)?.label ?? "";
   return getCellValue(resource, key, ctx);
 }
 
+/**
+ * The number a `>` / `<` facet compares. Usage columns compare percent of the
+ * limit/request — what the bar shows — and are unknown (null) when there is
+ * no limit or request to be a percent of, so `cpu:>80` cannot match a pod
+ * whose "142m" merely starts with a large number. Other columns use the
+ * cell's leading number ("14" → 14, "1/2" → 1, "-" → null).
+ */
+function facetCellNumber(resource: Resource, key: string, ctx: CellContext): number | null {
+  if (isUsageColumn(key)) return usageMeter(resource, key, ctx)?.percent ?? null;
+  const n = leadingNumber(getCellValue(resource, key, ctx));
+  return Number.isNaN(n) ? null : n;
+}
+
 export function matchesFacet(resource: Resource, facet: Facet, ctx: CellContext): boolean {
-  const raw = facetCellValue(resource, facet.key, ctx);
   switch (facet.op) {
     case ":":
-      return raw.toLowerCase().includes(facet.value.toLowerCase());
+      return facetCellValue(resource, facet.key, ctx).toLowerCase().includes(facet.value.toLowerCase());
     case "!:":
-      return !raw.toLowerCase().includes(facet.value.toLowerCase());
+      return !facetCellValue(resource, facet.key, ctx).toLowerCase().includes(facet.value.toLowerCase());
     default: {
-      const have = leadingNumber(raw);
+      const have = facetCellNumber(resource, facet.key, ctx);
       const want = Number(facet.value);
-      if (Number.isNaN(have) || Number.isNaN(want)) return false;
+      if (have === null || Number.isNaN(want)) return false;
       if (facet.op === ">") return have > want;
       if (facet.op === "<") return have < want;
       if (facet.op === ">=") return have >= want;

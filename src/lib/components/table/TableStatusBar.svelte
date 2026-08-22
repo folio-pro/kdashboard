@@ -54,6 +54,8 @@
     {watching ? "Watching" : "Not watching"}
   </span>
 
+  <!-- The one live region for the row count: the toolbar used to carry an
+       sr-only twin, which read every watch delta twice. -->
   <span class="font-mono tabular-nums" aria-live="polite">
     {#if shown === total}{total} {total === 1 ? "row" : "rows"}{:else}{shown} of {total} rows{/if}
   </span>

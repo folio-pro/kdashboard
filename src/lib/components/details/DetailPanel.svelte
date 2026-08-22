@@ -214,6 +214,9 @@
           <Button variant="muted" size="icon-sm" class="text-[var(--status-failed)]" onclick={() => resource && dialogStore.openDrain(resource.metadata.name)} title="Drain" aria-label="Drain"><Droplets class="h-3.5 w-3.5" /></Button>
         {/if}
         <Button variant="muted" size="icon-sm" class="hover:text-[var(--status-failed)]" onclick={handleDelete} title="Delete" aria-label="Delete"><Trash2 class="h-3.5 w-3.5" /></Button>
+        {#each extensions.mountsFor("detail-panel-actions") as mount (mount.id)}
+          <mount.component {resource} />
+        {/each}
         <span class="mx-0.5 h-4 w-px bg-[var(--border-color)]" aria-hidden="true"></span>
         <Button variant="muted" size="icon-sm" onclick={onopentab} title="Open in a tab (⌘↵)" aria-label="Open in a tab"><SquareArrowOutUpRight class="h-3.5 w-3.5" /></Button>
         <Button variant="muted" size="icon-sm" onclick={onclose} title="Close (Esc)" aria-label="Close detail"><X class="h-3.5 w-3.5" /></Button>

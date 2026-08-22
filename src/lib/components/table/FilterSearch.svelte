@@ -25,18 +25,12 @@
     return allColumns.find((c) => c.key === key)?.label ?? key;
   }
 
-  /** Push text into both the store and the box — the box owns its value between keystrokes. */
-  function setText(text: string) {
-    uiStore.setFilter(text);
-    if (input) input.value = text;
-  }
-
   /** Lift any `key:value` terms out of the text into chips. */
   function commitFacets(): boolean {
     const { facets, text } = extractFacets(uiStore.filter, allColumns);
     if (facets.length === 0) return false;
     uiStore.addFacets(facets);
-    setText(text);
+    uiStore.setFilter(text);
     return true;
   }
 
@@ -63,14 +57,13 @@
         if (uiStore.filter === "" && uiStore.facets.length > 0) {
           e.preventDefault();
           const last = uiStore.popFacet();
-          if (last) setText(facetToText(last));
+          if (last) uiStore.setFilter(facetToText(last));
         }
         return;
       case "Escape":
         if (uiStore.filter || uiStore.facets.length > 0) {
           e.preventDefault();
           uiStore.applyFilterState({ facets: [], text: "", statFilter: uiStore.statFilter });
-          if (input) input.value = "";
         }
         return;
     }
@@ -85,8 +78,7 @@
   class="ml-auto w-[340px] min-w-[160px] shrink"
   placeholder={uiStore.facets.length ? "…" : "Search or key:value…"}
   ariaLabel="Search {resourceTypeLabel.toLowerCase()}"
-  value={uiStore.filter}
-  oninput={(e) => uiStore.setFilter((e.target as HTMLInputElement).value)}
+  bind:value={() => uiStore.filter, (v) => uiStore.setFilter(v)}
   onkeydown={handleKeydown}
 >
   {#snippet leading()}

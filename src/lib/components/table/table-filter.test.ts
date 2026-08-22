@@ -10,6 +10,7 @@ import {
   sameFacets,
   splitPodName,
 } from "./table-filter";
+import { dedupeFacets } from "$lib/utils/facets";
 
 const columns: Column[] = [
   { key: "name", label: "Name", sortable: true },
@@ -127,6 +128,41 @@ describe("matchesFacet / applyFacets", () => {
   test("no facets returns the same array", () => {
     expect(applyFacets(items, [], ctxFor)).toBe(items);
   });
+
+  describe("usage columns", () => {
+    const limited = pod("limited", "Running", 0, {
+      spec: { containers: [{ name: "app", resources: { limits: { cpu: "500m" } } }] },
+    });
+    const unbounded = pod("unbounded", "Running", 0, {
+      spec: { containers: [{ name: "app", resources: {} }] },
+    });
+    const usage = (cores: number) => ({
+      ageTick: 0,
+      podUsage: { name: "x", namespace: "default", cpu_cores: cores, memory_bytes: 0, containers: [] },
+    });
+
+    test("comparison operators read the percent of the limit", () => {
+      // 250m of 500m = 50%
+      expect(matchesFacet(limited, { key: "podCpu", op: ">", value: "40" }, usage(0.25))).toBe(true);
+      expect(matchesFacet(limited, { key: "podCpu", op: ">", value: "60" }, usage(0.25))).toBe(false);
+    });
+
+    test("no limit or request means no percent, so a numeric facet never matches", () => {
+      // The raw label is "142m"; it must not be read as 142.
+      expect(matchesFacet(unbounded, { key: "podCpu", op: ">", value: "80" }, usage(0.142))).toBe(false);
+      expect(matchesFacet(unbounded, { key: "podCpu", op: "<", value: "1000" }, usage(0.142))).toBe(false);
+    });
+
+    test("text operators match the raw reading", () => {
+      expect(matchesFacet(unbounded, { key: "podCpu", op: ":", value: "142m" }, usage(0.142))).toBe(true);
+      expect(matchesFacet(limited, { key: "podCpu", op: "!:", value: "250m" }, usage(0.25))).toBe(false);
+    });
+
+    test("no usage at all matches nothing numeric and no text", () => {
+      expect(matchesFacet(limited, { key: "podCpu", op: ">", value: "0" }, ctx)).toBe(false);
+      expect(matchesFacet(limited, { key: "podCpu", op: ":", value: "m" }, ctx)).toBe(false);
+    });
+  });
 });
 
 describe("sameFacets", () => {
@@ -136,6 +172,21 @@ describe("sameFacets", () => {
     expect(sameFacets(a, b)).toBe(true);
     expect(sameFacets(a, [a[0]])).toBe(false);
     expect(sameFacets(a, [a[0], { key: "b", op: "<", value: "2" }])).toBe(false);
+  });
+  test("repeats count: [a, a] is not [a, b]", () => {
+    const a = { key: "a", op: ":" as const, value: "1" };
+    const b = { key: "b", op: ":" as const, value: "2" };
+    expect(sameFacets([a, a], [a, b])).toBe(false);
+    expect(sameFacets([a, b], [b, a])).toBe(true);
+  });
+});
+
+describe("dedupeFacets", () => {
+  test("keeps the first of each identity, in order", () => {
+    const a = { key: "a", op: ":" as const, value: "1" };
+    const b = { key: "b", op: ">" as const, value: "2" };
+    expect(dedupeFacets([a, b, { ...a }, b])).toEqual([a, b]);
+    expect(dedupeFacets([])).toEqual([]);
   });
 });
 

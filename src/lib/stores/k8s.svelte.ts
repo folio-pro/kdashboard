@@ -244,14 +244,13 @@ class K8sStore extends K8sStoreLogic {
       if (scopeGeneration !== this._scopeGeneration) return;
       if (this.pendingResourceType !== resourceType) return;
       this.selectedResourceType = resourceType;
-      this.resources = result;
-      this.lastUpdatedAt = Date.now();
+      this._replaceResources(result, Date.now());
       this._setCount(resourceType, result.items.length);
       this._startWatch(resourceType, this.currentNamespace, result.resource_version);
     } catch (err) {
       if (scopeGeneration !== this._scopeGeneration) return;
       this.error = `Failed to load resources: ${errMsg(err)}`;
-      this.resources = { items: [], resource_type: resourceType };
+      this._replaceResources({ items: [], resource_type: resourceType }, 0);
     } finally {
       clearTimeout(timer);
       if (scopeGeneration === this._scopeGeneration) {
@@ -351,7 +350,7 @@ class K8sStore extends K8sStoreLogic {
     this.selectedResource = entry.resource;
     // Reload resources for the previous type in background
     this._listResources(entry.resourceType).then((result) => {
-      this.resources = result;
+      this._replaceResources(result, Date.now());
       this._setCount(entry.resourceType, result.items.length);
       this._startWatch(entry.resourceType, this.currentNamespace, result.resource_version);
       // Re-find the resource in case it was updated
@@ -374,7 +373,7 @@ class K8sStore extends K8sStoreLogic {
     const expectedType = entry.resourceType;
     this._listResources(expectedType).then((result) => {
       if (this.selectedResourceType !== expectedType) return;
-      this.resources = result;
+      this._replaceResources(result, Date.now());
       this._setCount(expectedType, result.items.length);
       this._startWatch(expectedType, this.currentNamespace, result.resource_version);
       const updated = result.items.find((r) => r.metadata.uid === entry.resource.metadata.uid);
@@ -634,8 +633,7 @@ class K8sStore extends K8sStoreLogic {
     if (changed) {
       const items = Array.from(byUid.values());
       // Trigger Svelte 5 reactivity ONCE for the entire batch
-      this.resources = { items, resource_type: this.resources.resource_type };
-      this.lastUpdatedAt = Date.now();
+      this._replaceResources({ items, resource_type: this.resources.resource_type }, Date.now());
       this._setCount(this.selectedResourceType, items.length);
     }
 
@@ -647,8 +645,7 @@ class K8sStore extends K8sStoreLogic {
   private async _refreshAfterResync(): Promise<void> {
     try {
       const result = await this._listResources(this.selectedResourceType);
-      this.resources = result;
-      this.lastUpdatedAt = Date.now();
+      this._replaceResources(result, Date.now());
       this._setCount(this.selectedResourceType, result.items.length);
     } catch (err) {
       if (import.meta.env.DEV) console.warn("Failed to refresh after resync:", err);

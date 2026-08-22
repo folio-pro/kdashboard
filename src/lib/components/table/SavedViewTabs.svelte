@@ -68,7 +68,7 @@
       {#if !view.builtin}
         <button
           type="button"
-          class="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-[var(--status-failed)] group-hover/view:flex"
+          class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-muted)] opacity-0 hover:text-[var(--status-failed)] focus-visible:opacity-100 group-hover/view:opacity-100 group-focus-within/view:opacity-100"
           aria-label="Delete view {view.name}"
           onclick={(e) => { e.stopPropagation(); settingsStore.removeSavedView(view.id); }}
         >

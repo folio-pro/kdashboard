@@ -106,7 +106,7 @@ export class K8sStoreLogic {
     this.contextsLoadError = null;
     this.namespacesLoadError = null;
     this.viewLoaded = false;
-    this.resources = { items: [], resource_type: this.selectedResourceType };
+    this._replaceResources({ items: [], resource_type: this.selectedResourceType }, 0);
     this.selectedResource = null;
     this.clearNavHistory();
     this.resourceCounts = {};
@@ -164,11 +164,23 @@ export class K8sStoreLogic {
     this.selectedResource = entry.resource;
   }
 
+  /**
+   * Swap in a list of resources and say when it arrived. Every replacement of
+   * `resources` goes through here so the status bar's "updated Ns ago" can
+   * never describe a different view than the rows under it; pass 0 for a list
+   * whose age is unknown (cleared, or restored from a tab cache) and the
+   * label stays blank until the next list lands.
+   */
+  _replaceResources(list: ResourceList, at: number): void {
+    this.resources = list;
+    this.lastUpdatedAt = at;
+  }
+
   /** Restore resources from tab cache without fetching */
   restoreResourcesSync(resourceType: string, items: Resource[]): void {
     this._scopeGeneration++;
     this.setResourceType(resourceType);
-    this.resources = { items, resource_type: resourceType };
+    this._replaceResources({ items, resource_type: resourceType }, 0);
     this._setCount(resourceType, items.length);
     this.isLoading = false;
     this.error = null;
@@ -232,7 +244,7 @@ export class K8sStoreLogic {
       } else {
         items.push(event.resource);
       }
-      this.resources = { ...this.resources, items };
+      this._replaceResources({ ...this.resources, items }, Date.now());
       this._setCount(event.resource_type, items.length);
       if (this.selectedResource?.metadata?.uid === uid) {
         this.selectedResource = event.resource;
@@ -242,7 +254,7 @@ export class K8sStoreLogic {
       const idx = items.findIndex((r) => r.metadata?.uid === uid);
       if (idx >= 0) {
         items.splice(idx, 1);
-        this.resources = { ...this.resources, items };
+        this._replaceResources({ ...this.resources, items }, Date.now());
         this._setCount(event.resource_type, items.length);
         if (this.selectedResource?.metadata?.uid === uid) {
           this.selectedResource = null;

@@ -18,20 +18,45 @@
 
   const detailPanel = import("$lib/components/details/DetailPanel.svelte");
 
-  /** Keep at least this much of the table visible while dragging. */
+  /** Keep at least this much of the table visible beside the aside. */
   const TABLE_MIN_WIDTH = 360;
+  /** Arrow-key resize step, in px; Shift makes it coarse. */
+  const KEY_STEP = 16;
+  const KEY_STEP_COARSE = 64;
 
   let el: HTMLElement | undefined = $state();
   let dragging = $state(false);
   let dragCleanup: (() => void) | null = null;
 
+  // The widest the aside may be right now: whatever the row leaves after the
+  // table's minimum. Tracked live (not just while dragging) so a width saved
+  // on a wide display cannot push the table — and this handle — off-screen in
+  // a narrower window; the rendered width is clamped to it below.
+  let maxWidth = $state(Number.POSITIVE_INFINITY);
+  $effect(() => {
+    const parent = el?.parentElement;
+    if (!parent) return;
+    const measure = () => {
+      maxWidth = Math.max(ASIDE_MIN_WIDTH, parent.getBoundingClientRect().width - TABLE_MIN_WIDTH);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(parent);
+    return () => ro.disconnect();
+  });
+
+  let width = $derived(Math.min(tablePrefs.asideWidth, maxWidth));
+  const clamp = (w: number) => Math.min(maxWidth, Math.max(ASIDE_MIN_WIDTH, w));
+
   function handleResizeStart(e: MouseEvent) {
     e.preventDefault();
+    // A mouseup that never reached the document (released outside the window)
+    // leaves the previous pair of listeners attached; drop them first.
+    dragCleanup?.();
     const parent = el?.parentElement;
     if (!parent) return;
     const bounds = parent.getBoundingClientRect();
-    const maxWidth = Math.max(ASIDE_MIN_WIDTH, bounds.width - TABLE_MIN_WIDTH);
-    const widthAt = (clientX: number) => Math.min(maxWidth, Math.max(ASIDE_MIN_WIDTH, bounds.right - clientX));
+    const widthAt = (clientX: number) => clamp(bounds.right - clientX);
 
     // Live width goes straight to the element; the store (and storage) only
     // hear the final value on mouseup.
@@ -60,29 +85,54 @@
   }
 
   $effect(() => () => dragCleanup?.());
+
+  /** The handle sits on the aside's left edge, so Left widens and Right narrows. */
+  function handleResizeKeydown(e: KeyboardEvent) {
+    const step = e.shiftKey ? KEY_STEP_COARSE : KEY_STEP;
+    let next: number;
+    switch (e.key) {
+      case "ArrowLeft": next = width + step; break;
+      case "ArrowRight": next = width - step; break;
+      case "Home": next = ASIDE_MIN_WIDTH; break;
+      case "End": if (!Number.isFinite(maxWidth)) return; next = maxWidth; break;
+      default: return;
+    }
+    e.preventDefault();
+    tablePrefs.setAsideWidth(clamp(next));
+  }
 </script>
 
 <aside
   bind:this={el}
   class="relative flex shrink-0 flex-col border-l border-t border-[var(--border-color)] bg-[var(--bg-primary)]"
-  style="width: {tablePrefs.asideWidth}px;"
+  style="width: {width}px;"
   aria-label="Resource detail"
 >
   <!-- Resize handle on the left edge: 6px hit area, a 2px accent line while
-       hovered or dragging. -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+       hovered, focused or dragging. Focusable so the width is reachable from
+       the keyboard (arrows, Home/End), with the separator's value contract.
+       A focusable separator is the WAI-ARIA window-splitter pattern; the
+       a11y lint only knows the static kind. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
   <div
-    class="group/handle absolute inset-y-0 -left-[3px] z-10 w-[6px] cursor-col-resize"
+    class="group/handle absolute inset-y-0 -left-[3px] z-10 w-[6px] cursor-col-resize focus:outline-none"
     onmousedown={handleResizeStart}
+    onkeydown={handleResizeKeydown}
     role="separator"
+    tabindex="0"
     aria-orientation="vertical"
     aria-label="Resize detail panel"
-    title="Drag to resize"
+    aria-valuenow={Math.round(width)}
+    aria-valuemin={ASIDE_MIN_WIDTH}
+    aria-valuemax={Number.isFinite(maxWidth) ? Math.round(maxWidth) : undefined}
+    title="Drag or use the arrow keys to resize"
   >
     <div
       class={cn(
         "absolute inset-y-0 left-[2px] w-0.5 transition-colors",
-        dragging ? "bg-[var(--accent)]" : "bg-transparent group-hover/handle:bg-[var(--accent)]"
+        dragging
+          ? "bg-[var(--accent)]"
+          : "bg-transparent group-hover/handle:bg-[var(--accent)] group-focus-visible/handle:bg-[var(--accent)]"
       )}
     ></div>
   </div>

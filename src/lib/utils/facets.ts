@@ -36,9 +36,23 @@ export function facetKey(facet: Facet): string {
   return `${facet.key} ${facet.op} ${facet.value}`;
 }
 
-/** Same facet list, order-insensitive. */
+/** Drop repeated identities, keeping the first of each in order. */
+export function dedupeFacets(facets: Facet[]): Facet[] {
+  const seen = new Set<string>();
+  const out: Facet[] = [];
+  for (const f of facets) {
+    const k = facetKey(f);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(f);
+  }
+  return out;
+}
+
+/** Same facet list, order-insensitive; repeats count, so `[a, a]` ≠ `[a, b]`. */
 export function sameFacets(a: Facet[], b: Facet[]): boolean {
   if (a.length !== b.length) return false;
-  const bs = new Set(b.map(facetKey));
-  return a.every((f) => bs.has(facetKey(f)));
+  const ka = a.map(facetKey).sort();
+  const kb = b.map(facetKey).sort();
+  return ka.every((k, i) => k === kb[i]);
 }

@@ -10,7 +10,7 @@ export const ASIDE_DEFAULT_WIDTH = 440;
 interface Prefs {
   /** Hidden column keys, per resource type. */
   hidden: Record<string, string[]>;
-  /** Width of the docked detail aside, in px. */
+  /** Preferred width of the docked detail aside, in px; the aside caps it to the room it has. */
   asideWidth: number;
 }
 
@@ -25,8 +25,12 @@ function load(): Prefs {
     for (const [type, keys] of Object.entries(raw.hidden ?? {})) {
       if (Array.isArray(keys)) hidden[type] = keys.filter((k): k is string => typeof k === "string");
     }
+    // Only the floor is known here; the ceiling depends on the window, so the
+    // aside clamps the rendered width to what the row can spare.
     const asideWidth =
-      typeof raw.asideWidth === "number" && raw.asideWidth >= ASIDE_MIN_WIDTH ? raw.asideWidth : ASIDE_DEFAULT_WIDTH;
+      typeof raw.asideWidth === "number" && Number.isFinite(raw.asideWidth) && raw.asideWidth >= ASIDE_MIN_WIDTH
+        ? raw.asideWidth
+        : ASIDE_DEFAULT_WIDTH;
     return { hidden, asideWidth };
   } catch {
     return DEFAULTS;
@@ -60,6 +64,7 @@ class TablePrefs {
   }
 
   setAsideWidth(width: number): void {
+    if (!Number.isFinite(width)) return;
     this.update({ asideWidth: Math.max(ASIDE_MIN_WIDTH, Math.round(width)) });
   }
 
