@@ -3,6 +3,38 @@ import { k8sStore } from "$lib/stores/k8s.svelte";
 import { uiStore, DEFAULT_RESOURCE_TYPE } from "$lib/stores/ui.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
 import { extensions } from "$lib/extensions";
+import { topologyStore } from "$lib/stores/topology.svelte";
+import { costStore } from "$lib/stores/cost.svelte";
+import { securityStore } from "$lib/stores/security.svelte";
+import { helmStore } from "$lib/stores/helm.svelte";
+import { overviewStore } from "$lib/stores/overview.svelte";
+import type { ActiveView } from "$lib/stores/ui.logic";
+
+/**
+ * Catalog entries that are standalone views rather than resource lists. The
+ * catalog `type` IS the view name; the value is what the view needs loaded on
+ * entry, or null if it loads itself. One table for the sidebar, the palette
+ * and anything else that opens a view by name.
+ */
+export const APP_VIEWS: Record<string, ((namespace: string) => void) | null> = {
+  portforwards: null,
+  topology: (ns) => topologyStore.loadNamespaceTopology(ns),
+  cost: (ns) => costStore.loadCostOverview(ns),
+  security: (ns) => securityStore.loadSecurityOverview(ns),
+  helm: (ns) => helmStore.loadReleases(ns),
+  overview: (ns) => overviewStore.loadOverview(ns),
+  problems: (ns) => overviewStore.loadOverview(ns),
+};
+
+export function isAppView(type: string): boolean {
+  return type in APP_VIEWS;
+}
+
+/** Open a standalone view and kick off its load. */
+export function openAppView(type: string, namespace: string = k8sStore.currentNamespace): void {
+  uiStore.showView(type as ActiveView);
+  APP_VIEWS[type]?.(namespace);
+}
 
 /**
  * Open a resource in a new detail tab (synchronous — resource already in hand).

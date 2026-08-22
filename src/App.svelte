@@ -267,6 +267,16 @@
             loader={() => import("$lib/components/crd/CrdTableView.svelte")}
             name="CRDs"
           />
+        {:else if uiStore.activeView === "overview"}
+          <LazyView
+            loader={() => import("$lib/components/overview/OverviewView.svelte")}
+            name="overview"
+          />
+        {:else if uiStore.activeView === "problems"}
+          <LazyView
+            loader={() => import("$lib/components/overview/ProblemsView.svelte")}
+            name="problems"
+          />
         {/if}
       </div>
 

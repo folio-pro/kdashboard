@@ -6,3 +6,4 @@ export * from './metrics';
 export * from './helm';
 export * from './security';
 export * from './ui';
+export * from './overview';

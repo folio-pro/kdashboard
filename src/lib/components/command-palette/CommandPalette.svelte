@@ -21,7 +21,7 @@
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { extensions } from "$lib/extensions";
   import { restartWorkload, rollbackDeployment, SCALABLE_TYPES, RESTARTABLE_TYPES } from "$lib/actions/registry";
-  import { navigateToResourceTable, navigateToCrdTable, switchContext, openResourceDetail } from "$lib/actions/navigation";
+  import { navigateToResourceTable, navigateToCrdTable, switchContext, openResourceDetail, openAppView, isAppView } from "$lib/actions/navigation";
   import { toastStore } from "$lib/stores/toast.svelte";
   import type { CommandPaletteItem, ResourceList } from "$lib/types";
   import { getCellValue } from "$lib/components/table/cell-values";
@@ -88,6 +88,7 @@
   });
 
   const resourceTypes = RESOURCE_ITEMS.filter((i) => !i.virtual);
+  const appViews = RESOURCE_ITEMS.filter((i) => i.virtual && isAppView(i.type));
 
   const scalableTypes = SCALABLE_TYPES;
   const restartableTypes = RESTARTABLE_TYPES;
@@ -226,6 +227,20 @@
         category: "Resources",
         action: () => {
           navigateToResourceTable(rt.name, rt.type);
+          close();
+        },
+      });
+    }
+
+    // --- App views (Overview, Problems, Topology, …) ---
+    for (const view of appViews) {
+      items.push({
+        id: `resource-${view.type}`,
+        label: view.name,
+        description: `Open ${view.name}`,
+        category: "Resources",
+        action: () => {
+          openAppView(view.type);
           close();
         },
       });

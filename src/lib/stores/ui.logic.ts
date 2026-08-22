@@ -1,7 +1,7 @@
 import type { SortDirection, Resource, Facet } from "../types/index.js";
 import { dedupeFacets, facetKey } from "../utils/facets.js";
 
-export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "helm" | "crd-table";
+export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "helm" | "crd-table" | "overview" | "problems";
 
 /**
  *                    ┌───────────────────────────────────────┐
@@ -112,7 +112,7 @@ export function ensureTabCounterAbove(n: number): void {
 }
 
 /** View types that should only have one tab open at a time */
-const SINGLETON_VIEWS = new Set<ActiveView>(["settings", "topology", "cost", "security", "portforwards", "helm"]);
+const SINGLETON_VIEWS = new Set<ActiveView>(["settings", "topology", "cost", "security", "portforwards", "helm", "overview", "problems"]);
 
 /** View types tied to a specific resource (cache selectedResource on tab switch) */
 export const RESOURCE_TAB_TYPES = new Set<ActiveView>(["details", "logs", "yaml", "terminal"]);
@@ -124,6 +124,7 @@ export const VIEW_LABELS: Record<ActiveView, string> = {
   yaml: "YAML", settings: "Settings",
   topology: "Topology", cost: "Cost", security: "Security",
   helm: "Helm Releases", "crd-table": "CRDs",
+  overview: "Overview", problems: "Problems",
 };
 
 /** Fixed id (not "tab-N") so restored sessions and the tab counter never
@@ -660,6 +661,7 @@ export const TABS_STORAGE_VERSION = 1;
 const VALID_VIEW_TYPES = new Set<ActiveView>([
   "table", "details", "logs", "terminal", "portforwards",
   "yaml", "settings", "topology", "cost", "security", "crd-table",
+  "helm", "overview", "problems",
 ]);
 
 interface SerializableTab {

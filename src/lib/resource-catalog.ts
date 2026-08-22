@@ -111,6 +111,8 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
     name: "Cluster",
     key: "cluster",
     items: [
+      { name: "Overview", type: "overview", virtual: true },
+      { name: "Problems", type: "problems", virtual: true },
       { name: "Nodes", type: "nodes", kind: "Node", short: "no" },
       { name: "Namespaces", type: "namespaces", kind: "Namespace", short: "ns" },
       { name: "Events", type: "events", kind: "Event", short: "ev" },

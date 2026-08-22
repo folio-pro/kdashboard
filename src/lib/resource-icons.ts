@@ -8,7 +8,7 @@ import {
   HardDrive, HardDriveDownload, Archive, Key, Link, KeyRound, Users,
   Shield, ShieldCheck, ShieldAlert, PieChart, SlidersHorizontal, Share2,
   Plug, Route, UserCircle, Cable, Timer, Filter, CheckCircle2, ArrowUpNarrowWide,
-  Cog, Package, Activity,
+  Cog, Package, Activity, LayoutDashboard, AlertTriangle,
 } from "lucide-svelte";
 import type { IconComponent } from "$lib/actions/types";
 
@@ -64,6 +64,8 @@ export const RESOURCE_ICONS: Record<string, IconComponent> = {
   helm: Package,
   topology: Share2,
   security: ShieldCheck,
+  overview: LayoutDashboard,
+  problems: AlertTriangle,
 };
 
 /** Icon for a resource type, defaulting to the generic box. */
