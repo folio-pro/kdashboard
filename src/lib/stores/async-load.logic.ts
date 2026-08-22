@@ -1,5 +1,5 @@
 /**
- * Base class for stores that load data from a Tauri command with
+ * Base class for stores that load data from a backend command with
  * namespace filtering, loading/error state, and stale request detection.
  *
  * Pure logic version (no Svelte runes) for testing.

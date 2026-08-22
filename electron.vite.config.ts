@@ -8,14 +8,29 @@ import { rendererAlias, codemirrorDedupe, vendorChunks, rendererPort } from "./v
 // and the production bundle. The standalone vite.config.ts is kept for the
 // renderer-only path (npm run dev / Playwright e2e webServer).
 //
-// IMPORTANT: we deliberately do NOT use externalizeDepsPlugin for main/preload.
-// @kubernetes/client-node is ESM-only; externalizing it would re-introduce
-// ERR_REQUIRE_ESM at runtime. Bundling every dep (electron-vite still
-// externalizes Node built-ins + electron) avoids that, matching the prior
-// esbuild --external:electron setup.
+// IMPORTANT: main/preload must bundle every dep. electron-vite 5 externalizes
+// anything listed under `dependencies` by default (`build.externalizeDeps`
+// defaults to true; the old externalizeDepsPlugin is deprecated), so bundling
+// is expressed the way electron-vite documents it: package.json keeps only
+// electron-updater under `dependencies` and everything else under
+// `devDependencies`. Adding a runtime dep back to `dependencies` silently
+// un-bundles it AND makes electron-builder copy it into the asar.
+// electron-updater is the one exception — handlers/updater.ts require()s it
+// lazily at runtime, so it has to ship as real files inside the asar.
 export default defineConfig({
   main: {
     build: {
+      // ws probes for two optional native accelerators (bufferutil,
+      // utf-8-validate) inside a try/catch and falls back to pure JS when they
+      // are absent — which they are here, deliberately: they are native, and
+      // bundling exists to keep native modules out of the asar. Left to
+      // itself the bundler replaces the unresolved import with a stub that
+      // THROWS AT MODULE SCOPE, hoisting the failure out of ws's try/catch and
+      // killing the main process on load. `ignore` leaves the two require()
+      // calls alone so they fail where ws expects them to, inside the catch.
+      commonjsOptions: {
+        ignore: ["bufferutil", "utf-8-validate"],
+      },
       rollupOptions: {
         input: { index: path.resolve("electron/main.ts") },
         external: ["electron"],

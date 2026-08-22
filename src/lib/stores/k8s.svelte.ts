@@ -8,6 +8,7 @@ import { resourceTypeForRef } from "$lib/utils/related-resources";
 import { clearClusterCompletionCache } from "$lib/utils/cluster-completion-source";
 import { clearOpenApiCache } from "$lib/utils/openapi-schema";
 import { scheduleFlush } from "$lib/utils/frame-scheduler";
+import { liveValues, signalsFor } from "./live-values.svelte";
 import { unshadowState } from "./_unshadow.js";
 
 export type { WatchEvent, NavigationEntry } from "./k8s.logic.js";
@@ -82,7 +83,7 @@ class K8sStore extends K8sStoreLogic {
   override crdCounts = $state<Record<string, number>>({});
   override selectedCrd = $state<CrdInfo | null>(null);
 
-  // Private members that require Tauri / browser APIs (not in logic class)
+  // Private members that require backend / browser APIs (not in logic class)
   private _ageInterval: ReturnType<typeof setInterval> | null = null;
   private _watchUnlisten: UnlistenFn | null = null;
   private _watchActive = false;
@@ -399,7 +400,7 @@ class K8sStore extends K8sStoreLogic {
     settingsStore.updateConnection("", "default");
   }
 
-  /** Load counts for all resource types via a single batch Tauri command. */
+  /** Load counts for all resource types via a single batch command. */
   async loadAllResourceCounts(scopeGeneration = this._scopeGeneration): Promise<void> {
     const gen = ++this._countGeneration;
     const namespace = this.currentNamespace;
@@ -587,6 +588,12 @@ class K8sStore extends K8sStoreLogic {
     let selectedResourceUpdate: Resource | null | undefined;
     let changed = false;
 
+    // Which numbers, if any, this table wants highlighted when they move. Null
+    // for almost every resource type, and resolving it once here is what keeps
+    // the flush free of per-event cost for the types that do not opt in.
+    const signals = signalsFor(this.selectedResourceType);
+    const now = signals ? Date.now() : 0;
+
     for (const [uid, { event, reinserted }] of batch) {
       // Double-check scope hasn't changed mid-flush
       if (this._scopeGeneration !== scopeGen) return;
@@ -605,6 +612,9 @@ class K8sStore extends K8sStoreLogic {
         if (!reinserted && prev && rv && prev.metadata?.resource_version === rv) continue;
         // Deleted -> Applied within the batch: drop the old key so set() appends
         // at the end, exactly where a replay would have put it.
+        // The flush is the only place holding the old and the new object at
+        // once, so it is the only place that can say which way a value moved.
+        if (signals && prev) liveValues.compare(uid, signals(prev), signals(event.resource), now);
         if (reinserted) byUid.delete(uid);
         byUid.set(uid, event.resource);
         changed = true;

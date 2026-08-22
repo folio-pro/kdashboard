@@ -878,6 +878,30 @@ summary:focus-visible,
 }
 
 /* ========================================
+   Value Flash
+
+   A table cell whose number just changed. Watch deltas repaint one cell on an
+   otherwise still table, which is easy to miss when you are waiting to see an
+   autoscaler react; the wash fades back to nothing over the window. Direction
+   is carried by the arrow beside the value rather than by colour, so it still
+   reads under reduced motion and for a colour-blind reader.
+
+   The duration must match FLASH_MS in stores/live-values.logic.ts — the class
+   is removed when the store expires the flash, and a shorter animation would
+   leave a dead highlight behind.
+   ======================================== */
+
+@keyframes valueFlash {
+  from { background-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+  to { background-color: transparent; }
+}
+
+.animate-value-flash {
+  animation: valueFlash 1400ms ease-out;
+  border-radius: 3px;
+}
+
+/* ========================================
    Spin Animation
    ======================================== */
 

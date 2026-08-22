@@ -14,6 +14,7 @@
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { cn } from "$lib/utils";
   import { deriveKind, deriveShowLogsButton, deriveNodeName, deriveResourceType, deriveIsScalable, deriveIsRestartable, deriveIsRollbackable, deriveCurrentReplicas } from "./detail-panel";
+  import { autoscalerFlavor } from "$lib/utils/autoscaler";
   import LazyView from "$lib/components/common/LazyView.svelte";
   import EventsCard from "./EventsCard.svelte";
   import PodDetails from "./PodDetails.svelte";
@@ -24,7 +25,7 @@
   import CronJobDetails from "./CronJobDetails.svelte";
   import ServiceDetails from "./ServiceDetails.svelte";
   import IngressDetails from "./IngressDetails.svelte";
-  import HpaDetails from "./HpaDetails.svelte";
+  import AutoscalerDetails from "./AutoscalerDetails.svelte";
   import NodeDetails from "./NodeDetails.svelte";
   import GenericDetails from "./GenericDetails.svelte";
 
@@ -84,6 +85,8 @@
   );
 
   let kind = $derived(deriveKind(resource));
+  // HPA, VPA and WPA share one panel — see AutoscalerDetails.
+  let autoscalerKind = $derived(autoscalerFlavor(kind));
   let showLogsButton = $derived(deriveShowLogsButton(kind));
   let nodeName = $derived(deriveNodeName(resource));
 
@@ -380,8 +383,8 @@
             <ServiceDetails {resource} />
           {:else if kind === "ingress"}
             <IngressDetails {resource} />
-          {:else if kind === "horizontalpodautoscaler"}
-            <HpaDetails {resource} />
+          {:else if autoscalerKind}
+            <AutoscalerDetails {resource} flavor={autoscalerKind} />
           {:else if kind === "node"}
             <NodeDetails {resource} />
           {:else}

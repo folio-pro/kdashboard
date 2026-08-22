@@ -22,6 +22,8 @@
   import { isInputElement } from "$lib/utils/keyboard";
   import { costStore } from "$lib/stores/cost.svelte";
   import { metricsStore, POD_METRICS_TTL_MS } from "$lib/stores/metrics.svelte";
+  import { liveValues } from "$lib/stores/live-values.svelte";
+  import { resourceTypeLabel as catalogLabel } from "$lib/resource-catalog";
   import { contextMenuStore } from "$lib/stores/context-menu.svelte";
   import WorkloadStats from "$lib/components/common/WorkloadStats.svelte";
   import { computeWorkloadStats } from "$lib/utils/workload-stats";
@@ -62,6 +64,9 @@
     if (prevCtx && (ctx !== prevCtx || ns !== prevNs)) {
       costStore.reset();
       metricsStore.reset();
+      // Flashes are keyed by uid; a uid from the cluster we just left would
+      // highlight an unrelated row that happens to reuse the key.
+      liveValues.clear();
       uiStore.clearStatFilter();
     }
     prevCtx = ctx;
@@ -292,10 +297,7 @@
     await k8sStore.refreshResources();
   }
 
-  let resourceTypeLabel = $derived(
-    k8sStore.selectedResourceType.charAt(0).toUpperCase() +
-    k8sStore.selectedResourceType.slice(1)
-  );
+  let resourceTypeLabel = $derived(catalogLabel(k8sStore.selectedResourceType));
 
   let prevSelectedRowIndex = -1;
   $effect(() => {

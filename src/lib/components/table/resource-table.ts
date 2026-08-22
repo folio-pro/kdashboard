@@ -17,10 +17,9 @@ export type SortDirection = "asc" | "desc";
 
 // Cached collator: the sort re-runs over the full list on every watch flush,
 // and in V8 (Electron) a cached Intl.Collator.compare is several times faster
-// than per-call localeCompare (which re-resolves the locale each time). The
-// old note here favoring localeCompare benchmarked JavaScriptCore under Tauri
-// and no longer applies. Timestamps (RFC 3339, uniform format) sort with plain
-// string comparison — no locale semantics needed.
+// than per-call localeCompare (which re-resolves the locale each time).
+// Timestamps (RFC 3339, uniform format) sort with plain string comparison —
+// no locale semantics needed.
 const collator = new Intl.Collator();
 
 function compareStrings(a: string, b: string): number {

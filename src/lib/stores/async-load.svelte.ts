@@ -3,7 +3,7 @@ import { AsyncLoadStoreLogic } from "./async-load.logic";
 import { unshadowState } from "./_unshadow.js";
 
 /**
- * Base class for stores that load data from a Tauri command with
+ * Base class for stores that load data from a backend command with
  * namespace filtering, loading/error state, and stale request detection.
  *
  * Usage:
@@ -24,7 +24,7 @@ export class AsyncLoadStore<T> extends AsyncLoadStoreLogic<T> {
   }
 
   /**
-   * Load data from a Tauri command with automatic namespace normalization,
+   * Load data from a backend command with automatic namespace normalization,
    * loading state management, and stale response detection.
    */
   protected async _load(command: string, namespace: string | null): Promise<void> {

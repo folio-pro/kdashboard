@@ -1,9 +1,8 @@
-// Resource diagnostics — port of src-tauri/src/k8s/diagnostics/* (pod.rs,
-// workload.rs, aggregation.rs, types.rs). Backs the `diagnose_resource` command.
+// Resource diagnostics — backs the `diagnose_resource` command.
 //
-// Return SHAPES match the Rust serde output exactly (snake_case: resource_uid,
-// resource_kind, resource_name, checked_at, …). The Svelte types in
-// src/lib/types/cluster.ts depend on exactly these names.
+// Return shapes are snake_case (resource_uid, resource_kind, resource_name,
+// checked_at, …). The Svelte types in src/lib/types/cluster.ts depend on
+// exactly these names.
 
 import { getCoreV1Api, getAppsV1Api, getBatchV1Api } from '../../k8s/client';
 import { RESOURCE_TYPES } from '../../k8s/kinds';
@@ -19,7 +18,7 @@ import {
 } from './shared';
 
 // ---------------------------------------------------------------------------
-// Wire types (match diagnostics/types.rs)
+// Wire types (match src/lib/types/cluster.ts)
 // ---------------------------------------------------------------------------
 
 export interface DiagnosticIssue {
@@ -40,7 +39,7 @@ export interface DiagnosticResult {
 }
 
 // ---------------------------------------------------------------------------
-// pod.rs::diagnose_pod
+// diagnosePod
 // ---------------------------------------------------------------------------
 
 export function diagnosePod(obj: JsonObject): DiagnosticIssue[] {
@@ -225,7 +224,7 @@ export function diagnosePod(obj: JsonObject): DiagnosticIssue[] {
 }
 
 // ---------------------------------------------------------------------------
-// workload.rs::diagnose_deployment
+// diagnoseDeployment
 // ---------------------------------------------------------------------------
 
 export function diagnoseDeployment(obj: JsonObject): DiagnosticIssue[] {
@@ -287,8 +286,7 @@ export function diagnoseDeployment(obj: JsonObject): DiagnosticIssue[] {
 // ---------------------------------------------------------------------------
 // Minimal event fetch for the diagnose path
 //
-// Port of the subset of resources::get_resource_events used by aggregation.rs:
-// only reason / message / type_ / count are read. Self-contained here so the
+// Only reason / message / type_ / count are read. Self-contained here so the
 // topology module does not depend on the resources group.
 // ---------------------------------------------------------------------------
 
@@ -325,8 +323,8 @@ async function getResourceEvents(
     out.push({
       reason: asString(e['reason']),
       message: asString(e['message']),
-      // k8s-openapi/serde maps the JSON field "type" to type_ in Rust; on the
-      // wire the K8s Event JSON field is "type".
+      // `type` is a reserved-ish key locally, so it is read into type_; the
+      // K8s Event JSON field itself is "type".
       type_: asString(e['type']),
       count: asNumber(e['count']),
     });
@@ -335,7 +333,7 @@ async function getResourceEvents(
 }
 
 // ---------------------------------------------------------------------------
-// aggregation.rs::diagnose_resource
+// diagnoseResource
 // ---------------------------------------------------------------------------
 
 /** Read a single namespaced resource as plain JSON, mapping kind -> reader. */
@@ -369,7 +367,7 @@ async function readResource(
       resp = await apps.readNamespacedReplicaSet({ name, namespace });
       break;
     default:
-      // Rust falls back to reading a Pod for unknown kinds.
+      // Unknown kinds fall back to reading a Pod.
       resp = await core.readNamespacedPod({ name, namespace });
       break;
   }
@@ -380,7 +378,7 @@ async function readResource(
   return obj;
 }
 
-/** Map plural resource_type used for event lookup, mirroring the Rust match. */
+/** Map a singular kind to the plural resource_type used for event lookup. */
 function resourceTypeForKind(kindLower: string): string {
   switch (kindLower) {
     case 'pod':
@@ -429,7 +427,7 @@ export async function diagnoseResource(
       break;
   }
 
-  // Check events for additional signals (errors swallowed, as in Rust's if-let-Ok)
+  // Check events for additional signals; a failure here is not fatal.
   try {
     const resourceType = resourceTypeForKind(kindLower);
     const events = await getResourceEvents(resourceType, name, namespace);

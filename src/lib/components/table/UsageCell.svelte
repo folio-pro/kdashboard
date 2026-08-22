@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Resource } from "$lib/types";
-  import { usageMeter, usageBarColor, usagePercentIsLoud, type CellContext } from "./cell-values";
+  import { usageMeter, usagePercentIsLoud, type CellContext } from "./cell-values";
+  import { usageBarColor } from "$lib/stores/metrics.logic";
 
   /**
    * One line: value · bar · percent. The bar is neutral until it is telling

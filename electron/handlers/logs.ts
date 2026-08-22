@@ -1,8 +1,6 @@
 // Logs streaming handler.
 //
-// Rust source ported (faithful): src-tauri/src/k8s/logs.rs
-//
-// Commands implemented (EXACT Tauri command strings):
+// Commands implemented:
 //   - stream_pod_logs        -> streams ONE pod/container
 //   - stream_multi_pod_logs  -> streams N pods under ONE logical stream, each
 //                               line prefixed with `[pod-name] `
@@ -28,8 +26,8 @@
 //   (container/previous may be null; sinceSeconds may be null; the renderer
 //    sends camelCase tailLines/sinceSeconds.)
 //
-// Session semantics (mirrors the Rust single global STOP_FLAG): there is ONE
-// active logical log stream at a time, held in `activeSession`. Starting a new
+// Session semantics: there is ONE active logical log stream at a time, held in
+// `activeSession`. Starting a new
 // stream aborts any prior one. Session identity IS the staleness check — every
 // callback compares against `activeSession` before emitting anything.
 //
@@ -56,9 +54,9 @@ import { apiStream } from '../k8s/api';
 const LOG_CHANNEL = 'log-lines';
 const STATUS_CHANNEL = 'log-stream-status';
 
-/** Maximum lines to buffer before emitting a batch (mirrors Rust LOG_BATCH_SIZE). */
+/** Maximum lines to buffer before emitting a batch. */
 const LOG_BATCH_SIZE = 20;
-/** Maximum time (ms) to wait before flushing a partial batch (mirrors Rust LOG_FLUSH_INTERVAL_MS). */
+/** Maximum time (ms) to wait before flushing a partial batch. */
 const LOG_FLUSH_INTERVAL_MS = 50;
 
 /** Payload of STATUS_CHANNEL. Mirrors StreamStatus in src/.../log-viewer.ts. */
@@ -68,9 +66,9 @@ interface StreamStatus {
 }
 
 /**
- * One active logical stream = N underlying abortable per-pod readers. The Rust
- * kept a single global active slot; we do the same with one module-level
- * session object, and use its identity as the staleness check.
+ * One active logical stream = N underlying abortable per-pod readers. A single
+ * module-level session object holds the active slot, and its identity is the
+ * staleness check.
  */
 interface LogSession {
   controllers: AbortController[];
@@ -103,8 +101,8 @@ function optBool(v: unknown): boolean | undefined {
 }
 
 /**
- * Build the log query options from the common optional fields. Mirrors the Rust
- * build_log_params: follow is always true; the rest are only set when present.
+ * Build the log query options from the common optional fields. `follow` is
+ * always true; the rest are only set when present.
  */
 function buildLogOptions(args: Record<string, unknown>): LogOptions {
   const opts: LogOptions = { follow: true };
@@ -121,9 +119,8 @@ function buildLogOptions(args: Record<string, unknown>): LogOptions {
 
 /**
  * Batches complete log lines and flushes them as string[] over LOG_CHANNEL,
- * coalescing on a batch-size cap OR a short debounce timer (mirrors the Rust
- * spawn_log_reader). `linePrefix`, when set, prefixes each line with
- * `[prefix] ` (multi-pod streams).
+ * coalescing on a batch-size cap OR a short debounce timer. `linePrefix`, when
+ * set, prefixes each line with `[prefix] ` (multi-pod streams).
  */
 function makeBatcher(ctx: HandlerCtx, session: LogSession, linePrefix: string | undefined) {
   let batch: string[] = [];
@@ -258,7 +255,7 @@ async function openStream(
   const drained = pumpBody(session, resp.body, batcher).then(
     () => {
       batcher.clearTimer();
-      // Single-pod streams emit a "[stream ended]" marker (Rust line_prefix.is_none()).
+      // Only single-pod streams emit the "[stream ended]" marker.
       if (linePrefix === undefined) batcher.emitOne('[stream ended]');
     },
     (err: unknown) => {
@@ -322,8 +319,8 @@ function beginSession(): LogSession {
 
 /**
  * Start streaming logs for ONE pod/container. Aborts any prior active stream
- * first (single-slot semantics, like the Rust STOP_FLAG reset). Resolves once
- * the stream is established; lines arrive asynchronously via "log-lines".
+ * first (single-slot semantics). Resolves once the stream is established;
+ * lines arrive asynchronously via "log-lines".
  */
 async function streamPodLogs(args: Record<string, unknown>, ctx: HandlerCtx): Promise<null> {
   const name = optStr(args.name);
@@ -350,8 +347,7 @@ async function streamPodLogs(args: Record<string, unknown>, ctx: HandlerCtx): Pr
 /**
  * Stream logs from MULTIPLE pods under one logical stream. Each line is prefixed
  * with `[pod-name] `. A per-pod start failure emits an `[pod] [error: ...]`
- * line and continues with the rest (mirrors the Rust loop), rather than failing
- * the whole command.
+ * line and continues with the rest, rather than failing the whole command.
  */
 async function streamMultiPodLogs(args: Record<string, unknown>, ctx: HandlerCtx): Promise<null> {
   const pods = Array.isArray(args.pods)
@@ -377,7 +373,7 @@ async function streamMultiPodLogs(args: Record<string, unknown>, ctx: HandlerCtx
       void drained.catch(() => {});
       drains.push(drained);
     } catch (err) {
-      // Emit the per-pod error line and keep going (Rust: continue).
+      // Emit the per-pod error line and keep going.
       if (!isStale(session)) {
         ctx.emit(LOG_CHANNEL, [`[${podName}] [error: ${messageOf(err)}]`]);
       }
@@ -400,7 +396,7 @@ async function streamMultiPodLogs(args: Record<string, unknown>, ctx: HandlerCtx
   return null;
 }
 
-/** Signal the running log stream(s) to stop. Takes NO args (Rust stop_log_stream). */
+/** Signal the running log stream(s) to stop. Takes NO args. */
 function stopLogStream(): null {
   stopActive();
   return null;

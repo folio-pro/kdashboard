@@ -164,6 +164,19 @@ export function memoryCell(resource: Resource, usage: PodUsageInfo | undefined):
   );
 }
 
+/**
+ * Bar colour for a usage meter: neutral while there is headroom, amber when
+ * tight, red when over. Healthy rows stay monochrome on purpose — a table of
+ * green bars says nothing, and the one amber bar in it would get lost. Lives
+ * here with the rest of the usage formatting so a detail panel does not have
+ * to reach into the table layer for it.
+ */
+export function usageBarColor(percent: number): string {
+  if (percent >= 90) return "var(--status-failed)";
+  if (percent >= 70) return "var(--status-pending)";
+  return "color-mix(in srgb, var(--text-primary) 38%, var(--bg-primary))";
+}
+
 export class MetricsStoreLogic {
   /** Pod usage keyed by `${namespace}/${name}`. */
   podUsage: Record<string, PodUsageInfo> = {};

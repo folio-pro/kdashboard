@@ -1,20 +1,17 @@
 // Topology handlers — the cluster relationship graph.
 //
-// Faithful port of src-tauri/src/k8s/topology/* (building.rs, extraction.rs,
-// queries.rs, types.rs). The diagnostics half (diagnose_resource) lives in
-// ./topology/diagnostics.ts; the shared JSON-coercion helpers in
-// ./topology/shared.ts.
+// The diagnostics half (diagnose_resource) lives in ./topology/diagnostics.ts;
+// the shared JSON-coercion helpers in ./topology/shared.ts.
 //
-// Commands implemented here (EXACT Tauri command strings):
+// Commands implemented here:
 //   - get_namespace_topology  (args: { namespace?: string | null })
 //   - get_resource_topology   (args: { uid: string, namespace?: string | null })
 //   - diagnose_resource       (delegated to ./topology/diagnostics)
 //
-// Return SHAPES match the Rust serde output exactly. None of the Rust structs
-// use #[serde(rename_all)], so every field is plain snake_case on the wire
-// (api_version, is_ghost, controller_id, pod_count, pod_ids, edge_type,
-// root_ids, has_cycles, total_resources, cluster_groups, ...). The Svelte types
-// in src/lib/types/cluster.ts depend on exactly these names.
+// Every field is plain snake_case on the wire (api_version, is_ghost,
+// controller_id, pod_count, pod_ids, edge_type, root_ids, has_cycles,
+// total_resources, cluster_groups, ...). The Svelte types in
+// src/lib/types/cluster.ts depend on exactly these names.
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
 import {
@@ -40,7 +37,7 @@ import { diagnoseResource } from './topology/diagnostics';
 export type { DiagnosticIssue, DiagnosticResult } from './topology/diagnostics';
 
 // ---------------------------------------------------------------------------
-// Public wire types (match cluster.ts / src-tauri topology/types.rs)
+// Public wire types (match src/lib/types/cluster.ts)
 // ---------------------------------------------------------------------------
 
 export interface TopologyNode {
@@ -79,7 +76,7 @@ export interface TopologyGraph {
 }
 
 // ---------------------------------------------------------------------------
-// Internal types (mirror RawResource / OwnerRef in topology/types.rs)
+// Internal types
 // ---------------------------------------------------------------------------
 
 interface OwnerRef {
@@ -100,7 +97,7 @@ interface RawResource {
 }
 
 // ---------------------------------------------------------------------------
-// Status extraction (port of extraction.rs::extract_status_str)
+// Status extraction
 // ---------------------------------------------------------------------------
 
 export function extractStatusStr(kind: string, obj: JsonObject): string | undefined {
@@ -152,7 +149,7 @@ export function extractStatusStr(kind: string, obj: JsonObject): string | undefi
 }
 
 // ---------------------------------------------------------------------------
-// Owner reference parsing (port of extraction.rs::parse_owner_refs)
+// Owner reference parsing
 // ---------------------------------------------------------------------------
 
 function parseOwnerRefs(meta: JsonObject): OwnerRef[] {
@@ -178,7 +175,7 @@ function parseOwnerRefs(meta: JsonObject): OwnerRef[] {
 }
 
 // ---------------------------------------------------------------------------
-// Dynamic -> RawResource conversion (port of extraction.rs::raw_from_dynamic)
+// Dynamic -> RawResource conversion
 // ---------------------------------------------------------------------------
 
 export function rawFromDynamic(kind: string, apiVersion: string, items: JsonValue[]): RawResource[] {
@@ -208,10 +205,10 @@ export function rawFromDynamic(kind: string, apiVersion: string, items: JsonValu
 }
 
 // ---------------------------------------------------------------------------
-// Typed list fetching (port of extraction.rs::fetch_typed! macro)
+// Typed list fetching
 //
 // Lists a typed resource (namespaced or all-namespaces), serializes each item to
-// JSON, and converts via raw_from_dynamic. On error it returns an empty array
+// JSON, and converts via rawFromDynamic. On error it returns an empty array
 // (errors are swallowed per type so a single RBAC denial does not break the
 // whole graph).
 // ---------------------------------------------------------------------------
@@ -233,7 +230,7 @@ async function fetchTyped(
 }
 
 // ---------------------------------------------------------------------------
-// Graph building (port of building.rs::build_graph)
+// Graph building
 // ---------------------------------------------------------------------------
 
 export function buildGraph(resources: RawResource[], autoCluster: boolean): TopologyGraph {
@@ -310,7 +307,7 @@ export function buildGraph(resources: RawResource[], autoCluster: boolean): Topo
 }
 
 // ---------------------------------------------------------------------------
-// Cycle detection (port of building.rs::detect_and_break_cycles)
+// Cycle detection
 // ---------------------------------------------------------------------------
 
 function detectAndBreakCycles(nodesMap: Map<string, TopologyNode>, edges: TopologyEdge[]): boolean {
@@ -325,8 +322,7 @@ function detectAndBreakCycles(nodesMap: Map<string, TopologyNode>, edges: Topolo
   const inStack = new Set<string>();
   const backEdges: Array<[string, string]> = [];
 
-  // Iterative DFS to avoid blowing the call stack on large graphs (the Rust
-  // version recurses; node's default stack is shallower, so we emulate it).
+  // Iterative DFS: a recursive walk blows Node's call stack on large graphs.
   function dfs(start: string): void {
     // stack frames: [node, childIndex]
     const stack: Array<{ node: string; i: number }> = [{ node: start, i: 0 }];
@@ -377,7 +373,7 @@ function detectAndBreakCycles(nodesMap: Map<string, TopologyNode>, edges: Topolo
 }
 
 // ---------------------------------------------------------------------------
-// BFS depth assignment (port of building.rs::assign_depths)
+// BFS depth assignment
 // ---------------------------------------------------------------------------
 
 function assignDepths(
@@ -421,7 +417,7 @@ function assignDepths(
 }
 
 // ---------------------------------------------------------------------------
-// Pod clustering (port of building.rs::extract_pod_clusters)
+// Pod clustering
 //
 // Groups pods by their controller when node count exceeds 200. Mutates
 // nodesMap/edges in place by removing clustered pod nodes and their edges.
@@ -478,7 +474,7 @@ function extractPodClusters(
 }
 
 // ---------------------------------------------------------------------------
-// queries.rs::get_namespace_topology
+// get_namespace_topology
 //
 // The full namespace graph (12 list calls) is cached briefly per
 // context+namespace: opening a resource detail calls get_resource_topology,
@@ -552,9 +548,9 @@ async function fetchNamespaceTopology(namespace: string | null): Promise<Topolog
   const apps = getAppsV1Api();
   const batch = getBatchV1Api();
 
-  // Each entry mirrors one fetch_typed! arm in queries.rs (kind + apiVersion +
-  // namespaced/all-namespaces list fn). Kinds needing a status/spec field keep
-  // the typed full-body list; the rest go metadata-only (listMeta above).
+  // One entry per kind (kind + apiVersion + namespaced/all-namespaces list fn).
+  // Kinds needing a status/spec field keep the typed full-body list; the rest go
+  // metadata-only (listMeta above).
   const fetches: Array<Promise<RawResource[]>> = [
     fetchTyped(
       (ns) =>
@@ -636,7 +632,7 @@ async function fetchNamespaceTopology(namespace: string | null): Promise<Topolog
 }
 
 // ---------------------------------------------------------------------------
-// queries.rs::get_resource_topology
+// get_resource_topology
 // ---------------------------------------------------------------------------
 
 async function getResourceTopology(uid: string, namespace: string | null): Promise<TopologyGraph> {

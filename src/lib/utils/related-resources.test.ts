@@ -249,6 +249,21 @@ describe("getRelatedResources", () => {
     });
   });
 
+  describe("wpa", () => {
+    test("links to scaleTargetRef, which it spells like an HPA", () => {
+      const wpa = makeResource({
+        kind: "WatermarkPodAutoscaler",
+        spec: { scaleTargetRef: { kind: "Deployment", name: "my-deploy" } },
+      });
+      const related = getRelatedResources(wpa, "wpa");
+      expect(related).toContainEqual({
+        kind: "Deployment",
+        name: "my-deploy",
+        resourceType: "deployments",
+      });
+    });
+  });
+
   describe("vpa", () => {
     test("links to targetRef", () => {
       const vpa = makeResource({

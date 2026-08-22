@@ -1,13 +1,7 @@
-// Terminal exec handler group — ports the Tauri interactive-shell exec
-// subsystem to @kubernetes/client-node's WebSocket-based Exec API.
+// Terminal exec handler group — interactive shells over
+// @kubernetes/client-node's WebSocket-based Exec API.
 //
-// Rust source ported (faithful 1:1): src-tauri/src/k8s/exec.rs
-//   - start_exec       -> start_terminal_exec
-//   - write_stdin      -> send_terminal_input
-//   - resize_terminal  -> resize_terminal
-//   - stop_exec        -> stop_terminal_exec
-//
-// Commands implemented (EXACT Tauri command strings):
+// Commands implemented:
 //   - start_terminal_exec  { name, namespace, container, command } -> null
 //   - send_terminal_input  { data }                                -> null
 //   - resize_terminal      { width, height }  (width=cols, height=rows) -> null
@@ -18,8 +12,8 @@
 //   - terminal-output : string  (raw PTY chunk, utf8-decoded — terminal.write)
 //   - terminal-exit   : null    (payload unused; signals the session ended)
 //
-// Session model (mirrors the Rust OnceLock single-slot): exactly ONE active
-// session at a time. Starting a new one stops the previous. stop_terminal_exec
+// Session model: exactly ONE active session at a time, held in a single slot.
+// Starting a new one stops the previous. stop_terminal_exec
 // closes the WebSocket and emits terminal-exit. The session Map is cleaned on
 // stop AND on stream death (status callback / ws close / error).
 
@@ -132,7 +126,7 @@ interface Session {
   output: OutputCoalescer;
 }
 
-/** Single active session (matches the Rust OnceLock<Option<...>> single slot). */
+/** Single active session. */
 let session: Session | null = null;
 
 /** Tear down the active session if any. `notify` emits terminal-exit when true. */

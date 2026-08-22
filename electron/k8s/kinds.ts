@@ -162,8 +162,8 @@ export function resolveKind(kind: string): KindEntry | undefined {
 }
 
 /**
- * Resolve a kind or throw the canonical unsupported-kind error (mirrors the
- * single Rust helper error string used by both YAML fetch and workload ops).
+ * Resolve a kind or throw the canonical unsupported-kind error, shared by both
+ * the YAML fetch and workload ops paths.
  */
 export function resolveKindOrThrow(kind: string): KindEntry {
   const entry = resolveKind(kind);
