@@ -8,8 +8,7 @@
   import { Package, ArrowLeft } from "lucide-svelte";
   import { helmStore } from "$lib/stores/helm.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
-  import { filterReleases, releaseHealth } from "$lib/stores/helm.logic";
+    import { filterReleases, releaseHealth } from "$lib/stores/helm.logic";
   import { formatAge } from "$lib/utils/age";
   import { cn } from "$lib/utils";
   import { stringify as toYaml } from "yaml";
@@ -22,13 +21,9 @@
 
   let visible = $derived(filterReleases(helmStore.releases, query));
 
+  /** The only "back" a tab needs: release detail → release list. */
   function handleBack() {
-    if (helmStore.selected) {
-      helmStore.clearSelection();
-      return;
-    }
-    helmStore.reset();
-    uiStore.backToPrevious();
+    helmStore.clearSelection();
   }
 
   function handleRefresh() {
@@ -65,7 +60,7 @@
   isLoading={helmStore.isLoading}
   error={helmStore.error}
   hasData={helmStore.loaded}
-  onBack={handleBack}
+  onBack={helmStore.selected ? handleBack : undefined}
   onRefresh={handleRefresh}
   loadingMessage="Reading release secrets..."
   errorMessage="Failed to read Helm releases"

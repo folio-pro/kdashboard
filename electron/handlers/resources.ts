@@ -6,6 +6,7 @@
 //   - list_pods_by_selector    list pods filtered by a label selector
 //   - get_resource_counts      metadata-only counts for many kinds at once
 //   - get_resource_yaml        fetch one object, strip managedFields, -> YAML
+//                              (optional `context` reads from another context)
 //   - get_resource             fetch one object with FULL spec/status/data
 //   - get_events               list events, optional ns + field selector
 //   - get_resource_events      events for one named resource
@@ -20,7 +21,9 @@
 
 import * as YAML from 'yaml';
 
-import { getCoreV1Api } from '../k8s/client';
+import { KubernetesObjectApi } from '@kubernetes/client-node';
+
+import { getActiveContextName, getCoreV1Api, kcFor } from '../k8s/client';
 import { apiGet, META_ACCEPT } from '../k8s/api';
 import type {
   RawList,
@@ -266,9 +269,37 @@ async function getResource(kind: string, name: string, namespace: string): Promi
   return res;
 }
 
-async function getResourceYaml(kind: string, name: string, namespace: string): Promise<string> {
+/**
+ * Read one object from a context other than the active one. Goes through the
+ * typed KubernetesObjectApi (which builds its own TLS agent from that
+ * context's kubeconfig entry) rather than the raw `apiGet` path, whose TLS is
+ * bound to the ACTIVE cluster via the global dispatcher.
+ */
+async function getRawFromContext(
+  context: string,
+  kind: string,
+  ar: ApiResource,
+  name: string,
+  namespace: string,
+): Promise<RawObject> {
+  const api = kcFor(context).makeApiClient(KubernetesObjectApi);
+  const obj = await api.read({
+    apiVersion: ar.apiVersion,
+    kind,
+    metadata: { name, namespace: ar.clusterScoped ? undefined : namespace },
+  });
+  return obj as unknown as RawObject;
+}
+
+async function getResourceYaml(
+  kind: string,
+  name: string,
+  namespace: string,
+  context?: string,
+): Promise<string> {
   const { ar } = apiResourceForKind(kind);
-  const obj = await getRaw(ar, name, namespace);
+  const peer = context && context !== getActiveContextName() ? context : undefined;
+  const obj = peer ? await getRawFromContext(peer, kind, ar, name, namespace) : await getRaw(ar, name, namespace);
   // Strip managedFields — verbose server-side-apply noise.
   if (obj.metadata) delete obj.metadata.managedFields;
   return YAML.stringify(obj);
@@ -435,7 +466,9 @@ export function register(handlers: HandlerMap): void {
   };
 
   const getResourceYamlHandler: Handler = async (args) => {
-    return getResourceYaml(str(args.kind), str(args.name), str(args.namespace));
+    // `context` is optional: set, it reads from that context instead of the
+    // active one (Compare Across Contexts) — never switches the active one.
+    return getResourceYaml(str(args.kind), str(args.name), str(args.namespace), optStr(args.context));
   };
 
   const getResourceHandler: Handler = async (args) => {

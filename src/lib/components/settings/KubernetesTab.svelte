@@ -3,7 +3,9 @@
   import { cn } from "$lib/utils";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
-  import { X, RefreshCw } from "lucide-svelte";
+  import { X, RefreshCw, Trash2 } from "lucide-svelte";
+  import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
+  import KubeconfigImport from "./KubeconfigImport.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -21,6 +23,21 @@
   let editingContext = $state<string | null>(null);
   let refreshingPricing = $state(false);
   let labelDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let removingContext = $state<string | null>(null);
+
+  async function confirmRemoveContext() {
+    const ctx = removingContext;
+    if (!ctx) return;
+    try {
+      await invoke("remove_kubeconfig_context", { context: ctx });
+      toastStore.success("Context removed", `${ctx} was removed from the kubeconfig (a backup was written next to it)`);
+      await k8sStore.loadContexts();
+    } catch (e) {
+      toastStore.error("Could not remove context", String(e));
+    } finally {
+      removingContext = null;
+    }
+  }
 
   function handleKubeconfigSave() {
     settingsStore.updateKubeconfigPath(kubeconfigPath);
@@ -205,6 +222,21 @@
                 {/each}
               </div>
             </div>
+            <div class="flex items-center justify-between gap-2 border-t border-[var(--border-color)] pt-3">
+              <span class="text-[11px] text-[var(--text-muted)]">
+                {isActive ? "Switch to another context before removing this one." : "Removes the context (and its cluster/user if unused) from the kubeconfig file."}
+              </span>
+              <Button
+                variant="ghost-tone"
+                tone="error"
+                size="sm"
+                disabled={isActive}
+                onclick={() => (removingContext = ctx)}
+                data-testid="remove-context"
+              >
+                <Trash2 class="h-3 w-3" /> Remove from kubeconfig
+              </Button>
+            </div>
           </div>
         {/if}
       </div>
@@ -242,7 +274,19 @@
       Save
     </Button>
   </div>
+
+  <KubeconfigImport />
 </section>
+
+<ConfirmDialog
+  open={removingContext !== null}
+  title="Remove context from kubeconfig"
+  description={removingContext ? `Remove "${removingContext}" from ${settingsStore.settings.kubeconfig_path || "~/.kube/config"}? Its cluster and user entries go too if nothing else uses them. A backup of the file is written first.` : ""}
+  confirmLabel="Remove"
+  variant="destructive"
+  onconfirm={confirmRemoveContext}
+  oncancel={() => (removingContext = null)}
+/>
 
 <!-- Prometheus -->
 <section>

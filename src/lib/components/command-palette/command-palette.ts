@@ -4,6 +4,7 @@ import type { CommandPaletteItem } from "$lib/types";
  * categories appear after this list in the order they are first seen. */
 export const CATEGORY_ORDER = [
   "Resource Actions",
+  "Search Results",
   "Resources",
   "Custom Resources",
   "Contexts",

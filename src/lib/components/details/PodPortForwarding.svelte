@@ -1,13 +1,18 @@
 <script lang="ts">
-  import { Play, Box, Info, Square, ExternalLink, ArrowRight } from "lucide-svelte";
+  import { Play, Box, Info, Square, ExternalLink, ArrowRight, Bookmark, BookmarkCheck } from "lucide-svelte";
   import { Button, Input, Spinner } from "$lib/components/ui";
   import { open } from "$lib/ipc/shell";
   import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { portForwardStore } from "$lib/stores/port-forwards.svelte";
+  import { describeTarget, inferForwardTarget } from "$lib/stores/port-forwards.logic";
   import { getContainerIconUrl } from "$lib/utils/container-icon";
+  import type { Resource } from "$lib/types";
   import type { PortInfo, SpecContainer } from "./pod-utils";
 
   interface Props {
     allPorts: PortInfo[];
+    /** The pod itself — a saved forward follows its owning workload. */
+    pod?: Pick<Resource, "metadata">;
     podName: string;
     namespace: string;
     specContainerMap: Map<string, SpecContainer>;
@@ -15,7 +20,17 @@
     onIconError: (url: string) => void;
   }
 
-  let { allPorts, podName, namespace, specContainerMap, failedIcons, onIconError }: Props = $props();
+  let { allPorts, pod, podName, namespace, specContainerMap, failedIcons, onIconError }: Props = $props();
+
+  // Where a saved forward would point: the Deployment/StatefulSet/DaemonSet
+  // behind the pod when known, else the pod itself.
+  let saveTarget = $derived(pod ? inferForwardTarget(pod) : { kind: "Pod" as const, name: podName });
+
+  function toggleSaved(pf: typeof k8sStore.portForwards[0]) {
+    const saved = portForwardStore.savedFor(pf) ?? portForwardStore.findEquivalent(pf, saveTarget);
+    if (saved) portForwardStore.forget(saved.id);
+    else portForwardStore.save(pf, saveTarget);
+  }
 
   let portInputs = $state<Record<number, string>>({});
   let portForwardingPorts = $state<Set<number>>(new Set());
@@ -118,6 +133,7 @@
       <!-- Forward controls: inline on the right when there is room, a full
            second line (indented under the name) when there is not. -->
       {#if forwarded && activePf}
+        {@const savedEntry = portForwardStore.savedFor(activePf) ?? portForwardStore.findEquivalent(activePf, saveTarget)}
         <div class="flex items-center gap-2 @max-[460px]:w-full @max-[460px]:pl-9">
           <ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
           <Button
@@ -131,6 +147,22 @@
           <span class="ml-auto inline-flex shrink-0 items-center gap-1.5 text-[12px] text-[var(--status-running)]">
             <span class="h-1.5 w-1.5 rounded-full bg-[var(--status-running)]"></span>active
           </span>
+          <Button
+            variant="toolbar"
+            size="icon-sm"
+            class="shrink-0"
+            onclick={() => toggleSaved(activePf)}
+            title={savedEntry
+              ? `Saved as ${describeTarget(savedEntry)} → localhost:${savedEntry.local_port}. Click to forget.`
+              : `Save this forward (${describeTarget({ target_kind: saveTarget.kind, target_name: saveTarget.name })} → localhost:${activePf.local_port}) so it can be restarted and reconnects when the pod changes`}
+            data-testid="save-port-forward"
+          >
+            {#if savedEntry}
+              <BookmarkCheck class="h-3.5 w-3.5 text-[var(--accent)]" />
+            {:else}
+              <Bookmark class="h-3.5 w-3.5" />
+            {/if}
+          </Button>
           <Button
             variant="toolbar"
             size="sm"

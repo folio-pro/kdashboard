@@ -1,21 +1,35 @@
 <script lang="ts">
-  import { Badge } from "$lib/components/ui";
+  import { Badge, SegmentedControl, StatTile } from "$lib/components/ui";
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { DollarSign, Cpu, MemoryStick, ChevronDown, ChevronRight } from "lucide-svelte";
   import { costStore } from "$lib/stores/cost.svelte";
+  import { rightsizingStore } from "$lib/stores/rightsizing.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
+    import { formatCpu, formatBytes } from "$lib/stores/metrics.logic";
+  import RightsizingPanel from "./RightsizingPanel.svelte";
 
   let expandedNamespaces = $state<Set<string>>(new Set());
+  /** "costs" is the namespace breakdown; "rightsizing" compares requests with usage. */
+  let mode = $state<"costs" | "rightsizing">("costs");
 
-  function handleBack() {
-    costStore.reset();
-    uiStore.backToPrevious();
-  }
+  // ViewPanel reads one state object whichever store the mode is showing.
+  let panel = $derived(
+    mode === "costs"
+      ? { isLoading: costStore.isLoading, error: costStore.error, hasData: !!costStore.overview }
+      : { isLoading: rightsizingStore.isLoading && !rightsizingStore.overview, error: rightsizingStore.error, hasData: !!rightsizingStore.overview },
+  );
 
   function handleRefresh() {
-    costStore.loadCostOverview(k8sStore.currentNamespace);
+    if (mode === "rightsizing") rightsizingStore.loadRightsizing(k8sStore.currentNamespace);
+    else costStore.loadCostOverview(k8sStore.currentNamespace);
+  }
+
+  function setMode(next: "costs" | "rightsizing") {
+    mode = next;
+    if (next === "rightsizing" && !rightsizingStore.overview && !rightsizingStore.isLoading) {
+      rightsizingStore.loadRightsizing(k8sStore.currentNamespace);
+    }
   }
 
   function toggleNamespace(ns: string) {
@@ -33,26 +47,16 @@
     return `$${value.toFixed(2)}`;
   }
 
-  function formatCpu(cores: number): string {
-    if (cores < 0.001) return "<1m";
-    if (cores < 1) return `${Math.round(cores * 1000)}m`;
-    return `${cores.toFixed(2)}`;
-  }
-
-  function formatMemory(gb: number): string {
-    if (gb < 0.01) return `${Math.round(gb * 1024)} Mi`;
-    return `${gb.toFixed(2)} Gi`;
-  }
+  const GB = 1024 ** 3;
 
 </script>
 
 <ViewPanel
   title="Cost Visibility"
   icon={DollarSign}
-  isLoading={costStore.isLoading}
-  error={costStore.error}
-  hasData={!!costStore.overview}
-  onBack={handleBack}
+  isLoading={panel.isLoading}
+  error={panel.error}
+  hasData={panel.hasData}
   onRefresh={handleRefresh}
   loadingMessage="Loading cost data..."
   errorMessage="Failed to load cost data"
@@ -60,67 +64,34 @@
   emptyHelper="Requires metrics-server installed in your cluster"
 >
   {#snippet badge()}
-    {#if costStore.overview}
+    {#if mode === "costs" && costStore.overview}
       <Badge appearance="surface" size="sm">
         {costStore.overview.source}
       </Badge>
     {/if}
   {/snippet}
 
+  {#snippet headerActions()}
+    <SegmentedControl
+      ariaLabel="Cost view mode"
+      value={mode}
+      onchange={setMode}
+      items={[{ value: "costs", label: "Costs" }, { value: "rightsizing", label: "Rightsizing", testid: "cost-mode-rightsizing" }]}
+      testid="cost-mode"
+    />
+  {/snippet}
+
+  {#if mode === "rightsizing"}
+    <RightsizingPanel />
+  {:else}
   <ScrollArea class="h-full">
     <div class="p-4 space-y-4">
       <!-- Cluster Summary Cards -->
       <div class="grid grid-cols-4 gap-3">
-        <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
-            <DollarSign class="h-3.5 w-3.5" />
-            Monthly Estimate
-          </div>
-          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
-            {formatCost(costStore.overview!.cluster_cost_monthly)}
-          </div>
-          <div class="text-[11px] text-[var(--text-muted)]">
-            {formatCost(costStore.overview!.cluster_cost_hourly)}/hr
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
-            <Cpu class="h-3.5 w-3.5" />
-            CPU Usage
-          </div>
-          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
-            {formatCpu(costStore.overview!.total_cpu_cores)}
-          </div>
-          <div class="text-[11px] text-[var(--text-muted)]">
-            cores in use
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
-            <MemoryStick class="h-3.5 w-3.5" />
-            Memory Usage
-          </div>
-          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
-            {formatMemory(costStore.overview!.total_memory_gb)}
-          </div>
-          <div class="text-[11px] text-[var(--text-muted)]">
-            in use
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
-            Namespaces
-          </div>
-          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
-            {costStore.overview!.namespaces.length}
-          </div>
-          <div class="text-[11px] text-[var(--text-muted)]">
-            with active workloads
-          </div>
-        </div>
+        <StatTile label="Monthly Estimate" icon={DollarSign} value={formatCost(costStore.overview!.cluster_cost_monthly)} note={`${formatCost(costStore.overview!.cluster_cost_hourly)}/hr`} mono={false} />
+        <StatTile label="CPU Usage" icon={Cpu} value={formatCpu(costStore.overview!.total_cpu_cores)} note="cores in use" mono={false} />
+        <StatTile label="Memory Usage" icon={MemoryStick} value={formatBytes(costStore.overview!.total_memory_gb * GB)} note="in use" mono={false} />
+        <StatTile label="Namespaces" value={costStore.overview!.namespaces.length} note="with active workloads" mono={false} />
       </div>
 
       <!-- Pricing Info -->
@@ -145,7 +116,7 @@
               <span class="flex-1 text-[13px] font-medium text-[var(--text-primary)]">{ns.namespace}</span>
               <span class="text-[12px] text-[var(--text-muted)]">{ns.workload_count} pods</span>
               <span class="text-[12px] text-[var(--text-secondary)]">{formatCpu(ns.total_cpu_cores)} CPU</span>
-              <span class="text-[12px] text-[var(--text-secondary)]">{formatMemory(ns.total_memory_gb)} Mem</span>
+              <span class="text-[12px] text-[var(--text-secondary)]">{formatBytes(ns.total_memory_gb * GB)} Mem</span>
               <span class="min-w-[70px] text-right text-[13px] font-medium text-[var(--text-primary)]">
                 {formatCost(ns.total_cost_monthly)}/mo
               </span>
@@ -168,7 +139,7 @@
                       <tr class="border-t border-[var(--border-color)]/50 text-[var(--text-secondary)]">
                         <td class="px-3 py-1.5 font-mono text-[var(--text-primary)]">{w.name}</td>
                         <td class="px-3 py-1.5 text-right">{formatCpu(w.cpu_cores)}</td>
-                        <td class="px-3 py-1.5 text-right">{formatMemory(w.memory_bytes / (1024 * 1024 * 1024))}</td>
+                        <td class="px-3 py-1.5 text-right">{formatBytes(w.memory_bytes)}</td>
                         <td class="px-3 py-1.5 text-right">{formatCost(w.total_cost_hourly)}</td>
                         <td class="px-3 py-1.5 text-right font-medium">{formatCost(w.total_cost_monthly)}</td>
                       </tr>
@@ -182,4 +153,5 @@
       </div>
     </div>
   </ScrollArea>
+  {/if}
 </ViewPanel>

@@ -12,7 +12,11 @@
     isLoading: boolean;
     error: string | null;
     hasData: boolean;
-    onBack: () => void;
+    /**
+     * Views are tabs, so there is no global "back". Pass this only when the
+     * view has an inner level to leave (Helm: release detail → release list).
+     */
+    onBack?: () => void;
     onRefresh: () => void;
     loadingMessage?: string;
     errorMessage?: string;
@@ -49,9 +53,11 @@
   <!-- Header -->
   <div class="flex h-[52px] items-center justify-between border-b border-[var(--border-color)] px-4">
     <div class="flex items-center gap-3">
-      <Button variant="outline" size="icon-lg" onclick={onBack} title="Back" aria-label="Go back">
-        <ArrowLeft class="h-4 w-4" />
-      </Button>
+      {#if onBack}
+        <Button variant="outline" size="icon-lg" onclick={onBack} title="Back" aria-label="Go back">
+          <ArrowLeft class="h-4 w-4" />
+        </Button>
+      {/if}
       <div class="flex items-center gap-2">
         <Icon class="h-4 w-4 text-[var(--accent)]" />
         <span class="text-[13px] font-semibold text-[var(--text-primary)]">{title}</span>

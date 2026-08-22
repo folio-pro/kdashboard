@@ -11,37 +11,16 @@
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore, RESOURCE_TAB_TYPES, type ActiveView } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
-  import { openResourceDetail, navigateToResourceTable, navigateToCrdTable } from "$lib/actions/navigation";
+  import { openResourceDetail, navigateToResourceTable, navigateToCrdTable, openAppView, isAppView } from "$lib/actions/navigation";
   import { settingsStore } from "$lib/stores/settings.svelte";
-  import { topologyStore } from "$lib/stores/topology.svelte";
-  import { costStore } from "$lib/stores/cost.svelte";
-  import { securityStore } from "$lib/stores/security.svelte";
-  import { helmStore } from "$lib/stores/helm.svelte";
   import { sidebarStore } from "$lib/stores/sidebar.svelte";
   import { RESOURCE_SECTIONS } from "$lib/resource-catalog";
   import { filterGroups, resourceMatches, crdMatches } from "./sidebar-filter";
 
   const sections = RESOURCE_SECTIONS;
 
-  /**
-   * Sidebar entries that are standalone views rather than resource lists.
-   * Their catalog `type` IS the view name, which is what lets both handlers
-   * below be table lookups instead of parallel if-chains — previously ten
-   * branches across two functions encoding that single fact, where adding a
-   * sixth view meant remembering to touch both.
-   *
-   * The value is the data the view needs on entry, or null if it loads itself.
-   */
-  const VIRTUAL_VIEWS: Record<string, ((namespace: string) => void) | null> = {
-    portforwards: null,
-    topology: (ns) => topologyStore.loadNamespaceTopology(ns),
-    cost: (ns) => costStore.loadCostOverview(ns),
-    security: (ns) => securityStore.loadSecurityOverview(ns),
-    helm: (ns) => helmStore.loadReleases(ns),
-  };
-
   function isItemActive(type: string): boolean {
-    if (type in VIRTUAL_VIEWS) return uiStore.activeView === type;
+    if (isAppView(type)) return uiStore.activeView === type;
 
     // Views that sit "inside" a resource type, and so keep its catalog entry
     // lit. Derived from RESOURCE_TAB_TYPES rather than re-listing its members:
@@ -57,9 +36,8 @@
   }
 
   function handleItemClick(resourceType: string) {
-    if (resourceType in VIRTUAL_VIEWS) {
-      uiStore.showView(resourceType as ActiveView);
-      VIRTUAL_VIEWS[resourceType]?.(k8sStore.currentNamespace);
+    if (isAppView(resourceType)) {
+      openAppView(resourceType, k8sStore.currentNamespace);
       return;
     }
     const item = sections.flatMap((s) => s.items).find((i) => i.type === resourceType);
@@ -161,7 +139,7 @@
 
 <TooltipProvider delayDuration={300}>
   <aside
-    class="flex h-full flex-row border-r border-t border-[var(--border-color)] bg-[var(--sidebar-bg)]"
+    class="flex h-full flex-row border-r border-[var(--border-color)] bg-[var(--sidebar-bg)]"
   >
     {#if uiStore.sidebarCollapsed}
       <!-- Collapsed: single column with group labels + icons -->

@@ -3,6 +3,42 @@ import { k8sStore } from "$lib/stores/k8s.svelte";
 import { uiStore, DEFAULT_RESOURCE_TYPE } from "$lib/stores/ui.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
 import { extensions } from "$lib/extensions";
+import { topologyStore } from "$lib/stores/topology.svelte";
+import { costStore } from "$lib/stores/cost.svelte";
+import { securityStore } from "$lib/stores/security.svelte";
+import { helmStore } from "$lib/stores/helm.svelte";
+import { overviewStore } from "$lib/stores/overview.svelte";
+import { portForwardStore } from "$lib/stores/port-forwards.svelte";
+import type { ActiveView } from "$lib/stores/ui.logic";
+
+/** The standalone views: catalog `type` === view name. */
+export type AppViewType = Extract<ActiveView, "portforwards" | "topology" | "cost" | "security" | "helm" | "overview" | "problems">;
+
+/**
+ * Catalog entries that are standalone views rather than resource lists. The
+ * value is what the view needs loaded on entry, or null if it loads itself.
+ * One table for the sidebar, the palette and anything else that opens a view
+ * by name.
+ */
+export const APP_VIEWS: Record<AppViewType, ((namespace: string) => void) | null> = {
+  portforwards: null,
+  topology: (ns) => topologyStore.loadNamespaceTopology(ns),
+  cost: (ns) => costStore.loadCostOverview(ns),
+  security: (ns) => securityStore.loadSecurityOverview(ns),
+  helm: (ns) => helmStore.loadReleases(ns),
+  overview: (ns) => overviewStore.loadOverview(ns),
+  problems: (ns) => overviewStore.loadOverview(ns),
+};
+
+export function isAppView(type: string): type is AppViewType {
+  return Object.prototype.hasOwnProperty.call(APP_VIEWS, type);
+}
+
+/** Open a standalone view and kick off its load. */
+export function openAppView(type: AppViewType, namespace: string = k8sStore.currentNamespace): void {
+  uiStore.showView(type);
+  APP_VIEWS[type]?.(namespace);
+}
 
 /**
  * Open a resource in a new detail tab (synchronous — resource already in hand).
@@ -35,6 +71,9 @@ export async function switchContext(contextName: string): Promise<void> {
   k8sStore.setResourceType(DEFAULT_RESOURCE_TYPE);
   await extensions.emit({ type: "context-changed", contextName });
   await k8sStore.switchContext(contextName);
+  if (k8sStore.currentContext === contextName && k8sStore.connectionStatus === "connected") {
+    portForwardStore.onContextConnected(contextName);
+  }
 }
 
 /**

@@ -27,6 +27,10 @@ export class DialogStoreLogic {
   compareOpen = false;
   compareResource: Resource | null = null;
 
+  // Quick edit (image / env / resources without the YAML editor)
+  quickEditOpen = false;
+  quickEditResource: Resource | null = null;
+
   openScale(resource: Resource): void {
     this.scaleResource = {
       kind: resource.kind,
@@ -78,5 +82,15 @@ export class DialogStoreLogic {
 
   closeUpsell(): void {
     this.upsellOpen = false;
+  }
+
+  openQuickEdit(resource: Resource): void {
+    this.quickEditResource = resource;
+    this.quickEditOpen = true;
+  }
+
+  closeQuickEdit(): void {
+    this.quickEditOpen = false;
+    this.quickEditResource = null;
   }
 }

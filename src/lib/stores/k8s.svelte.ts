@@ -87,7 +87,6 @@ class K8sStore extends K8sStoreLogic {
   private _ageInterval: ReturnType<typeof setInterval> | null = null;
   private _watchUnlisten: UnlistenFn | null = null;
   private _watchActive = false;
-  private _pfUnlisten: UnlistenFn | null = null;
   // Pending watch deltas, COALESCED BY uid. _flushWatchEvents is a last-write-
   // wins upsert per uid, so keeping only the newest event per resource yields
   // exactly the same result as replaying every event — while bounding the buffer
@@ -320,6 +319,20 @@ class K8sStore extends K8sStoreLogic {
       // Unknown type or list failed — leave selection unset (view shows empty).
     }
     return null;
+  }
+
+  /**
+   * One object by Kind, or null when it does not exist. Any other failure
+   * (RBAC, network) throws — callers that poll must tell "gone" from "could
+   * not ask" apart.
+   */
+  async getResource(kind: string, name: string, namespace?: string): Promise<Resource | null> {
+    try {
+      return await invoke<Resource>("get_resource", { kind, name, namespace: namespace ?? "" });
+    } catch (err) {
+      if (/not found|404/i.test(errMsg(err))) return null;
+      throw err;
+    }
   }
 
   /** @deprecated Use openRelatedResourceTab() or openResourceDetail() instead */
@@ -652,41 +665,44 @@ class K8sStore extends K8sStoreLogic {
     }
   }
 
-  private async _ensurePortForwardListener(): Promise<void> {
-    if (this._pfUnlisten) return;
-    this._pfUnlisten = await listen<string>("port-forward-closed", (event) => {
-      const sessionId = event.payload;
-      const pf = this.portForwards.find((p) => p.session_id === sessionId);
-      if (pf) {
-        this.portForwards = this.portForwards.filter((p) => p.session_id !== sessionId);
-        toastStore.warning(
-          "Port forward stopped",
-          `Forward to ${pf.pod_name}:${pf.container_port} ended unexpectedly`,
-        );
+  /** Start a session; throws with the backend's message on failure. */
+  async startPortForward(info: PortForwardInfo): Promise<PortForwardInfo> {
+    const result = await invoke<{ session_id: string; local_port: number }>(
+      "start_port_forward",
+      {
+        podName: info.pod_name,
+        namespace: info.namespace,
+        containerPort: info.container_port,
+        localPort: info.local_port,
+        sessionId: info.session_id,
       }
-    });
+    );
+    const started = { ...info, local_port: result.local_port, session_id: result.session_id };
+    this.portForwards = [...this.portForwards, started];
+    return started;
   }
 
+  /** Like startPortForward, but reports failure through `error` (detail panels read it). */
   async addPortForward(info: PortForwardInfo): Promise<void> {
-    await this._ensurePortForwardListener();
     try {
-      const result = await invoke<{ session_id: string; local_port: number }>(
-        "start_port_forward",
-        {
-          podName: info.pod_name,
-          namespace: info.namespace,
-          containerPort: info.container_port,
-          localPort: info.local_port,
-          sessionId: info.session_id,
-        }
-      );
-      this.portForwards = [
-        ...this.portForwards,
-        { ...info, local_port: result.local_port, session_id: result.session_id },
-      ];
+      await this.startPortForward(info);
     } catch (err) {
       this.error = `Failed to start port forward: ${errMsg(err)}`;
     }
+  }
+
+  /** Forget a session the backend reported closed; returns it so the caller can explain. */
+  dropPortForward(sessionId: string): PortForwardInfo | undefined {
+    const pf = this.portForwards.find((p) => p.session_id === sessionId);
+    if (pf) this.portForwards = this.portForwards.filter((p) => p.session_id !== sessionId);
+    return pf;
+  }
+
+  /** Link (or unlink) an active session to a saved forward. */
+  adoptPortForward(sessionId: string, savedId: string | undefined): void {
+    this.portForwards = this.portForwards.map((pf) =>
+      pf.session_id === sessionId ? { ...pf, saved_id: savedId } : pf,
+    );
   }
 
   async removePortForward(sessionId: string): Promise<void> {

@@ -10,6 +10,12 @@ import type { BrowserWindow } from 'electron';
 
 import { describeInvokeError } from './k8s/errors.js';
 
+/** A non-empty string arg, else undefined ("All Namespaces" counts as unset). */
+export function optStr(args: Record<string, unknown>, key: string): string | undefined {
+  const v = args[key];
+  return typeof v === 'string' && v !== '' && v !== 'All Namespaces' ? v : undefined;
+}
+
 /**
  * Context handed to every handler. `emit` pushes an event to the renderer over
  * one of the 5 event channels (terminal-output, terminal-exit, log-lines,

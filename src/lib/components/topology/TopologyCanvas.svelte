@@ -8,11 +8,34 @@
   import { kindToResourceType } from "$lib/utils/related-resources";
   import { toastStore } from "$lib/stores/toast.svelte";
 
+  import type { NetpolOverlay } from "./netpol-layer.logic";
+
   interface Props {
     graph: TopologyGraph;
+    /** NetworkPolicy layer: isolation badges per node and allowed flows. */
+    overlay?: NetpolOverlay | null;
   }
 
-  let { graph }: Props = $props();
+  let { graph, overlay = null }: Props = $props();
+
+  const BADGE_COLOR = {
+    isolated: "var(--status-running)",
+    partial: "var(--status-pending)",
+    open: "var(--status-failed)",
+  } as const;
+
+  /** Allowed-flow edges curve between node centres, unlike the top→bottom ownership edges. */
+  function flowPath(from: string, to: string): string {
+    const a = layout.positions.get(from);
+    const b = layout.positions.get(to);
+    if (!a || !b) return "";
+    const x1 = a.x + NODE_WIDTH / 2;
+    const y1 = a.y + NODE_HEIGHT / 2;
+    const x2 = b.x + NODE_WIDTH / 2;
+    const y2 = b.y + NODE_HEIGHT / 2;
+    const bend = Math.max(40, Math.abs(x2 - x1) * 0.25);
+    return `M ${x1} ${y1} C ${x1 + bend} ${y1 - bend}, ${x2 - bend} ${y2 - bend}, ${x2} ${y2}`;
+  }
 
   // Layout constants
   const NODE_WIDTH = 180;
@@ -236,6 +259,24 @@
     />
   {/each}
 
+  <!-- Allowed flows (NetworkPolicy layer) -->
+  {#if overlay}
+    {#each overlay.flows as f, i (i)}
+      <path
+        d={flowPath(f.from, f.to)}
+        fill="none"
+        stroke="var(--accent)"
+        stroke-width="1.5"
+        stroke-dasharray="5 4"
+        stroke-opacity={hoveredNodeId && f.from !== hoveredNodeId && f.to !== hoveredNodeId ? 0.15 : 0.7}
+        marker-end="url(#arrowhead-highlight)"
+        data-testid="netpol-flow"
+      >
+        <title>{f.policy}: {f.ports.length ? f.ports.join(", ") : "all ports"}</title>
+      </path>
+    {/each}
+  {/if}
+
   <!-- Cluster group badges -->
   {#each graph.cluster_groups as group}
     {@const pos = layout.positions.get(group.controller_id)}
@@ -275,6 +316,14 @@
         onmouseleave={() => hoveredNodeId = null}
         onclick={() => handleNodeClick(node)}
       />
+      {#if overlay?.badges.get(node.id)}
+        {@const b = overlay.badges.get(node.id)!}
+        <g transform="translate({pos.x + NODE_WIDTH - 10}, {pos.y - 6})" data-testid="netpol-badge" data-badge={b}>
+          <circle r="7" fill="var(--bg-secondary)" stroke={BADGE_COLOR[b]} stroke-width="1.5" />
+          <circle r="3" fill={BADGE_COLOR[b]} />
+          <title>{b === "isolated" ? "Ingress and egress restricted by NetworkPolicy" : b === "partial" ? "Only one direction restricted" : "No NetworkPolicy selects this workload"}</title>
+        </g>
+      {/if}
     {/if}
   {/each}
 </svg>

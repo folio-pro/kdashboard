@@ -2,6 +2,8 @@ import type { Resource } from "$lib/types";
 
 export const SCALABLE_TYPES = ["deployments", "statefulsets", "replicasets"];
 export const RESTARTABLE_TYPES = ["deployments", "statefulsets", "daemonsets"];
+/** Kinds the alert watcher can judge (alerts.logic healthOf); others only alert on events. */
+export const ALERTABLE_TYPES = ["pods", "deployments", "statefulsets", "daemonsets", "jobs", "cronjobs", "nodes"];
 export const LOG_TYPES = ["pods", "deployments"];
 
 export const GROUP_ORDER: Record<string, number> = {

@@ -689,11 +689,11 @@ describe("UiStore", () => {
       expect(deserializeTabs(bad)).toBeNull();
     });
 
-    test("deserializeTabs drops unknown tab types (e.g. legacy overview) but keeps the rest", () => {
+    test("deserializeTabs drops unknown tab types (e.g. a removed view) but keeps the rest", () => {
       const mixed = JSON.stringify({
         version: TABS_STORAGE_VERSION,
         tabs: [
-          { id: "tab-overview", type: "overview", label: "Overview", closable: true },
+          { id: "tab-overview", type: "legacy-view", label: "Legacy", closable: true },
           { id: "tab-1", type: "table", label: "Pods", closable: true, resourceType: "pods" },
         ],
         activeTabId: "tab-overview",

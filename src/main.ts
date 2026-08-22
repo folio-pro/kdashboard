@@ -2,6 +2,7 @@ import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
 import { extensions } from "$lib/extensions";
+import { loadUserExtensions } from "$lib/extensions/host.svelte";
 import { readBootSettings } from "$lib/ipc/core";
 
 // Apply the persisted theme BEFORE mounting. settingsStore.loadSettings() sets
@@ -19,6 +20,11 @@ function applyBootTheme(): void {
   }
 }
 applyBootTheme();
+
+// User extensions (<userData>/extensions/*) register before the registry is
+// sealed; a failing one is recorded for Settings → Extensions, never fatal.
+// Nothing to load under the plain dev server (no bridge) — resolves at once.
+await loadUserExtensions();
 
 // No registrations are made in the core bundle. Sealing now guarantees that
 // any accidental attempt to register extensions after mount fails loudly.

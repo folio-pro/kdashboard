@@ -1,12 +1,16 @@
 <script lang="ts">
   import { open } from "$lib/ipc/shell";
   import { cn } from "$lib/utils";
-  import { ChevronsUpDown, Unplug, ExternalLink, Square } from "lucide-svelte";
-  import { Button } from "$lib/components/ui";
+  import { ChevronsUpDown, Unplug, ExternalLink, Square, Bookmark, BookmarkCheck } from "lucide-svelte";
+  import { Button, StatTile } from "$lib/components/ui";
   import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { portForwardStore } from "$lib/stores/port-forwards.svelte";
+  import { describeTarget } from "$lib/stores/port-forwards.logic";
+  import SavedForwardsTable from "./SavedForwardsTable.svelte";
   import type { Column, PortForwardInfo, SortDirection } from "$lib/types";
 
   let portForwards = $derived(k8sStore.portForwards ?? []);
+  let savedForwards = $derived(portForwardStore.saved);
 
   // Sort state
   let sortColumn = $state<string>("pod_name");
@@ -73,7 +77,7 @@
     { key: "container_port", label: "Container Port", sortable: true, width: "130px" },
     { key: "local_port", label: "Local Port", sortable: true, width: "130px" },
     { key: "status", label: "Status", sortable: false, width: "100px" },
-    { key: "actions", label: "Actions", sortable: false, width: "160px" },
+    { key: "actions", label: "Actions", sortable: false, width: "220px" },
   ];
 
   function getColumnStyle(col: Column): string {
@@ -160,17 +164,15 @@
 <div class="flex h-full flex-col bg-[var(--bg-primary)]">
   <!-- Metric Cards -->
   <div class="flex items-stretch gap-3 px-6 pt-4 pb-4">
-    <div class="flex flex-1 flex-col gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-      <span class="text-[10px] font-normal text-[var(--text-muted)]">Total</span>
-      <div class="flex items-end gap-1.5">
-        <span class="text-[18px] font-semibold leading-none tabular-nums text-[var(--text-primary)]">{portForwards.length}</span>
-        <span class="pb-0.5 text-[10px] text-[var(--text-muted)]">port forwards</span>
-      </div>
-      <div class="h-1 w-full overflow-hidden rounded-full bg-[var(--border-color)]">
-        <div class="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300" style="width: 100%;"></div>
-      </div>
-    </div>
+    <StatTile class="flex-1" label="Active" value={portForwards.length} note="port forwards" />
+    <StatTile class="flex-1" label={`Saved in ${k8sStore.currentContext || "this context"}`} value={savedForwards.length} note={`${savedForwards.filter((s) => s.auto_start).length} auto-start`} />
   </div>
+
+  {#if savedForwards.length > 0}
+    <div class="px-6 pb-4">
+      <SavedForwardsTable forwards={savedForwards} onOpen={openInBrowser} />
+    </div>
+  {/if}
 
   <!-- Table -->
   <div class="relative flex-1 overflow-hidden px-6 pb-4">
@@ -179,7 +181,7 @@
         <div class="flex h-full flex-col items-center justify-center py-20">
           <Unplug class="h-6 w-6 text-[var(--text-muted)]" />
           <p class="mt-3 text-[12px] text-[var(--text-muted)]">No active port forwards</p>
-          <p class="mt-1 text-[11px] text-[var(--text-muted)]">Open a pod and forward a container port to get started</p>
+          <p class="mt-1 text-[11px] text-[var(--text-muted)]">Open a pod and forward a container port to get started{savedForwards.length ? " — or start a saved forward above" : ""}</p>
         </div>
       {:else}
         <table class="w-full" style="table-layout: fixed;">
@@ -227,7 +229,19 @@
                         Active
                       </span>
                     {:else if col.key === "actions"}
+                      {@const savedEntry = portForwardStore.savedFor(pf)}
                       <div class="flex items-center gap-1">
+                        <Button
+                          variant="ghost-tone"
+                          tone={savedEntry ? "accent" : "muted"}
+                          size="sm"
+                          onclick={() => (savedEntry ? portForwardStore.forget(savedEntry.id) : portForwardStore.save(pf))}
+                          title={savedEntry ? `Saved as ${describeTarget(savedEntry)} — click to forget` : "Save this forward to restart it later"}
+                          data-testid="port-forward-save"
+                        >
+                          {#if savedEntry}<BookmarkCheck class="h-3 w-3" />{:else}<Bookmark class="h-3 w-3" />{/if}
+                          {savedEntry ? "Saved" : "Save"}
+                        </Button>
                         <Button
                           variant="ghost-tone"
                           tone="accent"

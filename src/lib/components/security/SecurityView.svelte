@@ -1,21 +1,32 @@
 <script lang="ts">
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Badge, Card, type BadgeTone } from "$lib/components/ui";
+  import { Badge, SegmentedControl, StatTile, type BadgeTone } from "$lib/components/ui";
   import { Shield, ShieldAlert, ShieldCheck, ChevronDown, ChevronRight } from "lucide-svelte";
   import { securityStore } from "$lib/stores/security.svelte";
+  import { rbacStore } from "$lib/stores/rbac.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
+    import RbacPanel from "./RbacPanel.svelte";
 
   let expandedPods = $state<Set<string>>(new Set());
+  /** "posture" = image scans and compliance; "permissions" = the RBAC explorer. */
+  let mode = $state<"posture" | "permissions">("posture");
 
-  function handleBack() {
-    securityStore.reset();
-    uiStore.backToPrevious();
-  }
+  // ViewPanel reads one state object whichever mode is showing; the RBAC
+  // explorer loads its own two lists and renders its own progress.
+  let panel = $derived(
+    mode === "posture"
+      ? { isLoading: securityStore.isLoading, error: securityStore.error, hasData: !!securityStore.overview }
+      : { isLoading: false, error: null, hasData: true },
+  );
 
   function handleRefresh() {
-    securityStore.loadSecurityOverview(k8sStore.currentNamespace);
+    if (mode === "permissions") {
+      rbacStore.reset();
+      void rbacStore.loadSubjects(k8sStore.currentNamespace);
+    } else {
+      securityStore.loadSecurityOverview(k8sStore.currentNamespace);
+    }
   }
 
   function togglePod(key: string) {
@@ -66,10 +77,9 @@
 <ViewPanel
   title="Security Overview"
   icon={Shield}
-  isLoading={securityStore.isLoading}
-  error={securityStore.error}
-  hasData={!!securityStore.overview}
-  onBack={handleBack}
+  isLoading={panel.isLoading}
+  error={panel.error}
+  hasData={panel.hasData}
   onRefresh={handleRefresh}
   loadingMessage="Scanning images..."
   errorMessage="Failed to load security data"
@@ -77,29 +87,31 @@
   emptyHelper="Install trivy or grype to scan container images"
 >
   {#snippet badge()}
-    {#if securityStore.overview}
+    {#if mode === "posture" && securityStore.overview}
       <Badge appearance="surface" size="sm">{securityStore.overview.scanner}</Badge>
     {/if}
   {/snippet}
 
+  {#snippet headerActions()}
+    <SegmentedControl
+      ariaLabel="Security view mode"
+      value={mode}
+      onchange={(v) => (mode = v)}
+      items={[{ value: "posture", label: "Posture" }, { value: "permissions", label: "Permissions", testid: "security-mode-permissions" }]}
+      testid="security-mode"
+    />
+  {/snippet}
+
+  {#if mode === "permissions"}
+    <RbacPanel />
+  {:else}
   <ScrollArea class="h-full">
     <div class="p-4 space-y-4">
       <!-- Summary Cards -->
       <div class="grid grid-cols-5 gap-3">
-        <Card>
-          <div class="text-[12px] text-[var(--text-muted)]">Images Scanned</div>
-          <div class="mt-1 text-[18px] font-semibold text-[var(--text-primary)]">
-            {securityStore.overview!.total_images_scanned}
-          </div>
-        </Card>
-
-        {#each severities as sev}
-          <Card tone={severityTone[sev.key]}>
-            <div class="text-[12px]" style="color: {severityVar[sev.key]};">{sev.label}</div>
-            <div class="mt-1 text-[18px] font-semibold" style="color: {severityVar[sev.key]};">
-              {securityStore.overview!.total_vulns[sev.key]}
-            </div>
-          </Card>
+        <StatTile label="Images Scanned" value={securityStore.overview!.total_images_scanned} />
+        {#each severities as sev (sev.key)}
+          <StatTile label={sev.label} value={securityStore.overview!.total_vulns[sev.key]} tone={severityTone[sev.key]} class="border-[var(--tone)]/30" />
         {/each}
       </div>
 
@@ -224,4 +236,5 @@
       </div>
     </div>
   </ScrollArea>
+  {/if}
 </ViewPanel>

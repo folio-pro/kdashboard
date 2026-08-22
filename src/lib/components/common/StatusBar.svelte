@@ -3,6 +3,9 @@
   import { cn } from "$lib/utils";
   import { Unplug } from "lucide-svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { openAppView } from "$lib/actions/navigation";
+  import { alertStore } from "$lib/stores/alerts.svelte";
+  import AlertsPopover from "./AlertsPopover.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
   import { hintsForView } from "$lib/shortcuts";
@@ -50,11 +53,16 @@
         k8sStore.portForwards.length > 0 && uiStore.activeView !== "portforwards" && "text-[var(--text-secondary)]"
       )}
       title="Port forwards"
-      onclick={() => uiStore.showView("portforwards")}
+      onclick={() => openAppView("portforwards")}
     >
       <Unplug class="h-3 w-3" />
       <span>{k8sStore.portForwards.length}</span>
     </button>
+
+    {#if alertStore.watched.length > 0}
+      <span class="h-3 w-px bg-[var(--border-color)]"></span>
+      <AlertsPopover />
+    {/if}
 
     {#if k8sStore.isLoading}
       <span class="h-3 w-px bg-[var(--border-color)]"></span>

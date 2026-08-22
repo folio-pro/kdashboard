@@ -41,6 +41,8 @@ export interface RevisionInfo {
   images: string[];
   replicas: number;
   is_current: boolean;
+  /** The revision's pod template as YAML, for diffing two revisions. */
+  template_yaml: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +118,26 @@ function rsImages(rs: V1ReplicaSet): string[] {
     if (typeof c.image === 'string') images.push(c.image);
   }
   return images;
+}
+
+/**
+ * The revision's pod template as YAML, minus the `pod-template-hash` label the
+ * Deployment controller stamps on every ReplicaSet: it differs between any
+ * two revisions by construction and would bury the real change in the diff.
+ */
+export function revisionTemplateYaml(rs: V1ReplicaSet): string {
+  const template = rs.spec?.template;
+  if (!template) return '';
+  const copy = JSON.parse(JSON.stringify(template)) as {
+    metadata?: { labels?: Record<string, string> } & Record<string, unknown>;
+  };
+  const labels = copy.metadata?.labels;
+  if (labels) {
+    delete labels['pod-template-hash'];
+    if (Object.keys(labels).length === 0) delete copy.metadata!.labels;
+  }
+  if (copy.metadata && Object.keys(copy.metadata).length === 0) delete copy.metadata;
+  return stringifyYaml(copy);
 }
 
 /**
@@ -386,6 +408,7 @@ async function listDeploymentRevisions(args: Record<string, unknown>): Promise<R
       images: rsImages(rs),
       replicas: rs.status?.replicas ?? 0,
       is_current: idx === currentIdx,
+      template_yaml: revisionTemplateYaml(rs),
     };
   });
 }
