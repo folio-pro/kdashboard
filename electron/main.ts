@@ -38,6 +38,7 @@ import * as kubeconfig from './handlers/kubeconfig';
 import * as overview from './handlers/overview';
 import * as rightsizing from './handlers/rightsizing';
 import * as rbac from './handlers/rbac';
+import * as netpol from './handlers/netpol';
 import * as resources from './handlers/resources';
 import * as workloadOps from './handlers/workload-ops';
 import * as nodeOps from './handlers/node-ops';
@@ -303,6 +304,7 @@ function buildHandlerModules(): HandlerModule[] {
     overview, // get_cluster_overview
     rightsizing, // get_rightsizing
     rbac, // get_rbac_subjects, get_effective_permissions
+    netpol, // get_network_policies
     resources, // list_resources, list_pods_by_selector, get_resource_counts, get_resource_yaml, get_resource, get_events, get_resource_events
     workloadOps, // apply_yaml, delete_resource, scale_workload, restart_workload, rollback_deployment, list_deployment_revisions
     nodeOps, // cordon_node, drain_node
