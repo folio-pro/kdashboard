@@ -132,7 +132,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "compare-namespaces",
-    label: "Compare Across Namespaces...",
+    label: "Compare Across Namespaces / Contexts...",
     icon: GitCompare,
     tier: "green",
     group: "navigate",
