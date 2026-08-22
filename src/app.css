@@ -435,6 +435,9 @@ html, body {
 [data-theme] {
   --border-color: color-mix(in srgb, var(--text-primary) 14%, var(--bg-primary));
   --border-hover: color-mix(in srgb, var(--text-primary) 22%, var(--bg-primary));
+  /* Row separator inside dense tables: half the contrast of --border-color, so
+     a screen of 20 rows reads as one surface rather than 20 stripes. */
+  --hairline: color-mix(in srgb, var(--text-primary) 7%, var(--bg-primary));
   /* Derived rather than declared per theme: the overlay takes its polarity
      from the theme's own text colour, so light themes darken and dark themes
      lighten without eleven hand-maintained pairs. */

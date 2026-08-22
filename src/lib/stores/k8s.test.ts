@@ -126,6 +126,35 @@ describe("K8sStore", () => {
     });
   });
 
+  describe("lastUpdatedAt", () => {
+    test("_replaceResources stamps the list it swaps in", () => {
+      const list: ResourceList = { items: [makeResource({ metadata: { name: "a", uid: "u1" } })], resource_type: "pods" };
+      store._replaceResources(list, 1234);
+      expect(store.resources).toBe(list);
+      expect(store.lastUpdatedAt).toBe(1234);
+    });
+
+    test("watch deltas stamp the list", () => {
+      store.resources = { items: [], resource_type: "pods" };
+      store.handleWatchEvent({
+        event_type: "Applied",
+        resource_type: "pods",
+        resource: makeResource({ metadata: { name: "a", uid: "u1" } }),
+      });
+      expect(store.lastUpdatedAt).toBeGreaterThan(0);
+    });
+
+    test("_resetVisibleState and a tab-cache restore forget the previous view's timestamp", () => {
+      store._replaceResources({ items: [], resource_type: "pods" }, 1234);
+      store._resetVisibleState();
+      expect(store.lastUpdatedAt).toBe(0);
+
+      store._replaceResources({ items: [], resource_type: "pods" }, 1234);
+      store.restoreResourcesSync("deployments", []);
+      expect(store.lastUpdatedAt).toBe(0);
+    });
+  });
+
   describe("_resetVisibleState", () => {
     test("clears errors and resources", () => {
       store.error = "some error";

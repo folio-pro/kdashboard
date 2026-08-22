@@ -1,5 +1,7 @@
-import type { Resource } from "$lib/types";
-import { eventLastTimestamp } from "./cell-values";
+import type { FilterState, Resource } from "$lib/types";
+import { isPodNeedingAttention, matchesStatFilter } from "$lib/utils/workload-stats";
+import { eventLastTimestamp, type CellContext } from "./cell-values";
+import { applyFacets } from "./table-filter";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -51,6 +53,37 @@ export function filterResources(items: Resource[], filterText: string): Resource
       (typeof spec?.message === "string" && spec.message.toLowerCase().includes(lower))
     );
   });
+}
+
+export type { FilterState };
+
+/**
+ * The one filter pipeline — stat chip, then typed facets, then free text —
+ * shared by the visible list and by the saved-view counts in the toolbar, so
+ * "Attention 3" and the rows you get on clicking it can never disagree.
+ * `ctxFor` supplies per-resource cell context for facets on usage columns.
+ */
+export function applyFilterState(
+  items: Resource[],
+  state: FilterState,
+  resourceType: string,
+  ctxFor: (resource: Resource) => CellContext,
+): Resource[] {
+  if (state.statFilter) {
+    const key = state.statFilter;
+    items =
+      key === "needsAttention"
+        ? items.filter(isPodNeedingAttention)
+        : items.filter((r) => matchesStatFilter(r, resourceType, key));
+  }
+  if (state.facets.length > 0) items = applyFacets(items, state.facets, ctxFor);
+  if (state.text) items = filterResources(items, state.text);
+  return items;
+}
+
+/** How many things the status bar should say are filtering the view. */
+export function countActiveFilters(state: FilterState): number {
+  return state.facets.length + (state.statFilter ? 1 : 0) + (state.text ? 1 : 0);
 }
 
 /** Sort resources by a given column and direction. */

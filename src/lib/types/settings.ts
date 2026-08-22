@@ -1,3 +1,5 @@
+import type { SavedView, TableDensity } from "./ui";
+
 /** Payload emitted by the main process when an app update is available. */
 export interface UpdateInfo {
   version: string;
@@ -26,9 +28,11 @@ export interface AppSettings {
   namespace: string;
   theme_mode: string;
   kubeconfig_path: string;
-  table_density: "comfortable" | "compact";
+  table_density: TableDensity;
   context_customizations: Record<string, ContextCustomization>;
   pinned_resources?: PinnedResource[];
   /** Base URL of a Prometheus reachable from this machine. Empty = disabled. */
   prometheus_url?: string;
+  /** User-defined table views (filter sets), per resource type. */
+  saved_views?: SavedView[];
 }

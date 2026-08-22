@@ -3,7 +3,7 @@
   import type { Resource } from "$lib/types";
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Pencil, Terminal, Trash2, Scale, RotateCcw, History, ChevronRight, Info, ScrollText, FileCode, Bell, Ban, CircleCheck, Droplets } from "lucide-svelte";
+  import { Pencil, Terminal, Trash2, Scale, RotateCcw, History, ChevronRight, Info, ScrollText, FileCode, Bell, Ban, CircleCheck, Droplets, X, SquareArrowOutUpRight } from "lucide-svelte";
   import type { IconComponent } from "$lib/actions/types";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
@@ -28,6 +28,19 @@
   import AutoscalerDetails from "./AutoscalerDetails.svelte";
   import NodeDetails from "./NodeDetails.svelte";
   import GenericDetails from "./GenericDetails.svelte";
+
+  /**
+   * `page`: the detail tab (full-width header with labelled actions).
+   * `aside`: docked beside a table — a 44px header with icon actions, plus
+   * "open in tab" and close. Same body, same subtabs, same store-backed state.
+   */
+  interface Props {
+    variant?: "page" | "aside";
+    onopentab?: () => void;
+    onclose?: () => void;
+  }
+  let { variant = "page", onopentab, onclose }: Props = $props();
+  let aside = $derived(variant === "aside");
 
   // The list item (lean for projected types like pods). Renders the header
   // instantly while the full object hydrates.
@@ -118,14 +131,6 @@
     }
   });
 
-  function close() {
-    if (k8sStore.navigateBack()) return;
-    k8sStore.selectResource(null);
-    if (uiStore.activeTab?.closable) {
-      uiStore.closeTab(uiStore.activeTabId);
-    }
-  }
-
   let restartLoading = $state(false);
   let rollbackLoading = $state(false);
   let cordonLoading = $state(false);
@@ -180,6 +185,44 @@
 
 {#if resource}
   <div data-testid="detail-panel" class="flex h-full flex-col bg-[var(--bg-primary)]">
+    {#if aside}
+    <!-- Aside header: identity on the left, icon actions on the right. The
+         labelled actions of the page header would not fit a 440px panel, and
+         Logs / Shell / Edit already have subtabs below. -->
+    <div class="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border-color)] bg-[var(--bg-primary)] pl-4 pr-2">
+      <div class="flex min-w-0 flex-1 flex-col">
+        <span class="truncate text-[13px] font-semibold leading-4 text-[var(--text-primary)]" title={resource.metadata.name}>{resource.metadata.name}</span>
+        <span class="truncate text-[10px] leading-[14px] text-[var(--text-muted)]">
+          {resource.kind}{#if resource.metadata.namespace} · {resource.metadata.namespace}{/if}{#if nodeName} · {nodeName}{/if}
+        </span>
+      </div>
+      <div class="flex shrink-0 items-center gap-0.5">
+        {#if isScalable}
+          <Button variant="muted" size="icon-sm" onclick={() => resource && dialogStore.openScale(resource)} title="Scale (s)" aria-label="Scale"><Scale class="h-3.5 w-3.5" /></Button>
+        {/if}
+        {#if isRestartable}
+          <Button variant="muted" size="icon-sm" onclick={doRestart} disabled={restartLoading} title="Restart" aria-label="Restart"><RotateCcw class="h-3.5 w-3.5" /></Button>
+        {/if}
+        {#if isRollbackable}
+          <Button variant="muted" size="icon-sm" onclick={doRollback} disabled={rollbackLoading} title="Rollback" aria-label="Rollback"><History class="h-3.5 w-3.5" /></Button>
+        {/if}
+        {#if kind === "node" && resource}
+          {@const cordoned = isCordoned(resource)}
+          <Button variant="muted" size="icon-sm" onclick={doToggleCordon} disabled={cordonLoading} title={cordoned ? "Uncordon" : "Cordon"} aria-label={cordoned ? "Uncordon" : "Cordon"}>
+            {#if cordoned}<CircleCheck class="h-3.5 w-3.5" />{:else}<Ban class="h-3.5 w-3.5" />{/if}
+          </Button>
+          <Button variant="muted" size="icon-sm" class="text-[var(--status-failed)]" onclick={() => resource && dialogStore.openDrain(resource.metadata.name)} title="Drain" aria-label="Drain"><Droplets class="h-3.5 w-3.5" /></Button>
+        {/if}
+        <Button variant="muted" size="icon-sm" class="hover:text-[var(--status-failed)]" onclick={handleDelete} title="Delete" aria-label="Delete"><Trash2 class="h-3.5 w-3.5" /></Button>
+        {#each extensions.mountsFor("detail-panel-actions") as mount (mount.id)}
+          <mount.component {resource} />
+        {/each}
+        <span class="mx-0.5 h-4 w-px bg-[var(--border-color)]" aria-hidden="true"></span>
+        <Button variant="muted" size="icon-sm" onclick={onopentab} title="Open in a tab (⌘↵)" aria-label="Open in a tab"><SquareArrowOutUpRight class="h-3.5 w-3.5" /></Button>
+        <Button variant="muted" size="icon-sm" onclick={onclose} title="Close (Esc)" aria-label="Close detail"><X class="h-3.5 w-3.5" /></Button>
+      </div>
+    </div>
+    {:else}
     <!-- Header -->
     <div class="flex h-[68px] items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-6">
       <!-- Left: Breadcrumbs + Info -->
@@ -298,16 +341,18 @@
         </Button>
       </div>
     </div>
+    {/if}
 
     <!-- Subtab bar — px-3 here + px-3 per tab lands the first tab's content at
          24px, aligned with the header and the section titles below. -->
-    <div class="flex shrink-0 items-stretch gap-0.5 border-b border-[var(--border-color)] px-3">
+    <div class={cn("flex shrink-0 items-stretch gap-0.5 border-b border-[var(--border-color)]", aside ? "px-1" : "px-3")}>
       {#each subtabs as t (t)}
         {@const TabIcon = SUBTAB_META[t].icon}
         {@const isActive = activeSubtab === t}
         <button
           class={cn(
-            "relative flex items-center gap-1.5 px-3 pb-2.5 pt-2 text-[13px] transition-colors",
+            "relative flex items-center gap-1.5 transition-colors",
+            aside ? "px-2.5 pb-2 pt-1.5 text-[12px]" : "px-3 pb-2.5 pt-2 text-[13px]",
             isActive ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           )}
           onclick={() => setSubtab(t)}

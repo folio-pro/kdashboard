@@ -84,7 +84,7 @@ class UiStore extends UiStoreLogic {
         // we'd only discard.
         void this.activeTabId;
         for (const t of this.tabs) {
-          void t.filter; void t.sortColumn; void t.sortDirection;
+          void t.filter; void t.facets; void t.sortColumn; void t.sortDirection;
           void t.statFilter; void t.label; void t.resourceName;
           void t.resourceType; void t.namespace;
         }

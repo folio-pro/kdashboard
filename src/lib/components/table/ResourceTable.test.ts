@@ -7,7 +7,10 @@ import {
   computeSomeSelected,
   handleSelectAll,
   clampColumnWidth,
+  applyFilterState,
+  countActiveFilters,
 } from "./resource-table";
+import { minimumTableWidth, GUTTER_WIDTH, NAME_MIN_WIDTH, UNSIZED_MIN_WIDTH } from "./table-columns";
 
 // ---------------------------------------------------------------------------
 // Helpers: build minimal Resource objects for testing
@@ -480,5 +483,49 @@ describe("ResourceTable — filter + sort integration", () => {
     const filtered = filterResources(items, "nonexistent");
     const sorted = sortResources(filtered, "name", "asc");
     expect(sorted).toHaveLength(0);
+  });
+});
+
+describe("ResourceTable — filter pipeline", () => {
+  const ctxFor = () => ({ ageTick: 0 });
+  const pod = (name: string, phase: string, restarts: number, waitingReason?: string): Resource =>
+    ({
+      kind: "Pod",
+      metadata: { name, namespace: "default", uid: name, creation_timestamp: "2024-01-01T00:00:00Z" },
+      spec: {},
+      status: {
+        phase,
+        containerStatuses: [
+          { name: "c", ready: true, restartCount: restarts, image: "x", state: waitingReason ? { waiting: { reason: waitingReason } } : {} },
+        ],
+      },
+    }) as unknown as Resource;
+  const items = [pod("api-1", "Running", 0), pod("api-2", "Running", 14, "CrashLoopBackOff"), pod("job-1", "Succeeded", 0)];
+
+  test("no filters returns the same array", () => {
+    expect(applyFilterState(items, { statFilter: null, facets: [], text: "" }, "pods", ctxFor)).toBe(items);
+  });
+  test("stat chip, then facets, then text", () => {
+    expect(applyFilterState(items, { statFilter: "running", facets: [], text: "" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-1"]);
+    expect(applyFilterState(items, { statFilter: "needsAttention", facets: [], text: "" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-2"]);
+    expect(applyFilterState(items, { statFilter: null, facets: [{ key: "restarts", op: ">", value: "0" }], text: "" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-2"]);
+    expect(applyFilterState(items, { statFilter: null, facets: [], text: "job" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["job-1"]);
+    expect(applyFilterState(items, { statFilter: null, facets: [{ key: "status", op: ":", value: "running" }], text: "api-2" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-2"]);
+  });
+  test("countActiveFilters counts each kind once", () => {
+    expect(countActiveFilters({ facets: [], text: "", statFilter: null })).toBe(0);
+    expect(countActiveFilters({ facets: [{ key: "a", op: ":", value: "b" }, { key: "c", op: ":", value: "d" }], text: "x", statFilter: "running" })).toBe(4);
+  });
+});
+
+describe("ResourceTable — minimum table width", () => {
+  test("sized columns add up; unsized ones get the floor", () => {
+    const cols = [
+      { key: "name", label: "Name", sortable: true },
+      { key: "status", label: "Status", sortable: true, width: "120px" },
+      { key: "node", label: "Node", sortable: true },
+    ];
+    expect(minimumTableWidth(cols)).toBe(GUTTER_WIDTH + 120 + NAME_MIN_WIDTH + UNSIZED_MIN_WIDTH);
+    expect(minimumTableWidth([])).toBe(GUTTER_WIDTH);
   });
 });

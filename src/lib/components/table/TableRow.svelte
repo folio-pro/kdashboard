@@ -1,11 +1,8 @@
 <script lang="ts">
   import { Badge } from "$lib/components/ui";
   import { cn } from "$lib/utils";
-  import type { Resource, Column } from "$lib/types";
-  import StatusBadge from "$lib/components/common/StatusBadge.svelte";
+  import type { Resource, Column, TableDensity } from "$lib/types";
   import { Checkbox } from "$lib/components/ui/checkbox";
-  import { Box } from "lucide-svelte";
-  import { getContainerIconUrl } from "$lib/utils/container-icon";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { costStore } from "$lib/stores/cost.svelte";
@@ -19,11 +16,17 @@
     isAutoscalerTargetsColumn,
     isContainersColumn,
     isMonoColumn,
+    isRightAlignedColumn,
     isStatusColumn,
     isTagColumn,
     isUsageColumn,
-    usageMeter,
   } from "./cell-values";
+  import { statusCategory, statusColor, isQuietStatus, rowSeverity } from "./status-category";
+  import { splitPodName } from "./table-filter";
+  import { ROW_HEIGHT, DENSITY_CLASSES } from "./table-density";
+  import ContainersCell from "./ContainersCell.svelte";
+  import UsageCell from "./UsageCell.svelte";
+  import RowActions from "./RowActions.svelte";
   import { usageBarColor } from "$lib/stores/metrics.logic";
   import { autoscalerFlavor, autoscalerSummary } from "$lib/utils/autoscaler";
   import { liveValues, NO_FLASH } from "$lib/stores/live-values.svelte";
@@ -35,19 +38,28 @@
     highlighted: boolean;
     resourceType: string;
     onclick: () => void;
+    /** Double-click: open the row in its own tab (single click previews it). */
+    ondblclick?: () => void;
     oncontextmenu?: (event: MouseEvent) => void;
-    density: "comfortable" | "compact";
+    /** Open the row's action menu at a screen position (the "…" button). */
+    onmore?: (x: number, y: number) => void;
+    density: TableDensity;
     checkboxChecked?: boolean;
+    /** True while any row in the table is checked: keeps every checkbox visible. */
+    selectionActive?: boolean;
     oncheck?: () => void;
   }
 
-  let { resource, columns, selected, highlighted, resourceType, onclick, oncontextmenu, density, checkboxChecked = false, oncheck }: Props = $props();
+  let {
+    resource, columns, selected, highlighted, resourceType, onclick, ondblclick, oncontextmenu, onmore,
+    density, checkboxChecked = false, selectionActive = false, oncheck,
+  }: Props = $props();
+
+  let d = $derived(DENSITY_CLASSES[density]);
 
   let trailingMounts = $derived(
     extensions.mountsFor("table-row-trailing").filter((m) => !m.visible || m.visible()),
   );
-
-  let rowHeight = $derived(density === "compact" ? "h-8" : "h-11");
 
   // Non-null only on the three autoscaler tables; everywhere else it short
   // circuits the normalizing and the flash lookups below.
@@ -81,70 +93,17 @@
   // cell value inline on every render of the name-column filter highlight.
   let nameLower = $derived(resource.metadata.name.toLowerCase());
 
-  let failedIcons: Set<string> = $state(new Set());
+  // Pods: the generated suffix is dimmed so the owner's name is what the eye
+  // reads down the column. Other kinds keep their name whole.
+  let podName = $derived(resourceType === "pods" ? splitPodName(resource.metadata.name) : null);
 
-  type ContainerState = "running" | "waiting" | "error" | "terminated";
-
-  interface ContainerInfo {
-    name: string;
-    ready: boolean;
-    iconUrl: string | null;
-    state: ContainerState;
-  }
-
-  let containerStatuses = $derived.by((): ContainerInfo[] => {
-    const cs = resource.status?.containerStatuses as Array<{ name: string; ready: boolean; image: string; state?: Record<string, unknown> }> | undefined;
-    if (!cs) return [];
-    return cs.map((c) => {
-      const img = c.image ?? "";
-      const url = img ? getContainerIconUrl(img) : null;
-      let state: ContainerState = "running";
-      if (c.state) {
-        if (c.state.waiting) {
-          const reason = (c.state.waiting as { reason?: string }).reason ?? "";
-          state = /error|crash|backoff/i.test(reason) ? "error" : "waiting";
-        } else if (c.state.terminated) {
-          const exitCode = (c.state.terminated as { exitCode?: number }).exitCode;
-          state = exitCode && exitCode !== 0 ? "error" : "terminated";
-        }
-      }
-      if (!c.ready && state === "running") state = "waiting";
-      return {
-        name: c.name,
-        ready: c.ready,
-        iconUrl: (url && !failedIcons.has(url)) ? url : null,
-        state,
-      };
-    });
-  });
-
-  function containerStateColor(state: ContainerState): string {
-    switch (state) {
-      case "running": return "var(--status-running)";
-      case "waiting": return "var(--status-pending)";
-      case "error": return "var(--status-failed)";
-      case "terminated": return "var(--text-muted)";
-    }
-  }
-
-  function containerIconFilter(state: ContainerState): string {
-    switch (state) {
-      case "error": return "grayscale(1) brightness(0.7) sepia(1) hue-rotate(-30deg) saturate(5)";
-      case "waiting": return "grayscale(1) brightness(0.9) sepia(1) hue-rotate(15deg) saturate(3)";
-      default: return "none";
-    }
-  }
-
-  function handleIconError(url: string) {
-    if (failedIcons.has(url)) return;
-    const next = new Set(failedIcons);
-    next.add(url);
-    failedIcons = next;
-  }
-
-  // Cells used to copy their value on double-click. That path was
-  // unreachable: the row's own single click already opened the detail tab and
-  // unmounted the table, so the second click never landed here.
+  // Row severity comes from the status cell: a 2px bar in the gutter for
+  // problem rows only, so a scroll through 300 pods lands on the red ones.
+  // The table says which column is its status (Events use `eventType`), so the
+  // gutter reads that one rather than assuming "status".
+  let statusColumn = $derived(columns.find((c) => isStatusColumn(c.key)));
+  let statusValue = $derived(statusColumn ? getCellValue(resource, statusColumn.key, cellCtx) : "-");
+  let severity = $derived(statusValue === "-" ? null : rowSeverity(statusCategory(statusValue)));
 
   // Events: the Object column deep-links to the involved resource when its
   // Kind is one the catalog can navigate to (built-in kinds only — a CRD kind
@@ -159,86 +118,66 @@
     if (!type) return null;
     return { type, name: ref.name, namespace: ref.namespace ?? resource.metadata.namespace ?? undefined };
   });
+
+  let lastColumnIndex = $derived(columns.length - 1);
 </script>
 
 <tr
   class={cn(
-    "cursor-pointer border-b border-[var(--border-color)] transition-colors",
-    rowHeight,
+    "group cursor-pointer border-b border-[var(--hairline)] transition-colors",
+    d.mono && "font-mono",
     selected
       ? "bg-[var(--accent)]/10"
       : highlighted
-        ? "bg-[var(--accent)]/5 ring-1 ring-inset ring-[var(--accent)]/20"
+        ? "bg-[var(--accent)]/[0.07]"
         : "hover:bg-[var(--table-row-hover)]"
   )}
+  style="height: {ROW_HEIGHT[density]}px;"
   onclick={onclick}
+  ondblclick={ondblclick}
   oncontextmenu={oncontextmenu}
   tabindex={highlighted ? 0 : -1}
   aria-selected={selected || highlighted}
+  data-testid="resource-row"
+  data-selected={selected || checkboxChecked ? "true" : undefined}
 >
-  {#if oncheck}
-    <td class="w-10 px-4 text-center" onclick={(e) => e.stopPropagation()}>
-      <Checkbox
-        checked={checkboxChecked}
-        onCheckedChange={oncheck}
-        aria-label="Select row"
-      />
-    </td>
-  {/if}
-  {#each columns as column}
-    <td class="overflow-hidden px-4 text-[12px]">
+  <!-- Gutter: severity bar + checkbox. The checkbox only shows on hover or
+       once a selection exists, so an unselected table has no column of empty
+       boxes; the bar is the first thing the eye meets on a problem row. -->
+  <td class="relative w-7 p-0 text-center" onclick={(e) => e.stopPropagation()}>
+    {#if highlighted}
+      <span class="absolute inset-y-0 left-0 w-0.5 bg-[var(--accent)]" aria-hidden="true"></span>
+    {:else if severity}
+      <span
+        class="absolute inset-y-0 left-0 w-0.5"
+        style:background-color={severity === "error"
+          ? "var(--status-failed)"
+          : "color-mix(in srgb, var(--status-pending) 55%, transparent)"}
+        aria-hidden="true"
+      ></span>
+    {/if}
+    {#if oncheck}
+      <span
+        class={cn(
+          "inline-flex items-center justify-center align-middle transition-opacity",
+          checkboxChecked || selectionActive
+            ? "opacity-100"
+            : "opacity-0 group-hover:opacity-100 [&:has(:focus-visible)]:opacity-100"
+        )}
+      >
+        <Checkbox checked={checkboxChecked} onCheckedChange={oncheck} aria-label="Select row" data-testid="row-checkbox" />
+      </span>
+    {/if}
+  </td>
+  {#each columns as column, ci}
+    <td
+      class={cn("relative overflow-hidden px-3.5", d.text, isRightAlignedColumn(column.key) && "text-right")}
+      data-testid="cell-{column.key}"
+    >
       {#if isContainersColumn(column.key)}
-        <div class="flex items-center gap-1.5 overflow-hidden">
-          {#each containerStatuses as c}
-            <div
-              class="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border"
-              style:background-color={`color-mix(in srgb, ${containerStateColor(c.state)} 14%, var(--bg-tertiary))`}
-              style:border-color={`color-mix(in srgb, ${containerStateColor(c.state)} 28%, transparent)`}
-              title="{c.name} ({c.state})"
-            >
-              {#if c.iconUrl}
-                <img
-                  src={c.iconUrl}
-                  alt={c.name}
-                  class="h-4 w-4 object-contain"
-                  style:filter={containerIconFilter(c.state)}
-                  onerror={() => handleIconError(c.iconUrl!)}
-                />
-              {:else}
-                <span style:color={containerStateColor(c.state)}><Box class="h-3.5 w-3.5" /></span>
-              {/if}
-            </div>
-          {/each}
-        </div>
+        <ContainersCell {resource} {density} />
       {:else if isUsageColumn(column.key)}
-        {@const usage = usageMeter(resource, column.key, cellCtx)}
-        <!-- Value above, meter below: the meter reads as "how full", the value
-             as "how much", and the denominator says why the meter is that full.
-             The empty track is kept when there is no data so the column does
-             not visually jump between rows. -->
-        <div class="flex w-full flex-col justify-center gap-1" title={usage?.title ?? ""}>
-          <!-- The type size lives on this row, not on each span, so the used
-               value and its denominator can never drift apart; the spans only
-               carry colour. -->
-          <div class="flex items-baseline gap-1.5 overflow-hidden font-mono text-[11px] leading-none tabular-nums">
-            {#if usage}
-              <span class="text-[var(--text-primary)]">{usage.label}</span>
-              {#if usage.basisLabel}
-                <span class="truncate text-[var(--text-muted)]">/ {usage.basisLabel}</span>
-              {/if}
-            {:else}
-              <span class="text-[var(--text-muted)]">—</span>
-            {/if}
-          </div>
-          <div class="h-[3px] w-full overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
-            {#if usage && usage.percent !== null}
-              <div
-                class="h-full rounded-full transition-all duration-300"
-                style="width: {Math.min(usage.percent, 100)}%; background-color: {usageBarColor(usage.percent)}"
-              ></div>
-            {/if}
-          </div>
-        </div>
+        <UsageCell {resource} columnKey={column.key} ctx={cellCtx} />
       {:else if isAutoscalerTargetsColumn(column.key)}
         {@const pressure = autoscalerPressure(cellCtx.autoscaler)}
         <!-- Same shape as a usage meter, because it answers the same question:
@@ -298,29 +237,43 @@
         </span>
       {:else if isStatusColumn(column.key)}
         {@const val = getCellValue(resource, column.key, cellCtx)}
-        {#if val !== "-"}
-          <StatusBadge status={val} />
-        {:else}
+        {#if val === "-"}
           <span class="text-[var(--text-muted)]">-</span>
+        {:else}
+          {@const category = statusCategory(val)}
+          {#if isQuietStatus(category)}
+            <!-- Healthy / finished: plain muted text. Colour is reserved for
+                 rows that need a look. -->
+            <span class="block truncate text-[var(--text-muted)]" title={val}>{val}</span>
+          {:else if d.pill}
+            <span
+              class="inline-flex max-w-full items-center gap-1.5 truncate rounded-sm px-1.5 text-[11px] font-medium leading-4"
+              style="color: {statusColor(category)}; background-color: color-mix(in srgb, {statusColor(category)} 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, {statusColor(category)} 25%, transparent);"
+              title={val}
+            >
+              <span class="h-[5px] w-[5px] shrink-0 rounded-full" style="background-color: {statusColor(category)}"></span>
+              <span class="truncate">{val}</span>
+            </span>
+          {:else}
+            <span class="block truncate font-medium" style="color: {statusColor(category)}" title={val}>{val}</span>
+          {/if}
         {/if}
       {:else if column.key === "restarts"}
         {@const restarts = parseInt(getCellValue(resource, "restarts", cellCtx), 10) || 0}
         <span
-          class={cn(
-            "font-mono text-[12px] tabular-nums",
-            restarts > 5
-              ? "font-medium text-[var(--status-failed)]"
-              : restarts > 0
-                ? "font-medium text-[var(--status-pending)]"
-                : "text-[var(--text-muted)]"
-          )}
+          class={cn("font-mono tabular-nums", restarts > 5 && "font-medium")}
+          style:color={restarts > 5
+            ? "var(--status-failed)"
+            : restarts > 0
+              ? "var(--status-pending)"
+              : "color-mix(in srgb, var(--text-muted) 55%, var(--bg-primary))"}
         >{restarts}</span>
       {:else if column.key === "eventObject" && eventObjectTarget}
         {@const label = getCellValue(resource, column.key, cellCtx)}
         {@const target = eventObjectTarget}
         <button
           type="button"
-          class="block max-w-full truncate font-mono text-[12px] text-[var(--accent)] hover:underline"
+          class="block max-w-full truncate font-mono text-[var(--accent)] hover:underline"
           title={label}
           onclick={(e) => {
             e.stopPropagation();
@@ -334,20 +287,33 @@
         {:else}
           <span class="text-[var(--text-muted)]">—</span>
         {/if}
+      {:else if column.key === "name"}
+        {@const cellValue = getCellValue(resource, column.key, cellCtx)}
+        <span class="block truncate font-medium text-[var(--text-primary)]" title={cellValue}>
+          {#if uiStore.filter}
+            {@const idx = nameLower.indexOf(uiStore.filterLower)}
+            {#if idx >= 0}{cellValue.slice(0, idx)}<span style="color:var(--accent)">{cellValue.slice(idx, idx + uiStore.filter.length)}</span>{cellValue.slice(idx + uiStore.filter.length)}{:else}{cellValue}{/if}
+          {:else if podName && podName.suffix}
+            {podName.base}<span class="font-normal text-[var(--text-muted)]">{podName.suffix}</span>
+          {:else}
+            {cellValue}
+          {/if}
+        </span>
       {:else}
         {@const cellValue = getCellValue(resource, column.key, cellCtx)}
         <span
           class={cn(
             "block truncate text-[var(--text-secondary)]",
-            isMonoColumn(column.key) && "font-mono text-[12px] tabular-nums text-[var(--text-secondary)]",
-            column.key === "name" && "font-medium text-[var(--text-primary)]",
+            isMonoColumn(column.key) && "font-mono tabular-nums",
             column.key === "namespace" && "text-[var(--text-muted)]",
-            column.key === "node" && "text-[11px] text-[var(--text-muted)]"
+            column.key === "node" && "font-mono text-[11px] text-[var(--text-muted)]"
           )}
           title={cellValue}
-        >
-{#if column.key === "name" && uiStore.filter}{@const idx = nameLower.indexOf(uiStore.filterLower)}{#if idx >= 0}{cellValue.slice(0, idx)}<span style="color:var(--accent)">{cellValue.slice(idx, idx + uiStore.filter.length)}</span>{cellValue.slice(idx + uiStore.filter.length)}{:else}{cellValue}{/if}{:else}{cellValue}{/if}
-        </span>
+        >{cellValue}</span>
+      {/if}
+
+      {#if ci === lastColumnIndex && onmore}
+        <RowActions {resource} {resourceType} {onmore} />
       {/if}
     </td>
   {/each}

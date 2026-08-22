@@ -435,3 +435,12 @@ export function autoscalerPressure(summary: AutoscalerSummary | undefined): Auto
     title: spelled.join(" \u00b7 "),
   };
 }
+
+/** Whether the bar's percent label should take the bar's colour (only when it is warning anyone). */
+export function usagePercentIsLoud(percent: number): boolean {
+  return percent >= 70;
+}
+
+/** Counts and ages read right-aligned, so digits line up down the column. */
+const RIGHT_ALIGNED_COLUMNS = new Set(["restarts", "age", "eventCount"]);
+export const isRightAlignedColumn = (key: string): boolean => RIGHT_ALIGNED_COLUMNS.has(key);

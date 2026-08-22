@@ -265,6 +265,30 @@ export const defaultColumns: Column[] = [
   { key: "age", label: "Age", sortable: true, width: "80px" },
 ];
 
+/** Width of the leading gutter column (severity bar + checkbox). */
+export const GUTTER_WIDTH = 28;
+
+/** Floors for columns that declare no width: Name stays readable, the rest merely present. */
+export const NAME_MIN_WIDTH = 160;
+export const UNSIZED_MIN_WIDTH = 90;
+
+/**
+ * `table-layout: fixed` at width 100% hands the unsized columns (Name, and a
+ * few others) whatever is left after the sized ones — which, once the detail
+ * aside takes 440px, can be nothing. This floor on the table's own width turns
+ * that into a horizontal scroll instead of a vanishing column. The floors are
+ * deliberately low: the pods table at a 1280px window must still fit without
+ * a scrollbar when no aside is open.
+ */
+export function minimumTableWidth(columns: Column[]): number {
+  let width = GUTTER_WIDTH;
+  for (const c of columns) {
+    const px = c.width ? parseInt(c.width, 10) : NaN;
+    width += Number.isFinite(px) ? px : c.key === "name" ? NAME_MIN_WIDTH : UNSIZED_MIN_WIDTH;
+  }
+  return width;
+}
+
 // ---------------------------------------------------------------------------
 // Per-resource-type column width overrides (runtime state — not persisted)
 // ---------------------------------------------------------------------------

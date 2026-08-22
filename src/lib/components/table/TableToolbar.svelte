@@ -1,75 +1,54 @@
 <script lang="ts">
   import { RefreshCw, Plus } from "lucide-svelte";
-  import { Button, Kbd, SearchField } from "$lib/components/ui";
+  import { Button } from "$lib/components/ui";
   import NamespacePicker from "$lib/components/common/NamespacePicker.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
+  import SavedViewTabs from "./SavedViewTabs.svelte";
+  import FilterSearch from "./FilterSearch.svelte";
+  import DensityToggle from "./DensityToggle.svelte";
+  import ColumnPicker from "./ColumnPicker.svelte";
+  import type { Column } from "$lib/types";
 
-  // One bar where there used to be two. The old TitleBar (48px, app-level)
-  // carried title + namespace + search; a second toolbar row (38px, inside
-  // the table) carried the count + Filter/Refresh/Create. The Filter button
-  // only focused the search box that was already on screen, so it is gone.
+  /**
+   * One 44px bar: title, namespace, saved views, then the search box (which
+   * holds the typed filters as chips), density, columns, refresh, Create.
+   */
   interface Props {
     resourceTypeLabel: string;
-    count: number;
+    resourceType: string;
     isLoading: boolean;
+    /** Every column the type defines, shown or hidden. */
+    allColumns: Column[];
+    namespaceAutoHidden: boolean;
+    /** Row count each saved view would show, by view id. */
+    viewCounts: Record<string, number>;
     onrefresh: () => void;
     oncreate: () => void;
   }
 
-  let { resourceTypeLabel, count, isLoading, onrefresh, oncreate }: Props = $props();
-
-  // resourceTypeLabel is already plural ("Pods"), so the old toolbar's
-  // `{label}{count === 1 ? "" : "s"}` rendered "5 podss". Depluralise for the
-  // singular case instead of appending to an already-plural noun.
-  let noun = $derived(
-    count === 1
-      ? resourceTypeLabel.toLowerCase().replace(/s$/, "")
-      : resourceTypeLabel.toLowerCase(),
-  );
-
-  let searchInput: HTMLInputElement | undefined = $state();
-
-  function handleSearchKeydown(e: KeyboardEvent) {
-    // Down/Up hands control back to the row list without clearing the query.
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      uiStore.selectedRowIndex = 0;
-      searchInput?.blur();
-    }
-  }
+  let {
+    resourceTypeLabel, resourceType, isLoading, allColumns, namespaceAutoHidden, viewCounts, onrefresh, oncreate,
+  }: Props = $props();
 </script>
 
 <header
-  class="flex h-[44px] shrink-0 items-center gap-3 border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-6"
+  class="flex h-[44px] shrink-0 items-center gap-2.5 border-b border-[var(--border-color)] bg-[var(--bg-primary)] pl-6 pr-4"
   data-drag-region
 >
-  <h1 class="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]" data-drag-region>
+  <h1 class="shrink-0 text-[15px] font-semibold tracking-tight text-[var(--text-primary)]" data-drag-region>
     {resourceTypeLabel}
   </h1>
 
   <NamespacePicker />
 
-  <span class="text-[11px] tabular-nums text-[var(--text-muted)]" aria-live="polite">
-    {count}
-    {noun}
-  </span>
+  <span class="h-[18px] w-px shrink-0 bg-[var(--border-color)]" aria-hidden="true"></span>
 
-  <div class="flex-1"></div>
+  <SavedViewTabs {resourceType} {viewCounts} />
 
-  <SearchField
-    bind:ref={searchInput}
-    id="resource-filter"
-    class="w-[260px]"
-    placeholder="Search {resourceTypeLabel.toLowerCase()}..."
-    ariaLabel="Search {resourceTypeLabel.toLowerCase()}"
-    value={uiStore.filter}
-    oninput={(e) => uiStore.setFilter((e.target as HTMLInputElement).value)}
-    onkeydown={handleSearchKeydown}
-  >
-    {#snippet trailing()}
-      <Kbd>/</Kbd>
-    {/snippet}
-  </SearchField>
+  <FilterSearch {resourceTypeLabel} {allColumns} />
+
+  <DensityToggle />
+
+  <ColumnPicker {resourceType} {allColumns} {namespaceAutoHidden} />
 
   <Button
     variant="ghost"

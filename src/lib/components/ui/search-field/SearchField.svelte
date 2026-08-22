@@ -28,6 +28,8 @@
     oninput?: (event: Event) => void;
     onkeydown?: (event: KeyboardEvent) => void;
     onclear?: () => void;
+    /** Anything that sits between the icon and the input (filter chips). */
+    leading?: Snippet;
     /** Anything that sits between the input and the clear button. */
     trailing?: Snippet;
     /** The input element, for callers that focus it from a shortcut. */
@@ -46,6 +48,7 @@
     oninput,
     onkeydown,
     onclear,
+    leading,
     trailing,
     ref = $bindable(),
     class: className,
@@ -70,6 +73,7 @@
   )}
 >
   <Search class={cn("shrink-0 text-[var(--text-muted)]", icon[size])} />
+  {@render leading?.()}
   <input
     bind:this={ref}
     bind:value
