@@ -106,9 +106,11 @@ html, body {
   --status-succeeded: #3C83F6;
   --status-warning: #F59F0A;
   --status-terminating: #F97316;
-  --sidebar-bg: #0D0E10;
-  --sidebar-hover: #17191C;
-  --sidebar-active: #1E2329;
+  /* Neutral greys on the neutral surface scale — the old values carried a
+     blue cast (#0D0E10 / #1E2329) that read as a different theme. */
+  --sidebar-bg: #0F0F0F;
+  --sidebar-hover: #1A1A1A;
+  --sidebar-active: #242424;
   --table-header-bg: #242424;
   --table-row-hover: #1A1A1A;
   --log-bg: #171717;

@@ -104,7 +104,7 @@
 
 <aside
   bind:this={el}
-  class="relative flex shrink-0 flex-col border-l border-t border-[var(--border-color)] bg-[var(--bg-primary)]"
+  class="relative flex shrink-0 flex-col border-l border-[var(--border-color)] bg-[var(--bg-primary)]"
   style="width: {width}px;"
   aria-label="Resource detail"
 >

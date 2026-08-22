@@ -139,7 +139,7 @@
 
 <TooltipProvider delayDuration={300}>
   <aside
-    class="flex h-full flex-row border-r border-t border-[var(--border-color)] bg-[var(--sidebar-bg)]"
+    class="flex h-full flex-row border-r border-[var(--border-color)] bg-[var(--sidebar-bg)]"
   >
     {#if uiStore.sidebarCollapsed}
       <!-- Collapsed: single column with group labels + icons -->
