@@ -8,7 +8,8 @@ function slice(service: string, namespace: string, addresses: string[], ready = 
     kind: "EndpointSlice",
     api_version: "discovery.k8s.io/v1",
     metadata: { name: `${service}-x`, namespace, uid: "u", creation_timestamp: "", labels: { [SERVICE_NAME_LABEL]: service }, annotations: {}, resource_version: "1", owner_references: [] },
-    spec: { endpoints: [{ addresses, conditions: { ready } }] },
+    // One endpoint per address: that is how the controller writes slices.
+    spec: { endpoints: addresses.map((a) => ({ addresses: [a], conditions: { ready } })) },
     status: {},
   };
 }

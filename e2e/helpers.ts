@@ -30,10 +30,17 @@ const DEFAULT_CLUSTER = `(cmd, args) => {
     const list = lists[args.resourceType];
     return list ? { resource_type: list.resource_type, items: inNamespace(list.items) } : { resource_type: args.resourceType, items: [] };
   }
-  if (cmd === "list_pods_by_selector") return { resource_type: "pods", items: inNamespace(lists.pods.items) };
+  if (cmd === "list_pods_by_selector") {
+    // "k=v,k=v" against the pod labels, like the API server does.
+    const terms = String(args.selector ?? "").split(",").map((t) => t.trim()).filter(Boolean).map((t) => t.split("="));
+    const matches = (pod) => terms.every(([k, v]) => (pod.metadata.labels ?? {})[k] === v);
+    return { resource_type: "pods", items: inNamespace(lists.pods.items).filter(matches) };
+  }
   if (cmd === "get_resource") {
-    const all = Object.values(lists).flatMap((l) => l.items);
-    return all.find((i) => i.metadata.name === args.name && (!args.namespace || i.metadata.namespace === args.namespace)) ?? null;
+    // Restrict to the requested kind so same-name resources resolve correctly.
+    const kind = String(args.kind ?? "").toLowerCase();
+    const pool = Object.values(lists).flatMap((l) => l.items).filter((i) => !kind || String(i.kind).toLowerCase() === kind);
+    return pool.find((i) => i.metadata.name === args.name && (!args.namespace || i.metadata.namespace === args.namespace)) ?? null;
   }
   if (cmd === "get_resource_events") return [];
   if (cmd === "get_pod_metrics") return { available: false, reason: "mock cluster", pods: [] };

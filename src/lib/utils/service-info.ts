@@ -133,19 +133,22 @@ function sliceEndpoints(slice: Resource): SliceEndpoint[] {
 export function endpointSummary(slices: Resource[], serviceName: string, namespace?: string | null): EndpointSummary | null {
   const mine = slicesForService(slices, serviceName, namespace);
   if (mine.length === 0) return null;
+  // One endpoint is one backend: `addresses` is an array for historical
+  // reasons, the controller writes exactly one and kube-proxy reads only the
+  // first — so count endpoints, not addresses.
   let ready = 0, total = 0, terminating = 0;
   for (const slice of mine) {
     for (const ep of sliceEndpoints(slice)) {
-      const n = ep.addresses?.length ?? 0;
-      total += n;
-      if (ep.conditions?.ready !== false) ready += n;
-      if (ep.conditions?.terminating === true) terminating += n;
+      if (!ep.addresses?.length) continue;
+      total += 1;
+      if (ep.conditions?.ready !== false) ready += 1;
+      if (ep.conditions?.terminating === true) terminating += 1;
     }
   }
   return { ready, total, terminating };
 }
 
-/** One row per address across the service's slices, with the slice's first port. */
+/** One row per endpoint (its first address) across the service's slices, with the slice's first port. */
 export function endpointAddresses(slices: Resource[], serviceName: string, namespace?: string | null): EndpointAddress[] {
   const out: EndpointAddress[] = [];
   for (const slice of slicesForService(slices, serviceName, namespace)) {
@@ -153,18 +156,18 @@ export function endpointAddresses(slices: Resource[], serviceName: string, names
     const ports = (Array.isArray(topPorts) ? topPorts : (slice.spec as Json | undefined)?.ports) as Array<{ port?: number }> | undefined;
     const port = ports?.[0]?.port;
     for (const ep of sliceEndpoints(slice)) {
-      for (const address of ep.addresses ?? []) {
-        out.push({
-          address,
-          port,
-          ready: ep.conditions?.ready !== false,
-          serving: ep.conditions?.serving !== false,
-          terminating: ep.conditions?.terminating === true,
-          targetRef: ep.targetRef,
-          nodeName: ep.nodeName,
-          zone: ep.zone,
-        });
-      }
+      const address = ep.addresses?.[0];
+      if (!address) continue;
+      out.push({
+        address,
+        port,
+        ready: ep.conditions?.ready !== false,
+        serving: ep.conditions?.serving !== false,
+        terminating: ep.conditions?.terminating === true,
+        targetRef: ep.targetRef,
+        nodeName: ep.nodeName,
+        zone: ep.zone,
+      });
     }
   }
   return out;

@@ -100,8 +100,9 @@ export function shortImage(image: string): string {
   const lastSlash = ref.lastIndexOf("/");
   const name = lastSlash === -1 ? ref : ref.slice(lastSlash + 1);
   if (digest) {
+    // A digest pin is the identity even when a tag rides along: keep both.
     const hex = digest.replace(/^sha256:/, "");
-    return name.includes(":") ? name : `${name}@${hex.slice(0, 7)}`;
+    return `${name}@${hex.slice(0, 7)}`;
   }
   return name;
 }

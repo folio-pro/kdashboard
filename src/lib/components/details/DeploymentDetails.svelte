@@ -83,6 +83,7 @@
     let cancelled = false;
     if (!sel) {
       pods = [];
+      podsLoading = false;
       return;
     }
     podsLoading = true;
@@ -106,6 +107,10 @@
   $effect(() => {
     const ns = namespace;
     let cancelled = false;
+    // Drop the previous namespace's lists so a stale HPA/Service cannot be
+    // matched against the new Deployment while the requests are in flight.
+    autoscalers = [];
+    services = [];
     invoke<{ items: Resource[] }>("list_resources", { resourceType: "hpa", namespace: ns })
       .then((r) => { if (!cancelled) autoscalers = r.items; })
       .catch(() => { if (!cancelled) autoscalers = []; });

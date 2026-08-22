@@ -67,7 +67,7 @@ describe("shortImage / templateImages", () => {
 
   test("digest-pinned images keep a short digest", () => {
     expect(shortImage("ghcr.io/shop/api@sha256:0123456789abcdef")).toBe("api@0123456");
-    expect(shortImage("ghcr.io/shop/api:2.4.1@sha256:0123456789abcdef")).toBe("api:2.4.1");
+    expect(shortImage("ghcr.io/shop/api:2.4.1@sha256:0123456789abcdef")).toBe("api:2.4.1@0123456");
   });
 
   test("template images in container order", () => {

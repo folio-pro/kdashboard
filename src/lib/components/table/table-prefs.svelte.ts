@@ -2,7 +2,13 @@
 // wide the detail aside is. localStorage (like the tab session) rather than
 // settings: not cluster state, cheap to lose, one object under one key.
 
-const STORAGE_KEY = "kdashboard-table-prefs-v1";
+import { migrateHiddenPrefs } from "./table-columns";
+
+// v2: hidden keys mean "toggled away from the column's default" (see
+// Column.defaultHidden). v1 (every column shown by default) is read once and
+// migrated — see migrateHiddenPrefs.
+const STORAGE_KEY = "kdashboard-table-prefs-v2";
+const LEGACY_STORAGE_KEY = "kdashboard-table-prefs-v1";
 
 export const ASIDE_MIN_WIDTH = 320;
 export const ASIDE_DEFAULT_WIDTH = 440;
@@ -23,12 +29,19 @@ const DEFAULTS: Prefs = { hidden: {}, asideWidth: ASIDE_DEFAULT_WIDTH };
 function load(): Prefs {
   if (typeof localStorage === "undefined") return DEFAULTS;
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<Prefs> | null;
+    let legacy = false;
+    let stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === null) {
+      stored = localStorage.getItem(LEGACY_STORAGE_KEY);
+      legacy = stored !== null;
+    }
+    const raw = JSON.parse(stored ?? "null") as Partial<Prefs> | null;
     if (!raw || typeof raw !== "object") return DEFAULTS;
-    const hidden: Prefs["hidden"] = {};
+    let hidden: Prefs["hidden"] = {};
     for (const [type, keys] of Object.entries(raw.hidden ?? {})) {
       if (Array.isArray(keys)) hidden[type] = keys.filter((k): k is string => typeof k === "string");
     }
+    if (legacy) hidden = migrateHiddenPrefs(hidden);
     // Only the floor is known here; the ceiling depends on the window, so the
     // aside clamps the rendered width to what the row can spare.
     const asideWidth =

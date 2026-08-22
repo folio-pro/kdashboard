@@ -78,9 +78,10 @@ describe("endpointSummary / endpointAddresses", () => {
     slice("web", [{ addresses: ["10.1.0.1"] }], "elsewhere"),
   ];
 
-  test("counts only the service's slices in the namespace", () => {
-    expect(endpointSummary(slices, "web", "ns")).toEqual({ ready: 2, total: 5, terminating: 1 });
-    expect(endpointSummary(slices, "web")).toEqual({ ready: 3, total: 6, terminating: 1 });
+  test("counts endpoints (not addresses) of the service's slices in the namespace", () => {
+    // The second endpoint lists two addresses but is one backend.
+    expect(endpointSummary(slices, "web", "ns")).toEqual({ ready: 2, total: 4, terminating: 1 });
+    expect(endpointSummary(slices, "web")).toEqual({ ready: 3, total: 5, terminating: 1 });
   });
 
   test("null when no slice exists, zero when the slice is empty", () => {
@@ -88,12 +89,12 @@ describe("endpointSummary / endpointAddresses", () => {
     expect(endpointSummary([slice("empty", [])], "empty", "ns")).toEqual({ ready: 0, total: 0, terminating: 0 });
   });
 
-  test("addresses flatten with the slice port and endpoint metadata", () => {
+  test("one row per endpoint (its first address) with the slice port and endpoint metadata", () => {
     const rows = endpointAddresses(slices, "web", "ns");
-    expect(rows.map((r) => r.address)).toEqual(["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4", "10.0.1.1"]);
+    expect(rows.map((r) => r.address)).toEqual(["10.0.0.1", "10.0.0.2", "10.0.0.4", "10.0.1.1"]);
     expect(rows[0]).toEqual({ address: "10.0.0.1", port: 8080, ready: true, serving: true, terminating: false, targetRef: { kind: "Pod", name: "web-1" }, nodeName: "n1", zone: "a" });
     expect(rows[1].ready).toBe(false);
-    expect(rows[3].terminating).toBe(true);
+    expect(rows[2].terminating).toBe(true);
   });
 
   test("reads a full EndpointSlice object (endpoints at the top level) too", () => {

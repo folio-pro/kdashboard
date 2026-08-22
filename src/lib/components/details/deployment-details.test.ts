@@ -97,6 +97,9 @@ describe("findAutoscalerFor / servicesSelecting / templateReferences", () => {
     const sts = res("HorizontalPodAutoscaler", "api-sts", { scaleTargetRef: { kind: "StatefulSet", name: "api" } });
     expect(findAutoscalerFor(deploy, [other, sts, mine])).toBe(mine);
     expect(findAutoscalerFor(deploy, [other])).toBeNull();
+    // Same name in another namespace is somebody else's HPA.
+    const elsewhere = { ...mine, metadata: { ...mine.metadata, namespace: "other" } };
+    expect(findAutoscalerFor(deploy, [elsewhere])).toBeNull();
   });
 
   test("services whose selector is a subset of the template labels", () => {
@@ -106,6 +109,8 @@ describe("findAutoscalerFor / servicesSelecting / templateReferences", () => {
     const empty = res("Service", "none", { selector: {} });
     const ext = res("Service", "ext", { type: "ExternalName" });
     expect(servicesSelecting(deploy, [api, full, web, empty, ext]).map((s) => s.metadata.name)).toEqual(["api", "api-backend"]);
+    const foreign = { ...api, metadata: { ...api.metadata, namespace: "other" } };
+    expect(servicesSelecting(deploy, [foreign])).toEqual([]);
   });
 
   test("template references: volumes, projected, envFrom, env valueFrom, init containers, service account; deduped", () => {

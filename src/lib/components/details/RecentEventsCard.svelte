@@ -34,6 +34,8 @@
     const args = { resourceType, name: resourceName, namespace: resourceNamespace };
     let cancelled = false;
     loading = true;
+    // Never show the previous resource's events under the new one's name.
+    events = [];
     invoke<K8sEvent[]>("get_resource_events", args)
       .then((result) => {
         if (!cancelled) events = result;

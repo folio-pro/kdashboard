@@ -19,9 +19,11 @@ export interface IngressRoute {
  * The Ingresses whose rules (or default backend) send traffic to `serviceName`,
  * with a short "host path" note per matching path.
  */
-export function ingressesForService(ingresses: Resource[], serviceName: string): IngressRoute[] {
+export function ingressesForService(ingresses: Resource[], serviceName: string, namespace?: string | null): IngressRoute[] {
   const out: IngressRoute[] = [];
   for (const ing of ingresses) {
+    // Ingress backends resolve in the Ingress's own namespace.
+    if (namespace != null && namespace !== "" && ing.metadata.namespace !== namespace) continue;
     const spec = (ing.spec ?? {}) as Json;
     const routes: string[] = [];
     const defaultBackend = spec.defaultBackend as { service?: { name?: string } } | undefined;

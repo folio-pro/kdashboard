@@ -126,8 +126,11 @@ export function strategyLabel(resource: Resource): string {
 /** The HPA whose scaleTargetRef points at this Deployment, if any. */
 export function findAutoscalerFor(resource: Resource, autoscalers: Resource[]): Resource | null {
   const name = resource.metadata.name;
+  const namespace = resource.metadata.namespace;
   return (
     autoscalers.find((hpa) => {
+      // scaleTargetRef resolves inside the HPA's own namespace.
+      if (hpa.metadata.namespace !== namespace) return false;
       const ref = (hpa.spec as Json | undefined)?.scaleTargetRef as { kind?: string; name?: string } | undefined;
       return ref?.kind === "Deployment" && ref.name === name;
     }) ?? null
@@ -137,7 +140,9 @@ export function findAutoscalerFor(resource: Resource, autoscalers: Resource[]): 
 /** Services whose selector is a non-empty subset of the pod template's labels. */
 export function servicesSelecting(resource: Resource, services: Resource[]): Resource[] {
   const labels = templateLabels(resource);
+  const namespace = resource.metadata.namespace;
   return services.filter((svc) => {
+    if (svc.metadata.namespace !== namespace) return false;
     const selector = (svc.spec as Json | undefined)?.selector as Record<string, string> | undefined;
     if (!selector) return false;
     const entries = Object.entries(selector);

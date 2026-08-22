@@ -79,6 +79,7 @@
     let cancelled = false;
     if (!sel) {
       pods = [];
+      podsLoading = false;
       return;
     }
     podsLoading = true;
@@ -104,7 +105,7 @@
       .catch(() => { if (!cancelled) ingresses = []; });
     return () => { cancelled = true; };
   });
-  let routes = $derived(ingressesForService(ingresses, name));
+  let routes = $derived(ingressesForService(ingresses, name, namespace));
 
   // --- Attention -------------------------------------------------------------
   let noBackends = $derived(
@@ -255,7 +256,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each addresses as ep (`${ep.address}:${ep.port ?? ""}`)}
+                  {#each addresses as ep, i (`${ep.address}:${ep.port ?? ""}:${i}`)}
                     <tr class="border-b border-[var(--hairline)] last:border-b-0">
                       <td class="{TD} font-mono tabular-nums text-[var(--text-primary)]">{ep.address}{ep.port ? `:${ep.port}` : ""}</td>
                       <td class="{TD} max-w-[220px] truncate">

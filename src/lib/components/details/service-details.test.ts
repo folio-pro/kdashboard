@@ -32,6 +32,9 @@ describe("ingressesForService", () => {
       { name: "fallback", routes: ["default backend"] },
     ]);
     expect(ingressesForService(ingresses, "nothing")).toEqual([]);
+    // Scoped to a namespace, an Ingress from another namespace does not count.
+    expect(ingressesForService(ingresses, "web", "ns")).toHaveLength(2);
+    expect(ingressesForService(ingresses, "web", "elsewhere")).toEqual([]);
   });
 });
 

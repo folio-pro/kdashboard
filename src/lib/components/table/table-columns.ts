@@ -20,7 +20,7 @@ export const columnsByType: Record<string, Column[]> = {
     { key: "podCpu", label: "CPU", sortable: false, width: "160px" },
     { key: "podMemory", label: "Memory", sortable: false, width: "160px" },
     { key: "age", label: "Age", sortable: true, width: "70px" },
-    { key: "controlledBy", label: "Controlled by", sortable: true, width: "180px" },
+    { key: "controlledBy", label: "Controlled by", sortable: true, width: "170px" },
     { key: "node", label: "Node", sortable: true, width: "150px" },
     { key: "ip", label: "IP", sortable: false, width: "120px", defaultHidden: true },
   ],
@@ -282,6 +282,23 @@ export const defaultColumns: Column[] = [
   { key: "namespace", label: "Namespace", sortable: true, width: "150px" },
   { key: "age", label: "Age", sortable: true, width: "80px" },
 ];
+
+/**
+ * Migrate v1 column preferences. v1 stored the keys the user hid, when every
+ * column was shown by default; today a key in the list means "toggled away
+ * from the default", so a v1 entry for a column that is now `defaultHidden`
+ * (Up-to-date, Available, IP, Selector) would read as "shown" — the opposite
+ * of what the user chose. Dropping those entries keeps the column hidden.
+ */
+export function migrateHiddenPrefs(hidden: Record<string, string[]>): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [type, keys] of Object.entries(hidden)) {
+    const columns = columnsByType[type] ?? defaultColumns;
+    const kept = keys.filter((key) => !columns.find((c) => c.key === key)?.defaultHidden);
+    if (kept.length > 0) out[type] = kept;
+  }
+  return out;
+}
 
 /** Width of the leading gutter column (severity bar + checkbox). */
 export const GUTTER_WIDTH = 28;
