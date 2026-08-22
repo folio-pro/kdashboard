@@ -122,6 +122,7 @@ export const RESOURCE_SECTIONS: CatalogSection[] = [
       { name: "Helm Releases", type: "helm", short: "helm", virtual: true },
       { name: "Topology", type: "topology", virtual: true },
       { name: "Security", type: "security", virtual: true },
+      { name: "Cost", type: "cost", virtual: true },
     ],
   },
 ];

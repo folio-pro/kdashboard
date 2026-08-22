@@ -3,19 +3,34 @@
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { DollarSign, Cpu, MemoryStick, ChevronDown, ChevronRight } from "lucide-svelte";
+  import { Button } from "$lib/components/ui/button";
   import { costStore } from "$lib/stores/cost.svelte";
+  import { rightsizingStore } from "$lib/stores/rightsizing.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
+  import RightsizingPanel from "./RightsizingPanel.svelte";
+  import { cn } from "$lib/utils";
 
   let expandedNamespaces = $state<Set<string>>(new Set());
+  /** "costs" is the namespace breakdown; "rightsizing" compares requests with usage. */
+  let mode = $state<"costs" | "rightsizing">("costs");
 
   function handleBack() {
     costStore.reset();
+    rightsizingStore.reset();
     uiStore.backToPrevious();
   }
 
   function handleRefresh() {
-    costStore.loadCostOverview(k8sStore.currentNamespace);
+    if (mode === "rightsizing") rightsizingStore.loadRightsizing(k8sStore.currentNamespace);
+    else costStore.loadCostOverview(k8sStore.currentNamespace);
+  }
+
+  function setMode(next: "costs" | "rightsizing") {
+    mode = next;
+    if (next === "rightsizing" && !rightsizingStore.overview && !rightsizingStore.isLoading) {
+      rightsizingStore.loadRightsizing(k8sStore.currentNamespace);
+    }
   }
 
   function toggleNamespace(ns: string) {
@@ -49,9 +64,9 @@
 <ViewPanel
   title="Cost Visibility"
   icon={DollarSign}
-  isLoading={costStore.isLoading}
-  error={costStore.error}
-  hasData={!!costStore.overview}
+  isLoading={mode === "costs" ? costStore.isLoading : rightsizingStore.isLoading && !rightsizingStore.overview}
+  error={mode === "costs" ? costStore.error : null}
+  hasData={mode === "costs" ? !!costStore.overview : true}
   onBack={handleBack}
   onRefresh={handleRefresh}
   loadingMessage="Loading cost data..."
@@ -60,13 +75,23 @@
   emptyHelper="Requires metrics-server installed in your cluster"
 >
   {#snippet badge()}
-    {#if costStore.overview}
+    {#if mode === "costs" && costStore.overview}
       <Badge appearance="surface" size="sm">
         {costStore.overview.source}
       </Badge>
     {/if}
   {/snippet}
 
+  {#snippet headerActions()}
+    <div class="flex gap-0.5 rounded-md bg-[var(--bg-tertiary)] p-0.5 text-[11px]" data-testid="cost-mode">
+      <Button variant="segment" size="xs" class={cn("h-6 rounded-sm px-2", mode === "costs" && "bg-[var(--bg-secondary)] text-[var(--text-primary)]")} onclick={() => setMode("costs")}>Costs</Button>
+      <Button variant="segment" size="xs" class={cn("h-6 rounded-sm px-2", mode === "rightsizing" && "bg-[var(--bg-secondary)] text-[var(--text-primary)]")} onclick={() => setMode("rightsizing")} data-testid="cost-mode-rightsizing">Rightsizing</Button>
+    </div>
+  {/snippet}
+
+  {#if mode === "rightsizing"}
+    <RightsizingPanel />
+  {:else}
   <ScrollArea class="h-full">
     <div class="p-4 space-y-4">
       <!-- Cluster Summary Cards -->
@@ -182,4 +207,5 @@
       </div>
     </div>
   </ScrollArea>
+  {/if}
 </ViewPanel>

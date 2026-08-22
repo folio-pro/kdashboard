@@ -751,6 +751,26 @@ async function buildCostFromMetrics(namespace: string | undefined): Promise<Cost
   };
 }
 
+/**
+ * The $/core/hour and $/GB/hour the cost view prices with — cloud pricing
+ * when the node instance types resolve, the fallback rates otherwise. Shared
+ * with rightsizing so both views quote the same money.
+ */
+export async function currentRates(): Promise<{ cpu: number; memory: number; source: string }> {
+  let nodes: NodeInfo[] = [];
+  try {
+    nodes = await getNodeInfo();
+  } catch {
+    nodes = [];
+  }
+  const pricing = await resolvePricing(nodes);
+  if (pricing !== null && pricing.size > 0 && nodes.length > 0) {
+    const [cpu, memory] = resolveNodeRates(nodes, pricing);
+    if (Math.abs(cpu - FALLBACK_CPU_RATE) > 0.0001) return { cpu, memory, source: 'cloud-pricing' };
+  }
+  return { cpu: FALLBACK_CPU_RATE, memory: FALLBACK_MEM_RATE, source: 'fallback' };
+}
+
 async function getCostOverview(namespace: string | null | undefined): Promise<CostOverview> {
   const ns =
     namespace && namespace !== 'All Namespaces' && namespace.length > 0
