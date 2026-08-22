@@ -39,4 +39,6 @@ export interface AppSettings {
   saved_port_forwards?: SavedPortForward[];
   /** Resources watched for desktop alerts, per context. */
   watched_resources?: WatchedResource[];
+  /** Key/value storage for user extensions (`<extension id>.<key>`). */
+  extensions?: Record<string, unknown>;
 }

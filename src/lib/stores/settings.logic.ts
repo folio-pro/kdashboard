@@ -145,6 +145,15 @@ export class SettingsStoreLogic {
     this.saveSettings();
   }
 
+  getExtensionValue(key: string): unknown {
+    return this.settings.extensions?.[key];
+  }
+
+  setExtensionValue(key: string, value: unknown): void {
+    this.settings.extensions = { ...(this.settings.extensions ?? {}), [key]: value };
+    this.saveSettings();
+  }
+
   get pinnedResources(): PinnedResource[] {
     return this.settings.pinned_resources ?? SettingsStoreLogic.EMPTY_PINS;
   }

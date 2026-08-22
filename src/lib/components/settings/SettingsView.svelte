@@ -8,6 +8,7 @@
   import GeneralTab from "./GeneralTab.svelte";
   import KubernetesTab from "./KubernetesTab.svelte";
   import ShortcutsTab from "./ShortcutsTab.svelte";
+  import ExtensionsTab from "./ExtensionsTab.svelte";
 
   let activeTab = $state<TabId>("general");
 
@@ -61,6 +62,8 @@
         <KubernetesTab />
       {:else if activeTab === "shortcuts"}
         <ShortcutsTab />
+      {:else if activeTab === "extensions"}
+        <ExtensionsTab />
       {:else if activeExtensionTab}
         <activeExtensionTab.component />
       {/if}
