@@ -4,18 +4,30 @@
   import { Badge, Card, type BadgeTone } from "$lib/components/ui";
   import { Shield, ShieldAlert, ShieldCheck, ChevronDown, ChevronRight } from "lucide-svelte";
   import { securityStore } from "$lib/stores/security.svelte";
+  import { rbacStore } from "$lib/stores/rbac.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
+  import { Button } from "$lib/components/ui/button";
+  import { cn } from "$lib/utils";
+  import RbacPanel from "./RbacPanel.svelte";
 
   let expandedPods = $state<Set<string>>(new Set());
+  /** "posture" = image scans and compliance; "permissions" = the RBAC explorer. */
+  let mode = $state<"posture" | "permissions">("posture");
 
   function handleBack() {
     securityStore.reset();
+    rbacStore.reset();
     uiStore.backToPrevious();
   }
 
   function handleRefresh() {
-    securityStore.loadSecurityOverview(k8sStore.currentNamespace);
+    if (mode === "permissions") {
+      rbacStore.reset();
+      void rbacStore.loadSubjects(k8sStore.currentNamespace);
+    } else {
+      securityStore.loadSecurityOverview(k8sStore.currentNamespace);
+    }
   }
 
   function togglePod(key: string) {
@@ -66,9 +78,9 @@
 <ViewPanel
   title="Security Overview"
   icon={Shield}
-  isLoading={securityStore.isLoading}
-  error={securityStore.error}
-  hasData={!!securityStore.overview}
+  isLoading={mode === "posture" ? securityStore.isLoading : false}
+  error={mode === "posture" ? securityStore.error : null}
+  hasData={mode === "posture" ? !!securityStore.overview : true}
   onBack={handleBack}
   onRefresh={handleRefresh}
   loadingMessage="Scanning images..."
@@ -77,11 +89,21 @@
   emptyHelper="Install trivy or grype to scan container images"
 >
   {#snippet badge()}
-    {#if securityStore.overview}
+    {#if mode === "posture" && securityStore.overview}
       <Badge appearance="surface" size="sm">{securityStore.overview.scanner}</Badge>
     {/if}
   {/snippet}
 
+  {#snippet headerActions()}
+    <div class="flex gap-0.5 rounded-md bg-[var(--bg-tertiary)] p-0.5 text-[11px]" data-testid="security-mode">
+      <Button variant="segment" size="xs" class={cn("h-6 rounded-sm px-2", mode === "posture" && "bg-[var(--bg-secondary)] text-[var(--text-primary)]")} onclick={() => (mode = "posture")}>Posture</Button>
+      <Button variant="segment" size="xs" class={cn("h-6 rounded-sm px-2", mode === "permissions" && "bg-[var(--bg-secondary)] text-[var(--text-primary)]")} onclick={() => (mode = "permissions")} data-testid="security-mode-permissions">Permissions</Button>
+    </div>
+  {/snippet}
+
+  {#if mode === "permissions"}
+    <RbacPanel />
+  {:else}
   <ScrollArea class="h-full">
     <div class="p-4 space-y-4">
       <!-- Summary Cards -->
@@ -224,4 +246,5 @@
       </div>
     </div>
   </ScrollArea>
+  {/if}
 </ViewPanel>
