@@ -40,11 +40,12 @@ test.describe("CommandPalette", () => {
     await page.keyboard.press("Meta+k");
     await page.waitForTimeout(300);
 
+    // Nothing is selected yet, so there is no "Resource Actions" group.
     const groups = page.locator('[data-testid="command-group"]');
-    await expect(groups).toHaveCount(5);
+    await expect(groups).toHaveCount(4);
 
     const groupLabels = page.locator('[data-testid="command-group-label"]');
-    await expect(groupLabels).toContainText(["Resources", "Contexts", "Namespaces", "Actions", "Resource Actions"]);
+    await expect(groupLabels).toContainText(["Resources", "Contexts", "Namespaces", "Actions"]);
   });
 
   test("filters resources when typing in search input", async ({ page }) => {
@@ -173,16 +174,16 @@ test.describe("CommandPalette", () => {
       await page.keyboard.press("Meta+k");
       await page.waitForTimeout(300);
 
-      const resourceActionsGroup = page.locator('[data-testid="command-group"]').filter({ hasText: /resource actions/i });
-      await expect(resourceActionsGroup).toBeVisible();
+      // The group label is a sibling of the items container.
+      await expect(page.locator('[data-testid="command-group-label"]', { hasText: "Resource Actions" })).toBeVisible();
     });
 
     test("shows View Logs action for pods", async ({ page }) => {
       await page.goto("/");
       await page.waitForLoadState("networkidle");
 
-      const podRow = page.locator('[data-testid="resource-row"]').filter({ hasText: /pod/i }).first();
-      await podRow.click();
+      // The default view is the Pods table, so any row is a pod.
+      await page.locator('[data-testid="resource-row"]').first().click();
       await page.waitForTimeout(300);
 
       await page.keyboard.press("Meta+k");
@@ -242,7 +243,7 @@ test.describe("CommandPalette", () => {
       await expect(selectedItem).toBeVisible();
     });
 
-    test("Ctrl+K navigates up", async ({ page }) => {
+    test("ArrowUp navigates back up", async ({ page }) => {
       await page.keyboard.press("Meta+k");
       await page.waitForTimeout(300);
 
@@ -250,11 +251,13 @@ test.describe("CommandPalette", () => {
       await page.keyboard.press("Control+j");
       await page.waitForTimeout(100);
 
-      await page.keyboard.press("Control+k");
+      // Ctrl+K is the palette's own toggle, so "up" is ArrowUp here.
+      await page.keyboard.press("ArrowUp");
       await page.waitForTimeout(100);
 
       const selectedItem = page.locator('[data-testid="command-item"][data-selected="true"]');
       await expect(selectedItem).toBeVisible();
+      await expect(page.locator('[data-testid="command-item"]').nth(1)).toHaveAttribute("data-selected", "true");
     });
   });
 });

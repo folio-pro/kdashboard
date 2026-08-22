@@ -1,17 +1,18 @@
 <script lang="ts">
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Badge, Button } from "$lib/components/ui";
+  import { Badge, Button, CardSection, SegmentedControl, StatTile, toneStyle } from "$lib/components/ui";
   import { LayoutDashboard, AlertTriangle, ArrowRight, Server, Activity, Flame } from "lucide-svelte";
   import { overviewStore } from "$lib/stores/overview.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { openAppView, openRelatedResourceTab } from "$lib/actions/navigation";
   import { formatCpu, formatBytes } from "$lib/stores/metrics.logic";
+  import { kindToResourceType } from "$lib/utils/related-resources";
   import { formatAge } from "$lib/utils/age";
   import { cn } from "$lib/utils";
   import type { NodeSummary, Problem } from "$lib/types";
-  import { nodePressure, nodeNeedsAttention, overviewTiles, problemResourceType } from "./overview.logic";
+  import { nodePressure, nodeNeedsAttention, overviewTiles } from "./overview.logic";
 
   let overview = $derived(overviewStore.overview);
   let tiles = $derived(overview ? overviewTiles(overview) : []);
@@ -19,13 +20,6 @@
   let topMode = $state<"cpu" | "memory">("cpu");
   let topPods = $derived(overview ? (topMode === "cpu" ? overview.top_pods_cpu : overview.top_pods_memory) : []);
   let topMax = $derived(topPods.reduce((m, p) => Math.max(m, topMode === "cpu" ? p.cpu_usage : p.memory_usage), 0));
-
-  const TONE_VAR = {
-    neutral: "var(--text-muted)",
-    success: "var(--status-running)",
-    warning: "var(--status-pending)",
-    error: "var(--status-failed)",
-  } as const;
 
   function handleBack() {
     overviewStore.reset();
@@ -35,7 +29,7 @@
     overviewStore.loadOverview(k8sStore.currentNamespace);
   }
   function openProblem(p: Problem) {
-    void openRelatedResourceTab(problemResourceType(p.kind), p.name, p.namespace ?? undefined);
+    void openRelatedResourceTab(kindToResourceType(p.kind), p.name, p.namespace ?? undefined);
   }
   function openNode(n: NodeSummary) {
     void openRelatedResourceTab("nodes", n.name);
@@ -47,6 +41,16 @@
     return "var(--accent)";
   }
 </script>
+
+{#snippet meter(label: string, percent: number | null)}
+  <span class="flex flex-col gap-1">
+    <span class="flex justify-between font-mono text-[10px] text-[var(--text-muted)]">
+      <span>{label}</span>
+      <span>{percent === null ? "" : `${percent} %`}</span>
+    </span>
+    <span class="h-1 rounded-full bg-[var(--bg-tertiary)]"><span class="block h-1 rounded-full" style="width: {percent ?? 0}%; background: {barColor(percent)}"></span></span>
+  </span>
+{/snippet}
 
 <ViewPanel
   title="Overview"
@@ -73,35 +77,20 @@
   {#if overview}
     <ScrollArea class="h-full">
       <div class="flex flex-col gap-4 p-4" data-testid="overview">
-        <!-- Tiles -->
         <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
           {#each tiles as tile (tile.label)}
-            <div class="flex flex-col gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3" data-testid="overview-tile">
-              <span class="text-[11px] text-[var(--text-muted)]">{tile.label}</span>
-              <span class="font-mono text-[26px] font-medium leading-none text-[var(--text-primary)]">{tile.value}</span>
-              <span class="flex items-center gap-1.5 truncate text-[11px] text-[var(--text-secondary)]" title={tile.note}>
-                <span class="h-1.5 w-1.5 shrink-0 rounded-full" style="background: {TONE_VAR[tile.tone]}"></span>
-                <span class="truncate">{tile.note}</span>
-              </span>
-            </div>
+            <StatTile label={tile.label} value={tile.value} note={tile.note} tone={tile.tone === "neutral" ? "neutral" : tile.tone} size="lg" dot data-testid="overview-tile" />
           {/each}
         </div>
 
         <div class="grid grid-cols-1 gap-3 2xl:grid-cols-2">
-          <!-- Node capacity -->
-          <section class="flex flex-col overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]" data-testid="overview-nodes">
-            <header class="flex h-9 items-center gap-2 border-b border-[var(--border-color)] px-3">
-              <Server class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-              <span class="text-[12px] font-semibold">Nodes</span>
-              <span class="text-[11px] text-[var(--text-muted)]">requests over allocatable{overview.metrics_available ? " · usage from metrics-server" : ""}</span>
-            </header>
+          <CardSection title="Nodes" icon={Server} subtitle={`requests over allocatable${overview.metrics_available ? " · usage from metrics-server" : ""}`} data-testid="overview-nodes">
             {#if overview.nodes.length === 0}
               <p class="px-3 py-4 text-[12px] text-[var(--text-muted)]">Nodes are not listable with these credentials.</p>
             {:else}
               <div class="flex flex-col py-1">
                 {#each overview.nodes as n (n.name)}
                   {@const p = nodePressure(n)}
-                  {@const attention = nodeNeedsAttention(n)}
                   <button
                     type="button"
                     class="grid grid-cols-[minmax(140px,1.2fr)_1fr_1fr_auto] items-center gap-3 px-3 py-1.5 text-left hover:bg-[var(--table-row-hover)]"
@@ -109,55 +98,39 @@
                     title={[n.instance_type, n.zone, n.kubelet_version].filter(Boolean).join(" · ")}
                   >
                     <span class="flex min-w-0 items-center gap-2">
-                      <span class={cn("h-1.5 w-1.5 shrink-0 rounded-full", !n.ready ? "bg-[var(--status-failed)]" : attention ? "bg-[var(--status-pending)]" : "bg-[var(--status-running)]")}></span>
+                      <span class={cn("h-1.5 w-1.5 shrink-0 rounded-full", !n.ready ? "bg-[var(--status-failed)]" : nodeNeedsAttention(n) ? "bg-[var(--status-pending)]" : "bg-[var(--status-running)]")}></span>
                       <span class="truncate font-mono text-[12px] text-[var(--text-primary)]">{n.name}</span>
                       {#if !n.ready}<Badge tone="error">NotReady</Badge>{/if}
                       {#each n.pressure as pr}<Badge tone="warning">{pr}</Badge>{/each}
                       {#if n.unschedulable}<Badge tone="muted">cordoned</Badge>{/if}
                     </span>
-                    <span class="flex flex-col gap-1">
-                      <span class="flex justify-between font-mono text-[10px] text-[var(--text-muted)]">
-                        <span>{n.cpu_requests === null ? "—" : formatCpu(n.cpu_requests)} / {formatCpu(n.cpu_allocatable)} CPU</span>
-                        <span>{p.cpu === null ? "" : `${p.cpu} %`}</span>
-                      </span>
-                      <span class="h-1 rounded-full bg-[var(--bg-tertiary)]"><span class="block h-1 rounded-full" style="width: {p.cpu ?? 0}%; background: {barColor(p.cpu)}"></span></span>
-                    </span>
-                    <span class="flex flex-col gap-1">
-                      <span class="flex justify-between font-mono text-[10px] text-[var(--text-muted)]">
-                        <span>{n.memory_requests === null ? "—" : formatBytes(n.memory_requests)} / {formatBytes(n.memory_allocatable)}</span>
-                        <span>{p.memory === null ? "" : `${p.memory} %`}</span>
-                      </span>
-                      <span class="h-1 rounded-full bg-[var(--bg-tertiary)]"><span class="block h-1 rounded-full" style="width: {p.memory ?? 0}%; background: {barColor(p.memory)}"></span></span>
-                    </span>
+                    {@render meter(`${n.cpu_requests === null ? "—" : formatCpu(n.cpu_requests)} / ${formatCpu(n.cpu_allocatable)} CPU`, p.cpu)}
+                    {@render meter(`${n.memory_requests === null ? "—" : formatBytes(n.memory_requests)} / ${formatBytes(n.memory_allocatable)}`, p.memory)}
                     <span class="w-[70px] text-right font-mono text-[10px] text-[var(--text-muted)]">{n.pod_count === null ? "" : `${n.pod_count} pods`}</span>
                   </button>
                 {/each}
               </div>
             {/if}
-          </section>
+          </CardSection>
 
-          <!-- Problems -->
-          <section class="flex flex-col overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]" data-testid="overview-problems">
-            <header class="flex h-9 items-center gap-2 border-b border-[var(--border-color)] px-3">
-              <AlertTriangle class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-              <span class="text-[12px] font-semibold">Needs attention</span>
+          <CardSection title="Needs attention" icon={AlertTriangle} data-testid="overview-problems">
+            {#snippet actions()}
               {#if overview.problems.length > 0}<Badge tone="error">{overview.problems.length}</Badge>{/if}
-              <div class="flex-1"></div>
               <Button variant="link" size="inline-sm" onclick={() => openAppView("problems")}>Open problems <ArrowRight class="h-3 w-3" /></Button>
-            </header>
+            {/snippet}
             {#if topProblems.length === 0}
               <p class="px-3 py-4 text-[12px] text-[var(--text-muted)]">Nothing is broken right now.</p>
             {:else}
               <div class="flex flex-col py-1">
                 {#each topProblems as p (p.id)}
                   <button type="button" class="grid grid-cols-[56px_minmax(0,1fr)_minmax(0,1fr)_70px] items-center gap-3 px-3 py-1.5 text-left hover:bg-[var(--table-row-hover)]" onclick={() => openProblem(p)}>
-                    <span class="truncate rounded-sm bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-center font-mono text-[10px] text-[var(--text-muted)]">{p.kind}</span>
+                    <Badge appearance="surface" mono size="xs">{p.kind}</Badge>
                     <span class="flex min-w-0 flex-col">
                       <span class="truncate text-[12px] text-[var(--text-primary)]">{p.name}</span>
                       {#if p.namespace}<span class="truncate font-mono text-[10px] text-[var(--text-muted)]">{p.namespace}{p.owner ? ` · ${p.owner}` : ""}</span>{/if}
                     </span>
-                    <span class={cn("flex min-w-0 items-center gap-1.5 text-[11px]", p.severity === "critical" ? "text-[var(--status-failed)]" : "text-[var(--status-pending)]")} title={p.detail ?? p.reason}>
-                      <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-current"></span>
+                    <span class="flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--tone)]" style={toneStyle(p.severity === "critical" ? "error" : "warning")} title={p.detail ?? p.reason}>
+                      <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--tone)]"></span>
                       <span class="truncate">{p.reason}</span>
                     </span>
                     <span class="text-right font-mono text-[10px] text-[var(--text-muted)]">{p.since ? formatAge(p.since) : ""}</span>
@@ -165,15 +138,9 @@
                 {/each}
               </div>
             {/if}
-          </section>
+          </CardSection>
 
-          <!-- Warnings -->
-          <section class="flex flex-col overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]" data-testid="overview-warnings">
-            <header class="flex h-9 items-center gap-2 border-b border-[var(--border-color)] px-3">
-              <Activity class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-              <span class="text-[12px] font-semibold">Warnings · last hour</span>
-              <span class="text-[11px] text-[var(--text-muted)]">{overview.warnings_total} total</span>
-            </header>
+          <CardSection title="Warnings · last hour" icon={Activity} subtitle={`${overview.warnings_total} total`} data-testid="overview-warnings">
             {#if overview.warnings.length === 0}
               <p class="px-3 py-4 text-[12px] text-[var(--text-muted)]">No Warning events in the last hour.</p>
             {:else}
@@ -187,19 +154,12 @@
                 {/each}
               </div>
             {/if}
-          </section>
+          </CardSection>
 
-          <!-- Top pods -->
-          <section class="flex flex-col overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]" data-testid="overview-top">
-            <header class="flex h-9 items-center gap-2 border-b border-[var(--border-color)] px-3">
-              <Flame class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-              <span class="text-[12px] font-semibold">Top consumers</span>
-              <div class="flex-1"></div>
-              <div class="flex gap-0.5 rounded-md bg-[var(--bg-tertiary)] p-0.5 text-[11px]">
-                <button type="button" class={cn("rounded-sm px-2 py-0.5", topMode === "cpu" ? "bg-[var(--bg-secondary)] text-[var(--text-primary)]" : "text-[var(--text-muted)]")} onclick={() => (topMode = "cpu")}>CPU</button>
-                <button type="button" class={cn("rounded-sm px-2 py-0.5", topMode === "memory" ? "bg-[var(--bg-secondary)] text-[var(--text-primary)]" : "text-[var(--text-muted)]")} onclick={() => (topMode = "memory")}>Memory</button>
-              </div>
-            </header>
+          <CardSection title="Top consumers" icon={Flame} data-testid="overview-top">
+            {#snippet actions()}
+              <SegmentedControl ariaLabel="Top consumers by" value={topMode} onchange={(v) => (topMode = v)} items={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "Memory" }]} />
+            {/snippet}
             {#if !overview.metrics_available || topPods.length === 0}
               <p class="px-3 py-4 text-[12px] text-[var(--text-muted)]">metrics-server is not available — no usage data.</p>
             {:else}
@@ -214,7 +174,7 @@
                 {/each}
               </div>
             {/if}
-          </section>
+          </CardSection>
         </div>
       </div>
     </ScrollArea>

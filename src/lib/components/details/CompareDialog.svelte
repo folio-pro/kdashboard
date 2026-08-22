@@ -2,6 +2,7 @@
   import { invoke } from "$lib/ipc/core";
   import { Dialog, DialogContent } from "$lib/components/ui/dialog";
   import { Button } from "$lib/components/ui/button";
+  import { Input } from "$lib/components/ui/input";
   import { SelectMenu } from "$lib/components/ui/select-menu";
   import { FolderOpen, Server } from "lucide-svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -162,16 +163,22 @@
             <span class="text-[11px] text-[var(--text-muted)]">No other namespace here — pick another context</span>
           {/if}
         {:else}
-          <input
-            class="h-7 w-[180px] rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 font-mono text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-            bind:value={foreignNamespace}
+          <Input
+            size="sm"
+            mono
+            class="w-[180px]"
+            value={foreignNamespace}
+            oninput={(e) => { foreignNamespace = (e.target as HTMLInputElement).value; }}
             placeholder="Namespace in {targetContext}"
             aria-label="Target namespace"
           />
         {/if}
-        <input
-          class="h-7 w-[220px] rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 font-mono text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-          bind:value={targetName}
+        <Input
+          size="sm"
+          mono
+          class="w-[220px]"
+          value={targetName}
+          oninput={(e) => { targetName = (e.target as HTMLInputElement).value; }}
           placeholder="Target name"
           aria-label="Target resource name"
         />

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Badge, Button, SearchField } from "$lib/components/ui";
+  import { Badge, Button, Input, SearchField, SegmentedControl, Select } from "$lib/components/ui";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { KeyRound, ShieldAlert, Check, X as XIcon } from "lucide-svelte";
   import { rbacStore } from "$lib/stores/rbac.svelte";
@@ -55,11 +55,13 @@
   <div class="flex min-h-0 flex-col border-r border-[var(--border-color)]">
     <div class="flex flex-col gap-2 border-b border-[var(--border-color)] p-3">
       <SearchField value={subjectQuery} ariaLabel="Filter subjects" placeholder="Filter subjects…" oninput={(e: Event) => { subjectQuery = (e.target as HTMLInputElement).value; }} />
-      <div class="flex gap-0.5 rounded-md bg-[var(--bg-tertiary)] p-0.5 text-[11px]">
-        {#each [[null, "All"], ["ServiceAccount", "SAs"], ["User", "Users"], ["Group", "Groups"]] as [value, label] (label)}
-          <button type="button" class={cn("flex-1 rounded-sm px-2 py-0.5", kindFilter === value ? "bg-[var(--bg-secondary)] text-[var(--text-primary)]" : "text-[var(--text-muted)]")} onclick={() => (kindFilter = value as SubjectKind | null)}>{label}</button>
-        {/each}
-      </div>
+      <SegmentedControl
+        ariaLabel="Subject kind"
+        value={kindFilter ?? "all"}
+        onchange={(v) => (kindFilter = v === "all" ? null : (v as SubjectKind))}
+        items={[{ value: "all", label: "All" }, { value: "ServiceAccount", label: "SAs" }, { value: "User", label: "Users" }, { value: "Group", label: "Groups" }]}
+        class="[&>button]:flex-1"
+      />
     </div>
     <ScrollArea class="min-h-0 flex-1">
       {#if rbacStore.subjectsLoading}
@@ -76,7 +78,7 @@
           onclick={() => pick(s)}
           data-testid="rbac-subject"
         >
-          <span class="w-7 shrink-0 rounded-sm bg-[var(--bg-tertiary)] px-1 text-center font-mono text-[9px] uppercase text-[var(--text-muted)]">{s.kind === "ServiceAccount" ? "sa" : s.kind === "User" ? "usr" : "grp"}</span>
+          <Badge appearance="surface" mono size="xs" class="w-8 justify-center">{s.kind === "ServiceAccount" ? "sa" : s.kind === "User" ? "usr" : "grp"}</Badge>
           <span class="min-w-0 flex-1 truncate font-mono text-[var(--text-primary)]">{s.namespace ? `${s.namespace}/` : ""}{s.name}</span>
           <span class="font-mono text-[10px] text-[var(--text-muted)]">{s.bindings}</span>
         </button>
@@ -85,10 +87,10 @@
     <div class="flex flex-col gap-1.5 border-t border-[var(--border-color)] p-3">
       <span class="text-[11px] text-[var(--text-muted)]">Not in any binding? Ask about a name anyway (groups from your IdP count via membership only if listed above).</span>
       <div class="flex gap-1.5">
-        <select class="h-7 rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)] px-1 text-[11px] text-[var(--text-primary)]" bind:value={customKind} aria-label="Subject kind">
+        <Select size="sm" bind:value={customKind} aria-label="Subject kind">
           <option value="User">User</option><option value="Group">Group</option><option value="ServiceAccount">ServiceAccount</option>
-        </select>
-        <input class="h-7 min-w-0 flex-1 rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 font-mono text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" placeholder="name" bind:value={customName} aria-label="Subject name" onkeydown={(e) => { if (e.key === "Enter") pickCustom(); }} />
+        </Select>
+        <Input size="sm" mono class="min-w-0 flex-1" placeholder="name" value={customName} oninput={(e) => { customName = (e.target as HTMLInputElement).value; }} aria-label="Subject name" onkeydown={(e) => { if (e.key === "Enter") pickCustom(); }} />
         <Button size="sm" variant="outline" onclick={pickCustom} disabled={!customName.trim()}>Resolve</Button>
       </div>
     </div>
@@ -118,12 +120,12 @@
         <!-- Quick check -->
         <div class="flex flex-wrap items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-[12px]" data-testid="rbac-check">
           <span class="text-[var(--text-muted)]">can it</span>
-          <select class="h-7 rounded-sm border border-[var(--border-color)] bg-[var(--bg-primary)] px-1 font-mono text-[11px] text-[var(--text-primary)]" bind:value={checkVerb} aria-label="Verb">
+          <Select size="sm" mono bind:value={checkVerb} aria-label="Verb">
             {#each VERBS as v (v)}<option value={v}>{v}</option>{/each}
-          </select>
-          <input class="h-7 w-[180px] rounded-sm border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 font-mono text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" bind:value={checkResource} placeholder="deployments.apps" aria-label="Resource" />
+          </Select>
+          <Input size="sm" mono class="w-[180px]" value={checkResource} oninput={(e) => { checkResource = (e.target as HTMLInputElement).value; }} placeholder="deployments.apps" aria-label="Resource" />
           <span class="text-[var(--text-muted)]">in</span>
-          <input class="h-7 w-[140px] rounded-sm border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 font-mono text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" bind:value={checkNamespace} placeholder="(cluster scope)" aria-label="Namespace" />
+          <Input size="sm" mono class="w-[140px]" value={checkNamespace} oninput={(e) => { checkNamespace = (e.target as HTMLInputElement).value; }} placeholder="(cluster scope)" aria-label="Namespace" />
           <span class="text-[var(--text-muted)]">?</span>
           {#if check}
             <span class={cn("ml-auto flex items-center gap-1.5 font-medium", check.length > 0 ? "text-[var(--status-running)]" : "text-[var(--status-failed)]")} data-testid="rbac-check-result">
@@ -135,7 +137,7 @@
           <SearchField value={rowQuery} ariaLabel="Filter resources" placeholder="Filter resources…" oninput={(e: Event) => { rowQuery = (e.target as HTMLInputElement).value; }} class="w-[220px]" />
           <div class="flex flex-wrap gap-1">
             {#each scopes as sc (sc)}
-              <button type="button" class={cn("h-6 rounded-md border px-2 font-mono text-[11px]", scopeFilter === sc ? "border-[var(--accent)] text-[var(--text-primary)]" : "border-[var(--border-color)] text-[var(--text-secondary)]")} onclick={() => (scopeFilter = scopeFilter === sc ? null : sc)}>{sc}</button>
+              <Button variant="outline" size="xs" mono active={scopeFilter === sc} activeStyle="underline" onclick={() => (scopeFilter = scopeFilter === sc ? null : sc)}>{sc}</Button>
             {/each}
           </div>
         </div>

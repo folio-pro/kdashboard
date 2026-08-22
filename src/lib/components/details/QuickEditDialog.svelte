@@ -3,6 +3,7 @@
   import { Dialog, DialogContent } from "$lib/components/ui/dialog";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
+  import { SegmentedControl } from "$lib/components/ui";
   import { Plus, X, Lock } from "lucide-svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
@@ -98,11 +99,12 @@
         <p class="text-[12px] text-[var(--status-failed)]">{error}</p>
       {:else if edit && step === "edit"}
         {#if edit.containers.length > 1}
-          <div class="flex gap-0.5 rounded-md bg-[var(--bg-tertiary)] p-0.5 text-[11px]">
-            {#each edit.containers as c, i (c.name)}
-              <button type="button" class={`rounded-sm px-2 py-0.5 ${activeContainer === i ? "bg-[var(--bg-secondary)] text-[var(--text-primary)]" : "text-[var(--text-muted)]"}`} onclick={() => (activeContainer = i)}>{c.name}</button>
-            {/each}
-          </div>
+          <SegmentedControl
+            ariaLabel="Container"
+            value={String(activeContainer)}
+            onchange={(v) => (activeContainer = Number(v))}
+            items={edit.containers.map((c, i) => ({ value: String(i), label: c.name }))}
+          />
         {/if}
         {#if edit.containers[activeContainer]}
           {@const c = edit.containers[activeContainer]}

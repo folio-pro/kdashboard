@@ -1,39 +1,16 @@
 <script lang="ts">
   import { open } from "$lib/ipc/shell";
   import { cn } from "$lib/utils";
-  import { ChevronsUpDown, Unplug, ExternalLink, Square, Play, Bookmark, BookmarkCheck, Trash2, RefreshCw, Zap, ZapOff } from "lucide-svelte";
-  import { Button } from "$lib/components/ui";
+  import { ChevronsUpDown, Unplug, ExternalLink, Square, Bookmark, BookmarkCheck } from "lucide-svelte";
+  import { Button, StatTile } from "$lib/components/ui";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { portForwardStore } from "$lib/stores/port-forwards.svelte";
   import { describeTarget } from "$lib/stores/port-forwards.logic";
-  import type { Column, PortForwardInfo, SavedPortForward, SortDirection } from "$lib/types";
+  import SavedForwardsTable from "./SavedForwardsTable.svelte";
+  import type { Column, PortForwardInfo, SortDirection } from "$lib/types";
 
   let portForwards = $derived(k8sStore.portForwards ?? []);
-
-  // Saved forwards for this context, sorted by target so the list is stable.
-  let savedForwards = $derived(
-    [...portForwardStore.saved].sort((a, b) =>
-      `${a.namespace}/${a.target_name}:${a.local_port}`.localeCompare(`${b.namespace}/${b.target_name}:${b.local_port}`),
-    ),
-  );
-  let activeCount = $derived(portForwards.length);
-
-  function savedStateLabel(saved: SavedPortForward): { label: string; tone: "success" | "warning" | "error" | "muted" } {
-    const st = portForwardStore.stateOf(saved.id);
-    switch (st.kind) {
-      case "active": return { label: `active · ${st.podName}`, tone: "success" };
-      case "starting": return { label: "starting…", tone: "warning" };
-      case "reconnecting": return { label: `reconnecting (try ${st.attempt})`, tone: "warning" };
-      case "error": return { label: st.message, tone: "error" };
-      default: return { label: "stopped", tone: "muted" };
-    }
-  }
-  const TONE_COLOR = {
-    success: "var(--status-running)",
-    warning: "var(--status-pending)",
-    error: "var(--status-failed)",
-    muted: "var(--text-muted)",
-  } as const;
+  let savedForwards = $derived(portForwardStore.saved);
 
   // Sort state
   let sortColumn = $state<string>("pod_name");
@@ -187,95 +164,13 @@
 <div class="flex h-full flex-col bg-[var(--bg-primary)]">
   <!-- Metric Cards -->
   <div class="flex items-stretch gap-3 px-6 pt-4 pb-4">
-    <div class="flex flex-1 flex-col gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-      <span class="text-[10px] font-normal text-[var(--text-muted)]">Active</span>
-      <div class="flex items-end gap-1.5">
-        <span class="text-[18px] font-semibold leading-none tabular-nums text-[var(--text-primary)]">{activeCount}</span>
-        <span class="pb-0.5 text-[10px] text-[var(--text-muted)]">port forwards</span>
-      </div>
-      <div class="h-1 w-full overflow-hidden rounded-full bg-[var(--border-color)]">
-        <div class="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300" style="width: 100%;"></div>
-      </div>
-    </div>
-    <div class="flex flex-1 flex-col gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-      <span class="text-[10px] font-normal text-[var(--text-muted)]">Saved in {k8sStore.currentContext || "this context"}</span>
-      <div class="flex items-end gap-1.5">
-        <span class="text-[18px] font-semibold leading-none tabular-nums text-[var(--text-primary)]">{savedForwards.length}</span>
-        <span class="pb-0.5 text-[10px] text-[var(--text-muted)]">{savedForwards.filter((s) => s.auto_start).length} auto-start</span>
-      </div>
-      <div class="h-1 w-full overflow-hidden rounded-full bg-[var(--border-color)]">
-        <div class="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300" style="width: {savedForwards.length ? 100 : 0}%;"></div>
-      </div>
-    </div>
+    <StatTile class="flex-1" label="Active" value={portForwards.length} note="port forwards" />
+    <StatTile class="flex-1" label={`Saved in ${k8sStore.currentContext || "this context"}`} value={savedForwards.length} note={`${savedForwards.filter((s) => s.auto_start).length} auto-start`} />
   </div>
 
-  <!-- Saved forwards -->
   {#if savedForwards.length > 0}
-    <div class="px-6 pb-4" data-testid="saved-port-forwards">
-      <div class="rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-        <div class="flex items-center gap-2 border-b border-[var(--border-hover)] px-4 py-2">
-          <Bookmark class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-          <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Saved forwards</span>
-          <span class="text-[11px] text-[var(--text-muted)]">· reconnect when the pod changes · auto-start opens them with the context</span>
-        </div>
-        <table class="w-full" style="table-layout: fixed;">
-          <tbody>
-            {#each savedForwards as saved (saved.id)}
-              {@const st = savedStateLabel(saved)}
-              {@const state = portForwardStore.stateOf(saved.id)}
-              <tr class="h-10 border-b border-[var(--border-hover)] last:border-b-0 hover:bg-[var(--table-row-hover)]" data-testid="saved-port-forward">
-                <td class="px-4 text-[12px]">
-                  <span class="block truncate font-medium text-[var(--text-primary)]" title={describeTarget(saved)}>{describeTarget(saved)}</span>
-                </td>
-                <td class="w-[150px] px-4 text-[12px] text-[var(--text-secondary)]">{saved.namespace}</td>
-                <td class="w-[190px] px-4 font-mono text-[12px] text-[var(--text-secondary)]">
-                  {saved.container_port} <span class="text-[var(--text-muted)]">→</span> <span class="text-[var(--accent)]">localhost:{saved.local_port}</span>
-                </td>
-                <td class="w-[240px] px-4 text-[11px]">
-                  <span class="inline-flex max-w-full items-center gap-1.5 truncate" style="color: {TONE_COLOR[st.tone]}" title={st.label}>
-                    <span class="h-1.5 w-1.5 shrink-0 rounded-full" style="background: {TONE_COLOR[st.tone]}"></span>
-                    <span class="truncate">{st.label}</span>
-                  </span>
-                </td>
-                <td class="w-[300px] px-4">
-                  <div class="flex items-center justify-end gap-1">
-                    <Button
-                      variant="ghost-tone"
-                      tone={saved.auto_start ? "accent" : "muted"}
-                      size="sm"
-                      onclick={() => portForwardStore.setAutoStart(saved.id, !saved.auto_start)}
-                      title={saved.auto_start ? "Auto-start on: opens when this context connects" : "Auto-start off"}
-                      data-testid="saved-port-forward-autostart"
-                    >
-                      {#if saved.auto_start}<Zap class="h-3 w-3" />{:else}<ZapOff class="h-3 w-3" />{/if}
-                      Auto
-                    </Button>
-                    {#if state.kind === "active"}
-                      <Button variant="ghost-tone" tone="accent" size="sm" onclick={() => openInBrowser(saved.local_port)}>
-                        <ExternalLink class="h-3 w-3" /> Open
-                      </Button>
-                      <Button variant="ghost-tone" tone="error" size="sm" onclick={() => portForwardStore.stop(saved.id)}>
-                        <Square class="h-3 w-3" /> Stop
-                      </Button>
-                    {:else if state.kind === "starting" || state.kind === "reconnecting"}
-                      <Button variant="ghost-tone" tone="error" size="sm" onclick={() => portForwardStore.stop(saved.id)}>
-                        <Square class="h-3 w-3" /> Cancel
-                      </Button>
-                    {:else}
-                      <Button variant="ghost-tone" tone="accent" size="sm" onclick={() => portForwardStore.start(saved)} data-testid="saved-port-forward-start">
-                        {#if state.kind === "error"}<RefreshCw class="h-3 w-3" /> Retry{:else}<Play class="h-3 w-3" /> Start{/if}
-                      </Button>
-                    {/if}
-                    <Button variant="ghost-tone" tone="muted" size="sm" onclick={() => portForwardStore.forget(saved.id)} title="Forget this saved forward">
-                      <Trash2 class="h-3 w-3" />
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+    <div class="px-6 pb-4">
+      <SavedForwardsTable forwards={savedForwards} onOpen={openInBrowser} />
     </div>
   {/if}
 

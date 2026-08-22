@@ -20,7 +20,11 @@ export {
   type BadgeAppearance,
   type BadgeSize,
 } from "./badge/index.js";
-export { Card } from "./card/index.js";
+export { Card, CardSection } from "./card/index.js";
+export { StatTile } from "./stat-tile/index.js";
+export { SegmentedControl, type SegmentItem } from "./segmented-control/index.js";
+export { Select } from "./select/index.js";
+export { Textarea } from "./textarea/index.js";
 export { TONES, toneStyle, type Tone } from "./tones.js";
 export { Input } from "./input/index.js";
 export { Kbd } from "./kbd/index.js";

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Badge, Button, SearchField } from "$lib/components/ui";
+  import { Badge, Button, SearchField, SegmentedControl, StatTile } from "$lib/components/ui";
   import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "$lib/components/ui/dialog";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { Scaling, ChevronDown, ChevronRight, Wand2 } from "lucide-svelte";
@@ -9,6 +9,7 @@
   import { invoke } from "$lib/ipc/core";
   import { openRelatedResourceTab } from "$lib/actions/navigation";
   import { formatCpu, formatBytes } from "$lib/stores/metrics.logic";
+  import { kindToResourceType } from "$lib/utils/related-resources";
   import { cn } from "$lib/utils";
   import type { RightsizingVerdict, WorkloadRightsizing } from "$lib/types";
   import { filterWorkloads, formatSaving, rightsizingPatchYaml, usageShare, verdictLabel, type RightsizingFilter } from "./rightsizing.logic";
@@ -35,9 +36,6 @@
     if (next.has(id)) next.delete(id); else next.add(id);
     expanded = next;
   }
-  function resourceTypeFor(kind: string): string {
-    return { Deployment: "deployments", StatefulSet: "statefulsets", DaemonSet: "daemonsets", Job: "jobs", Pod: "pods" }[kind] ?? "pods";
-  }
   async function applyPatch() {
     if (!patchFor || !patchYaml) return;
     applying = true;
@@ -60,37 +58,20 @@
   }
 </script>
 
-{#if rightsizingStore.isLoading && !overview}
-  <div class="flex h-full items-center justify-center text-[12px] text-[var(--text-muted)]">Reading requests and usage…</div>
-{:else if rightsizingStore.error}
-  <div class="flex h-full items-center justify-center text-[12px] text-[var(--status-failed)]">{rightsizingStore.error}</div>
-{:else if overview}
+{#if overview}
   <ScrollArea class="h-full">
     <div class="flex flex-col gap-4 p-4" data-testid="rightsizing">
       <!-- Summary -->
       <div class="grid grid-cols-4 gap-3">
-        <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="text-[12px] text-[var(--text-muted)]">Potential saving</div>
-          <div class="mt-1 font-mono text-[18px] font-semibold text-[var(--text-primary)]" data-testid="rightsizing-saving">{formatSaving(overview.total_saving_monthly)}<span class="text-[12px] font-normal text-[var(--text-muted)]">/mo</span></div>
-          <div class="text-[11px] text-[var(--text-muted)]">if recommendations were applied</div>
-        </div>
-        <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="text-[12px] text-[var(--text-muted)]">Over-provisioned</div>
-          <div class="mt-1 font-mono text-[18px] font-semibold text-[var(--status-pending)]">{overview.over_count}</div>
-          <div class="text-[11px] text-[var(--text-muted)]">workloads requesting &gt; 1.5× what they use</div>
-        </div>
-        <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="text-[12px] text-[var(--text-muted)]">Under-provisioned</div>
-          <div class="mt-1 font-mono text-[18px] font-semibold text-[var(--status-failed)]">{overview.under_count}</div>
-          <div class="text-[11px] text-[var(--text-muted)]">using &gt; 90 % of their request — throttling / OOM risk</div>
-        </div>
-        <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div class="text-[12px] text-[var(--text-muted)]">Usage source</div>
-          <div class="mt-1 text-[13px] font-medium text-[var(--text-primary)]">{overview.usage_source === "none" ? "none" : overview.usage_source}</div>
-          <div class="text-[11px] text-[var(--text-muted)]">
-            {#if overview.usage_source === "prometheus-p95-7d"}P95 over the last 7 days{:else if overview.usage_source === "metrics-server"}one snapshot — point Settings at a Prometheus for a 7-day P95{:else}no metrics-server or Prometheus — requests only{/if}
-          </div>
-        </div>
+        <StatTile label="Potential saving" value={`${formatSaving(overview.total_saving_monthly)}/mo`} note="if recommendations were applied" data-testid="rightsizing-saving" />
+        <StatTile label="Over-provisioned" value={overview.over_count} tone="warning" note="workloads requesting > 1.5× what they use" />
+        <StatTile label="Under-provisioned" value={overview.under_count} tone="error" note="using > 90 % of their request — throttling / OOM risk" />
+        <StatTile
+          label="Usage source"
+          value={overview.usage_source === "none" ? "none" : overview.usage_source}
+          mono={false}
+          note={overview.usage_source === "prometheus-p95-7d" ? "P95 over the last 7 days" : overview.usage_source === "metrics-server" ? "one snapshot — point Settings at a Prometheus for a 7-day P95" : "no metrics-server or Prometheus — requests only"}
+        />
       </div>
 
       <!-- Filters -->
@@ -121,7 +102,7 @@
               <button type="button" class="text-[var(--text-muted)]" onclick={() => toggle(w.id)} aria-label={open ? "Collapse" : "Expand"}>
                 {#if open}<ChevronDown class="h-3.5 w-3.5" />{:else}<ChevronRight class="h-3.5 w-3.5" />{/if}
               </button>
-              <button type="button" class="flex min-w-0 flex-col text-left" onclick={() => void openRelatedResourceTab(resourceTypeFor(w.kind), w.name, w.namespace)}>
+              <button type="button" class="flex min-w-0 flex-col text-left" onclick={() => void openRelatedResourceTab(kindToResourceType(w.kind), w.name, w.namespace)}>
                 <span class="truncate font-mono text-[12px] text-[var(--text-primary)]">{w.name}</span>
                 <span class="truncate text-[11px] text-[var(--text-muted)]">{w.kind.toLowerCase()} · {w.namespace}{w.containers.length > 1 ? ` · ${w.containers.length} containers` : ""}</span>
               </button>
@@ -169,7 +150,7 @@
           </div>
         {/each}
       </div>
-      <p class="text-[11px] text-[var(--text-muted)]">Recommendations are usage × 1.3 (CPU) / × 1.25 (memory), rounded up. Limits are left alone. Review before applying: a 7-day window misses monthly peaks.</p>
+      <p class="text-[11px] text-[var(--text-muted)]">Recommendations are usage × 1.3 (CPU) / × 1.25 (memory), rounded-md up. Limits are left alone. Review before applying: a 7-day window misses monthly peaks.</p>
     </div>
   </ScrollArea>
 {/if}

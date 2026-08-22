@@ -11,7 +11,7 @@
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore, RESOURCE_TAB_TYPES, type ActiveView } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
-  import { openResourceDetail, navigateToResourceTable, navigateToCrdTable, openAppView, APP_VIEWS } from "$lib/actions/navigation";
+  import { openResourceDetail, navigateToResourceTable, navigateToCrdTable, openAppView, isAppView } from "$lib/actions/navigation";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { sidebarStore } from "$lib/stores/sidebar.svelte";
   import { RESOURCE_SECTIONS } from "$lib/resource-catalog";
@@ -19,11 +19,8 @@
 
   const sections = RESOURCE_SECTIONS;
 
-  /** Standalone views live in the shared APP_VIEWS table (actions/navigation). */
-  const VIRTUAL_VIEWS = APP_VIEWS;
-
   function isItemActive(type: string): boolean {
-    if (type in VIRTUAL_VIEWS) return uiStore.activeView === type;
+    if (isAppView(type)) return uiStore.activeView === type;
 
     // Views that sit "inside" a resource type, and so keep its catalog entry
     // lit. Derived from RESOURCE_TAB_TYPES rather than re-listing its members:
@@ -39,7 +36,7 @@
   }
 
   function handleItemClick(resourceType: string) {
-    if (resourceType in VIRTUAL_VIEWS) {
+    if (isAppView(resourceType)) {
       openAppView(resourceType, k8sStore.currentNamespace);
       return;
     }

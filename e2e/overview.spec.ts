@@ -15,7 +15,7 @@ const OVERVIEW = {
   ],
   pods: { running: 284, pending: 9, succeeded: 15, failed: 4, unknown: 0, total: 312 },
   problems: [
-    { id: "Pod/billing/payments-api-7f9c-x2k", severity: "critical", kind: "Pod", name: "payments-api-7f9c-x2k", namespace: "billing", reason: "CrashLoopBackOff", detail: "container api — back-off 5m", owner: "ReplicaSet/payments-api-7f9c", since, restarts: 14, ready: null, desired: null },
+    { id: "Pod/billing/payments-api-7f9c-x2k", severity: "critical", kind: "Pod", name: "payments-api-7f9c-x2k", namespace: "billing", reason: "CrashLoopBackOff", detail: "container api — back-off 5m", owner: "Deployment/payments-api", since, restarts: 14, ready: null, desired: null },
     { id: "Deployment/storefront/checkout-web", severity: "warning", kind: "Deployment", name: "checkout-web", namespace: "storefront", reason: "4/6 ready", detail: null, owner: null, since, restarts: 0, ready: 4, desired: 6 },
     { id: "Node//ip-10-0-1-12", severity: "warning", kind: "Node", name: "ip-10-0-1-12", namespace: null, reason: "MemoryPressure", detail: null, owner: null, since: null, restarts: 0, ready: null, desired: null },
   ],

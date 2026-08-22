@@ -13,9 +13,9 @@ const GOOD = `export default { activate(ctx) {
 const MOCK = clusterBootMock(`(cmd, args) => {
   if (cmd === "list_resources") return { resource_type: args.resourceType, items: [] };
   if (cmd === "list_extensions") return { dir: "/home/me/.config/kdashboard/extensions", extensions: [
-    { manifest: { id: "hello", name: "Hello", version: "0.1.0", description: "Says hello", main: "index.js", api: 1 }, dir: "/home/me/.config/kdashboard/extensions/hello", source: ${JSON.stringify(GOOD)}, error: null },
-    { manifest: { id: "broken", name: "Broken", version: "0.0.1", main: "index.js", api: 1 }, dir: "/home/me/.config/kdashboard/extensions/broken", source: "export default { activate() { throw new Error('nope') } }", error: null },
-    { manifest: null, dir: "/home/me/.config/kdashboard/extensions/bad-manifest", source: null, error: "bad-manifest: manifest needs a \\"name\\"" },
+    { ok: true, manifest: { id: "hello", name: "Hello", version: "0.1.0", description: "Says hello", main: "index.js", api: 1 }, dir: "/home/me/.config/kdashboard/extensions/hello", source: ${JSON.stringify(GOOD)} },
+    { ok: true, manifest: { id: "broken", name: "Broken", version: "0.0.1", main: "index.js", api: 1 }, dir: "/home/me/.config/kdashboard/extensions/broken", source: "export default { activate() { throw new Error('nope') } }" },
+    { ok: false, manifest: null, dir: "/home/me/.config/kdashboard/extensions/bad-manifest", error: "bad-manifest: manifest needs a \\"name\\"" },
   ] };
   if (cmd === "discover_crds") return [];
 }`);

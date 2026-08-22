@@ -23,7 +23,7 @@
   import { restartWorkload, rollbackDeployment, SCALABLE_TYPES, RESTARTABLE_TYPES } from "$lib/actions/registry";
   import { navigateToResourceTable, navigateToCrdTable, switchContext, openResourceDetail, openAppView, isAppView } from "$lib/actions/navigation";
   import { toastStore } from "$lib/stores/toast.svelte";
-  import type { CommandPaletteItem, ResourceList } from "$lib/types";
+  import type { CommandPaletteItem } from "$lib/types";
   import { getCellValue } from "$lib/components/table/cell-values";
   import { resourceTypeLabel } from "$lib/resource-catalog";
   import {
@@ -32,45 +32,19 @@
     groupByCategory,
     orderGroups,
   } from "./command-palette";
-  import { MIN_SEARCH_LENGTH, ResourceSearchIndex } from "./resource-search.logic";
+  import { resourceSearch } from "$lib/stores/resource-search.svelte";
 
   let query = $state("");
   let selectedIndex = $state(0);
 
-  // --- Global resource search -----------------------------------------------
-  // Objects by name across kinds and namespaces. The index lists lazily (only
-  // while the palette is open with a query) and caches per type for 30s, so
-  // typing costs one round of lists per session, not one per keystroke.
-  const searchIndex = new ResourceSearchIndex((resourceType, namespace) =>
-    invoke<ResourceList>("list_resources", { resourceType, namespace }).then((r) => r.items),
-  );
-  let searchVersion = $state(0);
-  let searchLoading = $state(false);
-
-  const searchable = $derived(query.trim().length >= MIN_SEARCH_LENGTH);
-
-  // A context switch changes what every name refers to. (Assign from the
-  // index's own counter rather than `searchVersion++` — an effect that reads
-  // the state it writes re-runs itself forever.)
+  // Global resource search: objects by name across kinds and namespaces, via
+  // the resource-search store (lists lazily while the palette is open).
+  let searchable = $derived(resourceSearch.active);
   $effect(() => {
-    k8sStore.currentContext;
-    searchIndex.invalidate();
-    searchVersion = searchIndex.version;
+    resourceSearch.setQuery(uiStore.commandPaletteOpen ? query : "");
   });
-
-  $effect(() => {
-    if (!uiStore.commandPaletteOpen || !searchable) return;
-    const namespaces = k8sStore.namespaces;
-    searchLoading = true;
-    void searchIndex
-      .ensureLoaded(namespaces, () => { searchVersion = searchIndex.version; })
-      .finally(() => { searchLoading = false; });
-  });
-
   let searchItems = $derived.by((): CommandPaletteItem[] => {
-    searchVersion;
-    if (!searchable) return [];
-    return searchIndex.search(query).map(({ resource, resourceType }) => {
+    return resourceSearch.results.map(({ resource, resourceType }) => {
       const ns = resource.metadata.namespace;
       const status = getCellValue(resource, "status", { ageTick: 0 });
       const where = [resourceTypeLabel(resourceType), ns].filter(Boolean).join(" · ");
@@ -79,6 +53,7 @@
         label: resource.metadata.name,
         description: status && status !== "-" ? `${where} · ${status}` : where,
         category: "Search Results",
+        icon: resourceIcon(resourceType),
         action: () => {
           openResourceDetail(resource, resourceType);
           close();
@@ -240,7 +215,7 @@
         description: `Open ${view.name}`,
         category: "Resources",
         action: () => {
-          openAppView(view.type);
+          if (isAppView(view.type)) openAppView(view.type);
           close();
         },
       });
@@ -412,9 +387,6 @@
       const type = item.id.replace("resource-", "");
       return resourceIcon(type);
     }
-    if (item.category === "Search Results") {
-      return resourceIcon(item.id.split(":")[1] ?? "");
-    }
     if (item.category === "Contexts") return Server;
     if (item.category === "Namespaces") return FolderOpen;
     // Resource Actions
@@ -447,7 +419,7 @@
         />
         <CommandList class="max-h-[50vh]">
           {#if filteredItems.length === 0}
-            {#if searchable && searchLoading}
+            {#if searchable && resourceSearch.loading}
               <CommandEmpty>Searching the cluster…</CommandEmpty>
             {:else}
               <CommandEmpty>No results found — try different keywords</CommandEmpty>
@@ -468,6 +440,8 @@
                   )}
                   onclick={() => item.action()}
                   onmouseenter={() => (selectedIndex = globalIndex)}
+                  aria-selected={globalIndex === selectedIndex}
+                  data-selected={globalIndex === selectedIndex ? "true" : undefined}
                 >
                   <IconComp class="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
                   <div class="flex-1">
@@ -495,7 +469,7 @@
         <span class="flex items-center gap-1.5"><Kbd class="px-1">esc</Kbd> Close</span>
         {#if searchable}
           <span class="ml-auto">
-            {#if searchLoading}Searching…{:else}{searchItems.length} resource{searchItems.length === 1 ? "" : "s"} matched{/if}
+            {#if resourceSearch.loading}Searching…{:else}{searchItems.length} resource{searchItems.length === 1 ? "" : "s"} matched{/if}
           </span>
         {/if}
       </div>
