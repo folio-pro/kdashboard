@@ -1,4 +1,4 @@
-import type { SavedPortForward, SavedView, TableDensity } from "./ui";
+import type { SavedPortForward, SavedView, TableDensity, WatchedResource } from "./ui";
 
 /** Payload emitted by the main process when an app update is available. */
 export interface UpdateInfo {
@@ -37,4 +37,6 @@ export interface AppSettings {
   saved_views?: SavedView[];
   /** Port forwards the user chose to keep, per context. */
   saved_port_forwards?: SavedPortForward[];
+  /** Resources watched for desktop alerts, per context. */
+  watched_resources?: WatchedResource[];
 }

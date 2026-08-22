@@ -48,6 +48,21 @@ export interface SavedPortForward {
 }
 
 
+/**
+ * A resource the user asked to be alerted about: polled while its context is
+ * connected; a health change or a new Warning event raises a desktop
+ * notification. Persisted in settings (`watched_resources`).
+ */
+export interface WatchedResource {
+  id: string;
+  context: string;
+  kind: string;
+  /** Plural resource_type, for get_resource_events and navigation. */
+  resourceType: string;
+  name: string;
+  namespace?: string;
+}
+
 /** Row height presets for resource tables, in toggle order. */
 export const TABLE_DENSITIES = ["comfortable", "compact", "terminal"] as const;
 export type TableDensity = (typeof TABLE_DENSITIES)[number];

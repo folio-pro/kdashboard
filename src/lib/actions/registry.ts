@@ -1,7 +1,7 @@
 import {
   FileText, Terminal, Scale, RotateCcw, History, Trash2,
   ClipboardCopy, GitFork, Pencil, Copy, FileJson,
-  ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets, GitCompare,
+  ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets, GitCompare, Bell, BellOff,
 } from "lucide-svelte";
 import type { ActionDef, BulkActionDef } from "./types";
 import type { Resource } from "$lib/types";
@@ -10,6 +10,7 @@ import { uiStore } from "$lib/stores/ui.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
 import { topologyStore } from "$lib/stores/topology.svelte";
 import { settingsStore } from "$lib/stores/settings.svelte";
+import { alertStore } from "$lib/stores/alerts.svelte";
 import { kindToResourceType } from "$lib/utils/related-resources";
 import { dialogStore } from "$lib/stores/dialogs.svelte";
 import { isCordoned, setNodeSchedulable } from "./node-ops";
@@ -17,8 +18,8 @@ import { extensions } from "$lib/extensions";
 import { invoke } from "$lib/ipc/core";
 import { open as shellOpen } from "$lib/ipc/shell";
 
-export { SCALABLE_TYPES, RESTARTABLE_TYPES, LOG_TYPES, GROUP_ORDER, groupActions, getResourceUrl } from "./registry.logic.js";
-import { SCALABLE_TYPES, RESTARTABLE_TYPES, LOG_TYPES, GROUP_ORDER, getResourceUrl as getResourceUrlPure } from "./registry.logic.js";
+export { SCALABLE_TYPES, RESTARTABLE_TYPES, ALERTABLE_TYPES, LOG_TYPES, GROUP_ORDER, groupActions, getResourceUrl } from "./registry.logic.js";
+import { SCALABLE_TYPES, RESTARTABLE_TYPES, ALERTABLE_TYPES, LOG_TYPES, GROUP_ORDER, getResourceUrl as getResourceUrlPure } from "./registry.logic.js";
 
 // --- Shared operation functions (used by both registry and DetailPanel) ---
 
@@ -277,6 +278,29 @@ export const resourceActions: ActionDef[] = [
           toastStore.error("Failed to open browser", url);
         });
       }
+    },
+  },
+  {
+    id: "watch-alerts",
+    label: "Watch for Alerts",
+    icon: Bell,
+    tier: "green",
+    group: "operations",
+    priority: 58,
+    appliesTo: (rt, resource) => ALERTABLE_TYPES.includes(rt) && (!resource || !alertStore.isWatched(resource)),
+    execute: (resource) => alertStore.watch(resource),
+  },
+  {
+    id: "unwatch-alerts",
+    label: "Stop Watching",
+    icon: BellOff,
+    tier: "green",
+    group: "operations",
+    priority: 58,
+    appliesTo: (rt, resource) => ALERTABLE_TYPES.includes(rt) && !!resource && alertStore.isWatched(resource),
+    execute: (resource) => {
+      alertStore.unwatch(resource);
+      toastStore.info("Stopped watching", `${resource.metadata.name} no longer raises alerts`);
     },
   },
   {

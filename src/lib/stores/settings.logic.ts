@@ -1,4 +1,4 @@
-import { isTableDensity, type AppSettings, type ContextCustomization, type PinnedResource, type SavedPortForward, type SavedView, type TableDensity } from "../types/index.js";
+import { isTableDensity, type AppSettings, type ContextCustomization, type PinnedResource, type SavedPortForward, type SavedView, type TableDensity, type WatchedResource } from "../types/index.js";
 
 export type { AppSettings, ContextCustomization, PinnedResource };
 
@@ -119,6 +119,29 @@ export class SettingsStoreLogic {
 
   removeSavedPortForward(id: string): void {
     this.settings.saved_port_forwards = this.savedPortForwards.filter((f) => f.id !== id);
+    this.saveSettings();
+  }
+
+  private static readonly EMPTY_WATCHED: WatchedResource[] = [];
+
+  get watchedResources(): WatchedResource[] {
+    return this.settings.watched_resources ?? SettingsStoreLogic.EMPTY_WATCHED;
+  }
+
+  findWatched(context: string, kind: string, name: string, namespace?: string): WatchedResource | undefined {
+    return this.watchedResources.find(
+      (w) => w.context === context && w.kind === kind && w.name === name && (w.namespace ?? "") === (namespace ?? ""),
+    );
+  }
+
+  watchResource(watched: WatchedResource): void {
+    if (this.findWatched(watched.context, watched.kind, watched.name, watched.namespace)) return;
+    this.settings.watched_resources = [...this.watchedResources, watched];
+    this.saveSettings();
+  }
+
+  unwatchResource(id: string): void {
+    this.settings.watched_resources = this.watchedResources.filter((w) => w.id !== id);
     this.saveSettings();
   }
 
