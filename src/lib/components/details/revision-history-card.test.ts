@@ -1,6 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { Resource } from "$lib/types";
 import {
+  canDiffRevisions,
+  diffAgainstCurrent,
+  orderDiffPair,
   performRollback,
   resourceKey,
   type RevisionInfo,
@@ -159,5 +162,33 @@ describe("performRollback", () => {
 
     expect(notifyError).toHaveBeenCalledWith("Rollback failed", "plain string failure");
     expect(result.error).toBe("plain string failure");
+  });
+});
+
+describe("revision diffing", () => {
+  const revs = [
+    makeRevision(5, { is_current: true, template_yaml: "spec: five" }),
+    makeRevision(4, { template_yaml: "spec: four" }),
+    makeRevision(3, { template_yaml: "spec: three" }),
+  ];
+
+  test("orderDiffPair puts the older revision on the left whichever was clicked first", () => {
+    expect(orderDiffPair(revs[0], revs[2])).toEqual({ base: revs[2], head: revs[0] });
+    expect(orderDiffPair(revs[2], revs[0])).toEqual({ base: revs[2], head: revs[0] });
+  });
+
+  test("diffAgainstCurrent pairs a row with the current revision", () => {
+    expect(diffAgainstCurrent(revs, revs[2])).toEqual({ base: revs[2], head: revs[0] });
+  });
+
+  test("diffAgainstCurrent is null for the current row or when nothing is current", () => {
+    expect(diffAgainstCurrent(revs, revs[0])).toBeNull();
+    expect(diffAgainstCurrent([makeRevision(1), makeRevision(2)], makeRevision(1))).toBeNull();
+  });
+
+  test("canDiffRevisions needs at least two revisions, all carrying templates", () => {
+    expect(canDiffRevisions(revs)).toBe(true);
+    expect(canDiffRevisions([revs[0]])).toBe(false);
+    expect(canDiffRevisions([revs[0], makeRevision(2)])).toBe(false);
   });
 });

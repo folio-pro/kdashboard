@@ -7,6 +7,35 @@ export interface RevisionInfo {
   images: string[];
   replicas: number;
   is_current: boolean;
+  /** Pod template YAML (hash label stripped). Absent on older backends. */
+  template_yaml?: string;
+}
+
+/** Two revisions to diff: `base` (older, left) against `head` (newer, right). */
+export interface RevisionDiff {
+  base: RevisionInfo;
+  head: RevisionInfo;
+}
+
+/** Order any two revisions so the older one is the base, whichever was clicked. */
+export function orderDiffPair(a: RevisionInfo, b: RevisionInfo): RevisionDiff {
+  return a.revision <= b.revision ? { base: a, head: b } : { base: b, head: a };
+}
+
+/**
+ * The default comparison for a row's "Diff" button: that revision against the
+ * one currently serving traffic. Null when the row *is* the current revision
+ * (nothing to compare) or the list has no current marker yet.
+ */
+export function diffAgainstCurrent(revisions: RevisionInfo[], rev: RevisionInfo): RevisionDiff | null {
+  const current = revisions.find((r) => r.is_current);
+  if (!current || current.name === rev.name) return null;
+  return orderDiffPair(rev, current);
+}
+
+/** Whether the backend sent templates, i.e. whether diffing is possible at all. */
+export function canDiffRevisions(revisions: RevisionInfo[]): boolean {
+  return revisions.length > 1 && revisions.every((r) => typeof r.template_yaml === "string");
 }
 
 /**
