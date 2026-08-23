@@ -1,7 +1,7 @@
 import type { FilterState, Resource } from "$lib/types";
 import { isPodNeedingAttention, matchesStatFilter } from "$lib/utils/workload-stats";
 import { eventLastTimestamp, type CellContext } from "./cell-values";
-import { applyFacets } from "./table-filter";
+import { matchesFacet } from "./table-filter";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -39,20 +39,23 @@ export function clampColumnWidth(width: number): number {
 export function filterResources(items: Resource[], filterText: string): Resource[] {
   if (!filterText) return items;
   const lower = filterText.toLowerCase();
-  return items.filter((r) => {
-    if (
-      r.metadata.name.toLowerCase().includes(lower) ||
-      (r.metadata.namespace ?? "").toLowerCase().includes(lower)
-    ) {
-      return true;
-    }
-    if (r.kind !== "Event") return false;
-    const spec = r.spec as { reason?: unknown; message?: unknown } | undefined;
-    return (
-      (typeof spec?.reason === "string" && spec.reason.toLowerCase().includes(lower)) ||
-      (typeof spec?.message === "string" && spec.message.toLowerCase().includes(lower))
-    );
-  });
+  return items.filter((r) => matchesText(r, lower));
+}
+
+/** `lower` must already be lowercased — callers hoist that out of the loop. */
+export function matchesText(r: Resource, lower: string): boolean {
+  if (
+    r.metadata.name.toLowerCase().includes(lower) ||
+    (r.metadata.namespace ?? "").toLowerCase().includes(lower)
+  ) {
+    return true;
+  }
+  if (r.kind !== "Event") return false;
+  const spec = r.spec as { reason?: unknown; message?: unknown } | undefined;
+  return (
+    (typeof spec?.reason === "string" && spec.reason.toLowerCase().includes(lower)) ||
+    (typeof spec?.message === "string" && spec.message.toLowerCase().includes(lower))
+  );
 }
 
 export type { FilterState };
@@ -62,23 +65,87 @@ export type { FilterState };
  * shared by the visible list and by the saved-view counts in the toolbar, so
  * "Attention 3" and the rows you get on clicking it can never disagree.
  * `ctxFor` supplies per-resource cell context for facets on usage columns.
+ * Returns null when the state filters nothing, so callers can skip the pass.
  */
+export function compileFilterState(
+  state: FilterState,
+  resourceType: string,
+  ctxFor: (resource: Resource) => CellContext,
+): ((resource: Resource) => boolean) | null {
+  const tests: Array<(r: Resource) => boolean> = [];
+  if (state.statFilter) {
+    const key = state.statFilter;
+    tests.push(
+      key === "needsAttention"
+        ? isPodNeedingAttention
+        : (r) => matchesStatFilter(r, resourceType, key),
+    );
+  }
+  if (state.facets.length > 0) {
+    const facets = state.facets;
+    tests.push((r) => {
+      const ctx = ctxFor(r);
+      return facets.every((f) => matchesFacet(r, f, ctx));
+    });
+  }
+  if (state.text) {
+    const lower = state.text.toLowerCase();
+    tests.push((r) => matchesText(r, lower));
+  }
+  if (tests.length === 0) return null;
+  if (tests.length === 1) return tests[0];
+  return (r) => tests.every((t) => t(r));
+}
+
 export function applyFilterState(
   items: Resource[],
   state: FilterState,
   resourceType: string,
   ctxFor: (resource: Resource) => CellContext,
 ): Resource[] {
-  if (state.statFilter) {
-    const key = state.statFilter;
-    items =
-      key === "needsAttention"
-        ? items.filter(isPodNeedingAttention)
-        : items.filter((r) => matchesStatFilter(r, resourceType, key));
+  const test = compileFilterState(state, resourceType, ctxFor);
+  return test ? items.filter(test) : items;
+}
+
+/**
+ * Row count per saved view in ONE pass over the items. The toolbar needs a
+ * number per view on every watch flush; filtering the list once per view
+ * materialized K arrays and built a cell context per row per facet view.
+ * Here the context is built at most once per row and shared by every view.
+ */
+export function countViews(
+  items: Resource[],
+  views: Array<{ id: string; state: FilterState }>,
+  resourceType: string,
+  ctxFor: (resource: Resource) => CellContext,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  let current: Resource | null = null;
+  let currentCtx: CellContext | undefined;
+  const sharedCtx = (r: Resource) => {
+    if (r !== current) {
+      current = r;
+      currentCtx = ctxFor(r);
+    }
+    return currentCtx!;
+  };
+  const active: Array<{ id: string; test: (r: Resource) => boolean }> = [];
+  for (const view of views) {
+    const test = compileFilterState(view.state, resourceType, sharedCtx);
+    if (test) {
+      out[view.id] = 0;
+      active.push({ id: view.id, test });
+    } else {
+      out[view.id] = items.length;
+    }
   }
-  if (state.facets.length > 0) items = applyFacets(items, state.facets, ctxFor);
-  if (state.text) items = filterResources(items, state.text);
-  return items;
+  if (active.length === 0) return out;
+  for (const r of items) {
+    for (const view of active) {
+      if (view.test(r)) out[view.id]++;
+    }
+  }
+  return out;
 }
 
 /** How many things the status bar should say are filtering the view. */
@@ -152,12 +219,14 @@ export function sortResources(
 export function computeAllSelected(filteredResources: Resource[], selectedRows: Set<string>): boolean {
   return (
     filteredResources.length > 0 &&
+    selectedRows.size >= filteredResources.length &&
     filteredResources.every((r) => selectedRows.has(r.metadata.uid))
   );
 }
 
 /** Returns true when at least one filtered resource is in the selected set. */
 export function computeSomeSelected(filteredResources: Resource[], selectedRows: Set<string>): boolean {
+  if (selectedRows.size === 0) return false;
   return filteredResources.some((r) => selectedRows.has(r.metadata.uid));
 }
 

@@ -94,8 +94,12 @@ test.describe("ResourceTable", () => {
 
   test.describe("Bulk selection", () => {
     test("checking rows shows the bulk action bar with the count", async ({ page }) => {
+      // The checkbox mounts when the pointer reaches the row (it is hover-only
+      // chrome until a selection exists), so hover before clicking.
+      await tableRows(page).nth(0).hover();
       await tableRows(page).nth(0).locator('[data-testid="row-checkbox"]').click({ force: true });
       await expect(page.getByText("1 resource selected")).toBeVisible();
+      await tableRows(page).nth(1).hover();
       await tableRows(page).nth(1).locator('[data-testid="row-checkbox"]').click({ force: true });
       await expect(page.getByText("2 resources selected")).toBeVisible();
     });

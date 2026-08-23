@@ -14,9 +14,10 @@ import { optStr, type HandlerCtx, type HandlerMap } from '../dispatch';
 import { getActiveContextName, getRbacAuthorizationV1Api, onConfigChange } from '../k8s/client';
 import { listScoped } from '../k8s/list-scope';
 import { collectSubjects, effectivePermissions, type RbacInput, type SubjectKind } from '../k8s/rbac';
+import { createTtlCache } from '../util/ttl-cache';
 
 const CACHE_TTL_MS = 30_000;
-const cache = new Map<string, { at: number; promise: Promise<RbacInput> }>();
+const cache = createTtlCache<RbacInput>(CACHE_TTL_MS);
 onConfigChange(() => cache.clear());
 
 async function fetchRbac(namespace: string | null): Promise<RbacInput> {
@@ -32,12 +33,7 @@ async function fetchRbac(namespace: string | null): Promise<RbacInput> {
 
 function loadRbac(namespace: string | null): Promise<RbacInput> {
   const key = `${getActiveContextName() ?? ''}|${namespace ?? ''}`;
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.promise;
-  const promise = fetchRbac(namespace);
-  cache.set(key, { at: Date.now(), promise });
-  promise.catch(() => cache.delete(key));
-  return promise;
+  return cache.get(key, () => fetchRbac(namespace));
 }
 
 export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {

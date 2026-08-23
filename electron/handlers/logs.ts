@@ -50,12 +50,19 @@ import { AddOptionsToSearchParams, type LogOptions } from '@kubernetes/client-no
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
 import { apiStream } from '../k8s/api';
+import { mapWithConcurrency } from '../util/concurrency';
 
 const LOG_CHANNEL = 'log-lines';
 const STATUS_CHANNEL = 'log-stream-status';
 
 /** Maximum lines to buffer before emitting a batch. */
+// Longest single line forwarded to the renderer; the rest of the line is
+// dropped with a marker. Bounds main-process memory on newline-free output.
+const LOG_MAX_LINE_CHARS = 512 * 1024;
+const LOG_TRUNCATED_MARKER = ' …[line truncated]';
 const LOG_BATCH_SIZE = 20;
+/** How many pod log streams are dialled at once for a multi-pod session. */
+const MULTI_POD_DIAL_CONCURRENCY = 8;
 /** Maximum time (ms) to wait before flushing a partial batch. */
 const LOG_FLUSH_INTERVAL_MS = 50;
 
@@ -178,6 +185,8 @@ async function pumpBody(
   const decoder = new TextDecoder();
   const reader = body.getReader();
   let partial = '';
+  // True while the rest of an over-long line is being discarded.
+  let dropping = false;
 
   try {
     for (;;) {
@@ -186,20 +195,38 @@ async function pumpBody(
       // Stop feeding a stream nobody is listening to any more.
       if (isStale(session)) return;
       partial += decoder.decode(value, { stream: true });
-      let idx = partial.indexOf('\n');
+      // Split with a moving offset and slice the remainder ONCE per chunk: a
+      // `tail` of thousands of lines arrives in big chunks, and re-slicing the
+      // remainder after every line copied the chunk once per line (O(n²)).
+      let start = 0;
+      let idx = partial.indexOf('\n', start);
       while (idx !== -1) {
-        // Strip the trailing '\n' (and a preceding '\r' if present) — the
-        // renderer expects complete lines with no trailing newline.
-        let line = partial.slice(0, idx);
-        if (line.endsWith('\r')) line = line.slice(0, -1);
-        batcher.push(line);
-        partial = partial.slice(idx + 1);
-        idx = partial.indexOf('\n');
+        if (dropping) {
+          dropping = false;
+        } else {
+          // Strip the trailing '\n' (and a preceding '\r' if present) — the
+          // renderer expects complete lines with no trailing newline.
+          const end = idx > start && partial.charCodeAt(idx - 1) === 13 ? idx - 1 : idx;
+          batcher.push(partial.slice(start, end));
+        }
+        start = idx + 1;
+        idx = partial.indexOf('\n', start);
+      }
+      partial = start > 0 ? partial.slice(start) : partial;
+      // A line with no newline in sight keeps growing in main-process memory
+      // (single-line JSON dumps, binary to stdout): cap it, ship what fits with
+      // a marker, and skip to the next newline.
+      if (!dropping && partial.length > LOG_MAX_LINE_CHARS) {
+        batcher.push(partial.slice(0, LOG_MAX_LINE_CHARS) + LOG_TRUNCATED_MARKER);
+        partial = '';
+        dropping = true;
+      } else if (dropping) {
+        partial = '';
       }
     }
     // A trailing line with no newline terminator from the server.
     partial += decoder.decode();
-    if (partial.length > 0) batcher.push(partial);
+    if (partial.length > 0 && !dropping) batcher.push(partial);
   } finally {
     reader.releaseLock();
     // In the `finally` so a mid-stream failure still delivers what was already
@@ -359,16 +386,18 @@ async function streamMultiPodLogs(args: Record<string, unknown>, ctx: HandlerCtx
   const session = beginSession();
   const drains: Array<Promise<void>> = [];
 
-  for (const podName of pods) {
-    // Bail out of the loop if a stop/restart raced in between iterations.
-    if (isStale(session)) return null;
-
+  // Dial pods concurrently (bounded): serially, 30 pods meant 30 round-trips
+  // before the last one showed a line. Order of the error lines follows
+  // completion order, which is fine — each carries its pod name.
+  const dial = async (podName: string): Promise<void> => {
+    // Bail out if a stop/restart raced in.
+    if (isStale(session)) return;
     try {
       const { drained } = await openStream(ctx, session, namespace, podName, container, args, podName);
-      // Attach a no-op handler NOW: reportWhenDrained only subscribes once the
-      // whole loop has finished dialling, and a reader that dies in the gap
-      // would be an unhandled rejection — fatal to the main process under
-      // Node's default --unhandled-rejections=throw. allSettled still sees the
+      // Attach a no-op handler NOW: reportWhenDrained only subscribes once
+      // every pod has been dialled, and a reader that dies in the gap would be
+      // an unhandled rejection — fatal to the main process under Node's
+      // default --unhandled-rejections=throw. allSettled still sees the
       // original rejection.
       void drained.catch(() => {});
       drains.push(drained);
@@ -378,7 +407,8 @@ async function streamMultiPodLogs(args: Record<string, unknown>, ctx: HandlerCtx
         ctx.emit(LOG_CHANNEL, [`[${podName}] [error: ${messageOf(err)}]`]);
       }
     }
-  }
+  };
+  await mapWithConcurrency(pods, MULTI_POD_DIAL_CONCURRENCY, dial);
 
   if (isStale(session)) return null;
 

@@ -9,6 +9,8 @@ import {
   clampColumnWidth,
   applyFilterState,
   countActiveFilters,
+  countViews,
+  compileFilterState,
 } from "./resource-table";
 import { minimumTableWidth, GUTTER_WIDTH, NAME_MIN_WIDTH, UNSIZED_MIN_WIDTH } from "./table-columns";
 
@@ -513,6 +515,37 @@ describe("ResourceTable — filter pipeline", () => {
     // Status is the effective state, so api-2 (CrashLoopBackOff) is no longer "running".
     expect(applyFilterState(items, { statFilter: null, facets: [{ key: "status", op: ":", value: "running" }], text: "api" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-1"]);
     expect(applyFilterState(items, { statFilter: null, facets: [{ key: "status", op: ":", value: "crash" }], text: "api" }, "pods", ctxFor).map((r) => r.metadata.name)).toEqual(["api-2"]);
+  });
+  test("compileFilterState returns null for the empty state and a predicate otherwise", () => {
+    expect(compileFilterState({ statFilter: null, facets: [], text: "" }, "pods", ctxFor)).toBeNull();
+    const test = compileFilterState({ statFilter: "running", facets: [], text: "api" }, "pods", ctxFor)!;
+    expect(items.filter(test).map((r) => r.metadata.name)).toEqual(["api-1"]);
+  });
+  test("countViews agrees with applyFilterState for every view, in one pass", () => {
+    const views = [
+      { id: "all", state: { statFilter: null, facets: [], text: "" } },
+      { id: "attention", state: { statFilter: "needsAttention", facets: [], text: "" } },
+      { id: "restarting", state: { statFilter: null, facets: [{ key: "restarts", op: ">" as const, value: "0" }], text: "" } },
+      { id: "jobs", state: { statFilter: null, facets: [], text: "job" } },
+    ];
+    let ctxCalls = 0;
+    const countingCtx = () => {
+      ctxCalls++;
+      return { ageTick: 0 };
+    };
+    const counts = countViews(items, views, "pods", countingCtx);
+    for (const v of views) {
+      expect(counts[v.id]).toBe(applyFilterState(items, v.state, "pods", ctxFor).length);
+    }
+    expect(counts).toEqual({ all: 3, attention: 1, restarting: 1, jobs: 1 });
+    // One context per row, shared by every facet view — not one per row per view.
+    expect(ctxCalls).toBe(items.length);
+  });
+  test("countViews with only the All view never walks the items", () => {
+    const counts = countViews(items, [{ id: "all", state: { statFilter: null, facets: [], text: "" } }], "pods", () => {
+      throw new Error("should not build a context");
+    });
+    expect(counts).toEqual({ all: 3 });
   });
   test("countActiveFilters counts each kind once", () => {
     expect(countActiveFilters({ facets: [], text: "", statFilter: null })).toBe(0);

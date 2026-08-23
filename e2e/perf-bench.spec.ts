@@ -15,9 +15,50 @@
  * Run:  npx playwright test e2e/perf-bench.spec.ts --project=chromium --reporter=line
  * The webServer block in playwright.config.ts starts `npm run dev` automatically.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const SIZES = [200, 2000, 10000];
+
+// BENCH_OUT=path makes every test append its section to one JSON document, so
+// scripts/bench/frontend.sh can collect repeated runs and
+// scripts/bench/compare.ts can diff two labels. Tests run serially under the
+// harness (--workers=1), so a plain read-modify-write is enough.
+function record(section: string, data: unknown) {
+  const out = process.env.BENCH_OUT;
+  if (!out) return;
+  const doc = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : {};
+  doc[section] = data;
+  writeFileSync(out, JSON.stringify(doc, null, 2));
+}
+
+interface HeapSample {
+  /** JS heap in use after a forced GC, MB. */
+  heapMB: number;
+  /** Live DOM nodes. */
+  nodes: number;
+  listeners: number;
+}
+
+// Forces a GC first so the reading is retained memory, not garbage waiting to
+// be collected — the number that tells you whether a list leaks.
+async function sampleHeap(page: Page): Promise<HeapSample> {
+  const client = await page.context().newCDPSession(page);
+  try {
+    await client.send("HeapProfiler.enable");
+    await client.send("HeapProfiler.collectGarbage");
+    await client.send("Performance.enable");
+    const { metrics } = await client.send("Performance.getMetrics");
+    const get = (name: string) => metrics.find((m) => m.name === name)?.value ?? 0;
+    return {
+      heapMB: round(get("JSHeapUsedSize") / 1024 / 1024),
+      nodes: get("Nodes"),
+      listeners: get("JSEventListeners"),
+    };
+  } finally {
+    await client.detach();
+  }
+}
 const FRAME_BUDGET_MS = 8; // main-thread budget/frame to leave room for paint+composite at 60fps
 
 // Generated in-page (keeps the Playwright payload tiny). Produces pods rich
@@ -114,6 +155,7 @@ test.describe("frontend perf bench", () => {
     });
 
     const report: Record<string, unknown> = {};
+    const heapEmpty = await sampleHeap(page);
 
     for (const size of SIZES) {
       // ---- MOUNT (cold): assign dataset -> rows painted ----
@@ -159,23 +201,33 @@ test.describe("frontend perf bench", () => {
       // ---- FILTER: keystroke -> filtered repaint (true end-to-end latency) ----
       const filter = await page.evaluate(async () => {
         const { uiStore } = (window as any).__kdash;
-        const countRows = () => document.querySelectorAll('tbody tr').length;
-        const before = countRows();
+        const NEEDLE = "workload-001"; // matches a block of pods -> row set must shrink
+        const nameCells = () => Array.from(document.querySelectorAll('tbody tr [data-testid="cell-name"]'));
+        // Done when rows are painted and every painted row matches the filter.
+        // (Counting rows is not enough: the virtualizer's spacer rows come and
+        // go with the scroll position, which made an early exit look like a
+        // 9 ms filter while the debounce had not even fired.)
+        const settled = () => {
+          const cells = nameCells();
+          return cells.length > 0 && cells.every((c) => (c.textContent ?? "").includes(NEEDLE));
+        };
         const t0 = performance.now();
-        uiStore.setFilter("workload-001"); // matches a single pod -> row set must shrink
-        // Poll each frame until the rendered set reflects the filter (debounce + derive + paint).
+        uiStore.setFilter(NEEDLE);
         let waited = 0;
-        while (countRows() >= before && waited < 1500) {
+        while (!settled() && waited < 1500) {
           await new Promise<void>((r) => requestAnimationFrame(() => r()));
           waited = performance.now() - t0;
         }
         const t1 = performance.now();
-        const rendered = countRows();
+        const rendered = nameCells().length;
         uiStore.setFilter("");
         await new Promise((r) => setTimeout(r, 80));
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         return { ms: t1 - t0, rendered };
       });
+
+      // ---- MEMORY: retained heap with this list mounted (GC forced) ----
+      const heap = await sampleHeap(page);
 
       report[`n=${size}`] = {
         mountMs: round(mount.ms),
@@ -183,15 +235,34 @@ test.describe("frontend perf bench", () => {
         scroll: scroll ? summarize(scroll, FRAME_BUDGET_MS) : "no-container",
         filterMs: round(filter.ms),
         filterRendered: filter.rendered,
+        heapMB: heap.heapMB,
+        domNodes: heap.nodes,
       };
     }
+
+    // Memory released once the list is gone: growth over the empty baseline
+    // after the 10k list is replaced by an empty one is what leaks look like.
+    await page.evaluate(async () => {
+      const { k8sStore } = (window as any).__kdash;
+      k8sStore.resources = { items: [], resource_type: "pods" };
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    });
+    const heapAfter = await sampleHeap(page);
+    report.memory = {
+      emptyHeapMB: heapEmpty.heapMB,
+      afterClearHeapMB: heapAfter.heapMB,
+      retainedAfterClearMB: round(heapAfter.heapMB - heapEmpty.heapMB),
+      emptyDomNodes: heapEmpty.nodes,
+      afterClearDomNodes: heapAfter.nodes,
+    };
 
     // eslint-disable-next-line no-console
     console.log("\n__PERF_BENCH__" + JSON.stringify(report, null, 2));
     console.log("console.errors:", consoleErrors.slice(0, 5));
+    record("table", report);
 
     // Smoke assertion: the harness produced data for every size.
-    expect(Object.keys(report).length).toBe(SIZES.length);
+    for (const size of SIZES) expect(report[`n=${size}`]).toBeDefined();
   });
 
   test("navigation: type switch + detail open + watch churn", async ({ page }) => {
@@ -285,8 +356,33 @@ test.describe("frontend perf bench", () => {
       };
     }, { gen: GEN });
 
+    // ---- CHURN MEMORY: 40 more wholesale replacements must not grow the heap ----
+    const heapBefore = await sampleHeap(page);
+    await page.evaluate(async ({ gen }) => {
+      const { k8sStore } = (window as any).__kdash;
+      const pods = (eval(gen))(1500);
+      const raf2 = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      for (let i = 0; i < 40; i++) {
+        const next = pods.slice();
+        for (let j = 0; j < 150; j++) {
+          const idx = (i * 150 + j) % next.length;
+          next[idx] = { ...next[idx], status: { ...next[idx].status, phase: j % 2 ? "Running" : "Pending" } };
+        }
+        k8sStore.resources = { items: next, resource_type: "pods" };
+        await raf2();
+      }
+    }, { gen: GEN });
+    const heapAfterChurn = await sampleHeap(page);
+    const result = {
+      ...r,
+      heapMB: heapAfterChurn.heapMB,
+      churnHeapGrowthMB: round(heapAfterChurn.heapMB - heapBefore.heapMB),
+      domNodes: heapAfterChurn.nodes,
+    };
+
     // eslint-disable-next-line no-console
-    console.log("\n__NAV_BENCH__" + JSON.stringify(r, null, 2));
+    console.log("\n__NAV_BENCH__" + JSON.stringify(result, null, 2));
+    record("nav", result);
     expect(r.navMedianMs).toBeGreaterThan(0);
   });
 
@@ -365,6 +461,7 @@ test.describe("frontend perf bench", () => {
 
     // eslint-disable-next-line no-console
     console.log("\n__CRD_BENCH__" + JSON.stringify(r, null, 2));
+    record("crd", r);
     // Virtualization invariant: the DOM must hold a window of rows, not the list.
     expect(r.renderedRows).toBeGreaterThan(0);
     expect(r.renderedRows).toBeLessThan(200);

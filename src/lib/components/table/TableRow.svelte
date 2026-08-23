@@ -74,11 +74,16 @@
 
   // Everything the cell accessors need from the stores, gathered once per row
   // so cell-values.ts can stay a pure module.
+  // Each lookup is gated on the table that reads it: a row subscribes to the
+  // node-cost / pod-usage records it would otherwise never render, and every
+  // metrics poll re-ran every cell of every visible row on every table.
   let cellCtx = $derived({
     ageTick: k8sStore.ageTick,
-    nodeCost: costStore.getNodeCost(resource.metadata.name),
-    nodeMetrics: costStore.getNodeMetrics(resource.metadata.name),
-    podUsage: metricsStore.getPodUsage(resource.metadata.namespace, resource.metadata.name),
+    nodeCost: resourceType === "nodes" ? costStore.getNodeCost(resource.metadata.name) : undefined,
+    nodeMetrics: resourceType === "nodes" ? costStore.getNodeMetrics(resource.metadata.name) : undefined,
+    podUsage: resourceType === "pods"
+      ? metricsStore.getPodUsage(resource.metadata.namespace, resource.metadata.name)
+      : undefined,
     autoscaler: flavor ? autoscalerSummary(resource, flavor) : undefined,
     endpoints: resourceType === "services"
       ? endpointsStore.summaryFor(resource.metadata.namespace, resource.metadata.name)
@@ -130,6 +135,14 @@
   });
 
   let lastColumnIndex = $derived(columns.length - 1);
+
+  // The checkbox and the hover actions are invisible until the pointer is on
+  // the row (or it is keyboard-highlighted / part of a selection), yet they
+  // were mounted for every virtual row: a bits-ui checkbox plus two to four
+  // Buttons with lucide icons, i.e. most of the cost of creating a row — which
+  // is what scrolling does, tens of times per frame. Mount them on demand.
+  let hovered = $state(false);
+  let showChrome = $derived(hovered || highlighted || checkboxChecked || selectionActive);
 </script>
 
 <tr
@@ -146,6 +159,8 @@
   onclick={onclick}
   ondblclick={ondblclick}
   oncontextmenu={oncontextmenu}
+  onpointerenter={() => (hovered = true)}
+  onpointerleave={() => (hovered = false)}
   tabindex={highlighted ? 0 : -1}
   aria-selected={selected || highlighted}
   data-testid="resource-row"
@@ -166,7 +181,7 @@
         aria-hidden="true"
       ></span>
     {/if}
-    {#if oncheck}
+    {#if oncheck && showChrome}
       <span
         class={cn(
           "inline-flex items-center justify-center align-middle transition-opacity",
@@ -420,7 +435,7 @@
         >{cellValue}</span>
       {/if}
 
-      {#if ci === lastColumnIndex && onmore}
+      {#if ci === lastColumnIndex && onmore && showChrome}
         <RowActions {resource} {resourceType} {onmore} />
       {/if}
     </td>

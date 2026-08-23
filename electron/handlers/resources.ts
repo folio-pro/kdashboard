@@ -34,7 +34,7 @@ import type {
   ResourceMetadata,
 } from '../k8s/resource-types';
 import { metaFrom, listMetaFrom, listProjectionFor } from '../k8s/resource-mapping';
-import { apiVersionOf, resolveKindOrThrow, resolveResourceType } from '../k8s/kinds';
+import { RESOURCE_TYPES, apiVersionOf, resolveKindOrThrow, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerMap } from '../dispatch';
 
 // ---------------------------------------------------------------------------
@@ -209,7 +209,17 @@ async function listResources(resourceType: string, namespace?: string): Promise<
   const ar = apiResourceForType(resourceType);
   const project = listProjectionFor(resourceType);
   if (!ar || !project) throw new Error(`Unknown resource type: ${resourceType}`);
-  const { items: raw, resourceVersion } = await listRaw({ ar, namespace });
+  // A kind whose projection keeps nothing but metadata (Role, ClusterRole)
+  // is listed metadata-only: the full bodies (rules…) were downloaded and
+  // parsed just to be thrown away. The registry is the authority on that.
+  const fields = RESOURCE_TYPES[resourceType]?.list;
+  const metaOnly =
+    !!fields && !fields.spec && !fields.status && !fields.data && !(fields.synth && fields.synth.length > 0);
+  const { items: raw, resourceVersion } = await listRaw({
+    ar,
+    namespace,
+    accept: metaOnly ? META_ACCEPT : undefined,
+  });
   const out: ResourceList = { items: raw.map(project), resource_type: resourceType };
   if (resourceVersion) out.resource_version = resourceVersion;
   return out;

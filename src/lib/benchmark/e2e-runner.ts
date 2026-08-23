@@ -126,6 +126,97 @@ async function measureType(
   };
 }
 
+interface ProcessSample {
+  uptime_ms: number;
+  main_heap_used_mb: number;
+  main_rss_mb: number;
+  processes: Array<{ type: string; pid: number; cpu_percent: number; cpu_ms: number | null; working_set_mb: number; private_mb: number }>;
+}
+
+/**
+ * Resource footprint while the app sits on the pods table with a live watch:
+ * CPU per process over an idle window (the number a laptop battery feels) and
+ * memory per process plus the renderer's JS heap.
+ */
+interface IdleProfile {
+  window_ms: number;
+  pod_count: number;
+  cpu_percent: Record<string, number>;
+  working_set_mb: Record<string, number>;
+  private_mb: Record<string, number>;
+  main_heap_used_mb: number;
+  renderer_js_heap_mb: number | null;
+}
+
+const IDLE_WINDOW_MS = 10_000;
+const IDLE_WINDOWS = 3;
+
+async function sampleProcesses(): Promise<ProcessSample> {
+  return invoke<ProcessSample>("bench_process_metrics");
+}
+
+/** CPU % of one core per process type over one window, from /proc deltas. */
+function cpuByType(before: ProcessSample, after: ProcessSample, windowMs: number): Record<string, number> {
+  const prev = new Map(before.processes.map((p) => [p.pid, p.cpu_ms]));
+  const out: Record<string, number> = {};
+  for (const p of after.processes) {
+    const was = prev.get(p.pid);
+    // Electron's own percentCPUUsage reads 0 on some platforms; prefer /proc.
+    const pct = p.cpu_ms !== null && was !== null && was !== undefined ? ((p.cpu_ms - was) / windowMs) * 100 : p.cpu_percent;
+    out[p.type] = (out[p.type] ?? 0) + pct;
+  }
+  return out;
+}
+
+function medianByKey(samples: Array<Record<string, number>>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of new Set(samples.flatMap((s) => Object.keys(s)))) {
+    out[key] = stat(samples.map((s) => s[key] ?? 0)).median;
+  }
+  return out;
+}
+
+async function profileIdle(namespace: string | undefined): Promise<IdleProfile> {
+  // A real list + watch, the way a user sits on the pods table.
+  k8sStore.currentNamespace = namespace ?? "";
+  uiStore.backToTable();
+  k8sStore.setResourceType("pods");
+  await k8sStore.loadResources("pods");
+  await nextPaint();
+  // Let the post-list work (watch sync, counts, metrics poll) settle first.
+  await new Promise((r) => setTimeout(r, 3000));
+  // Several windows, median per process: one window is at the mercy of a
+  // repaint or a burst of watch events landing inside it.
+  const cpuSamples: Array<Record<string, number>> = [];
+  let before = await sampleProcesses();
+  let after = before;
+  for (let i = 0; i < IDLE_WINDOWS; i++) {
+    const t0 = performance.now();
+    await new Promise((r) => setTimeout(r, IDLE_WINDOW_MS));
+    after = await sampleProcesses();
+    cpuSamples.push(cpuByType(before, after, performance.now() - t0));
+    before = after;
+  }
+  const byType = (pick: (p: ProcessSample["processes"][number]) => number): Record<string, number> => {
+    const out: Record<string, number> = {};
+    for (const p of after.processes) {
+      // Several renderer/utility processes can exist; sum per type.
+      out[p.type] = round((out[p.type] ?? 0) + pick(p));
+    }
+    return out;
+  };
+  const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+  return {
+    window_ms: IDLE_WINDOW_MS * IDLE_WINDOWS,
+    pod_count: k8sStore.resources.items.length,
+    cpu_percent: medianByKey(cpuSamples),
+    working_set_mb: byType((p) => p.working_set_mb),
+    private_mb: byType((p) => p.private_mb),
+    main_heap_used_mb: after.main_heap_used_mb,
+    renderer_js_heap_mb: mem ? round(mem.usedJSHeapSize / 1048576) : null,
+  };
+}
+
 /** Returns true if benchmark mode was active and handled init (caller should stop). */
 export async function maybeRunBenchmark(): Promise<boolean> {
   let cfg: BenchConfig;
@@ -204,6 +295,14 @@ export async function maybeRunBenchmark(): Promise<boolean> {
       console.warn("[bench] get_resource_counts failed:", err);
     }
 
+    let idle: IdleProfile | null = null;
+    try {
+      idle = await profileIdle(namespace);
+      console.log(`[bench] idle ${idle.window_ms}ms: cpu%=${JSON.stringify(idle.cpu_percent)} ws_mb=${JSON.stringify(idle.working_set_mb)} renderer_heap=${idle.renderer_js_heap_mb}MB`);
+    } catch (err) {
+      console.warn("[bench] idle profile failed:", err);
+    }
+
     const payload = {
       meta: {
         timestamp: new Date().toISOString(),
@@ -217,6 +316,7 @@ export async function maybeRunBenchmark(): Promise<boolean> {
       },
       results,
       countsMs,
+      idle,
     };
 
     const json = JSON.stringify(payload, null, 2);

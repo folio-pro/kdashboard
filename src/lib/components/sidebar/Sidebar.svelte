@@ -123,16 +123,19 @@
   });
 
   // Flat list: every CRD group is always visible, so load counts for all of
-  // them (only fetch the ones not already loaded).
+  // them (only fetch the ones not already loaded). One call for every group:
+  // this effect reads crdCounts, which each response rewrites, so a call per
+  // group re-ran it once per response and re-requested every group still
+  // pending — O(groups²) get_crd_counts on connect. The store additionally
+  // skips CRDs whose count is already in flight.
   $effect(() => {
+    const missing: CrdInfo[] = [];
     for (const group of visibleCrdGroups) {
-      const missing = group.resources.filter(
-        (crd) => !(k8sStore.crdKey(crd) in k8sStore.crdCounts),
-      );
-      if (missing.length > 0) {
-        k8sStore.loadCrdCounts(missing);
+      for (const crd of group.resources) {
+        if (!(k8sStore.crdKey(crd) in k8sStore.crdCounts)) missing.push(crd);
       }
     }
+    if (missing.length > 0) k8sStore.loadCrdCounts(missing);
   });
 
 </script>

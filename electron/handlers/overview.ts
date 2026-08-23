@@ -22,9 +22,10 @@ import type {
 } from '@kubernetes/client-node';
 
 import { optStr, type HandlerCtx, type HandlerMap } from '../dispatch';
-import { getAppsV1Api, getBatchV1Api, getCoreV1Api } from '../k8s/client';
+import { getActiveContextName, getAppsV1Api, getBatchV1Api, getCoreV1Api, onConfigChange } from '../k8s/client';
 import { listScoped } from '../k8s/list-scope';
 import { nodeUsage as readNodeUsage, podUsageScoped, type NodeUsage } from '../k8s/metrics-source';
+import { createTtlCache } from '../util/ttl-cache';
 import {
   foldPodsIntoOwners,
   nodeProblems,
@@ -120,6 +121,20 @@ export async function getClusterOverview(namespace: string | null): Promise<Clus
   };
 }
 
+// Short TTL + single-flight: Overview and Problems share this payload, and
+// hopping between them (or two tabs mounting at once) re-listed every pod,
+// workload and warning event in the cluster per call. Ten seconds is below
+// anything a person would call stale; failures are never cached.
+const OVERVIEW_CACHE_TTL_MS = 10_000;
+const OVERVIEW_CACHE_MAX_ENTRIES = 4;
+const overviewCache = createTtlCache<ClusterOverview>(OVERVIEW_CACHE_TTL_MS, { maxEntries: OVERVIEW_CACHE_MAX_ENTRIES });
+onConfigChange(() => overviewCache.clear());
+
+export function getClusterOverviewCached(namespace: string | null): Promise<ClusterOverview> {
+  const key = `${getActiveContextName() ?? ''}|${namespace ?? ''}`;
+  return overviewCache.get(key, () => getClusterOverview(namespace));
+}
+
 export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
-  handlers.set('get_cluster_overview', async (args) => getClusterOverview(optStr(args, 'namespace') ?? null));
+  handlers.set('get_cluster_overview', async (args) => getClusterOverviewCached(optStr(args, 'namespace') ?? null));
 }

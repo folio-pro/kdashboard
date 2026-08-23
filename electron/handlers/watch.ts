@@ -35,10 +35,10 @@
 
 import { Watch } from '@kubernetes/client-node';
 
-import { kc } from '../k8s/client';
+import { getActiveContextName, kc, onConfigChange } from '../k8s/client';
 import { apiGet, META_ACCEPT } from '../k8s/api';
 import type { RawObject, Resource } from '../k8s/resource-types';
-import { dynamicToResource, listProjectionFor } from '../k8s/resource-mapping';
+import { listDynamicToResource, listProjectionFor } from '../k8s/resource-mapping';
 import { apiVersionOf, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerCtx, HandlerMap } from '../dispatch';
 
@@ -108,7 +108,7 @@ function watchPath(ar: ApiResource, namespace?: string): string {
 
 // Projections live in electron/k8s/resource-mapping.ts (shared with the
 // resources and CRD paths): listProjectionFor gives the per-kind lean list
-// shape; dynamicToResource is the verbatim fallback for unknown kinds.
+// shape; listDynamicToResource is the verbatim fallback for unknown kinds.
 
 // ---------------------------------------------------------------------------
 // Single active watch slot.
@@ -139,6 +139,8 @@ interface ActiveWatch {
    * which forces the classic replay + Resync path once.
    */
   lastRV: string | undefined;
+  /** Context the watch was opened against, to stop it when the user leaves. */
+  contextName: string | undefined;
 }
 
 // Identity of the live ActiveWatch is the generation token: callbacks captured
@@ -199,6 +201,7 @@ async function startResourceWatch(
     openedAt: 0,
     stopped: false,
     lastRV: listResourceVersion,
+    contextName: getActiveContextName(),
   };
   active = state;
 
@@ -209,7 +212,7 @@ async function startResourceWatch(
   // types on the generic verbatim shape.
   const project =
     listProjectionFor(resourceType) ??
-    ((obj: RawObject) => dynamicToResource(obj, ar.apiVersion, ar.kind));
+    ((obj: RawObject) => listDynamicToResource(obj, ar.apiVersion, ar.kind));
 
   const isCurrent = (): boolean => active === state && !state.stopped;
 
@@ -485,4 +488,20 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
 
   handlers.set('start_resource_watch', startHandler);
   handlers.set('stop_resource_watch', stopHandler);
+
+  // The Watch captured the KubeConfig of the cluster it was opened against;
+  // after a context switch it kept streaming (and reconnecting, with backoff)
+  // from the OLD cluster until the renderer happened to start a new watch.
+  // Only a context change stops it: a kubeconfig rewrite that keeps the
+  // context (an import) must not silently end live updates.
+  onConfigChange(() => {
+    if (!active) return;
+    let current: string | undefined;
+    try {
+      current = getActiveContextName();
+    } catch {
+      current = undefined;
+    }
+    if (current !== active.contextName) clearActive();
+  });
 }

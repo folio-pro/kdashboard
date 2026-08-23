@@ -159,8 +159,22 @@ export class UiStoreLogic {
   protected _debounceTimer: ReturnType<typeof setTimeout> | null = null;
   protected _debounceTarget: Tab | null = null;
 
+  // Memoized on (tabs array, index, id): every per-tab getter below goes
+  // through here, and the table reads several of them per visible row per
+  // render, so a linear scan over proxied tabs each time added up. Any
+  // mutation that moves or replaces the tab fails the index check and falls
+  // back to the scan; the reads still register the same reactive deps.
+  #cachedTab: Tab | undefined;
+  #cachedTabIdx = -1;
   get activeTab(): Tab | undefined {
-    return this.tabs.find((t) => t.id === this.activeTabId);
+    const id = this.activeTabId;
+    const tabs = this.tabs;
+    const cached = this.#cachedTab;
+    if (cached && cached.id === id && tabs[this.#cachedTabIdx] === cached) return cached;
+    const idx = tabs.findIndex((t) => t.id === id);
+    this.#cachedTabIdx = idx;
+    this.#cachedTab = idx >= 0 ? tabs[idx] : undefined;
+    return this.#cachedTab;
   }
 
   /**
