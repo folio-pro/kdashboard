@@ -35,7 +35,11 @@ export function compare(before: Json, after: Json): string {
     if (y === undefined) continue;
     const higher = HIGHER_IS_BETTER.some((re) => re.test(key));
     const delta = y - x;
-    const pct = x !== 0 ? (delta / Math.abs(x)) * 100 : 0;
+    // A zero baseline has no meaningful percent change; report it as infinite
+    // (still marked ✓/✗ below) rather than "+0%", which would read as
+    // unchanged and hide exactly the regressions the leak-detector metrics
+    // (retainedAfterClearMB, churnHeapGrowthMB) are meant to catch: 0 -> 12.
+    const pct = x !== 0 ? (delta / Math.abs(x)) * 100 : delta === 0 ? 0 : delta > 0 ? Infinity : -Infinity;
     const better = higher ? delta > 0 : delta < 0;
     const mark = Math.abs(pct) < 3 ? "·" : better ? "✓" : "✗";
     rows.push(`| ${key} | ${fmt(x)} | ${fmt(y)} | ${delta >= 0 ? "+" : ""}${fmt(delta)} | ${pct >= 0 ? "+" : ""}${pct.toFixed(0)}% ${mark} |`);

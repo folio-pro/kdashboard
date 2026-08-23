@@ -207,7 +207,15 @@ async function pumpBody(
           // Strip the trailing '\n' (and a preceding '\r' if present) — the
           // renderer expects complete lines with no trailing newline.
           const end = idx > start && partial.charCodeAt(idx - 1) === 13 ? idx - 1 : idx;
-          batcher.push(partial.slice(start, end));
+          // A line can arrive already newline-terminated within a single
+          // chunk, long before the growing-`partial` check below ever runs —
+          // cap it here too, or a big enough read() bypasses the bound.
+          const len = end - start;
+          batcher.push(
+            len > LOG_MAX_LINE_CHARS
+              ? partial.slice(start, start + LOG_MAX_LINE_CHARS) + LOG_TRUNCATED_MARKER
+              : partial.slice(start, end),
+          );
         }
         start = idx + 1;
         idx = partial.indexOf('\n', start);

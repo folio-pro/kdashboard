@@ -141,6 +141,15 @@ interface ActiveWatch {
   lastRV: string | undefined;
   /** Context the watch was opened against, to stop it when the user leaves. */
   contextName: string | undefined;
+  /**
+   * Settles the pending `start_resource_watch` invoke with a rejection, set
+   * only while that first open is in flight. clearActive() calls this so a
+   * context switch (or a new/stopped watch) racing the first open can't leave
+   * the invoke's promise pending forever — the success/error paths inside
+   * connect() both no-op once `isCurrent()` is false, so nothing else would
+   * ever settle it.
+   */
+  cancelStart: ((err: unknown) => void) | null;
 }
 
 // Identity of the live ActiveWatch is the generation token: callbacks captured
@@ -168,6 +177,11 @@ function clearActive(): void {
       active.controller = null;
     }
     active.batch = [];
+    if (active.cancelStart) {
+      const cancel = active.cancelStart;
+      active.cancelStart = null;
+      cancel(new Error('watch cancelled before it finished opening'));
+    }
   }
   active = null;
 }
@@ -202,6 +216,7 @@ async function startResourceWatch(
     stopped: false,
     lastRV: listResourceVersion,
     contextName: getActiveContextName(),
+    cancelStart: null,
   };
   active = state;
 
@@ -271,15 +286,20 @@ async function startResourceWatch(
     const settleOk = (): void => {
       if (!settled) {
         settled = true;
+        state.cancelStart = null;
         resolve();
       }
     };
     const settleErr = (err: unknown): void => {
       if (!settled) {
         settled = true;
+        state.cancelStart = null;
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     };
+    // clearActive() calls this if the watch is torn down (context switch, a
+    // new start, or an explicit stop) before the first open settles either way.
+    state.cancelStart = settleErr;
 
     /**
      * Reconnecting with NO resourceVersion makes the apiserver replay the

@@ -153,6 +153,23 @@ describe('stream_pod_logs', () => {
     expect(out[1]).toBe('next');
   });
 
+  test('an oversized line already newline-terminated within one chunk is still capped', async () => {
+    const body = stagedBody();
+    await handlers.get('stream_pod_logs')!({ name: 'web-0', namespace: 'default' }, ctx);
+
+    // The whole 600 KiB line plus its terminator arrives in a single chunk —
+    // the cap must not rely on the line still being assembled across reads.
+    body.push('before\n' + 'y'.repeat(600 * 1024) + '\nafter\n');
+    await settle();
+
+    const out = lines();
+    expect(out).toEqual([
+      'before',
+      'y'.repeat(512 * 1024) + ' …[line truncated]',
+      'after',
+    ]);
+  });
+
   // A clean end already worked before; the marker and status must both fire.
   test('a graceful end emits the [stream ended] marker and an ended status', async () => {
     const body = stagedBody();
