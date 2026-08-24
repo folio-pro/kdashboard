@@ -1,7 +1,7 @@
 {
   "name": "kdashboard",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "author": "Nicolás Mengual",
   "type": "module",
   "main": "out/main/index.js",
