@@ -248,14 +248,18 @@
 
   <!-- Edges -->
   {#each graph.edges as edge (edge.from + "-" + edge.to)}
+    <!-- One highlight test per edge per hover change, not four: a hover
+         re-evaluates every edge's attributes, and large graphs have thousands. -->
+    {@const hl = isEdgeHighlighted(edge)}
+    {@const dim = isEdgeDimmed(edge)}
     <path
       d={edgePath(edge)}
       fill="none"
-      stroke={isEdgeHighlighted(edge) ? "var(--accent)" : "var(--text-muted)"}
-      stroke-width={isEdgeHighlighted(edge) ? 2 : 1}
-      stroke-opacity={isEdgeDimmed(edge) ? 0.15 : isEdgeHighlighted(edge) ? 0.8 : 0.35}
-      marker-end={isEdgeHighlighted(edge) ? "url(#arrowhead-highlight)" : "url(#arrowhead)"}
-      class="transition-all duration-150"
+      stroke={hl ? "var(--accent)" : "var(--text-muted)"}
+      stroke-width={hl ? 2 : 1}
+      stroke-opacity={dim ? 0.15 : hl ? 0.8 : 0.35}
+      marker-end={hl ? "url(#arrowhead-highlight)" : "url(#arrowhead)"}
+      class="transition-[stroke,stroke-width,stroke-opacity] duration-150"
     />
   {/each}
 

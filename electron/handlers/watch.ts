@@ -35,10 +35,10 @@
 
 import { Watch } from '@kubernetes/client-node';
 
-import { kc } from '../k8s/client';
+import { getActiveContextName, kc, onConfigChange } from '../k8s/client';
 import { apiGet, META_ACCEPT } from '../k8s/api';
 import type { RawObject, Resource } from '../k8s/resource-types';
-import { dynamicToResource, listProjectionFor } from '../k8s/resource-mapping';
+import { listDynamicToResource, listProjectionFor } from '../k8s/resource-mapping';
 import { apiVersionOf, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerCtx, HandlerMap } from '../dispatch';
 
@@ -108,7 +108,7 @@ function watchPath(ar: ApiResource, namespace?: string): string {
 
 // Projections live in electron/k8s/resource-mapping.ts (shared with the
 // resources and CRD paths): listProjectionFor gives the per-kind lean list
-// shape; dynamicToResource is the verbatim fallback for unknown kinds.
+// shape; listDynamicToResource is the verbatim fallback for unknown kinds.
 
 // ---------------------------------------------------------------------------
 // Single active watch slot.
@@ -139,6 +139,17 @@ interface ActiveWatch {
    * which forces the classic replay + Resync path once.
    */
   lastRV: string | undefined;
+  /** Context the watch was opened against, to stop it when the user leaves. */
+  contextName: string | undefined;
+  /**
+   * Settles the pending `start_resource_watch` invoke with a rejection, set
+   * only while that first open is in flight. clearActive() calls this so a
+   * context switch (or a new/stopped watch) racing the first open can't leave
+   * the invoke's promise pending forever — the success/error paths inside
+   * connect() both no-op once `isCurrent()` is false, so nothing else would
+   * ever settle it.
+   */
+  cancelStart: ((err: unknown) => void) | null;
 }
 
 // Identity of the live ActiveWatch is the generation token: callbacks captured
@@ -166,6 +177,11 @@ function clearActive(): void {
       active.controller = null;
     }
     active.batch = [];
+    if (active.cancelStart) {
+      const cancel = active.cancelStart;
+      active.cancelStart = null;
+      cancel(new Error('watch cancelled before it finished opening'));
+    }
   }
   active = null;
 }
@@ -199,6 +215,8 @@ async function startResourceWatch(
     openedAt: 0,
     stopped: false,
     lastRV: listResourceVersion,
+    contextName: getActiveContextName(),
+    cancelStart: null,
   };
   active = state;
 
@@ -209,7 +227,7 @@ async function startResourceWatch(
   // types on the generic verbatim shape.
   const project =
     listProjectionFor(resourceType) ??
-    ((obj: RawObject) => dynamicToResource(obj, ar.apiVersion, ar.kind));
+    ((obj: RawObject) => listDynamicToResource(obj, ar.apiVersion, ar.kind));
 
   const isCurrent = (): boolean => active === state && !state.stopped;
 
@@ -268,15 +286,20 @@ async function startResourceWatch(
     const settleOk = (): void => {
       if (!settled) {
         settled = true;
+        state.cancelStart = null;
         resolve();
       }
     };
     const settleErr = (err: unknown): void => {
       if (!settled) {
         settled = true;
+        state.cancelStart = null;
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     };
+    // clearActive() calls this if the watch is torn down (context switch, a
+    // new start, or an explicit stop) before the first open settles either way.
+    state.cancelStart = settleErr;
 
     /**
      * Reconnecting with NO resourceVersion makes the apiserver replay the
@@ -485,4 +508,20 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
 
   handlers.set('start_resource_watch', startHandler);
   handlers.set('stop_resource_watch', stopHandler);
+
+  // The Watch captured the KubeConfig of the cluster it was opened against;
+  // after a context switch it kept streaming (and reconnecting, with backoff)
+  // from the OLD cluster until the renderer happened to start a new watch.
+  // Only a context change stops it: a kubeconfig rewrite that keeps the
+  // context (an import) must not silently end live updates.
+  onConfigChange(() => {
+    if (!active) return;
+    let current: string | undefined;
+    try {
+      current = getActiveContextName();
+    } catch {
+      current = undefined;
+    }
+    if (current !== active.contextName) clearActive();
+  });
 }

@@ -274,6 +274,31 @@ describe("UiStore", () => {
     });
   });
 
+  describe("activeTab memo", () => {
+    test("tracks the active tab across open, move, close and array replacement", () => {
+      const pods = store.activeTab!;
+      store.openTab("logs", { label: "logs" });
+      const logs = store.activeTab!;
+      expect(logs).not.toBe(pods);
+      expect(logs.type).toBe("logs");
+      // Same id, same object, repeated reads.
+      expect(store.activeTab).toBe(logs);
+      // Moving the tab changes its index; the memo must follow it.
+      store.moveTab(logs.id, "left");
+      expect(store.activeTab).toBe(logs);
+      expect(store.tabs[0]).toBe(logs);
+      // Replacing the array with fresh objects (a session restore) must not
+      // keep handing out the stale object.
+      const fresh = store.tabs.map((t) => ({ ...t }));
+      store.tabs = fresh;
+      expect(store.activeTab).toBe(fresh[0]);
+      expect(store.activeTab).not.toBe(logs);
+      // Closing the active tab falls back to another tab.
+      store.closeTab(fresh[0].id);
+      expect(store.activeTab?.id).toBe(pods.id);
+    });
+  });
+
   describe("tab system", () => {
     test("starts with the pods table tab active", () => {
       expect(store.tabs.length).toBe(1);

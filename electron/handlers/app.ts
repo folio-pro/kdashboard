@@ -226,6 +226,26 @@ interface BenchConfig {
   resource_types: string | null;
 }
 
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+// Cumulative CPU time of a pid from /proc (Linux); null elsewhere. Electron's
+// percentCPUUsage reads 0 for every process on some setups, and a delta of
+// this over a window is unambiguous.
+function procCpuMs(pid: number): number | null {
+  if (process.platform !== 'linux') return null;
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    // Fields after the ")" of the comm: state is index 0, utime 11, stime 12.
+    const rest = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    const ticks = Number(rest[11]) + Number(rest[12]);
+    return Math.round((ticks * 1000) / 100); // CLK_TCK is 100 on Linux
+  } catch {
+    return null;
+  }
+}
+
 function parseEnvU32(key: string, fallback: number): number {
   const raw = process.env[key];
   if (raw === undefined) return fallback;
@@ -415,6 +435,28 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
       resource_types: optEnv('KDASH_BENCH_TYPES'),
     };
     return config;
+  });
+
+  // --- bench_process_metrics ---
+  // Benchmark-only: per-process CPU (percent since the previous call, so two
+  // samples bracket a window) and memory, for scripts/bench/run.sh. Refused
+  // outside benchmark mode.
+  handlers.set('bench_process_metrics', () => {
+    if (process.env.KDASH_BENCH !== '1') throw new Error('bench_process_metrics: not in benchmark mode');
+    const mem = process.memoryUsage();
+    return {
+      uptime_ms: Math.round(process.uptime() * 1000),
+      main_heap_used_mb: round1(mem.heapUsed / 1048576),
+      main_rss_mb: round1(mem.rss / 1048576),
+      processes: app.getAppMetrics().map((m) => ({
+        type: m.type,
+        pid: m.pid,
+        cpu_percent: round1(m.cpu.percentCPUUsage),
+        cpu_ms: procCpuMs(m.pid),
+        working_set_mb: round1(m.memory.workingSetSize / 1024),
+        private_mb: round1((m.memory.privateBytes ?? 0) / 1024),
+      })),
+    };
   });
 
   // --- write_bench_results ---

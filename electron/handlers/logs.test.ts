@@ -123,6 +123,53 @@ describe('stream_pod_logs', () => {
     expect(lines()).toEqual(['half-and-half']);
   });
 
+  test('many lines in one chunk come out in order, CR stripped', async () => {
+    const body = stagedBody();
+    await handlers.get('stream_pod_logs')!({ name: 'web-0', namespace: 'default' }, ctx);
+
+    const chunk = Array.from({ length: 50 }, (_, i) => `line-${i}${i % 2 ? '\r' : ''}\n`).join('');
+    body.push(chunk + 'tail');
+    await settle();
+
+    expect(lines()).toEqual(Array.from({ length: 50 }, (_, i) => `line-${i}`));
+    body.push('-end\n');
+    await settle();
+    expect(lines().at(-1)).toBe('tail-end');
+  });
+
+  test('a newline-free line past the cap is truncated and the rest dropped', async () => {
+    const body = stagedBody();
+    await handlers.get('stream_pod_logs')!({ name: 'web-0', namespace: 'default' }, ctx);
+
+    // 600 KiB without a newline, in 100 KiB chunks, then a normal line.
+    for (let i = 0; i < 6; i++) body.push('x'.repeat(100 * 1024));
+    body.push('still-the-same-line\nnext\n');
+    await settle();
+
+    const out = lines();
+    expect(out).toHaveLength(2);
+    expect(out[0].length).toBe(512 * 1024 + ' …[line truncated]'.length);
+    expect(out[0].endsWith(' …[line truncated]')).toBe(true);
+    expect(out[1]).toBe('next');
+  });
+
+  test('an oversized line already newline-terminated within one chunk is still capped', async () => {
+    const body = stagedBody();
+    await handlers.get('stream_pod_logs')!({ name: 'web-0', namespace: 'default' }, ctx);
+
+    // The whole 600 KiB line plus its terminator arrives in a single chunk —
+    // the cap must not rely on the line still being assembled across reads.
+    body.push('before\n' + 'y'.repeat(600 * 1024) + '\nafter\n');
+    await settle();
+
+    const out = lines();
+    expect(out).toEqual([
+      'before',
+      'y'.repeat(512 * 1024) + ' …[line truncated]',
+      'after',
+    ]);
+  });
+
   // A clean end already worked before; the marker and status must both fire.
   test('a graceful end emits the [stream ended] marker and an ended status', async () => {
     const body = stagedBody();

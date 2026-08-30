@@ -16,6 +16,7 @@ import { podUsage, podUsageFrom, type ContainerUsage, type PodUsageInfo } from '
 import { promQuery } from '../k8s/prometheus.js';
 import { getPrometheusUrl } from '../k8s/runtime-config.js';
 import { optStr, type HandlerMap } from '../dispatch.js';
+import { createTtlCache } from '../util/ttl-cache.js';
 
 export { podUsageFrom, type ContainerUsage, type PodUsageInfo };
 
@@ -59,18 +60,12 @@ export interface PrometheusResult {
  * the request without visible staleness. Cleared on context switch.
  */
 const POD_METRICS_COALESCE_MS = 5_000;
-const podMetricsCache = new Map<string, { at: number; promise: Promise<PodMetricsResult> }>();
+const podMetricsCache = createTtlCache<PodMetricsResult>(POD_METRICS_COALESCE_MS);
 onConfigChange(() => podMetricsCache.clear());
 
 async function getPodMetrics(args: Record<string, unknown>): Promise<PodMetricsResult> {
   const namespace = optStr(args, 'namespace');
-  const key = namespace ?? '';
-  const now = Date.now();
-  const hit = podMetricsCache.get(key);
-  if (hit && now - hit.at < POD_METRICS_COALESCE_MS) return hit.promise;
-  const promise = fetchPodMetrics(namespace);
-  podMetricsCache.set(key, { at: now, promise });
-  return promise;
+  return podMetricsCache.get(namespace ?? '', () => fetchPodMetrics(namespace));
 }
 
 async function fetchPodMetrics(namespace: string | undefined): Promise<PodMetricsResult> {

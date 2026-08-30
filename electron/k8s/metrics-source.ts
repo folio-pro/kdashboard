@@ -4,9 +4,9 @@
 // per-node usage shapes. cost, metrics, overview and rightsizing all used to
 // construct their own client and parse `usage.cpu` themselves.
 
-import { Metrics, type PodMetric } from '@kubernetes/client-node';
+import type { NodeMetric, PodMetric } from '@kubernetes/client-node';
 
-import { kc } from './client.js';
+import { apiGet } from './api.js';
 import { parseCpu, parseMemory } from './quantity.js';
 
 // ---------------------------------------------------------------------------
@@ -82,8 +82,21 @@ export function resetMetricsAvailability(): void {
 // Reads
 // ---------------------------------------------------------------------------
 
-export function getMetricsApi(): Metrics {
-  return new Metrics(kc());
+// Raw reads rather than client-node's `Metrics` class: that one builds its
+// own https.Agent per request (fresh TLS handshake, CA/cert file reads), which
+// the pods table paid once per poll. apiGet rides the shared auth cache and
+// keep-alive dispatcher like every other request.
+const METRICS_BASE = '/apis/metrics.k8s.io/v1beta1';
+
+function listPodMetrics(namespace?: string): Promise<{ items: PodMetric[] }> {
+  const path = namespace
+    ? `${METRICS_BASE}/namespaces/${encodeURIComponent(namespace)}/pods`
+    : `${METRICS_BASE}/pods`;
+  return apiGet<{ items: PodMetric[] }>(path);
+}
+
+function listNodeMetrics(): Promise<{ items: NodeMetric[] }> {
+  return apiGet<{ items: NodeMetric[] }>(`${METRICS_BASE}/nodes`);
 }
 
 /** Sum the per-container usage into the pod totals the table renders. */
@@ -112,7 +125,7 @@ export async function podUsage(namespace?: string): Promise<PodUsageInfo[]> {
     throw new Error('metrics-server pods endpoint marked unavailable; backing off');
   }
   try {
-    const list = await getMetricsApi().getPodMetrics(namespace);
+    const list = await listPodMetrics(namespace);
     markMetricsAvailable('pods');
     return list.items.map(podUsageFrom);
   } catch (err) {
@@ -137,7 +150,7 @@ export async function nodeUsage(): Promise<Map<string, NodeUsage>> {
     throw new Error('metrics-server nodes endpoint marked unavailable; backing off');
   }
   try {
-    const list = await getMetricsApi().getNodeMetrics();
+    const list = await listNodeMetrics();
     markMetricsAvailable('nodes');
     const map = new Map<string, NodeUsage>();
     for (const m of list.items) map.set(m.metadata.name, { cpu: parseCpu(m.usage.cpu), memory: parseMemory(m.usage.memory) });

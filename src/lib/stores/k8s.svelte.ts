@@ -103,6 +103,13 @@ class K8sStore extends K8sStoreLogic {
   // `reinserted` records that transition and the flush honours it. Every other
   // case keeps the uid's existing position, matching a replay exactly.
   private _pendingWatchEvents = new Map<string, PendingWatchEvent>();
+  // uid → Resource index of `resources.items`, kept between watch flushes so a
+  // batch of M events costs O(M), not O(N+M). `_byUidItems` records which
+  // array it describes: any other writer replacing the list (refresh, tab
+  // switch) makes it stale and it is rebuilt on the next flush. Dropped — not
+  // kept stale — on replacement so it never pins a list the store let go of.
+  private _byUid: Map<string, Resource> | null = null;
+  private _byUidItems: Resource[] | null = null;
   /** Cancels the scheduled flush; null when no flush is pending. */
   private _cancelWatchFlush: (() => void) | null = null;
   // Serializes start/stop so two fire-and-forget callers can't race on the
@@ -474,7 +481,13 @@ class K8sStore extends K8sStoreLogic {
     this._watchOp = this._watchOp.then(async () => {
       await this._stopWatchInner();
       // Start age ticker every 30s to refresh displayed ages (1s is wasteful – age labels barely change)
-      this._ageInterval = setInterval(() => { this.ageTick++; }, 30_000);
+      // Skipped while the window is hidden: nothing is painted, and each tick
+      // re-renders every visible row's age cells. The first tick after the
+      // window comes back refreshes them, so nothing is lost.
+      this._ageInterval = setInterval(() => {
+        if (typeof document !== "undefined" && document.hidden) return;
+        this.ageTick++;
+      }, 30_000);
       try {
         // Listen for watch events from the backend
         this._watchUnlisten = await listen<import("./k8s.logic.js").WatchEvent | import("./k8s.logic.js").WatchEvent[]>("resource-watch-event", (event) => {
@@ -568,6 +581,14 @@ class K8sStore extends K8sStoreLogic {
   }
 
   /** Drop every buffered delta and cancel any scheduled flush. */
+  override _replaceResources(list: ResourceList, at: number): void {
+    if (this._byUidItems !== list.items) {
+      this._byUid = null;
+      this._byUidItems = null;
+    }
+    super._replaceResources(list, at);
+  }
+
   private _discardPendingWatchEvents(): void {
     this._pendingWatchEvents.clear();
     this._cancelWatchFlush?.();
@@ -585,17 +606,28 @@ class K8sStore extends K8sStoreLogic {
     // Guard: discard stale events if context/namespace changed during the frame
     const scopeGen = this._scopeGeneration;
 
-    // Build an ordered uid→Resource map once (O(N)) so each event is an O(1)
-    // upsert/delete instead of an O(N) findIndex/splice — turns the worst-case
-    // O(N·M) flush (M events over N items) into O(N+M). Map iteration order
-    // matches the current array and set() keeps an existing key's position, so
-    // an update lands in place; only a `reinserted` uid moves (see below).
-    // A fresh array is built at the end (required for $state.raw correctness).
-    const byUid = new Map<string, Resource>();
-    for (const r of this.resources.items) {
-      const uid = r.metadata?.uid;
-      if (uid) byUid.set(uid, r);
+    // Ordered uid→Resource map so each event is an O(1) upsert/delete instead
+    // of an O(N) findIndex/splice. Map iteration order matches the current
+    // array and set() keeps an existing key's position, so an update lands in
+    // place; only a `reinserted` uid moves (see below). The map survives
+    // between flushes (see _byUid): building it is the only O(N) step, and a
+    // rollout on a 5k-pod list used to pay it once per frame for batches of
+    // one event. A fresh array is still built at the end (required for
+    // $state.raw correctness).
+    let byUid: Map<string, Resource>;
+    if (this._byUid && this._byUidItems === this.resources.items) {
+      byUid = this._byUid;
+    } else {
+      byUid = new Map<string, Resource>();
+      for (const r of this.resources.items) {
+        const uid = r.metadata?.uid;
+        if (uid) byUid.set(uid, r);
+      }
     }
+    // Checked out for the duration of the batch: an early return below (scope
+    // changed mid-flush) leaves a half-applied map, which must not be reused.
+    this._byUid = null;
+    this._byUidItems = null;
 
     let selectedResourceUpdate: Resource | null | undefined;
     let changed = false;
@@ -648,7 +680,11 @@ class K8sStore extends K8sStoreLogic {
       // Trigger Svelte 5 reactivity ONCE for the entire batch
       this._replaceResources({ items, resource_type: this.resources.resource_type }, Date.now());
       this._setCount(this.selectedResourceType, items.length);
+      this._byUidItems = items;
+    } else {
+      this._byUidItems = this.resources.items;
     }
+    this._byUid = byUid;
 
     if (selectedResourceUpdate !== undefined) {
       this.selectedResource = selectedResourceUpdate;
@@ -761,8 +797,15 @@ class K8sStore extends K8sStoreLogic {
     }
   }
 
-  async loadCrdCounts(crds: CrdInfo[]): Promise<void> {
+  private _crdCountsInFlight = new Set<string>();
+  async loadCrdCounts(requested: CrdInfo[]): Promise<void> {
+    // A CRD whose count is already being fetched is not requested again: the
+    // sidebar effect re-runs on every partial result and would otherwise
+    // re-issue the whole remaining set each time.
+    const crds = requested.filter((crd) => !this._crdCountsInFlight.has(this.crdKey(crd)));
     if (crds.length === 0) return;
+    const keys = crds.map((crd) => this.crdKey(crd));
+    for (const key of keys) this._crdCountsInFlight.add(key);
     try {
       const counts = await invoke<Record<string, number>>("get_crd_counts", {
         crds,
@@ -771,6 +814,8 @@ class K8sStore extends K8sStoreLogic {
       this.crdCounts = { ...this.crdCounts, ...counts };
     } catch {
       // Silently fail — counts are non-essential
+    } finally {
+      for (const key of keys) this._crdCountsInFlight.delete(key);
     }
   }
 }

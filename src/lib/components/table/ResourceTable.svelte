@@ -29,7 +29,7 @@
   import WorkloadStats from "$lib/components/common/WorkloadStats.svelte";
   import { computeWorkloadStats } from "$lib/utils/workload-stats";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
-  import { applyFilterState, countActiveFilters, sortResources, computeAllSelected as _computeAllSelected, computeSomeSelected as _computeSomeSelected, handleSelectAll as _handleSelectAll, MIN_COL_WIDTH as _MIN_COL_WIDTH, type FilterState } from "./resource-table";
+  import { applyFilterState, countViews, countActiveFilters, sortResources, computeAllSelected as _computeAllSelected, computeSomeSelected as _computeSomeSelected, handleSelectAll as _handleSelectAll, MIN_COL_WIDTH as _MIN_COL_WIDTH, type FilterState } from "./resource-table";
   import { columnsByType, defaultColumns, minimumTableWidth, GUTTER_WIDTH, getColumnWidth as _getColumnWidth, setColumnWidth as _setColumnWidth } from "./table-columns";
   import { tablePrefs } from "./table-prefs.svelte";
   import { ROW_HEIGHT, nextDensity, DENSITY_LABEL } from "./table-density";
@@ -129,12 +129,13 @@
   // columns ignore it. ageTick is deliberately NOT read here: formatAge works
   // from the clock, and reading the tick would re-filter the list every 30s.
   function facetCtxFor(r: Resource): CellContext {
+    const type = k8sStore.selectedResourceType;
     return {
       ageTick: 0,
-      nodeMetrics: costStore.getNodeMetrics(r.metadata.name),
-      nodeCost: costStore.getNodeCost(r.metadata.name),
-      podUsage: metricsStore.getPodUsage(r.metadata.namespace, r.metadata.name),
-      endpoints: endpointsStore.summaryFor(r.metadata.namespace, r.metadata.name),
+      nodeMetrics: type === "nodes" ? costStore.getNodeMetrics(r.metadata.name) : undefined,
+      nodeCost: type === "nodes" ? costStore.getNodeCost(r.metadata.name) : undefined,
+      podUsage: type === "pods" ? metricsStore.getPodUsage(r.metadata.namespace, r.metadata.name) : undefined,
+      endpoints: type === "services" ? endpointsStore.summaryFor(r.metadata.namespace, r.metadata.name) : undefined,
     };
   }
 
@@ -153,16 +154,11 @@
   // Row count per saved view, for the toolbar's view chips — through the same
   // pipeline, so a view's count and its rows can never disagree.
   let viewCounts = $derived.by((): Record<string, number> => {
-    const items = k8sStore.resources.items;
-    const out: Record<string, number> = {};
-    for (const view of viewsFor(k8sStore.selectedResourceType, settingsStore.savedViews)) {
-      out[view.id] = filter(items, {
-        statFilter: view.statFilter ?? null,
-        facets: view.facets ?? [],
-        text: view.text ?? "",
-      }).length;
-    }
-    return out;
+    const views = viewsFor(k8sStore.selectedResourceType, settingsStore.savedViews).map((view) => ({
+      id: view.id,
+      state: { statFilter: view.statFilter ?? null, facets: view.facets ?? [], text: view.text ?? "" },
+    }));
+    return countViews(k8sStore.resources.items, views, k8sStore.selectedResourceType, facetCtxFor);
   });
 
   function clearAllFilters() {

@@ -24,10 +24,11 @@ import {
 } from '@kubernetes/client-node';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
-import { getActiveContextName, makeApiClient } from '../k8s/client';
+import { getActiveContextName, makeApiClient, onConfigChange } from '../k8s/client';
 import type { RawObject, Resource } from '../k8s/resource-types';
-import { dynamicToResource } from '../k8s/resource-mapping';
+import { listDynamicToResource } from '../k8s/resource-mapping';
 import { apiGet } from '../k8s/api';
+import { createTtlCache } from '../util/ttl-cache';
 
 // ===========================================================================
 // Result types — snake_case wire casing, consumed by the renderer CRD stores.
@@ -269,37 +270,21 @@ async function discoverCrds(): Promise<CrdGroup[]> {
 
 const CRD_CACHE_TTL_MS = 30_000;
 
-interface CacheEntry<T> {
-  at: number;
-  promise: Promise<T>;
-}
-
 function contextKey(): string {
   return getActiveContextName() ?? '';
 }
 
-function cacheGet<T>(
-  cache: Map<string, CacheEntry<T>>,
-  key: string,
-  fetch: () => Promise<T>,
-): Promise<T> {
-  const now = Date.now();
-  const hit = cache.get(key);
-  if (hit && now - hit.at < CRD_CACHE_TTL_MS) return hit.promise;
-  const promise = fetch();
-  cache.set(key, { at: now, promise });
-  // Never cache failures — the next call retries.
-  promise.catch(() => {
-    if (cache.get(key)?.promise === promise) cache.delete(key);
-  });
-  return promise;
-}
-
-const discoveryCache = new Map<string, CacheEntry<CrdGroup[]>>();
-const columnsCache = new Map<string, CacheEntry<CrdColumn[]>>();
+const discoveryCache = createTtlCache<CrdGroup[]>(CRD_CACHE_TTL_MS);
+const columnsCache = createTtlCache<CrdColumn[]>(CRD_CACHE_TTL_MS);
+// Keys embed the context, so a switch cannot serve the wrong cluster — but
+// without this the previous cluster's discovery stayed resident for the TTL.
+onConfigChange(() => {
+  discoveryCache.clear();
+  columnsCache.clear();
+});
 
 function discoverCrdsCached(): Promise<CrdGroup[]> {
-  return cacheGet(discoveryCache, contextKey(), discoverCrds);
+  return discoveryCache.get(contextKey(), discoverCrds);
 }
 
 function getCrdColumnsCached(
@@ -308,7 +293,7 @@ function getCrdColumnsCached(
   plural: string,
 ): Promise<CrdColumn[]> {
   const key = `${contextKey()}|${group}|${version}|${plural}`;
-  return cacheGet(columnsCache, key, () => getCrdColumns(group, version, plural));
+  return columnsCache.get(key, () => getCrdColumns(group, version, plural));
 }
 
 // ===========================================================================
@@ -479,7 +464,7 @@ async function listCrdResources(
       }
 
       for (const obj of list.items ?? []) {
-        items.push(dynamicToResource(obj, apiVersion, kind));
+        items.push(listDynamicToResource(obj, apiVersion, kind));
       }
 
       const token = list.metadata?.continue;

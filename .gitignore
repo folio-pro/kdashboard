@@ -22,3 +22,6 @@ out/
 # OpenAPI schema cache written when handlers run outside Electron (integration
 # harness); inside the app this lives under userData instead.
 .cache/
+
+# Production build used by the frontend benchmark (scripts/bench/frontend.sh)
+dist-bench/

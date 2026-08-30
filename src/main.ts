@@ -48,8 +48,10 @@ import("$lib/utils/preload").then((m) => m.preloadHeavyViews()).catch(() => {});
 // DEV/E2E-only: expose the live stores on window so the reproducible frontend
 // benchmark harness (e2e/perf-bench.spec.ts) can inject synthetic datasets and
 // drive the real render path without a cluster. Tree-shaken out of prod builds
-// (import.meta.env.DEV is statically false there).
-if (import.meta.env.DEV) {
+// (import.meta.env.DEV is statically false there). VITE_KDASH_BENCH=1 opts a
+// production build in, so the benchmark can measure the optimized bundle
+// (scripts/bench/frontend.sh) instead of the dev-mode Svelte runtime.
+if (import.meta.env.DEV || import.meta.env.VITE_KDASH_BENCH === "1") {
   void Promise.all([
     import("$lib/stores/k8s.svelte"),
     import("$lib/stores/ui.svelte"),

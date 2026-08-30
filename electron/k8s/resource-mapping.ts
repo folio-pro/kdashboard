@@ -75,6 +75,18 @@ export function dynamicToResource(obj: RawObject, apiVersion: string, kind: stri
   return res;
 }
 
+/**
+ * dynamicToResource for LIST paths (CRD tables, the watch fallback for kinds
+ * outside the registry): same verbatim spec/status/data, but with
+ * listMetaFrom so the last-applied annotation — a full copy of the spec on
+ * every kubectl-applied object — is not shipped and kept resident per row.
+ */
+export function listDynamicToResource(obj: RawObject, apiVersion: string, kind: string): Resource {
+  const res = dynamicToResource(obj, apiVersion, kind);
+  res.metadata = listMetaFrom(obj.metadata);
+  return res;
+}
+
 // ---------------------------------------------------------------------------
 // Per-resource_type LIST projections — the lean shapes list_resources ships to
 // the renderer. The watch path MUST use the same projection: a watch event
