@@ -29,16 +29,26 @@ interface VulnerabilityCounts {
   unknown: number;
 }
 
-interface ImageScanResult {
+/** `failed` carries empty counts: zero findings because nothing was looked
+ *  at, which the UI must not present as "no vulnerabilities". */
+export type ImageScanStatus = 'scanned' | 'failed';
+
+export interface ImageScanResult {
   image: string;
   vulns: VulnerabilityCounts;
   scanned_at: string;
+  status: ImageScanStatus;
+  /** Scanner stderr for a failed scan, trimmed to one line. */
+  error?: string;
 }
 
-interface PodSecurityInfo {
+export interface PodSecurityInfo {
   name: string;
   namespace: string;
+  /** Scan results, successful or failed, for the pod's images. */
   images: ImageScanResult[];
+  /** Images with no result at all — no scanner installed, or not scanned yet. */
+  unscanned_images: string[];
   total_vulns: VulnerabilityCounts;
   compliant: boolean;
 }
@@ -365,10 +375,17 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
         let result: ImageScanResult;
         try {
           const vulns = await scanImage(scanner, img);
-          result = { image: img, vulns, scanned_at: now };
-        } catch {
-          // Failed scan -> empty result.
-          result = { image: img, vulns: emptyCounts(), scanned_at: now };
+          result = { image: img, vulns, scanned_at: now, status: 'scanned' };
+        } catch (err) {
+          // A failed scan is recorded as such, not as a clean image.
+          const message = err instanceof Error ? err.message : String(err);
+          result = {
+            image: img,
+            vulns: emptyCounts(),
+            scanned_at: now,
+            status: 'failed',
+            error: message.split('\n')[0].slice(0, 300),
+          };
         }
         imageResults.set(img, result);
         putCachedScan(result);
@@ -381,7 +398,23 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
     await Promise.all(workers);
   }
 
-  // Per-pod posture.
+  return {
+    ...summarizePods(podImages, imageResults),
+    scanner,
+    fetched_at: now,
+  };
+}
+
+/**
+ * Fold per-image scan results into per-pod posture. Pure, so the "not
+ * scanned" bookkeeping is testable without a scanner: an image with no result
+ * lands in `unscanned_images`, a failed one keeps its `failed` status, and
+ * only successful scans count toward `total_images_scanned`.
+ */
+export function summarizePods(
+  podImages: ReadonlyArray<readonly [string, string, readonly string[]]>,
+  imageResults: ReadonlyMap<string, ImageScanResult>,
+): Omit<SecurityOverview, 'scanner' | 'fetched_at'> {
   const pods: PodSecurityInfo[] = [];
   const overallVulns = emptyCounts();
   let compliantCount = 0;
@@ -390,11 +423,14 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
   for (const [podName, podNs, images] of podImages) {
     const podVulns = emptyCounts();
     const podImagesResults: ImageScanResult[] = [];
+    const unscanned: string[] = [];
     for (const img of images) {
       const result = imageResults.get(img);
       if (result) {
         mergeCounts(podVulns, result.vulns);
         podImagesResults.push(result);
+      } else {
+        unscanned.push(img);
       }
     }
 
@@ -408,6 +444,7 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
       name: podName,
       namespace: podNs,
       images: podImagesResults,
+      unscanned_images: unscanned,
       total_vulns: podVulns,
       compliant,
     });
@@ -423,14 +460,17 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
     return b.total_vulns.high - a.total_vulns.high;
   });
 
+  let scanned = 0;
+  for (const result of imageResults.values()) {
+    if (result.status === 'scanned') scanned += 1;
+  }
+
   return {
     pods,
     total_vulns: overallVulns,
-    total_images_scanned: imageResults.size,
+    total_images_scanned: scanned,
     compliant_pods: compliantCount,
     non_compliant_pods: nonCompliantCount,
-    scanner,
-    fetched_at: now,
   };
 }
 
@@ -440,7 +480,7 @@ async function scanSingleImage(image: string): Promise<ImageScanResult> {
     throw new Error('No vulnerability scanner found. Install trivy or grype.');
   }
   const vulns = await scanImage(scanner, image);
-  return { image, vulns, scanned_at: new Date().toISOString() };
+  return { image, vulns, scanned_at: new Date().toISOString(), status: 'scanned' };
 }
 
 // ===========================================================================
