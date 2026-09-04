@@ -44,7 +44,7 @@ describe('revisionTemplateYaml', () => {
 // ---------------------------------------------------------------------------
 
 import type { V1CronJob, V1Job } from '@kubernetes/client-node';
-import { buildManualJob, buildRerunJob, jobNameWithSuffix } from './workload-ops';
+import { buildManualJob, buildRerunJob, jobGenerateName, jobNameWithSuffix } from './workload-ops';
 
 const NOW = new Date('2026-09-04T10:00:00Z');
 const TS = Math.floor(NOW.getTime() / 1000);
@@ -83,12 +83,22 @@ describe('jobNameWithSuffix', () => {
   });
 });
 
+describe('jobGenerateName', () => {
+  test('ends with a dash and leaves room for the apiserver\'s 5-character tail under 63', () => {
+    expect(jobGenerateName('nightly-report', 'manual-1756980000')).toBe('nightly-report-manual-1756980000-');
+    const long = jobGenerateName('a'.repeat(80), 'rerun-1756980000');
+    expect(long.endsWith('-rerun-1756980000-')).toBe(true);
+    expect(long.length + 5).toBe(63);
+  });
+});
+
 describe('buildManualJob', () => {
   test('creates a Job from the jobTemplate, named, annotated and owned like kubectl create job --from', () => {
     const job = buildManualJob(cronJob(), NOW);
     expect(job.apiVersion).toBe('batch/v1');
     expect(job.kind).toBe('Job');
-    expect(job.metadata?.name).toBe(`nightly-report-manual-${TS}`);
+    expect(job.metadata?.name).toBeUndefined();
+    expect(job.metadata?.generateName).toBe(`nightly-report-manual-${TS}-`);
     expect(job.metadata?.namespace).toBe('batch');
     expect(job.metadata?.labels).toEqual({ app: 'report' });
     expect(job.metadata?.annotations).toEqual({
@@ -175,9 +185,10 @@ describe('buildRerunJob', () => {
     expect(job.spec?.template.metadata?.labels).toEqual({ app: 'import' });
   });
 
-  test('names the new Job <job>-rerun-<ts>, keeps user annotations and drops status / server metadata', () => {
+  test('names the new Job <job>-rerun-<ts>-<random> via generateName, keeps user annotations and drops status / server metadata', () => {
     const job = buildRerunJob(failedJob(), NOW);
-    expect(job.metadata?.name).toBe(`import-abc-rerun-${TS}`);
+    expect(job.metadata?.name).toBeUndefined();
+    expect(job.metadata?.generateName).toBe(`import-abc-rerun-${TS}-`);
     expect(job.metadata?.namespace).toBe('batch');
     expect(job.metadata?.uid).toBeUndefined();
     expect(job.metadata?.resourceVersion).toBeUndefined();
@@ -193,6 +204,20 @@ describe('buildRerunJob', () => {
     expect(job.metadata?.ownerReferences).toEqual([
       { apiVersion: 'batch/v1', kind: 'CronJob', name: 'import', uid: 'cj-1', controller: false, blockOwnerDeletion: false },
     ]);
+  });
+
+  test('drops owners that are not CronJobs so the garbage collector cannot take the rerun with them', () => {
+    const src = failedJob();
+    src.metadata!.ownerReferences = [
+      { apiVersion: 'argoproj.io/v1alpha1', kind: 'Workflow', name: 'nightly', uid: 'wf-1', controller: true },
+      { apiVersion: 'batch/v1', kind: 'CronJob', name: 'import', uid: 'cj-1', controller: false },
+    ];
+    expect(buildRerunJob(src, NOW).metadata?.ownerReferences).toEqual([
+      { apiVersion: 'batch/v1', kind: 'CronJob', name: 'import', uid: 'cj-1', controller: false, blockOwnerDeletion: false },
+    ]);
+
+    src.metadata!.ownerReferences = [{ apiVersion: 'argoproj.io/v1alpha1', kind: 'Workflow', name: 'nightly', uid: 'wf-1', controller: true }];
+    expect(buildRerunJob(src, NOW).metadata?.ownerReferences).toBeUndefined();
   });
 
   test('a template whose only labels were controller-owned ends up without a labels map', () => {
