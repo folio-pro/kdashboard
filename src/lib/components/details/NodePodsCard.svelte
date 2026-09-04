@@ -94,7 +94,18 @@
               <td class="px-3 py-2 text-right font-mono text-[12px] {ready.ready < ready.total ? 'text-[var(--status-pending)]' : 'text-[var(--text-primary)]'}">{ready.ready}/{ready.total}</td>
               <td class="px-3 py-2 text-right font-mono text-[12px] {restarts.count > 0 ? 'text-[var(--status-pending)]' : 'text-[var(--text-muted)]'}">{restarts.count}</td>
               <td class="px-3 py-2 text-right font-mono text-[12px] text-[var(--text-muted)]">{formatAge(pod.metadata.creation_timestamp)}</td>
-              <td class="px-3 py-2 text-right"><ArrowUpRight class="node-pod-arrow inline h-3.5 w-3.5 text-[var(--text-muted)] transition-transform" /></td>
+              <td class="px-3 py-2 text-right">
+                <!-- The row's click is mouse-only; this button is the same
+                     action for the keyboard (Tab, then Enter or Space). -->
+                <button
+                  type="button"
+                  class="inline-flex h-5 w-5 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]"
+                  aria-label="Open pod {pod.metadata.name}"
+                  onclick={(e) => { e.stopPropagation(); openResourceDetail(pod, "pods"); }}
+                >
+                  <ArrowUpRight class="node-pod-arrow h-3.5 w-3.5 transition-transform" />
+                </button>
+              </td>
             </tr>
           {/each}
         </tbody>

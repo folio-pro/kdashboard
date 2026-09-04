@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Badge } from "$lib/components/ui";
   import { ChevronRight, Network, Lock } from "lucide-svelte";
-  import { onMount } from "svelte";
   import type { Resource, ResourceList } from "$lib/types";
   import { invoke } from "$lib/ipc/core";
   import MetadataSection from "./MetadataSection.svelte";
@@ -62,12 +61,17 @@
 
   // The Services in the Ingress's namespace, so a backend pointing at a name
   // that does not exist is flagged instead of printed as if it were fine.
-  // null until listed: nothing is marked on a guess.
+  // null until listed: nothing is marked on a guess. Re-listed whenever the
+  // namespace changes: the aside keeps this component mounted while the user
+  // moves between rows, so a one-time list would judge an Ingress in one
+  // namespace by the Services of another.
   let serviceNames = $state<Set<string> | null>(null);
 
-  onMount(() => {
+  $effect(() => {
+    const namespace = resource.metadata.namespace;
     let cancelled = false;
-    invoke<ResourceList>("list_resources", { resourceType: "services", namespace: resource.metadata.namespace })
+    serviceNames = null;
+    invoke<ResourceList>("list_resources", { resourceType: "services", namespace })
       .then((result) => {
         if (!cancelled) serviceNames = new Set(result.items.map((s) => s.metadata.name));
       })

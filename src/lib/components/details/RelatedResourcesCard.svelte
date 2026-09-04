@@ -7,7 +7,6 @@
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { openRelatedResourceTab } from "$lib/actions/navigation";
   import { invoke } from "$lib/ipc/core";
-  import { onMount } from "svelte";
 
   interface Props {
     resource: Resource;
@@ -27,15 +26,18 @@
   const SERVICE_REFERENCING_TYPES = new Set(["ingresses"]);
 
   // One list of the namespace's Services serves both: selector matches for a
-  // workload, existence checks for an Ingress backend.
-  onMount(() => {
-    if (!SERVICE_MATCHABLE_TYPES.has(resourceType) && !SERVICE_REFERENCING_TYPES.has(resourceType)) return;
+  // workload, existence checks for an Ingress backend. Re-listed when the type
+  // or namespace changes — the aside keeps this card mounted across row
+  // clicks, and a stale list marked valid backends as missing.
+  $effect(() => {
+    const type = resourceType;
+    // Match services in the resource's own namespace, not the selected one.
+    const namespace = resource.metadata.namespace ?? k8sStore.currentNamespace;
+    allServices = [];
+    servicesLoaded = false;
+    if (!SERVICE_MATCHABLE_TYPES.has(type) && !SERVICE_REFERENCING_TYPES.has(type)) return;
     let cancelled = false;
-    invoke<ResourceList>("list_resources", {
-      // Match services in the resource's own namespace, not the selected one.
-      resourceType: "services",
-      namespace: resource.metadata.namespace ?? k8sStore.currentNamespace,
-    }).then((result) => {
+    invoke<ResourceList>("list_resources", { resourceType: "services", namespace }).then((result) => {
       if (cancelled) return;
       allServices = result.items;
       servicesLoaded = true;
