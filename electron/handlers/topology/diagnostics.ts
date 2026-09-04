@@ -385,7 +385,9 @@ export function diagnoseJob(obj: JsonObject, pods: readonly V1Pod[]): Verdict {
   const failedCond = conds.find((c) => c && asString(c['type']) === 'Failed' && asString(c['status']) === 'True');
   const complete = conds.some((c) => c && asString(c['type']) === 'Complete' && asString(c['status']) === 'True');
   const failed = asNumber(status['failed']) ?? 0;
-  if (!failedCond && failed === 0) return NO_VERDICT;
+  // A Job that completed after retries still carries status.failed > 0: it
+  // succeeded, so there is nothing to diagnose.
+  if (complete || (!failedCond && failed === 0)) return NO_VERDICT;
 
   const causes: PodCause[] = [];
   for (const p of pods) {
@@ -619,10 +621,32 @@ const OWNS_PODS = new Set(['deployment', 'statefulset', 'daemonset', 'replicaset
 export function labelSelectorOf(obj: JsonObject): string | null {
   const spec = asObject(obj['spec']);
   const selector = spec ? asObject(spec['selector']) : undefined;
-  const matchLabels = selector ? asObject(selector['matchLabels']) : undefined;
-  if (!matchLabels) return null;
-  const pairs = Object.entries(matchLabels).map(([k, v]) => `${k}=${String(v)}`);
-  return pairs.length > 0 ? pairs.join(',') : null;
+  if (!selector) return null;
+  const matchLabels = asObject(selector['matchLabels']) ?? {};
+  const terms = Object.entries(matchLabels).map(([k, v]) => `${k}=${String(v)}`);
+  // A selector may be written with matchExpressions only (or both); without
+  // them the owned pods were never listed and the diagnosis fell back to
+  // "unknown". Serialized in the label-selector query syntax the API accepts.
+  for (const expr of (asArray(selector['matchExpressions']) ?? []).map(asObject)) {
+    const key = expr ? asString(expr['key']) : undefined;
+    if (!key) continue;
+    const values = (asArray(expr?.['values']) ?? []).map((v) => String(v));
+    switch (asString(expr?.['operator'])) {
+      case 'In':
+        if (values.length > 0) terms.push(`${key} in (${values.join(',')})`);
+        break;
+      case 'NotIn':
+        if (values.length > 0) terms.push(`${key} notin (${values.join(',')})`);
+        break;
+      case 'Exists':
+        terms.push(key);
+        break;
+      case 'DoesNotExist':
+        terms.push(`!${key}`);
+        break;
+    }
+  }
+  return terms.length > 0 ? terms.join(',') : null;
 }
 
 /** The pods a workload's selector matches; empty when it has no selector or the list fails (best-effort). */

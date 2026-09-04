@@ -76,6 +76,12 @@ describe('diagnoseJob', () => {
     expect(v.issues[0].suggestion).toContain('failed pods are gone');
     expect(diagnoseJob({ status: { succeeded: 1, conditions: [{ type: 'Complete', status: 'True' }] } }, [])).toEqual({ issues: [], cause: 'unknown', pod: null });
   });
+
+  test('a Job that completed after retries is not diagnosed as failed', () => {
+    const retried = { spec: { backoffLimit: 3 }, status: { succeeded: 1, failed: 2, conditions: [{ type: 'Complete', status: 'True' }] } };
+    const dead = pod('retry-job-old', { phase: 'Failed', containerStatuses: [{ name: 'main', ready: false, restartCount: 0, state: { terminated: { exitCode: 1, reason: 'Error' } } }] }, 'main');
+    expect(diagnoseJob(retried, [dead])).toEqual({ issues: [], cause: 'unknown', pod: null });
+  });
 });
 
 describe('diagnosePvc / diagnoseService', () => {
@@ -110,6 +116,26 @@ describe('diagnosePvc / diagnoseService', () => {
     expect(labelSelectorOf({ spec: { selector: { matchLabels: { app: 'web', tier: 'api' } } } })).toBe('app=web,tier=api');
     expect(labelSelectorOf({ spec: { selector: { matchLabels: {} } } })).toBeNull();
     expect(labelSelectorOf({ spec: {} })).toBeNull();
+  });
+
+  test('labelSelectorOf serializes matchExpressions, alone or alongside matchLabels', () => {
+    expect(
+      labelSelectorOf({
+        spec: {
+          selector: {
+            matchExpressions: [
+              { key: 'app', operator: 'In', values: ['web', 'api'] },
+              { key: 'tier', operator: 'NotIn', values: ['canary'] },
+              { key: 'owned', operator: 'Exists' },
+              { key: 'legacy', operator: 'DoesNotExist' },
+            ],
+          },
+        },
+      }),
+    ).toBe('app in (web,api),tier notin (canary),owned,!legacy');
+    expect(labelSelectorOf({ spec: { selector: { matchLabels: { app: 'web' }, matchExpressions: [{ key: 'env', operator: 'In', values: ['prod'] }] } } })).toBe('app=web,env in (prod)');
+    // Malformed or empty expressions contribute nothing rather than a broken query.
+    expect(labelSelectorOf({ spec: { selector: { matchExpressions: [{ key: 'x', operator: 'In', values: [] }, { operator: 'Exists' }] } } })).toBeNull();
   });
 });
 
