@@ -113,12 +113,24 @@ function batchApi(): BatchV1Api {
  * (label value limit), not the 253 of a DNS subdomain. Trim the base to make
  * room for the suffix, never leaving a trailing dash.
  */
-export function jobNameWithSuffix(base: string, suffix: string): string {
-  const MAX = 63;
-  const room = MAX - suffix.length - 1;
+export function jobNameWithSuffix(base: string, suffix: string, max: number = 63): string {
+  const room = max - suffix.length - 1;
   let head = base.length > room ? base.slice(0, room) : base;
   head = head.replace(/[-.]+$/, '');
   return `${head}-${suffix}`;
+}
+
+/** Characters the apiserver appends to `metadata.generateName`. */
+const GENERATE_NAME_TAIL = 5;
+
+/**
+ * `<base>-<suffix>-` for `metadata.generateName`: the apiserver adds a random
+ * 5-character tail, so two triggers in the same second cannot collide on the
+ * name (a fixed `<base>-<suffix>` was rejected with AlreadyExists). Trimmed so
+ * the final name still fits the 63-character label limit.
+ */
+export function jobGenerateName(base: string, suffix: string): string {
+  return `${jobNameWithSuffix(base, suffix, 63 - GENERATE_NAME_TAIL - 1)}-`;
 }
 
 /** Labels the Job controller stamps on a Job and its pods; never copy them. */
@@ -135,7 +147,7 @@ function stripControllerLabels(labels: Record<string, string> | undefined): Reco
 
 /**
  * Build the Job that `kubectl create job --from=cronjob/<name>` would create:
- * the CronJob's jobTemplate, named `<cronjob>-manual-<unix-ts>`, annotated as a
+ * the CronJob's jobTemplate, named `<cronjob>-manual-<unix-ts>-<random>`, annotated as a
  * manual instantiation and owned by the CronJob so history limits and
  * cascading deletes treat it like a scheduled run.
  */
@@ -155,7 +167,7 @@ export function buildManualJob(cronJob: V1CronJob, now: Date = new Date()): V1Jo
     apiVersion: 'batch/v1',
     kind: 'Job',
     metadata: {
-      name: jobNameWithSuffix(cjName, `manual-${ts}`),
+      generateName: jobGenerateName(cjName, `manual-${ts}`),
       namespace,
       labels: template.metadata?.labels ? { ...template.metadata.labels } : undefined,
       annotations: {
@@ -210,18 +222,23 @@ export function buildRerunJob(job: V1Job, now: Date = new Date()): V1Job {
   delete annotations['kubectl.kubernetes.io/last-applied-configuration'];
   delete annotations['batch.kubernetes.io/job-tracking'];
   annotations['kdashboard.io/rerun-of'] = name;
+  const cronJobOwners = (job.metadata?.ownerReferences ?? []).filter(
+    (ref) => ref.apiVersion === 'batch/v1' && ref.kind === 'CronJob',
+  );
   return {
     apiVersion: 'batch/v1',
     kind: 'Job',
     metadata: {
-      name: jobNameWithSuffix(name, `rerun-${ts}`),
+      generateName: jobGenerateName(name, `rerun-${ts}`),
       namespace,
       ...(labels ? { labels } : {}),
       annotations,
-      // A Job spawned by a CronJob keeps pointing at it so history limits apply.
-      ...(job.metadata?.ownerReferences && job.metadata.ownerReferences.length > 0
+      // A Job spawned by a CronJob keeps pointing at it so history limits
+      // apply. Any other owner (an operator's CR, a workflow step) is not
+      // copied: the garbage collector would delete the rerun with it.
+      ...(cronJobOwners.length > 0
         ? {
-            ownerReferences: job.metadata.ownerReferences.map((ref) => ({
+            ownerReferences: cronJobOwners.map((ref) => ({
               ...ref,
               controller: false,
               blockOwnerDeletion: false,
@@ -643,7 +660,7 @@ async function triggerCronJob(args: Record<string, unknown>): Promise<{ name: st
   const job = buildManualJob(cronJob);
   try {
     const created = await batchApi().createNamespacedJob({ namespace, body: job });
-    return { name: created.metadata?.name ?? job.metadata!.name!, namespace };
+    return { name: created.metadata?.name ?? job.metadata!.generateName!, namespace };
   } catch (err) {
     throw new Error(`Could not create Job from CronJob ${name}: ${k8sErrorMessage(err)}`);
   }
@@ -701,7 +718,7 @@ async function rerunJob(args: Record<string, unknown>): Promise<{ name: string; 
   const fresh = buildRerunJob(job);
   try {
     const created = await batchApi().createNamespacedJob({ namespace, body: fresh });
-    return { name: created.metadata?.name ?? fresh.metadata!.name!, namespace };
+    return { name: created.metadata?.name ?? fresh.metadata!.generateName!, namespace };
   } catch (err) {
     throw new Error(`Could not re-run Job ${name}: ${k8sErrorMessage(err)}`);
   }
