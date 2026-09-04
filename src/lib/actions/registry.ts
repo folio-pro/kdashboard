@@ -2,11 +2,13 @@ import {
   FileText, Terminal, Scale, RotateCcw, History, Trash2,
   ClipboardCopy, GitFork, Pencil, Copy, FileJson,
   ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets, GitCompare, Bell, BellOff, PencilLine,
+  Play, Pause, RefreshCw,
 } from "lucide-svelte";
 import type { ActionDef, BulkActionDef } from "./types";
 import type { Resource } from "$lib/types";
 import { k8sStore } from "$lib/stores/k8s.svelte";
 import { uiStore } from "$lib/stores/ui.svelte";
+import type { DetailSubtab } from "$lib/stores/ui.logic";
 import { toastStore } from "$lib/stores/toast.svelte";
 import { topologyStore } from "$lib/stores/topology.svelte";
 import { settingsStore } from "$lib/stores/settings.svelte";
@@ -34,6 +36,38 @@ export async function restartWorkload(resource: Resource): Promise<void> {
     "Restart initiated",
     `${resource.kind} "${resource.metadata.name}" is restarting`,
   );
+  await k8sStore.refreshResources();
+}
+
+/**
+ * Restart several workloads at once (the bulk action). One target reports
+ * like a single restart; several report a summary. Errors are toasted here —
+ * callers (the confirmation dialog) only await completion.
+ */
+export async function restartWorkloads(resources: Resource[]): Promise<void> {
+  if (resources.length === 1) {
+    try {
+      await restartWorkload(resources[0]);
+    } catch (err) {
+      toastStore.error("Restart failed", String(err));
+    }
+    return;
+  }
+  const results = await Promise.allSettled(
+    resources.map((r) =>
+      invoke("restart_workload", {
+        kind: r.kind,
+        name: r.metadata.name,
+        namespace: r.metadata.namespace ?? "",
+      }),
+    ),
+  );
+  const failCount = results.filter((r) => r.status === "rejected").length;
+  if (failCount === 0) {
+    toastStore.success("Restarted", `${resources.length} resources restarting`);
+  } else {
+    toastStore.error("Partial failure", `${failCount} of ${resources.length} restarts failed`);
+  }
   await k8sStore.refreshResources();
 }
 
@@ -70,6 +104,86 @@ export async function deleteResource(resource: Resource): Promise<void> {
     await k8sStore.refreshResources();
   } catch (err) {
     toastStore.error("Delete failed", String(err));
+  }
+}
+
+/** Create a Job from the CronJob's template right now (kubectl create job --from). */
+export async function triggerCronJob(resource: Resource): Promise<void> {
+  const created = await invoke<{ name: string; namespace: string }>("trigger_cronjob", {
+    name: resource.metadata.name,
+    namespace: resource.metadata.namespace ?? "",
+  });
+  toastStore.success("Job created", `Job "${created.name}" started from CronJob "${resource.metadata.name}"`);
+  await k8sStore.refreshResources();
+}
+
+export function isCronJobSuspended(resource: Resource): boolean {
+  return resource.spec?.suspend === true;
+}
+
+/** Pause (suspend=true) or resume (suspend=false) a CronJob's schedule. */
+export async function setCronJobSuspend(resource: Resource, suspend: boolean): Promise<void> {
+  await invoke("set_cronjob_suspend", {
+    name: resource.metadata.name,
+    namespace: resource.metadata.namespace ?? "",
+    suspend,
+  });
+  toastStore.success(
+    suspend ? "CronJob suspended" : "CronJob resumed",
+    suspend
+      ? `"${resource.metadata.name}" will not schedule new jobs until resumed`
+      : `"${resource.metadata.name}" is scheduling jobs again`,
+  );
+  await k8sStore.refreshResources();
+}
+
+/** Create a fresh Job with the same spec as this one (typically a failed run). */
+export async function rerunJob(resource: Resource): Promise<void> {
+  const created = await invoke<{ name: string; namespace: string }>("rerun_job", {
+    name: resource.metadata.name,
+    namespace: resource.metadata.namespace ?? "",
+  });
+  toastStore.success("Job re-run", `Job "${created.name}" created from "${resource.metadata.name}"`);
+  await k8sStore.refreshResources();
+}
+
+/**
+ * Open the resource's detail tab on a given sub-tab. When that detail is
+ * already the active tab, only the sub-tab changes (no duplicate tab).
+ */
+function openInDetail(resource: Resource, subtab: DetailSubtab): void {
+  const alreadyOpen =
+    uiStore.activeView === "details" &&
+    k8sStore.selectedResource?.metadata.uid === resource.metadata.uid;
+  if (!alreadyOpen) {
+    uiStore.showDetails(resource.metadata.name, resource.kind, resource.metadata.namespace ?? undefined, resource);
+    k8sStore.selectResource(resource);
+  }
+  uiStore.detailSubtab = subtab;
+}
+
+/**
+ * Start a privileged host shell pod on the node and open its terminal. Shared
+ * by the row action and the node detail header.
+ */
+export async function startNodeShell(resource: Resource): Promise<void> {
+  const node = resource.metadata.name;
+  const toastId = toastStore.info("Starting node shell", `Creating a host shell pod on "${node}"…`);
+  try {
+    const { name, namespace } = await invoke<{ name: string; namespace: string }>(
+      "start_node_shell",
+      { nodeName: node },
+    );
+    const pod = await invoke<Resource>("get_resource", {
+      kind: "pod",
+      name,
+      namespace,
+    });
+    openInDetail(pod, "shell");
+  } catch (err) {
+    toastStore.error("Node shell failed", String(err));
+  } finally {
+    toastStore.dismiss(toastId);
   }
 }
 
@@ -130,7 +244,9 @@ export const resourceActions: ActionDef[] = [
     group: "navigate",
     priority: 40,
     appliesTo: () => true,
-    execute: () => uiStore.showYamlEditor(),
+    // Through the DetailPanel (header, actions, tabs) — never the bare
+    // top-level YAML tab.
+    execute: (resource) => openInDetail(resource, "yaml"),
   },
   {
     id: "compare-namespaces",
@@ -173,13 +289,7 @@ export const resourceActions: ActionDef[] = [
     group: "operations",
     priority: 20,
     appliesTo: (rt) => RESTARTABLE_TYPES.includes(rt),
-    execute: async (resource) => {
-      try {
-        await restartWorkload(resource);
-      } catch (err) {
-        toastStore.error("Restart failed", String(err));
-      }
-    },
+    execute: (resource) => dialogStore.openRestart(resource),
   },
   {
     id: "rollback",
@@ -189,11 +299,69 @@ export const resourceActions: ActionDef[] = [
     group: "operations",
     priority: 30,
     appliesTo: (rt) => rt === "deployments",
+    execute: (resource) => dialogStore.openRollback(resource),
+  },
+  {
+    id: "trigger-cronjob",
+    label: "Trigger Now",
+    icon: Play,
+    tier: "yellow",
+    group: "operations",
+    priority: 31,
+    appliesTo: (rt) => rt === "cronjobs",
     execute: async (resource) => {
       try {
-        await rollbackDeployment(resource);
+        await triggerCronJob(resource);
       } catch (err) {
-        toastStore.error("Rollback failed", String(err));
+        toastStore.error("Trigger failed", String(err));
+      }
+    },
+  },
+  {
+    id: "suspend-cronjob",
+    label: "Suspend",
+    icon: Pause,
+    tier: "yellow",
+    group: "operations",
+    priority: 31,
+    appliesTo: (rt, resource) => rt === "cronjobs" && !(resource && isCronJobSuspended(resource)),
+    execute: async (resource) => {
+      try {
+        await setCronJobSuspend(resource, true);
+      } catch (err) {
+        toastStore.error("Suspend failed", String(err));
+      }
+    },
+  },
+  {
+    id: "resume-cronjob",
+    label: "Resume",
+    icon: Play,
+    tier: "yellow",
+    group: "operations",
+    priority: 31,
+    appliesTo: (rt, resource) => rt === "cronjobs" && !!resource && isCronJobSuspended(resource),
+    execute: async (resource) => {
+      try {
+        await setCronJobSuspend(resource, false);
+      } catch (err) {
+        toastStore.error("Resume failed", String(err));
+      }
+    },
+  },
+  {
+    id: "rerun-job",
+    label: "Re-run",
+    icon: RefreshCw,
+    tier: "yellow",
+    group: "operations",
+    priority: 31,
+    appliesTo: (rt) => rt === "jobs",
+    execute: async (resource) => {
+      try {
+        await rerunJob(resource);
+      } catch (err) {
+        toastStore.error("Re-run failed", String(err));
       }
     },
   },
@@ -239,28 +407,7 @@ export const resourceActions: ActionDef[] = [
     group: "operations",
     priority: 33,
     appliesTo: (rt) => rt === "nodes",
-    execute: async (resource) => {
-      const node = resource.metadata.name;
-      const toastId = toastStore.info("Starting node shell", `Creating a host shell pod on "${node}"…`);
-      try {
-        const { name, namespace } = await invoke<{ name: string; namespace: string }>(
-          "start_node_shell",
-          { nodeName: node },
-        );
-        const pod = await invoke<Resource>("get_resource", {
-          kind: "pod",
-          name,
-          namespace,
-        });
-        uiStore.showDetails(name, "pods", namespace, pod);
-        k8sStore.selectResource(pod);
-        uiStore.detailSubtab = "shell";
-      } catch (err) {
-        toastStore.error("Node shell failed", String(err));
-      } finally {
-        toastStore.dismiss(toastId);
-      }
-    },
+    execute: (resource) => startNodeShell(resource),
   },
   {
     id: "drain-node",
@@ -440,24 +587,7 @@ export const bulkActions: BulkActionDef[] = [
     group: "operations",
     priority: 20,
     appliesTo: (rt) => RESTARTABLE_TYPES.includes(rt),
-    execute: async (resources) => {
-      const results = await Promise.allSettled(
-        resources.map((r) =>
-          invoke("restart_workload", {
-            kind: r.kind,
-            name: r.metadata.name,
-            namespace: r.metadata.namespace ?? "",
-          }),
-        ),
-      );
-      const failCount = results.filter((r) => r.status === "rejected").length;
-      if (failCount === 0) {
-        toastStore.success("Restarted", `${resources.length} resources restarting`);
-      } else {
-        toastStore.error("Partial failure", `${failCount} of ${resources.length} restarts failed`);
-      }
-      await k8sStore.refreshResources();
-    },
+    execute: (resources) => dialogStore.openRestart(resources),
   },
   {
     id: "bulk-copy-names",

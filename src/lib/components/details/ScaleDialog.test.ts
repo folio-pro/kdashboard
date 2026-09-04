@@ -320,3 +320,27 @@ describe("ScaleDialog — resource kinds", () => {
     expect(isScaleEnabled(false, 0, 0)).toBe(false);
   });
 });
+
+import { autoscalerWarning, findOwningAutoscaler } from "./scale-dialog";
+
+describe("findOwningAutoscaler / autoscalerWarning", () => {
+  const hpa = (name: string, ns: string, kind: string, target: string, min?: number, max?: number) => ({
+    metadata: { name, namespace: ns },
+    spec: { scaleTargetRef: { kind, name: target }, minReplicas: min, maxReplicas: max },
+  });
+
+  test("matches on namespace, kind and name only", () => {
+    const list = [hpa("other", "shop", "Deployment", "worker", 1, 3), hpa("web", "shop", "Deployment", "web-api", 2, 6), hpa("staging", "shop-staging", "Deployment", "web-api", 1, 1)];
+    expect(findOwningAutoscaler(list, { kind: "Deployment", name: "web-api", namespace: "shop" })).toEqual({ name: "web", min: 2, max: 6 });
+    expect(findOwningAutoscaler(list, { kind: "StatefulSet", name: "web-api", namespace: "shop" })).toBeNull();
+    expect(findOwningAutoscaler([], { kind: "Deployment", name: "web-api", namespace: "shop" })).toBeNull();
+  });
+
+  test("the warning names the HPA and says whether the value survives", () => {
+    const owner = { name: "web", min: 2, max: 6 };
+    expect(autoscalerWarning(null, 3)).toBe("");
+    expect(autoscalerWarning(owner, 3)).toContain("override");
+    expect(autoscalerWarning(owner, 9)).toContain("outside its range");
+    expect(autoscalerWarning(owner, 9)).toContain("(2–6)");
+  });
+});

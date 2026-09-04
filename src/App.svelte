@@ -21,6 +21,7 @@
   import CompareDialog from "$lib/components/details/CompareDialog.svelte";
   import QuickEditDialog from "$lib/components/details/QuickEditDialog.svelte";
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
+  import WorkloadConfirmDialogs from "$lib/components/details/WorkloadConfirmDialogs.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
@@ -332,6 +333,8 @@
     resource={dialogStore.compareResource}
   />
 {/if}
+
+<WorkloadConfirmDialogs />
 
 {#if dialogStore.deleteOpen && dialogStore.deleteResource}
   <ConfirmDialog

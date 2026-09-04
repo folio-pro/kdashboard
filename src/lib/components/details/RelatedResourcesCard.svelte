@@ -1,7 +1,9 @@
 <script lang="ts">
   import { ArrowUpRight, Layers, Server, FileText, Lock, HardDrive, Network, Shield, Box } from "lucide-svelte";
+  import { Badge } from "$lib/components/ui";
   import type { Resource, ResourceList } from "$lib/types";
   import { getRelatedResources, displayKind, type RelatedResource } from "$lib/utils/related-resources";
+  import { podSecretRefs } from "./pod-secret-refs";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { openRelatedResourceTab } from "$lib/actions/navigation";
   import { invoke } from "$lib/ipc/core";
@@ -15,33 +17,62 @@
   let { resource, resourceType }: Props = $props();
 
   let allServices = $state<Resource[]>([]);
+  /** The namespace's Services have been listed, so a Service this card names
+   *  but the list lacks is one that does not exist. */
+  let servicesLoaded = $state(false);
 
+  /** Workloads: reverse-match Services by selector. */
   const SERVICE_MATCHABLE_TYPES = new Set(["pods", "deployments", "replicasets", "statefulsets", "daemonsets"]);
+  /** Kinds that name Services by hand, where a typo is a dangling reference. */
+  const SERVICE_REFERENCING_TYPES = new Set(["ingresses"]);
 
-  // Load services for reverse selector matching (only for workload types)
+  // One list of the namespace's Services serves both: selector matches for a
+  // workload, existence checks for an Ingress backend.
   onMount(() => {
-    if (!SERVICE_MATCHABLE_TYPES.has(resourceType)) return;
+    if (!SERVICE_MATCHABLE_TYPES.has(resourceType) && !SERVICE_REFERENCING_TYPES.has(resourceType)) return;
     let cancelled = false;
     invoke<ResourceList>("list_resources", {
       // Match services in the resource's own namespace, not the selected one.
       resourceType: "services",
       namespace: resource.metadata.namespace ?? k8sStore.currentNamespace,
     }).then((result) => {
-      if (!cancelled) allServices = result.items;
+      if (cancelled) return;
+      allServices = result.items;
+      servicesLoaded = true;
     }).catch(() => {
       // non-critical, just won't show service matches
     });
     return () => { cancelled = true; };
   });
 
-  let related = $derived(getRelatedResources(resource, resourceType, allServices));
+  interface RelatedRow extends RelatedResource {
+    /** The referenced object was looked for and is not there. */
+    missing?: boolean;
+  }
+
+  let related = $derived.by((): RelatedRow[] => {
+    const rows: RelatedRow[] = getRelatedResources(resource, resourceType, allServices);
+    if (resourceType === "pods") {
+      const seen = new Set(rows.filter((r) => r.kind === "Secret").map((r) => r.name));
+      for (const name of podSecretRefs(resource)) {
+        if (!seen.has(name)) rows.push({ kind: "Secret", name, resourceType: "secrets" });
+      }
+    }
+    if (servicesLoaded && SERVICE_REFERENCING_TYPES.has(resourceType)) {
+      const known = new Set(allServices.map((s) => s.metadata.name));
+      for (const row of rows) {
+        if (row.kind === "Service" && !known.has(row.name)) row.missing = true;
+      }
+    }
+    return rows;
+  });
 
   // Group related resources by category for visual chunking (Miller's Law)
   interface CategoryGroup {
     label: string;
     icon: typeof Layers;
     color: string;
-    items: RelatedResource[];
+    items: RelatedRow[];
   }
 
   const CATEGORY_MAP: Record<string, { label: string; icon: typeof Layers; color: string }> = {
@@ -114,8 +145,20 @@
 
       <!-- Items in this category -->
       {#each group.items as rel}
-        {@const navigable = !!rel.resourceType}
-        {#if navigable}
+        {@const navigable = !!rel.resourceType && !rel.missing}
+        {#if rel.missing}
+          <!-- A dangling reference: shown where it would have been, flagged,
+               and not a link — there is nothing to open. -->
+          <div class="flex items-center gap-3 border-t border-[var(--border-hover)] px-5 py-2.5" data-testid="related-missing">
+            <span class="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-sm px-2 py-0.5 text-[10px] font-medium leading-tight border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-muted)]">
+              {displayKind(rel.kind)}
+            </span>
+            <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--status-pending)]" title="{displayKind(rel.kind)} {rel.name} does not exist in this namespace">
+              {rel.name}
+            </span>
+            <Badge tone="warning" size="xs">not found</Badge>
+          </div>
+        {:else if navigable}
           <button
             class="related-item flex w-full items-center gap-3 border-t border-[var(--border-hover)] px-5 py-2.5 text-left transition-colors hover:bg-[var(--bg-tertiary)]"
             onclick={() => navigate(rel)}
