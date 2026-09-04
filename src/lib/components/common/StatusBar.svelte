@@ -17,7 +17,15 @@
     error: "bg-[var(--status-failed)]",
   };
 
-  let statusColor = $derived(statusColors[k8sStore.connectionStatus] ?? "bg-[var(--text-muted)]");
+  // An outage mid-session outranks the boot-time "connected" (see Sidebar).
+  let statusColor = $derived(
+    k8sStore.reachable
+      ? (statusColors[k8sStore.connectionStatus] ?? "bg-[var(--text-muted)]")
+      : "bg-[var(--status-failed)]",
+  );
+  let statusTitle = $derived(
+    k8sStore.reachable ? `Connection ${k8sStore.connectionStatus}` : k8sStore.unreachableTooltip,
+  );
 
   // Hints come straight from the shortcut registry, so what the bar advertises
   // is by construction what the dispatcher implements.
@@ -38,8 +46,8 @@
   -->
   <div class="flex items-center gap-3">
     <!-- Connection Status -->
-    <div class="flex items-center gap-1.5">
-      <span class={cn("h-[7px] w-[7px] rounded-full", statusColor)}></span>
+    <div class="flex items-center gap-1.5" title={statusTitle}>
+      <span class={cn("h-[7px] w-[7px] rounded-full", statusColor)} role="img" aria-label={statusTitle}></span>
       <span class="font-medium text-[var(--text-secondary)]">{k8sStore.currentContext || "Disconnected"}</span>
     </div>
 

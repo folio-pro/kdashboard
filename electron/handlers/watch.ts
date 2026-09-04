@@ -15,6 +15,18 @@
 //     resource_type: string,
 //     resource: Resource }
 //
+// Lifecycle notices ride the same channel (k8s.logic.ts WatchNotice):
+//   { event_type: "watch_error", resource_type, message }  the stream ended
+//       with an error (not a routine server close) and is reconnecting with
+//       backoff — the renderer stops showing "Watching" and, when the message
+//       is a transport failure, marks the cluster unreachable;
+//   { event_type: "watch_open", resource_type }  a reconnect after such an
+//       error succeeded.
+//
+// resource_type may be a built-in kind OR the renderer's `crd:<group>/<Kind>`
+// pseudo-type, resolved through CRD discovery (handlers/crd.ts) so custom
+// resource tables update live like everything else.
+//
 // The embedded Resource is snake_case top-level: api_version,
 // metadata.{name,namespace,uid,resource_version,creation_timestamp,labels,
 // annotations,owner_references}, type. The renderer only reads
@@ -37,10 +49,12 @@ import { Watch } from '@kubernetes/client-node';
 
 import { getActiveContextName, kc, onConfigChange } from '../k8s/client';
 import { apiGet, META_ACCEPT } from '../k8s/api';
+import { describeInvokeError } from '../k8s/errors';
 import type { RawObject, Resource } from '../k8s/resource-types';
 import { listDynamicToResource, listProjectionFor } from '../k8s/resource-mapping';
 import { apiVersionOf, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerCtx, HandlerMap } from '../dispatch';
+import { parseCrdType, resolveCrdType } from './crd';
 
 const WATCH_CHANNEL = 'resource-watch-event';
 
@@ -65,12 +79,19 @@ interface WatchEvent {
   resource: Resource;
 }
 
+interface WatchNotice {
+  event_type: 'watch_error' | 'watch_open';
+  resource_type: string;
+  message?: string;
+}
+
 // ---------------------------------------------------------------------------
-// ApiResource resolution — reads the shared registry in k8s/kinds.ts, so a
-// watchable resource_type is exactly a listable one.
+// ApiResource resolution — built-in kinds read the shared registry in
+// k8s/kinds.ts (a watchable resource_type is exactly a listable one); a
+// `crd:` pseudo-type resolves through CRD discovery.
 // ---------------------------------------------------------------------------
 
-interface ApiResource {
+export interface ApiResource {
   group: string;
   version: string;
   apiVersion: string;
@@ -79,12 +100,44 @@ interface ApiResource {
   clusterScoped: boolean;
 }
 
-/** Resolve (group, version, kind, plural, scope) for a watch resource_type. */
-function apiResourceForType(resourceType: string): ApiResource | undefined {
+/**
+ * Resolve (group, version, kind, plural, scope) for a watch resource_type.
+ * `resolveCrd` is the discovery lookup; tests inject a stub.
+ */
+export async function resolveWatchTarget(
+  resourceType: string,
+  resolveCrd: typeof resolveCrdType = resolveCrdType,
+): Promise<ApiResource | undefined> {
+  const crdRef = parseCrdType(resourceType);
+  if (crdRef) {
+    const crd = await resolveCrd(crdRef.group, crdRef.kind);
+    if (!crd) return undefined;
+    return {
+      group: crd.group,
+      version: crd.version,
+      apiVersion: apiVersionOf(crd.group, crd.version),
+      kind: crd.kind,
+      plural: crd.plural,
+      clusterScoped: crd.scope === 'Cluster',
+    };
+  }
   const entry = resolveResourceType(resourceType);
   if (!entry) return undefined;
   const { group, version, kind, plural, clusterScoped } = entry;
   return { group, version, apiVersion: apiVersionOf(group, version), kind, plural, clusterScoped };
+}
+
+/**
+ * Why a watch stream ended, as a user-facing message — or null when it ended
+ * the way streams are meant to: cleanly (the apiserver's periodic close) or
+ * because we aborted it. Only a non-null reason is reported to the renderer.
+ */
+export function describeWatchEnd(err: unknown): string | null {
+  if (!err) return null;
+  const e = err as { name?: unknown; message?: unknown };
+  if (e.name === 'AbortError') return null;
+  if (typeof e.message === 'string' && /aborted/i.test(e.message)) return null;
+  return describeInvokeError(err);
 }
 
 /**
@@ -94,7 +147,7 @@ function apiResourceForType(resourceType: string): ApiResource | undefined {
  * kind is namespaced. Cluster-scoped kinds, and namespaced kinds with no
  * namespace, watch across all namespaces.
  */
-function watchPath(ar: ApiResource, namespace?: string): string {
+export function watchPath(ar: ApiResource, namespace?: string): string {
   const base = ar.group === '' ? `/api/${ar.version}` : `/apis/${ar.group}/${ar.version}`;
   if (!ar.clusterScoped && namespace !== undefined && namespace !== '') {
     return `${base}/namespaces/${encodeURIComponent(namespace)}/${ar.plural}`;
@@ -196,13 +249,16 @@ async function startResourceWatch(
   listResourceVersion: string | undefined,
   ctx: HandlerCtx,
 ): Promise<void> {
-  // Stop any existing watcher first (single active slot).
-  clearActive();
-
-  const ar = apiResourceForType(resourceType);
+  // Resolve BEFORE taking the slot: a CRD type awaits discovery, and clearing
+  // the slot first would let a second start that lands during the await be
+  // overwritten by this one's `active = state` below.
+  const ar = await resolveWatchTarget(resourceType);
   if (!ar) {
     throw new Error(`Unknown resource type for watch: ${resourceType}`);
   }
+
+  // Stop any existing watcher first (single active slot).
+  clearActive();
 
   const state: ActiveWatch = {
     controller: null,
@@ -259,6 +315,14 @@ async function startResourceWatch(
     }
   };
 
+  /** Lifecycle notice — see the header comment. */
+  const emitNotice = (eventType: WatchNotice['event_type'], message?: string): void => {
+    if (!isCurrent()) return;
+    const notice: WatchNotice = { event_type: eventType, resource_type: resourceType };
+    if (message) notice.message = message;
+    ctx.emit(WATCH_CHANNEL, [notice]);
+  };
+
   /** Tell the renderer to do a full relist (covers deltas a watch can't replay). */
   const emitResync = (): void => {
     ctx.emit(WATCH_CHANNEL, [
@@ -281,6 +345,10 @@ async function startResourceWatch(
   // emit a Resync even if the connection was short-lived, because the
   // no-RV reconnect's replay cannot cover deletes missed during the gap.
   let rvExpired = false;
+
+  // Set when a stream ended with an error (watch_error sent); the next
+  // successful open answers it with watch_open.
+  let errored = false;
 
   return await new Promise<void>((resolve, reject) => {
     const settleOk = (): void => {
@@ -345,6 +413,12 @@ async function startResourceWatch(
     const connect = (): void => {
       if (!isCurrent()) return;
 
+      // The JS Watch resolves its promise with the controller EVEN WHEN the
+      // connect failed — the failure goes to the done callback first, then
+      // the promise resolves. `ended` tells the two apart: a done() before
+      // the .then means this attempt never opened.
+      let ended = false;
+
       // Resume from the last seen RV when we have one: the server then sends
       // only deltas newer than the list/previous stream — no ADDED replay of
       // the entire list on every (re)connect. Bookmarks keep lastRV fresh even
@@ -392,7 +466,9 @@ async function startResourceWatch(
           },
           (err: unknown) => {
             // Stream ended (close, timeout, or error). Flush pending deltas.
+            ended = true;
             if (!isCurrent()) return;
+            const failure = describeWatchEnd(err);
             // eslint-disable-next-line no-console
             console.error(
               `[watch] stream ended for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
@@ -400,6 +476,20 @@ async function startResourceWatch(
             );
             flush();
             state.controller = null;
+
+            // The FIRST attempt never opened: reject the start invoke with the
+            // real reason (a transport failure lets the renderer mark the
+            // cluster unreachable) instead of resolving as if a watch were
+            // running and retrying in the dark.
+            if (failure && !settled) {
+              settleErr(new Error(failure));
+              clearActive();
+              return;
+            }
+            if (failure) {
+              errored = true;
+              emitNotice('watch_error', failure);
+            }
 
             // A connection that survived a while is "healthy": reset the
             // backoff. An unhealthy one (flapping) keeps growing it, and its
@@ -441,8 +531,16 @@ async function startResourceWatch(
             }
             return;
           }
+          // Failed open: the done callback already scheduled the reconnect
+          // (or rejected the start). Recording it as "opened" would make the
+          // next close look healthy and reset the backoff.
+          if (ended) return;
           state.controller = controller;
           state.openedAt = Date.now();
+          if (errored) {
+            errored = false;
+            emitNotice('watch_open');
+          }
           settleOk();
         })
         .catch((err: unknown) => {
@@ -467,9 +565,14 @@ async function startResourceWatch(
           // backoff so a transient open failure (e.g. a token refresh) doesn't
           // strand the list empty until the next user action.
           if (isCurrent() && !settled) {
+            settleErr(new Error(describeInvokeError(err)));
             clearActive();
-            settleErr(err);
             return;
+          }
+          const failure = describeWatchEnd(err);
+          if (failure) {
+            errored = true;
+            emitNotice('watch_error', failure);
           }
           scheduleReconnect();
         });

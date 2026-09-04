@@ -22,6 +22,14 @@ export async function listen<T = unknown>(
   cb: EventCallback<T>,
 ): Promise<UnlistenFn> {
   const fn = (_e: unknown, payload: unknown): void => cb({ payload: payload as T });
-  window.electronAPI.on(channel, fn);
-  return () => window.electronAPI.off(channel, fn);
+  // The preload's on() returns the unsubscribe for the exact listener it
+  // registered. `fn` itself is a different object on each side of the context
+  // bridge, so off(channel, fn) is only a fallback for a bridge that predates
+  // that return value (the ambient ElectronAPI type in global.d.ts still says
+  // void — hence the cast).
+  const unsubscribe = window.electronAPI.on(channel, fn) as unknown;
+  return () => {
+    if (typeof unsubscribe === "function") unsubscribe();
+    else window.electronAPI.off(channel, fn);
+  };
 }

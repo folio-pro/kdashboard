@@ -42,12 +42,25 @@ const api = {
    * terminal-exit, log-lines, port-forward-closed, resource-watch-event, …).
    * src/lib/ipc/event.ts wraps the payload as { payload } before handing it to
    * the UI callback.
+   *
+   * Returns the unsubscribe. A renderer function crossing the context bridge
+   * arrives here as a fresh proxy on EVERY call, so `off(channel, cb)` with
+   * the "same" cb removes nothing — every watch (re)start left its previous
+   * listener attached, and a dozen tabs later Node warned about 11
+   * resource-watch-event listeners. The closure below holds the one proxy
+   * that was actually registered, so removal cannot miss.
    */
-  on(channel: string, cb: Listener): void {
-    ipcRenderer.on(channel, cb);
+  on(channel: string, cb: Listener): () => void {
+    const listener: Listener = (event, payload) => cb(event, payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
   },
 
-  /** Remove a previously-registered channel listener (same fn reference). */
+  /**
+   * Remove a previously-registered channel listener. Only works for a `cb`
+   * whose identity survived the bridge (it generally does not — see on());
+   * prefer the unsubscribe on() returns.
+   */
   off(channel: string, cb: Listener): void {
     ipcRenderer.removeListener(channel, cb);
   },

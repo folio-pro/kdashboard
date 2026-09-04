@@ -1,9 +1,16 @@
 import { invoke } from "$lib/ipc/core";
 import { listen, type UnlistenFn } from "$lib/ipc/event";
-import type { Resource, ResourceList, ConnectionStatus, PortForwardInfo, CrdGroup, CrdInfo, CrdResourceList } from "../types/index.js";
+import type { Resource, ResourceList, ConnectionStatus, PortForwardInfo, CrdGroup, CrdInfo, CrdColumn, CrdResourceList } from "../types/index.js";
 import { settingsStore } from "./settings.svelte";
 import { toastStore } from "./toast.svelte.js";
-import { K8sStoreLogic, COUNTABLE_RESOURCE_TYPES } from "./k8s.logic.js";
+import {
+  K8sStoreLogic,
+  COUNTABLE_RESOURCE_TYPES,
+  crdTypeFor,
+  parseCrdType,
+  isWatchNotice,
+  type WatchPayload,
+} from "./k8s.logic.js";
 import { resourceTypeForRef } from "$lib/utils/related-resources";
 import { clearClusterCompletionCache } from "$lib/utils/cluster-completion-source";
 import { clearOpenApiCache } from "$lib/utils/openapi-schema";
@@ -11,8 +18,8 @@ import { scheduleFlush } from "$lib/utils/frame-scheduler";
 import { liveValues, signalsFor } from "./live-values.svelte";
 import { unshadowState } from "./_unshadow.js";
 
-export type { WatchEvent, NavigationEntry } from "./k8s.logic.js";
-export { COUNTABLE_RESOURCE_TYPES } from "./k8s.logic.js";
+export type { WatchEvent, WatchNotice, NavigationEntry } from "./k8s.logic.js";
+export { COUNTABLE_RESOURCE_TYPES, crdTypeFor, parseCrdType } from "./k8s.logic.js";
 
 /** User-facing message from a caught invoke() rejection (no "Error:" prefix). */
 function errMsg(err: unknown): string {
@@ -28,6 +35,14 @@ interface PendingWatchEvent {
   event: import("./k8s.logic.js").WatchEvent;
   reinserted: boolean;
 }
+
+/** A listing as the store consumes it: a CRD listing also carries its printer columns. */
+interface ListedResources extends ResourceList {
+  columns?: CrdColumn[];
+}
+
+/** While unreachable, ask the cluster again this often (a cheap namespaces list). */
+const REACHABILITY_PROBE_MS = 15_000;
 
 class K8sStore extends K8sStoreLogic {
   // Override all state properties with $state runes for Svelte 5 reactivity
@@ -70,6 +85,9 @@ class K8sStore extends K8sStoreLogic {
   override viewLoaded = $state(false);
   override lastUpdatedAt = $state(0);
   override watching = $state(false);
+  override reachable = $state(true);
+  override unreachableSince = $state(0);
+  override lastHeartbeatAt = $state(0);
 
   // CRD state
   override crdGroups = $state<CrdGroup[]>([]);
@@ -116,6 +134,13 @@ class K8sStore extends K8sStoreLogic {
   // single _ageInterval/_watchUnlisten/_watchActive slots and orphan a timer
   // or listener (a slow, unbounded leak under rapid type/tab switching).
   private _watchOp: Promise<void> = Promise.resolve();
+  // In-flight loads keyed by scope + type + namespace. Opening a CRD table
+  // asks for the same list twice within a tick (the sidebar click and the
+  // tab-switch hook), and each load restarts the watch — the second caller
+  // now joins the first instead.
+  private _inflightLoads = new Map<string, Promise<void>>();
+  /** Reachability probe timer; armed only while `reachable` is false. */
+  private _probeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     super();
@@ -166,7 +191,7 @@ class K8sStore extends K8sStoreLogic {
     try {
       this.namespacesLoadError = null;
       this.error = null;
-      const result = await invoke<string[]>("get_namespaces");
+      const result = await this._tracked(invoke<string[]>("get_namespaces"));
       if (scopeGeneration !== this._scopeGeneration) return;
       this.namespaces = result;
     } catch (err) {
@@ -195,13 +220,15 @@ class K8sStore extends K8sStoreLogic {
       await this.loadNamespaces(scopeGeneration);
       if (scopeGeneration !== this._scopeGeneration) return;
 
-      // Never fall back to "" — that lists at CLUSTER scope, which restrictive
-      // RBAC forbids (403 on every list) and the namespace picker can't leave.
-      const fallbackNamespace = this.namespaces.includes(this.currentNamespace)
-        ? this.currentNamespace
-        : this.namespaces.includes("default")
-          ? "default"
-          : (this.namespaces[0] ?? "default");
+      // Never fall back to "" by accident — that lists at CLUSTER scope, which
+      // restrictive RBAC forbids (403 on every list). "" chosen on purpose
+      // ("All namespaces" in the picker) is kept: the picker can leave it.
+      const fallbackNamespace =
+        this.currentNamespace === "" || this.namespaces.includes(this.currentNamespace)
+          ? this.currentNamespace
+          : this.namespaces.includes("default")
+            ? "default"
+            : (this.namespaces[0] ?? "default");
       this.currentNamespace = fallbackNamespace;
 
       await this.loadResources(this.selectedResourceType, scopeGeneration);
@@ -223,6 +250,16 @@ class K8sStore extends K8sStoreLogic {
   }
 
   async switchNamespace(namespace: string): Promise<void> {
+    // Switching while the cluster is gone used to neither error nor apply:
+    // the list hung until the cluster came back, then landed on whatever the
+    // user had since moved on to. Refuse up front and say so.
+    if (!this.reachable) {
+      toastStore.error(
+        "Cluster unreachable — cannot switch namespace",
+        `${this.unreachableTooltip}. Retry from the banner once the cluster is back.`,
+      );
+      return;
+    }
     const scopeGeneration = this._beginScopeChange();
     try {
       await this._stopTransientSessions();
@@ -241,7 +278,18 @@ class K8sStore extends K8sStoreLogic {
     }
   }
 
-  async loadResources(resourceType: string, scopeGeneration = this._scopeGeneration): Promise<void> {
+  loadResources(resourceType: string, scopeGeneration = this._scopeGeneration): Promise<void> {
+    const key = `${scopeGeneration}|${resourceType}|${this.currentNamespace}`;
+    const inflight = this._inflightLoads.get(key);
+    if (inflight) return inflight;
+    const run = this._loadResources(resourceType, scopeGeneration).finally(() => {
+      if (this._inflightLoads.get(key) === run) this._inflightLoads.delete(key);
+    });
+    this._inflightLoads.set(key, run);
+    return run;
+  }
+
+  private async _loadResources(resourceType: string, scopeGeneration: number): Promise<void> {
     const timer = setTimeout(() => { this.isLoading = true; }, 200);
     try {
       this.error = null;
@@ -250,6 +298,7 @@ class K8sStore extends K8sStoreLogic {
       if (scopeGeneration !== this._scopeGeneration) return;
       if (this.pendingResourceType !== resourceType) return;
       this.selectedResourceType = resourceType;
+      if (result.columns) this._adoptCrdListing(resourceType, result.items, result.columns);
       this._replaceResources(result, Date.now());
       this._setCount(resourceType, result.items.length);
       this._startWatch(resourceType, this.currentNamespace, result.resource_version);
@@ -257,6 +306,9 @@ class K8sStore extends K8sStoreLogic {
       if (scopeGeneration !== this._scopeGeneration) return;
       this.error = `Failed to load resources: ${errMsg(err)}`;
       this._replaceResources({ items: [], resource_type: resourceType }, 0);
+      // The CRD table has no error state of its own — it shows "No X found"
+      // for an empty list — so the failure is said out loud there.
+      if (parseCrdType(resourceType)) toastStore.error("Failed to load CRD resources", errMsg(err));
     } finally {
       clearTimeout(timer);
       if (scopeGeneration === this._scopeGeneration) {
@@ -424,10 +476,12 @@ class K8sStore extends K8sStoreLogic {
     const gen = ++this._countGeneration;
     const namespace = this.currentNamespace;
     try {
-      const counts = await invoke<Record<string, number>>("get_resource_counts", {
-        resourceTypes: [...COUNTABLE_RESOURCE_TYPES],
-        namespace,
-      });
+      const counts = await this._tracked(
+        invoke<Record<string, number>>("get_resource_counts", {
+          resourceTypes: [...COUNTABLE_RESOURCE_TYPES],
+          namespace,
+        }),
+      );
       // Discard stale results if namespace/context changed while in-flight
       if (gen !== this._countGeneration || scopeGeneration !== this._scopeGeneration) return;
       this.resourceCounts = { ...this.resourceCounts, ...counts };
@@ -468,11 +522,101 @@ class K8sStore extends K8sStoreLogic {
     settingsStore.updateConnection(this.currentContext, this.currentNamespace);
   }
 
-  private async _listResources(resourceType: string): Promise<ResourceList> {
-    return invoke<ResourceList>("list_resources", {
-      resourceType,
-      namespace: this.currentNamespace,
-    });
+  private async _listResources(resourceType: string): Promise<ListedResources> {
+    const crdRef = parseCrdType(resourceType);
+    if (!crdRef) {
+      return this._tracked(
+        invoke<ResourceList>("list_resources", { resourceType, namespace: this.currentNamespace }),
+      );
+    }
+    // A `crd:` pseudo-type lists through the CRD handler — list_resources only
+    // knows built-in kinds and used to log "Unknown resource type: crd:…" for
+    // every CRD tab the tab lifecycle (re)loaded.
+    let crd = this.findCrd(crdRef.group, crdRef.kind);
+    if (!crd && !this.crdDiscovered && !this.crdLoading) {
+      // A CRD tab restored before the sidebar's discovery ran: discover now
+      // rather than fail on a kind the cluster may well serve.
+      await this.discoverCrds();
+      crd = this.findCrd(crdRef.group, crdRef.kind);
+    }
+    if (!crd) {
+      throw new Error(`Custom resource ${crdRef.group}/${crdRef.kind} is not known in this cluster`);
+    }
+    const result = await this._tracked(
+      invoke<CrdResourceList & { resource_version?: string }>("list_crd_resources", {
+        group: crd.group,
+        version: crd.version,
+        kind: crd.kind,
+        plural: crd.plural,
+        scope: crd.scope,
+        namespace: crd.scope === "Namespaced" ? this.currentNamespace : null,
+      }),
+    );
+    const out: ListedResources = { items: result.items, resource_type: resourceType, columns: result.columns };
+    if (result.resource_version) out.resource_version = result.resource_version;
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // Reachability. Every call that goes to the apiserver passes through
+  // _tracked: success is a heartbeat, a transport failure starts an outage.
+  // ---------------------------------------------------------------------
+
+  private async _tracked<T>(call: Promise<T>): Promise<T> {
+    try {
+      const result = await call;
+      this._onReachable();
+      return result;
+    } catch (err) {
+      this.noteCallFailure(errMsg(err));
+      throw err;
+    }
+  }
+
+  /** Heartbeat; on the transition back from an outage, reload the view and restart its watch. */
+  private _onReachable(): void {
+    if (!this._markReachable()) return;
+    this._stopProbe();
+    toastStore.success("Cluster reachable again", `Reloading ${this.selectedResourceType}`);
+    void this.loadResources(this.selectedResourceType);
+    void this.loadAllResourceCounts();
+  }
+
+  override _markUnreachable(now: number = Date.now()): void {
+    super._markUnreachable(now);
+    this._armProbe();
+  }
+
+  /**
+   * With no live watch (its start failed too) nothing would ever notice the
+   * cluster coming back. Poll a cheap call until it answers; _tracked flips
+   * the state and stops the probe.
+   */
+  private _armProbe(): void {
+    if (this._probeTimer || this.reachable) return;
+    this._probeTimer = setTimeout(() => {
+      this._probeTimer = null;
+      if (this.reachable) return;
+      this._tracked(invoke<string[]>("get_namespaces"))
+        .then((nss) => { this.namespaces = nss; })
+        .catch(() => this._armProbe());
+    }, REACHABILITY_PROBE_MS);
+  }
+
+  private _stopProbe(): void {
+    if (this._probeTimer) {
+      clearTimeout(this._probeTimer);
+      this._probeTimer = null;
+    }
+  }
+
+  /** Retry from the outage banner: the same recovery the boot overlay runs. */
+  async retryConnection(): Promise<void> {
+    await this.loadContexts();
+    if (this.connectionStatus !== "connected") return;
+    await this.loadNamespaces();
+    await this.loadResources(this.selectedResourceType);
+    void this.loadAllResourceCounts();
   }
 
   private _startWatch(resourceType: string, namespace: string, resourceVersion?: string): Promise<void> {
@@ -490,16 +634,18 @@ class K8sStore extends K8sStoreLogic {
       }, 30_000);
       try {
         // Listen for watch events from the backend
-        this._watchUnlisten = await listen<import("./k8s.logic.js").WatchEvent | import("./k8s.logic.js").WatchEvent[]>("resource-watch-event", (event) => {
+        this._watchUnlisten = await listen<WatchPayload | WatchPayload[]>("resource-watch-event", (event) => {
           this._handleWatchEvents(event.payload);
         });
         // Start the backend watcher. Passing the list's resourceVersion lets it
         // resume from what we just rendered instead of replaying every item.
-        await invoke("start_resource_watch", {
-          resourceType,
-          namespace,
-          resourceVersion: resourceVersion ?? null,
-        });
+        await this._tracked(
+          invoke("start_resource_watch", {
+            resourceType,
+            namespace,
+            resourceVersion: resourceVersion ?? null,
+          }),
+        );
         this._watchActive = true;
         this.watching = true;
       } catch (err) {
@@ -536,7 +682,7 @@ class K8sStore extends K8sStoreLogic {
   }
 
   /** Backend may emit a single event or a coalesced batch (array). */
-  private _handleWatchEvents(payload: import("./k8s.logic.js").WatchEvent | import("./k8s.logic.js").WatchEvent[]): void {
+  private _handleWatchEvents(payload: WatchPayload | WatchPayload[]): void {
     if (Array.isArray(payload)) {
       for (const event of payload) this._handleWatchEvent(event);
     } else {
@@ -544,9 +690,23 @@ class K8sStore extends K8sStoreLogic {
     }
   }
 
-  private _handleWatchEvent(event: import("./k8s.logic.js").WatchEvent): void {
+  private _handleWatchEvent(event: WatchPayload): void {
     // Only process events for the currently viewed resource type
     if (event.resource_type !== this.selectedResourceType) return;
+
+    // Lifecycle notices: a stream that died (watching=false, and an outage if
+    // the failure was transport-level) or one that came back. A watch_open
+    // that ends an outage reloads the view through _onReachable — the backend
+    // resumed the stream, but the rows on screen are from before the outage.
+    if (isWatchNotice(event)) {
+      if (event.event_type === "watch_open") {
+        this.watching = true;
+        this._onReachable();
+      } else {
+        this.handleWatchNotice(event);
+      }
+      return;
+    }
 
     // Resync: watcher reconnected after a gap, do a full refresh
     if (event.event_type === "Resync") {
@@ -772,29 +932,17 @@ class K8sStore extends K8sStoreLogic {
     }
   }
 
+  /**
+   * Open a CRD table: the listing goes through loadResources under the
+   * `crd:<group>/<Kind>` pseudo-type, so the tab lifecycle, the cache restore
+   * and the live watch treat it exactly like a built-in kind.
+   */
   async loadCrdResources(crd: CrdInfo): Promise<void> {
-    const scopeGeneration = this._scopeGeneration;
+    const type = crdTypeFor(crd);
     this.selectedCrd = crd;
-    this.crdResources = { items: [], columns: [] };
-    this.isLoading = true;
-    try {
-      const result = await invoke<CrdResourceList>("list_crd_resources", {
-        group: crd.group,
-        version: crd.version,
-        kind: crd.kind,
-        plural: crd.plural,
-        scope: crd.scope,
-        namespace: crd.scope === "Namespaced" ? this.currentNamespace : null,
-      });
-      if (scopeGeneration !== this._scopeGeneration) return;
-      this.crdResources = result;
-    } catch (e) {
-      if (scopeGeneration !== this._scopeGeneration) return;
-      this.crdResources = { items: [], columns: [] };
-      toastStore.error("Failed to load CRD resources", String(e));
-    } finally {
-      this.isLoading = false;
-    }
+    this.crdResources = { items: [], columns: this._crdColumns.get(type) ?? [] };
+    this.setResourceType(type);
+    await this.loadResources(type);
   }
 
   private _crdCountsInFlight = new Set<string>();
@@ -807,10 +955,12 @@ class K8sStore extends K8sStoreLogic {
     const keys = crds.map((crd) => this.crdKey(crd));
     for (const key of keys) this._crdCountsInFlight.add(key);
     try {
-      const counts = await invoke<Record<string, number>>("get_crd_counts", {
-        crds,
-        namespace: this.currentNamespace,
-      });
+      const counts = await this._tracked(
+        invoke<Record<string, number>>("get_crd_counts", {
+          crds,
+          namespace: this.currentNamespace,
+        }),
+      );
       this.crdCounts = { ...this.crdCounts, ...counts };
     } catch {
       // Silently fail — counts are non-essential
