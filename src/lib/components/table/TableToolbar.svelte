@@ -7,6 +7,7 @@
   import DensityToggle from "./DensityToggle.svelte";
   import ColumnPicker from "./ColumnPicker.svelte";
   import type { Column } from "$lib/types";
+  import { isClusterScopedType } from "$lib/resource-catalog";
 
   /**
    * One 44px bar: title, namespace, saved views, then the search box (which
@@ -38,7 +39,11 @@
     {resourceTypeLabel}
   </h1>
 
-  <NamespacePicker />
+  <!-- A Node or a ClusterRole lives in no namespace: a picker here would
+       promise a scope the list cannot have. -->
+  {#if !isClusterScopedType(resourceType)}
+    <NamespacePicker />
+  {/if}
 
   <span class="h-[18px] w-px shrink-0 bg-[var(--border-color)]" aria-hidden="true"></span>
 
@@ -66,7 +71,7 @@
     size="sm"
     class="font-semibold"
     onclick={oncreate}
-    title="Create a resource from a YAML manifest on the clipboard"
+    title="Create resources from YAML — write, paste or start from a template"
   >
     <Plus class="h-3.5 w-3.5" />
     Create

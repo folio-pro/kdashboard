@@ -80,6 +80,15 @@
             {#if isActive}
               <span class="absolute top-1/2 -left-[11px] h-5 w-[3px] -translate-y-1/2 rounded-r-[3px] bg-[var(--accent)]"></span>
             {/if}
+            {#if isActive && !k8sStore.reachable}
+              <!-- Outage marker on the active cluster: the rail is the one
+                   piece of chrome that stays visible with the sidebar open. -->
+              <span
+                class="absolute -right-[3px] -bottom-[3px] h-[9px] w-[9px] rounded-full bg-[var(--status-failed)]"
+                style="box-shadow: 0 0 0 2px var(--rail-bg, color-mix(in srgb, var(--sidebar-bg) 92%, #000));"
+                aria-hidden="true"
+              ></span>
+            {/if}
             {#if iconDef}
               <!--
                 There used to be an icon+label combo that rendered its label at
@@ -99,6 +108,9 @@
         </TooltipTrigger>
         <TooltipContent side="right">
           <p>{ctx}{isActive ? " (active)" : ""}</p>
+          {#if isActive && !k8sStore.reachable}
+            <p class="text-[var(--status-failed)]">{k8sStore.unreachableTooltip}</p>
+          {/if}
         </TooltipContent>
       </Tooltip>
     {/each}

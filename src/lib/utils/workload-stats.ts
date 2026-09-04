@@ -55,16 +55,33 @@ export function getTotalRestarts(resource: Resource): number {
   return cs.reduce((sum, c) => sum + (c.restartCount ?? 0), 0);
 }
 
+/**
+ * A pod someone should look at: failed outright, stuck unschedulable, a
+ * container waiting on an error, or restarting a lot. Anything the table
+ * paints as "Failing" must count here too — the "Attention" view used to
+ * read 0 while the summary chip said "2 Failing", because a Job pod in
+ * phase Failed has no waiting container.
+ */
 export function isPodNeedingAttention(resource: Resource): boolean {
-  const cs = resource.status?.containerStatuses as Array<{ restartCount?: number; state?: Record<string, unknown> }> | undefined;
+  const status = resource.status ?? {};
+  if (status.phase === "Failed") return true;
+  if (status.phase === "Pending") {
+    const conds = status.conditions as Array<{ type?: string; status?: string; reason?: string }> | undefined;
+    if (conds?.some((c) => c.type === "PodScheduled" && c.status === "False" && c.reason === "Unschedulable")) return true;
+  }
+  const cs = status.containerStatuses as Array<{ restartCount?: number; state?: Record<string, unknown> }> | undefined;
   if (!cs) return false;
   const totalRestarts = cs.reduce((s, c) => s + (c.restartCount ?? 0), 0);
   const hasWaiting = cs.some((c) => {
     if (!c.state?.waiting) return false;
     const reason = ((c.state.waiting as { reason?: string }).reason ?? "");
-    return /error|crash|backoff|oom/i.test(reason);
+    return /error|crash|backoff|oom|invalid/i.test(reason);
   });
-  return totalRestarts > 10 || hasWaiting;
+  const terminatedBadly = cs.some((c) => {
+    const t = c.state?.terminated as { exitCode?: number; reason?: string } | undefined;
+    return !!t && ((t.exitCode ?? 0) !== 0 || t.reason === "OOMKilled");
+  });
+  return totalRestarts > 10 || hasWaiting || terminatedBadly;
 }
 
 export function computePodStats(items: Resource[]): WorkloadStatsResult {
@@ -87,6 +104,9 @@ export function computePodStats(items: Resource[]): WorkloadStatsResult {
       { key: "running", label: "Running", value: running, color: "var(--status-running)", subtitle: "healthy", filterable: true },
       { key: "failed", label: "Failing", value: failed, color: "var(--status-failed)", subtitle: "need attention", filterable: true },
       { key: "pending", label: "Pending", value: pending, color: "var(--status-pending)", subtitle: "starting", filterable: true },
+      // Completed pods are part of the total; without a chip the numbers in
+      // the strip never added up (16 pods = 11 Running + 2 Failing + ...?).
+      { key: "succeeded", label: "Completed", value: succeeded, color: "var(--text-muted)", subtitle: "finished", filterable: true },
       { key: "restarts", label: "Restarts", value: totalRestarts, color: "var(--text-muted)", subtitle: "total", filterable: false },
     ],
     healthSegments: [

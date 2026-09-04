@@ -3,7 +3,7 @@ import { uiStore } from "./stores/ui.svelte.js";
 import { contextMenuStore } from "./stores/context-menu.svelte.js";
 import { dialogStore } from "./stores/dialogs.svelte.js";
 import { SCALABLE_TYPES } from "./actions/registry.js";
-import { isInputElement } from "./utils/dom.js";
+import { isInputElement, overlayOpen } from "./utils/dom.js";
 import type { ActiveView } from "./stores/ui.svelte.js";
 
 /**
@@ -51,6 +51,7 @@ const selectedKind = (): string => (k8sStore.selectedResource?.kind ?? "").toLow
 
 /** Escape unwinds the UI in priority order: overlay, then view, then selection. */
 export function runEscape(target: EventTarget | null, isInput: boolean): void {
+  if (overlayOpen()) return;
   if (contextMenuStore.open) {
     contextMenuStore.close();
     return;

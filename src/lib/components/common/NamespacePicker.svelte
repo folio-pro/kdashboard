@@ -15,6 +15,14 @@
     k8sStore.namespaces.filter((ns) => ns.toLowerCase().includes(filter.toLowerCase())),
   );
 
+  // "" is the store's spelling of "every namespace" (cluster-wide lists).
+  // It is only ever entered from here, on purpose: a restored "" is snapped
+  // back to a real namespace (restrictive RBAC refuses cluster-scope lists).
+  const ALL = "";
+  const ALL_LABEL = "All namespaces";
+  let isAll = $derived(k8sStore.currentNamespace === ALL);
+  let showAll = $derived(filter.trim() === "" || ALL_LABEL.toLowerCase().includes(filter.trim().toLowerCase()));
+
   function select(ns: string) {
     k8sStore.switchNamespace(ns);
     open = false;
@@ -40,7 +48,7 @@
       aria-label="Change namespace"
     >
       <Boxes class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-      <span>{k8sStore.currentNamespace || "All Namespaces"}</span>
+      <span>{isAll ? ALL_LABEL : k8sStore.currentNamespace}</span>
       <ChevronDown class="h-3 w-3 text-[var(--text-muted)]" />
     </Button>
   </PopoverTrigger>
@@ -73,6 +81,23 @@
           </Button>
         </div>
       {/if}
+      {#if showAll}
+        <button
+          class={cn(
+            "flex h-7 shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-3 text-[12px] whitespace-nowrap transition-colors hover:bg-[var(--sidebar-hover)]",
+            isAll ? "text-[var(--accent)]" : "text-[var(--text-secondary)]",
+          )}
+          onclick={() => select(ALL)}
+          aria-current={isAll ? "true" : undefined}
+        >
+          {#if isAll}
+            <Check class="h-3 w-3 shrink-0" />
+          {:else}
+            <span class="h-3 w-3 shrink-0"></span>
+          {/if}
+          {ALL_LABEL}
+        </button>
+      {/if}
       {#each filtered as ns}
         <button
           class={cn(
@@ -80,6 +105,7 @@
             ns === k8sStore.currentNamespace ? "text-[var(--accent)]" : "text-[var(--text-secondary)]",
           )}
           onclick={() => select(ns)}
+          aria-current={ns === k8sStore.currentNamespace ? "true" : undefined}
         >
           {#if ns === k8sStore.currentNamespace}
             <Check class="h-3 w-3 shrink-0" />
@@ -89,7 +115,7 @@
           {ns}
         </button>
       {/each}
-      {#if filtered.length === 0 && !k8sStore.namespacesLoadError}
+      {#if filtered.length === 0 && !showAll && !k8sStore.namespacesLoadError}
         <span class="px-3 py-2 text-[12px] text-[var(--text-muted)]">No namespaces found</span>
       {/if}
     </div>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Column } from "$lib/types";
-  import { AlertTriangle, Inbox, RefreshCw } from "lucide-svelte";
+  import { AlertTriangle, Inbox, Lock, PackageX, RefreshCw } from "lucide-svelte";
+  import { classifyLoadError } from "./table-load-error";
   import { Button } from "$lib/components/ui";
   import { Skeleton } from "$lib/components/ui/skeleton";
 
@@ -11,6 +12,7 @@
     error = null,
     hasStatFilter = false,
     hasTextFilter = false,
+    clusterScoped = false,
     onretry,
     onclearStatFilter,
     onclearTextFilter,
@@ -21,6 +23,8 @@
     error?: string | null;
     hasStatFilter?: boolean;
     hasTextFilter?: boolean;
+    /** The kind lives outside namespaces (Node, ClusterRole, a Cluster CRD): "in this cluster", not "in this namespace". */
+    clusterScoped?: boolean;
     onretry: () => void;
     onclearStatFilter: () => void;
     onclearTextFilter: () => void;
@@ -62,16 +66,28 @@
     </tbody>
   </table>
 {:else if state === "error"}
-  <div class="flex h-full items-center justify-center">
+  {@const view = classifyLoadError(error, resourceTypeLabel)}
+  {@const unreachable = view.kind === "unreachable"}
+  <div class="flex h-full items-center justify-center" data-testid="table-error" data-error-kind={view.kind}>
     <div class="flex max-w-md flex-col items-center gap-4 px-10 py-16 text-center">
-      <div class="flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 text-[var(--status-failed)]">
-        <AlertTriangle class="h-6 w-6" />
+      <div
+        class={unreachable
+          ? "flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 text-[var(--status-failed)]"
+          : "flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--status-warning)]/30 bg-[var(--status-warning)]/10 text-[var(--status-warning)]"}
+      >
+        {#if view.kind === "not-installed"}
+          <PackageX class="h-6 w-6" />
+        {:else if view.kind === "forbidden"}
+          <Lock class="h-6 w-6" />
+        {:else}
+          <AlertTriangle class="h-6 w-6" />
+        {/if}
       </div>
-      <div class="text-[15px] font-semibold text-[var(--text-primary)]">Unable to reach cluster</div>
-      <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">{error}</p>
+      <div class="text-[15px] font-semibold text-[var(--text-primary)]">{view.title}</div>
+      <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]" title={error ?? ""}>{view.detail}</p>
       <Button variant="toolbar" size="md" class="mt-1" onclick={onretry}>
         <RefreshCw class="h-3.5 w-3.5" />
-        Retry connection
+        {view.action}
       </Button>
     </div>
   </div>
@@ -93,7 +109,9 @@
           Clear filters
         </Button>
       {:else}
-        <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">There are none in this namespace. Try switching namespace or context to see results.</p>
+        <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">
+          {#if clusterScoped}There are none in this cluster. Try switching context to see results.{:else}There are none in this namespace. Try switching namespace or context to see results.{/if}
+        </p>
       {/if}
     </div>
   </div>

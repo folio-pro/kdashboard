@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { formatClock } from "$lib/stores/k8s.logic";
+  import { isClusterScopedType } from "$lib/resource-catalog";
 
   /**
    * The line under the table that says what the view is doing: whether the
@@ -30,6 +33,25 @@
     return () => clearInterval(timer);
   });
 
+  // Unreachable: the dot goes to the failed tone and "Not watching" says how
+  // old the rows are, so stale data never passes for live data.
+  let unreachable = $derived(!k8sStore.reachable);
+  let watchLabel = $derived.by(() => {
+    // An outage wins over the watch flag: the socket may still be open while
+    // the apiserver stopped answering, and "Watching" next to a failed list
+    // is the lie this bar existed to avoid.
+    if (unreachable) return lastUpdatedAt ? `Not watching · data from ${formatClock(lastUpdatedAt)}` : "Not watching";
+    if (watching) return "Watching";
+    return "Not watching";
+  });
+  let watchTone = $derived(unreachable ? "var(--status-failed)" : watching ? "var(--status-running)" : "var(--text-muted)");
+  // "All namespaces" only means something for a kind that has namespaces.
+  let allNamespaces = $derived(
+    k8sStore.currentNamespace === "" &&
+      !isClusterScopedType(k8sStore.selectedResourceType) &&
+      !k8sStore.isClusterScopedCrd(k8sStore.selectedResourceType),
+  );
+
   let updatedLabel = $derived.by(() => {
     if (!lastUpdatedAt) return "";
     const s = Math.max(0, Math.round((now - lastUpdatedAt) / 1000));
@@ -45,13 +67,17 @@
   class="flex h-[26px] shrink-0 items-center gap-2.5 border-t border-[var(--border-color)] bg-[var(--bg-secondary)] px-6 text-[11px] text-[var(--text-muted)]"
   aria-label="Table status"
 >
-  <span class="inline-flex shrink-0 items-center gap-1.5" style:color={watching ? "var(--status-running)" : "var(--text-muted)"}>
+  <span
+    class="inline-flex shrink-0 items-center gap-1.5"
+    style:color={watchTone}
+    title={unreachable ? k8sStore.unreachableTooltip : undefined}
+  >
     <span
       class="h-[5px] w-[5px] rounded-full"
-      style:background-color={watching ? "var(--status-running)" : "var(--text-muted)"}
-      style:box-shadow={watching ? "0 0 6px color-mix(in srgb, var(--status-running) 55%, transparent)" : "none"}
+      style:background-color={watchTone}
+      style:box-shadow={watching && !unreachable ? "0 0 6px color-mix(in srgb, var(--status-running) 55%, transparent)" : "none"}
     ></span>
-    {watching ? "Watching" : "Not watching"}
+    {watchLabel}
   </span>
 
   <!-- The one live region for the row count: the toolbar used to carry an
@@ -73,6 +99,9 @@
   {#if namespaceHidden}
     <span aria-hidden="true">·</span>
     <span class="truncate">Namespace column hidden — one namespace selected</span>
+  {:else if allNamespaces}
+    <span aria-hidden="true">·</span>
+    <span class="truncate">All namespaces</span>
   {/if}
 
   <span class="flex-1"></span>
