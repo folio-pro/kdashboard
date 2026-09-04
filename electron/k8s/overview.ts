@@ -272,6 +272,15 @@ function podOwner(pod: V1Pod): string | null {
   return w.kind === 'Pod' ? null : workloadKey(w);
 }
 
+/**
+ * Key of `podCausesByWorkload`: the namespace is part of it because a cluster
+ * overview holds `Deployment/web` from several namespaces, and borrowing a pod
+ * across them opened the wrong pod's logs.
+ */
+export function workloadPodKey(namespace: string | null | undefined, kind: string, name: string): string {
+  return `${namespace ?? ''}/${kind}/${name}`;
+}
+
 /** The first thing wrong with a pod, or null. Mirrors the renderer's podProblem; the judgement itself lives in pod-cause.ts. */
 export function podProblem(pod: V1Pod): Problem | null {
   const c = podCause(pod);
@@ -284,17 +293,18 @@ export function podProblem(pod: V1Pod): Problem | null {
   });
 }
 
-/** Broken pods grouped under the workload that owns them ("Deployment/web", "Job/export-1"). */
+/** Broken pods grouped under the workload that owns them, keyed by `workloadPodKey`. */
 export function podCausesByWorkload(pods: readonly V1Pod[]): Map<string, PodCause[]> {
   const out = new Map<string, PodCause[]>();
   for (const pod of pods) {
-    const owner = podOwner(pod);
-    if (!owner) continue;
+    const owner = workloadOf(pod);
+    if (owner.kind === 'Pod') continue;
     const c = podCause(pod);
     if (!c) continue;
-    const list = out.get(owner) ?? [];
+    const key = workloadPodKey(pod.metadata?.namespace, owner.kind, owner.name);
+    const list = out.get(key) ?? [];
     list.push(c);
-    out.set(owner, list);
+    out.set(key, list);
   }
   return out;
 }
@@ -334,8 +344,8 @@ export function workloadProblems(lists: Partial<WorkloadLists>, pods: readonly V
   const out: Problem[] = [];
   const byWorkload = podCausesByWorkload(pods);
   /** Cause / pod / detail borrowed from the worst owned pod; `fallback` when the workload has no broken pod. */
-  const fromPods = (kind: ProblemKind, name: string, fallback: ProblemCause, detail: string | null): Partial<Problem> => {
-    const worst = worstPodCause(byWorkload.get(`${kind}/${name}`));
+  const fromPods = (kind: ProblemKind, namespace: string | null, name: string, fallback: ProblemCause, detail: string | null): Partial<Problem> => {
+    const worst = worstPodCause(byWorkload.get(workloadPodKey(namespace, kind, name)));
     if (!worst) return { cause: fallback, detail };
     return { cause: worst.cause, pod: worst.pod, detail: podLine(worst), restarts: worst.restarts };
   };
@@ -351,7 +361,7 @@ export function workloadProblems(lists: Partial<WorkloadLists>, pods: readonly V
     const progressing = cond('Progressing');
     const available = cond('Available');
     const since = iso(progressing?.lastUpdateTime ?? available?.lastTransitionTime);
-    const extra = (fallback: ProblemCause, detail: string | null) => ({ ready, desired, since, ...fromPods('Deployment', name, fallback, detail) });
+    const extra = (fallback: ProblemCause, detail: string | null) => ({ ready, desired, since, ...fromPods('Deployment', ns, name, fallback, detail) });
     if (d.spec?.paused || desired === 0) continue;
     if (failure?.status === 'True') out.push(problem('critical', 'Deployment', name, ns, 'ReplicaFailure', null, since, extra('unknown', failure.message ?? failure.reason ?? null)));
     else if (progressing?.status === 'False') out.push(problem('critical', 'Deployment', name, ns, progressing.reason ?? 'Failed', null, since, extra('progress-deadline', progressing.message ?? null)));
@@ -363,7 +373,7 @@ export function workloadProblems(lists: Partial<WorkloadLists>, pods: readonly V
     const desired = s.spec?.replicas ?? 1;
     const ready = num(s.status?.readyReplicas);
     if (desired > 0 && ready < desired) {
-      out.push(problem(ready === 0 ? 'critical' : 'warning', 'StatefulSet', name, s.metadata?.namespace ?? null, `${ready}/${desired} ready`, null, null, { ready, desired, ...fromPods('StatefulSet', name, 'unknown', null) }));
+      out.push(problem(ready === 0 ? 'critical' : 'warning', 'StatefulSet', name, s.metadata?.namespace ?? null, `${ready}/${desired} ready`, null, null, { ready, desired, ...fromPods('StatefulSet', s.metadata?.namespace ?? null, name, 'unknown', null) }));
     }
   }
   for (const ds of lists.daemonsets ?? []) {
@@ -371,7 +381,7 @@ export function workloadProblems(lists: Partial<WorkloadLists>, pods: readonly V
     const desired = num(ds.status?.desiredNumberScheduled);
     const ready = num(ds.status?.numberReady);
     if (desired > 0 && ready < desired) {
-      out.push(problem(ready === 0 ? 'critical' : 'warning', 'DaemonSet', name, ds.metadata?.namespace ?? null, `${ready}/${desired} ready`, null, null, { ready, desired, ...fromPods('DaemonSet', name, 'unknown', null) }));
+      out.push(problem(ready === 0 ? 'critical' : 'warning', 'DaemonSet', name, ds.metadata?.namespace ?? null, `${ready}/${desired} ready`, null, null, { ready, desired, ...fromPods('DaemonSet', ds.metadata?.namespace ?? null, name, 'unknown', null) }));
     }
   }
   for (const j of lists.jobs ?? []) {
@@ -382,7 +392,7 @@ export function workloadProblems(lists: Partial<WorkloadLists>, pods: readonly V
       const complete = conds.some((c) => c.type === 'Complete' && c.status === 'True');
       if (complete) continue;
       const ownerRef = controllerRef(j.metadata);
-      const worst = worstPodCause(byWorkload.get(`Job/${name}`));
+      const worst = worstPodCause(byWorkload.get(workloadPodKey(j.metadata?.namespace, 'Job', name)));
       const detail = [failed?.message ?? null, worst ? podLine(worst) : null].filter(Boolean).join(' · ') || null;
       out.push(problem(failed ? 'critical' : 'warning', 'Job', name, j.metadata?.namespace ?? null, failed?.reason ?? `${num(j.status?.failed)} failed`, detail, iso(failed?.lastTransitionTime ?? j.status?.startTime), {
         owner: ownerRef ? `${ownerRef.kind}/${ownerRef.name}` : null,

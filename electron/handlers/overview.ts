@@ -100,9 +100,11 @@ export async function getClusterOverview(namespace: string | null): Promise<Clus
   const partial: string[] = [];
   const scopes = { nodes, pods, deployments, statefulsets, daemonsets, jobs, persistentvolumeclaims: pvcs, services, endpoints, events };
   for (const [kind, listed] of Object.entries(scopes)) if (listed.scope === null) partial.push(kind);
-  // The overview is "cluster" scoped when every namespaced kind listed cluster-wide.
-  const namespacedScopes = [pods, deployments, statefulsets, daemonsets, jobs, pvcs, services, endpoints, events].map((l) => l.scope).filter((s) => s !== null);
-  const scope: ClusterOverview['scope'] = namespacedScopes.length > 0 && namespacedScopes.every((s) => s === 'cluster') ? 'cluster' : 'namespace';
+  // The scope is what was asked for: `listScoped` lists cluster-wide exactly
+  // when no namespace was given. Deriving it from the lists' own scopes
+  // mislabelled a cluster-wide request as "namespace" (with namespace: null)
+  // whenever every namespaced list failed; `partial` already says which did.
+  const scope: ClusterOverview['scope'] = namespace === null ? 'cluster' : 'namespace';
 
   const nodeRows = summarizeNodes(nodes.items, pods.scope === null ? null : pods.items, usage);
   const problems = orderProblems(
