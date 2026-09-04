@@ -16,7 +16,7 @@
   import ProblemDetail from "./ProblemDetail.svelte";
   import { EMPTY_PROBLEM_FILTER, countByKind, countBySeverity, filterProblems, restartTargetFor, type ProblemFilter } from "./overview.logic";
 
-  const KINDS: ProblemKind[] = ["Node", "Deployment", "StatefulSet", "DaemonSet", "Job", "Pod"];
+  const KINDS: ProblemKind[] = ["Node", "Deployment", "StatefulSet", "DaemonSet", "Job", "Pod", "PersistentVolumeClaim", "Service"];
 
   let overview = $derived(overviewStore.overview);
   let filter = $state<ProblemFilter>({ ...EMPTY_PROBLEM_FILTER });
@@ -33,6 +33,16 @@
   function handleRefresh() {
     overviewStore.loadOverview(k8sStore.currentNamespace);
   }
+
+  // The header's namespace picker scopes THIS view: "" is the whole cluster,
+  // anything else one namespace. openAppView issued the first load, so only
+  // a change re-loads (the backend keeps a short per-namespace cache).
+  let lastNamespace: string | undefined;
+  $effect(() => {
+    const ns = k8sStore.currentNamespace;
+    if (lastNamespace !== undefined && lastNamespace !== ns) overviewStore.loadOverview(ns);
+    lastNamespace = ns;
+  });
   function toggleSeverity(s: ProblemSeverity) {
     filter = { ...filter, severity: filter.severity === s ? null : s };
   }
@@ -81,7 +91,14 @@
   {#snippet badge()}
     {#if overview}
       <Badge tone={overview.problems.length === 0 ? "success" : severityCounts.critical > 0 ? "error" : "warning"}>{overview.problems.length} active</Badge>
-      {#if overview.scope === "namespace"}<Badge tone="warning">namespace {overview.namespace}</Badge>{/if}
+      <!-- Same scope badge as Overview, always shown: a "whole cluster" that
+           was silent here read as "this namespace". -->
+      <Badge tone={overview.scope === "cluster" ? "success" : "warning"} data-testid="overview-scope">
+        {overview.scope === "cluster" ? "whole cluster" : `namespace ${overview.namespace}`}
+      </Badge>
+      {#if overview.partial.length > 0}
+        <Badge tone="warning" title={`Could not list: ${overview.partial.join(", ")}`}>partial</Badge>
+      {/if}
     {/if}
   {/snippet}
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import { DoubleClickIntent } from "./double-click-intent";
   import type { Resource } from "$lib/types";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
@@ -7,7 +8,7 @@
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { invoke } from "$lib/ipc/core";
   import TableToolbar from "./TableToolbar.svelte";
-  import ApplyYamlDialog from "./ApplyYamlDialog.svelte";
+  import CreateResourceDialog from "./CreateResourceDialog.svelte";
   import AppTableHeader from "./TableHeader.svelte";
   import AppTableRow from "./TableRow.svelte";
   import BulkActionBar from "./BulkActionBar.svelte";
@@ -15,7 +16,7 @@
   import TableStatusBar from "./TableStatusBar.svelte";
   import TableDetailAside from "./TableDetailAside.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
-  import { RefreshCw, LayoutGrid, Filter, ClipboardPaste } from "lucide-svelte";
+  import { RefreshCw, LayoutGrid, Filter, FilePlus2 } from "lucide-svelte";
   import { extensions } from "$lib/extensions";
   import { Checkbox } from "$lib/components/ui/checkbox";
   import { cn } from "$lib/utils";
@@ -24,7 +25,7 @@
   import { metricsStore, POD_METRICS_TTL_MS } from "$lib/stores/metrics.svelte";
   import { endpointsStore, ENDPOINTS_TTL_MS } from "$lib/stores/endpoints.svelte";
   import { liveValues } from "$lib/stores/live-values.svelte";
-  import { resourceTypeLabel as catalogLabel } from "$lib/resource-catalog";
+  import { resourceTypeLabel as catalogLabel, isClusterScopedType } from "$lib/resource-catalog";
   import { contextMenuStore } from "$lib/stores/context-menu.svelte";
   import WorkloadStats from "$lib/components/common/WorkloadStats.svelte";
   import { computeWorkloadStats } from "$lib/utils/workload-stats";
@@ -211,10 +212,20 @@
     uiStore.selectedRowIndex = index;
     k8sStore.selectResource(resource);
     uiStore.previewOpen = true;
+    doubleClick.click(resource.metadata.uid);
   }
 
   function openInTab(resource: Resource) {
     openResourceDetail(resource);
+  }
+
+  // A double-click opens the row of the FIRST click, which is also the one
+  // previewed in the aside — see DoubleClickIntent for why.
+  const doubleClick = new DoubleClickIntent();
+  function handleRowDoubleClick(resource: Resource) {
+    const uid = doubleClick.resolve(resource.metadata.uid);
+    const intended = uid === resource.metadata.uid ? resource : k8sStore.resources.items.find((r) => r.metadata.uid === uid);
+    openInTab(intended ?? resource);
   }
 
   function closePreview() {
@@ -429,11 +440,11 @@
           },
         },
         {
-          id: "paste-yaml",
-          label: "Paste & Apply YAML",
-          icon: ClipboardPaste,
-          // Same preview path as the Create button — this used to apply the
-          // clipboard straight to the cluster with no confirmation either.
+          id: "create-yaml",
+          label: "Create from YAML...",
+          icon: FilePlus2,
+          // Same dialog as the Create button — this used to apply the
+          // clipboard straight to the cluster with no confirmation.
           execute: handleCreate,
         },
       ],
@@ -444,38 +455,39 @@
     if (uiStore.selectedCount > 0) confirmBulkDelete();
   }
 
-  // Applying the clipboard is a write to the live cluster, so it goes through
-  // a preview first — see ApplyYamlDialog. Both entry points (the Create
-  // button and the context menu's "Paste & Apply YAML") funnel through here.
-  let applyYamlOpen = $state(false);
-  let pendingYaml = $state("");
+  // Create opens an editor (see CreateResourceDialog) — it never reads the
+  // clipboard on its own; the dialog has a button for that. Both entry points
+  // (the Create button and the context menu's "Create from YAML...") land here.
+  let createOpen = $state(false);
 
-  async function handleCreate() {
-    let yaml: string;
-    try {
-      yaml = await navigator.clipboard.readText();
-    } catch (err) {
-      toastStore.error("Cannot read clipboard", String(err));
-      return;
-    }
-    if (!yaml.trim()) {
-      toastStore.error("Empty clipboard", "Copy a YAML manifest first, then Create");
-      return;
-    }
-    pendingYaml = yaml;
-    applyYamlOpen = true;
+  function handleCreate() {
+    createOpen = true;
   }
 
-  async function confirmApplyYaml() {
-    applyYamlOpen = false;
+  /**
+   * Apply each manifest the dialog produced, in order. `apply_yaml` takes one
+   * document at a time, and the dialog has already written the target
+   * namespace into each one. Resolves true only when every document was
+   * accepted, so the dialog keeps the draft open (and editable) on a failure.
+   */
+  async function applyManifests(manifests: string[]): Promise<boolean> {
+    let applied = 0;
     try {
-      await invoke("apply_yaml", { yaml: pendingYaml });
-      toastStore.success("Applied", "Resource created from clipboard YAML");
-      await k8sStore.refreshResources();
+      for (const yaml of manifests) {
+        await invoke("apply_yaml", { yaml });
+        applied++;
+      }
+      toastStore.success(
+        "Applied",
+        manifests.length === 1 ? "Resource created" : `${manifests.length} resources created`,
+      );
+      return true;
     } catch (err) {
-      toastStore.error("Apply failed", String(err));
+      const which = manifests.length > 1 ? ` (document ${applied + 1} of ${manifests.length})` : "";
+      toastStore.error(`Apply failed${which}`, String(err));
+      return false;
     } finally {
-      pendingYaml = "";
+      if (applied > 0) await k8sStore.refreshResources();
     }
   }
 
@@ -550,6 +562,7 @@
         state="empty"
         {columns}
         {resourceTypeLabel}
+        clusterScoped={isClusterScopedType(k8sStore.selectedResourceType) || k8sStore.isClusterScopedCrd(k8sStore.selectedResourceType)}
         hasStatFilter={!!uiStore.statFilter}
         hasTextFilter={!!uiStore.filter || uiStore.facets.length > 0}
         onretry={retryFromError}
@@ -608,7 +621,7 @@
                 highlighted={uiStore.selectedRowIndex === i}
                 resourceType={k8sStore.selectedResourceType}
                 onclick={() => handleRowClick(resource, i)}
-                ondblclick={() => openInTab(resource)}
+                ondblclick={() => handleRowDoubleClick(resource)}
                 oncontextmenu={(e) => handleRowContextMenu(resource, i, e)}
                 onmore={(x, y) => openRowMenu(resource, i, x, y)}
                 {density}
@@ -643,13 +656,6 @@
   />
 </div>
 
-{#if applyYamlOpen}
-  <ApplyYamlDialog
-    open={applyYamlOpen}
-    yaml={pendingYaml}
-    context={k8sStore.currentContext}
-    namespace={k8sStore.currentNamespace}
-    onapply={confirmApplyYaml}
-    oncancel={() => { applyYamlOpen = false; pendingYaml = ""; }}
-  />
+{#if createOpen}
+  <CreateResourceDialog onclose={() => { createOpen = false; }} onapply={applyManifests} />
 {/if}

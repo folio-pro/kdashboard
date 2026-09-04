@@ -52,7 +52,7 @@ test.describe("DetailPanel", () => {
     });
 
     test("offers the pod actions with labels", async ({ page }) => {
-      for (const name of ["Logs", "Shell", "Edit", "Delete"]) {
+      for (const name of ["Logs", "Shell", "Edit YAML", "Delete"]) {
         await expect(page.getByRole("button", { name, exact: true }).first()).toBeVisible();
       }
     });

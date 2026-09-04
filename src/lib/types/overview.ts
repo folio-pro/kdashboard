@@ -28,7 +28,28 @@ export interface PodPhaseCounts {
 }
 
 export type ProblemSeverity = "critical" | "warning";
-export type ProblemKind = "Pod" | "Deployment" | "StatefulSet" | "DaemonSet" | "Job" | "Node";
+export type ProblemKind = "Pod" | "Deployment" | "StatefulSet" | "DaemonSet" | "Job" | "Node" | "PersistentVolumeClaim" | "Service";
+
+/** Machine-readable category the Problems view keys its actions on (mirror of electron/k8s/pod-cause.ts). */
+export type ProblemCause =
+  | "image-pull"
+  | "config"
+  | "crash"
+  | "oom"
+  | "unschedulable"
+  | "progress-deadline"
+  | "job-failed"
+  | "pvc-pending"
+  | "no-endpoints"
+  | "lb-pending"
+  | "unknown";
+
+/** The most relevant pod behind a problem — where "Open pod" / "View pod logs" land. */
+export interface PodRef {
+  name: string;
+  namespace: string;
+  container: string | null;
+}
 
 export interface Problem {
   id: string;
@@ -43,6 +64,18 @@ export interface Problem {
   restarts: number;
   ready: number | null;
   desired: number | null;
+  cause: ProblemCause;
+  pod: PodRef | null;
+}
+
+/**
+ * What diagnose_resource adds on top of the generic DiagnosticResult
+ * (src/lib/types/cluster.ts): the cause and pod it settled on after looking
+ * at the owned pods, which can be more precise than the overview's snapshot.
+ */
+export interface DiagnosisVerdict {
+  cause: ProblemCause;
+  pod: PodRef | null;
 }
 
 export interface WarningEvent {

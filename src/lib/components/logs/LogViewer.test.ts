@@ -3,7 +3,6 @@ import {
   type EmptyStateOptions,
   type LogLevel,
   type LogLine,
-  detectLevel,
   tryParseJson,
   formatTimestamp,
   shortPodName,
@@ -17,79 +16,7 @@ import {
 
 // --- Tests ---
 
-describe("detectLevel", () => {
-  test("detects error level (lowercase)", () => {
-    expect(detectLevel("something error occurred")).toBe("error");
-  });
-
-  test("detects error level (uppercase)", () => {
-    expect(detectLevel("FATAL: process crashed")).toBe("error");
-  });
-
-  test("detects error level (mixed case)", () => {
-    expect(detectLevel("Error: file not found")).toBe("error");
-  });
-
-  test("detects err keyword", () => {
-    expect(detectLevel("connection err timeout")).toBe("error");
-  });
-
-  test("detects panic keyword", () => {
-    expect(detectLevel("goroutine panic: nil pointer")).toBe("error");
-  });
-
-  test("detects crit keyword", () => {
-    expect(detectLevel("crit level alert")).toBe("error");
-  });
-
-  test("detects critical keyword", () => {
-    expect(detectLevel("critical failure in subsystem")).toBe("error");
-  });
-
-  test("detects warn level (lowercase)", () => {
-    expect(detectLevel("warn: disk space low")).toBe("warn");
-  });
-
-  test("detects warning level (uppercase)", () => {
-    expect(detectLevel("WARNING: deprecated API call")).toBe("warn");
-  });
-
-  test("detects info level", () => {
-    expect(detectLevel("info: server started")).toBe("info");
-  });
-
-  test("detects notice level as info", () => {
-    expect(detectLevel("notice: scheduled maintenance")).toBe("info");
-  });
-
-  test("defaults to debug when no keywords match", () => {
-    expect(detectLevel("GET /api/health 200 OK")).toBe("debug");
-  });
-
-  test("error takes priority over warn", () => {
-    expect(detectLevel("warn: error happened")).toBe("error");
-  });
-
-  test("error takes priority over info", () => {
-    expect(detectLevel("info: fatal exception")).toBe("error");
-  });
-
-  test("warn takes priority over info", () => {
-    expect(detectLevel("info: warning issued")).toBe("warn");
-  });
-
-  test("does not match partial words (word boundary)", () => {
-    // 'information' contains 'info' but as a substring — however the regex
-    // uses \b which matches word boundaries. 'info' IS a word boundary match
-    // inside 'information' because 'info' ends where 'r' begins — actually
-    // \binfo\b would NOT match 'information'. Let's verify.
-    expect(detectLevel("informational message")).toBe("debug");
-  });
-
-  test("empty string defaults to debug", () => {
-    expect(detectLevel("")).toBe("debug");
-  });
-});
+// detectLevel is covered in detect-level.test.ts.
 
 describe("tryParseJson", () => {
   test("detects simple JSON object", () => {
@@ -230,7 +157,8 @@ describe("parseLogLine", () => {
     const line = parseLogLine("GET /health 200");
     expect(line.id).toBe(0);
     expect(line.message).toBe("GET /health 200");
-    expect(line.level).toBe("debug");
+    // No level token anywhere in the line: none is invented.
+    expect(line.level).toBeNull();
     expect(line.timestamp).toBeUndefined();
     expect(line.podName).toBeUndefined();
     expect(line.isJson).toBe(false);
@@ -335,7 +263,7 @@ describe("filterLogs", () => {
     { id: 0, podName: "pod-a-b-c", message: "info: started", level: "info", isJson: false },
     { id: 1, podName: "pod-x-y-z", message: "error: crash", level: "error", isJson: false },
     { id: 2, podName: "pod-a-b-c", message: "warn: disk low", level: "warn", isJson: false },
-    { id: 3, podName: "pod-x-y-z", message: "GET /health 200", level: "debug", isJson: false },
+    { id: 3, podName: "pod-x-y-z", message: "GET /health 200", level: null, isJson: false },
     { id: 4, message: "info: no pod", level: "info", isJson: false },
   ];
 

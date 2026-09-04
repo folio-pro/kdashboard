@@ -4,7 +4,7 @@
   import { Badge, Button } from "$lib/components/ui";
   import { Sheet, SheetContent } from "$lib/components/ui/sheet";
   import type { LogLine } from "./log-viewer";
-  import { LEVEL_LABELS, LEVEL_PILL_COLORS, MESSAGE_COLORS } from "./log-constants";
+  import { LEVEL_LABELS, LEVEL_PILL_COLORS, messageColor } from "./log-constants";
   import { getJsonHighlighted } from "./log-highlighting";
 
   let {
@@ -58,14 +58,18 @@
       <!-- Metadata -->
       <div class="flex shrink-0 flex-col gap-2 border-b border-[var(--border-color)] px-5 py-3">
         <div class="flex items-center gap-2">
-          <span
-            class={cn(
-              "rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-bold",
-              LEVEL_PILL_COLORS[selectedLog.level],
-            )}
-          >
-            {LEVEL_LABELS[selectedLog.level]}
-          </span>
+          {#if selectedLog.level}
+            <span
+              class={cn(
+                "rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-bold",
+                LEVEL_PILL_COLORS[selectedLog.level],
+              )}
+            >
+              {LEVEL_LABELS[selectedLog.level]}
+            </span>
+          {:else}
+            <span class="font-mono text-[10px] text-[var(--text-muted)]">no level</span>
+          {/if}
           {#if selectedLog.isJson}
             <Badge mono class="font-bold" style="--tone: var(--log-json);">JSON</Badge>
           {/if}
@@ -86,7 +90,7 @@
           <pre
             class={cn(
               "whitespace-pre-wrap break-all font-mono text-[11px] leading-[20px]",
-              MESSAGE_COLORS[selectedLog.level],
+              messageColor(selectedLog.level),
             )}
           >{selectedLog.message}</pre>
         {/if}

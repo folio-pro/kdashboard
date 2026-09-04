@@ -6,10 +6,13 @@ import { AsyncLoadStore } from "./async-load.svelte";
 export type Diagnosis = DiagnosticResult | { error: string } | "loading";
 
 /**
- * One payload feeds two views (Overview, Problems). Loaded cluster-wide; the
- * backend narrows to the given namespace only where the cluster-wide list is
- * refused, and says so in `scope` / `partial`. Diagnoses are fetched lazily
- * per problem and kept until the next load.
+ * One payload feeds two views (Overview, Problems). `loadOverview` takes the
+ * picker's namespace — "" (All namespaces) goes to the backend as null for a
+ * cluster-wide overview, anything else scopes it — and the backend reports
+ * what it actually covered in `scope` / `partial` (a kind whose cluster-wide
+ * list is refused is re-listed in the namespace). Both views show that scope
+ * as the same badge. The backend caches per (context, namespace) for 10s.
+ * Diagnoses are fetched lazily per problem and kept until the next load.
  */
 class OverviewStore extends AsyncLoadStore<ClusterOverview> {
   readonly diagnoses = new SvelteMap<string, Diagnosis>();
@@ -18,7 +21,7 @@ class OverviewStore extends AsyncLoadStore<ClusterOverview> {
 
   async loadOverview(namespace: string | null): Promise<void> {
     this.diagnoses.clear();
-    await this._load("get_cluster_overview", namespace);
+    await this._load("get_cluster_overview", namespace || null);
   }
 
   /** Run diagnose_resource for a problem once; reads are reactive through `diagnoses`. */

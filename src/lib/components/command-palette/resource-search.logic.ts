@@ -222,8 +222,13 @@ export class ResourceSearchIndex {
     return items;
   }
 
-  /** Rank cached objects against `query`. Synchronous; call after loading. */
-  search(query: string, limit = 30): SearchHit[] {
+  /**
+   * Rank cached objects against `query`. Synchronous; call after loading.
+   * `preferNamespace` is the namespace the user is working in: among hits of
+   * equal score it goes first, so `web-api` while in `shop` lists shop's
+   * Deployment above shop-staging's rather than whichever sorted first by name.
+   */
+  search(query: string, limit = 30, preferNamespace?: string): SearchHit[] {
     const parsed = parseSearchQuery(query);
     if (parsed.terms.length === 0 && !parsed.resourceType && !parsed.namespace) return [];
     const hits: SearchHit[] = [];
@@ -241,10 +246,17 @@ export class ResourceSearchIndex {
         hits.push({ resource, resourceType: type, score });
       }
     }
-    // Best score first; same score keeps type order (deployments before their
-    // pods) then name, so results are stable between keystrokes.
+    // Best score first; same score prefers the active namespace, then keeps
+    // type order (deployments before their pods) then name, so results are
+    // stable between keystrokes.
+    const preferred = preferNamespace?.toLowerCase() || undefined;
     hits.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
+      if (preferred) {
+        const pa = a.resource.metadata.namespace?.toLowerCase() === preferred;
+        const pb = b.resource.metadata.namespace?.toLowerCase() === preferred;
+        if (pa !== pb) return pa ? -1 : 1;
+      }
       const ta = this.types.indexOf(a.resourceType);
       const tb = this.types.indexOf(b.resourceType);
       if (ta !== tb) return ta - tb;

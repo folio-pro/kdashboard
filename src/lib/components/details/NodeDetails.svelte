@@ -10,6 +10,7 @@
   import CollapsibleConditions from "./CollapsibleConditions.svelte";
   import SmartAnnotationsCard from "./SmartAnnotationsCard.svelte";
   import RelatedResourcesCard from "./RelatedResourcesCard.svelte";
+  import NodePodsCard from "./NodePodsCard.svelte";
 
   interface Props {
     resource: Resource;
@@ -123,6 +124,8 @@
       </div>
     </DetailSection>
   {/if}
+
+  <NodePodsCard nodeName={resource.metadata.name} />
 
   <RelatedResourcesCard {resource} resourceType="nodes" />
 

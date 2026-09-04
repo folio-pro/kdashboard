@@ -36,7 +36,9 @@
     class?: string;
   }
 
-  let { size = "md", mono = false, class: className, ...restProps }: Props = $props();
+  // `value` is bindable so callers can `bind:value` (filter boxes, pickers)
+  // instead of wiring oninput by hand.
+  let { size = "md", mono = false, class: className, value = $bindable(), ...restProps }: Props = $props();
 </script>
 
-<input class={cn(inputVariants({ size, mono }), className)} {...restProps} />
+<input class={cn(inputVariants({ size, mono }), className)} bind:value {...restProps} />

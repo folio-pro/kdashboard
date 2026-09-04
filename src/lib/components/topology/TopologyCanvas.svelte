@@ -7,6 +7,9 @@
   import { openRelatedResourceTab } from "$lib/actions/navigation";
   import { kindToResourceType } from "$lib/utils/related-resources";
   import { toastStore } from "$lib/stores/toast.svelte";
+  import { Button } from "$lib/components/ui";
+  import { Scan } from "lucide-svelte";
+  import { fitViewBox, layoutTopology, maxNodesPerRow, TOPOLOGY_METRICS } from "$lib/stores/topology.logic";
 
   import type { NetpolOverlay } from "./netpol-layer.logic";
 
@@ -38,84 +41,40 @@
   }
 
   // Layout constants
-  const NODE_WIDTH = 180;
-  const NODE_HEIGHT = 48;
-  const LAYER_GAP_Y = 100;
-  const NODE_GAP_X = 40;
-  const PADDING = 60;
+  const NODE_WIDTH = TOPOLOGY_METRICS.nodeWidth;
+  const NODE_HEIGHT = TOPOLOGY_METRICS.nodeHeight;
 
   // Pan & zoom state
   let viewBox = $state({ x: 0, y: 0, w: 1200, h: 800 });
   let isPanning = $state(false);
   let panStart = $state({ x: 0, y: 0 });
   let svgEl: SVGSVGElement | undefined = $state();
+  // The canvas's own size, so the layout can wrap rows to it and the initial
+  // view can fit it; 0 until mounted, which fitViewBox treats as a default.
+  let viewportWidth = $state(0);
+  let viewportHeight = $state(0);
 
   // Hover state
   let hoveredNodeId = $state<string | null>(null);
 
-  // Compute layout: group by depth, position in layers
-  let layout = $derived.by(() => {
-    const nodes = graph.nodes;
-    const edges = graph.edges;
+  // Layout: layers by depth, wrapped into rows no wider than the viewport at
+  // the minimum readable zoom (see topology.logic.ts for the geometry).
+  let layout = $derived(layoutTopology(graph.nodes, maxNodesPerRow(viewportWidth)));
 
-    // Group nodes by depth
-    const layers: Map<number, TopologyNode[]> = new Map();
-    for (const node of nodes) {
-      const depth = node.depth;
-      if (!layers.has(depth)) layers.set(depth, []);
-      layers.get(depth)!.push(node);
-    }
+  function fit() {
+    viewBox = fitViewBox(
+      { width: layout.width, height: layout.height },
+      { width: viewportWidth, height: viewportHeight },
+    );
+  }
 
-    // Sort layers by depth
-    const sortedDepths = Array.from(layers.keys()).sort((a, b) => a - b);
-
-    // Position nodes
-    const positions: Map<string, { x: number; y: number }> = new Map();
-    let maxWidth = 0;
-
-    for (const depth of sortedDepths) {
-      const layerNodes = layers.get(depth)!;
-      // Sort nodes within layer by kind then name for consistency
-      layerNodes.sort((a, b) => {
-        if (a.kind !== b.kind) return a.kind.localeCompare(b.kind);
-        return a.name.localeCompare(b.name);
-      });
-
-      const layerWidth = layerNodes.length * (NODE_WIDTH + NODE_GAP_X) - NODE_GAP_X;
-      maxWidth = Math.max(maxWidth, layerWidth);
-      const startX = PADDING;
-
-      for (let i = 0; i < layerNodes.length; i++) {
-        positions.set(layerNodes[i].id, {
-          x: startX + i * (NODE_WIDTH + NODE_GAP_X),
-          y: PADDING + depth * (NODE_HEIGHT + LAYER_GAP_Y),
-        });
-      }
-    }
-
-    // Center each layer relative to the widest
-    for (const depth of sortedDepths) {
-      const layerNodes = layers.get(depth)!;
-      const layerWidth = layerNodes.length * (NODE_WIDTH + NODE_GAP_X) - NODE_GAP_X;
-      const offset = (maxWidth - layerWidth) / 2;
-      for (const node of layerNodes) {
-        const pos = positions.get(node.id)!;
-        pos.x += offset;
-      }
-    }
-
-    // Compute viewBox to fit all content
-    const totalWidth = maxWidth + PADDING * 2;
-    const totalHeight = (sortedDepths.length) * (NODE_HEIGHT + LAYER_GAP_Y) + PADDING * 2;
-
-    return { positions, totalWidth, totalHeight };
-  });
-
-  // Set initial viewbox when layout changes
+  // Fit whenever the layout changes (new graph, filter, or a resize that
+  // re-wrapped the rows). Hand zoom and pan survive anything else.
   $effect(() => {
-    if (layout) {
-      viewBox = { x: 0, y: 0, w: layout.totalWidth, h: layout.totalHeight };
-    }
+    void layout;
+    void viewportWidth;
+    void viewportHeight;
+    fit();
   });
 
   // Edge paths with connected node highlighting
@@ -210,10 +169,11 @@
   }
 </script>
 
+<div class="relative h-full w-full" bind:clientWidth={viewportWidth} bind:clientHeight={viewportHeight}>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <svg
   bind:this={svgEl}
-  class="h-full w-full"
+  class="block h-full w-full"
   viewBox="{viewBox.x} {viewBox.y} {viewBox.w} {viewBox.h}"
   style="cursor: {isPanning ? 'grabbing' : 'grab'};"
   onmousedown={handleMouseDown}
@@ -331,3 +291,17 @@
     {/if}
   {/each}
 </svg>
+<!-- Bottom-right: the legend owns the bottom-left corner and the NetworkPolicy
+     panel the top-right. -->
+<Button
+  variant="toolbar"
+  size="icon-sm"
+  class="absolute bottom-4 right-4"
+  onclick={fit}
+  title="Fit graph to view"
+  aria-label="Fit graph to view"
+  data-testid="topology-fit"
+>
+  <Scan class="h-3.5 w-3.5" />
+</Button>
+</div>

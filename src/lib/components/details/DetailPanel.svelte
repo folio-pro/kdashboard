@@ -3,12 +3,12 @@
   import type { Resource } from "$lib/types";
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Pencil, Terminal, Trash2, Scale, RotateCcw, History, ChevronRight, Info, ScrollText, FileCode, Bell, Ban, CircleCheck, Droplets, X, SquareArrowOutUpRight } from "lucide-svelte";
+  import { Pencil, Terminal, Trash2, Scale, RotateCcw, History, ChevronRight, Info, ScrollText, FileCode, Bell, Ban, CircleCheck, Droplets, X, SquareArrowOutUpRight, Play, Pause, RefreshCw } from "lucide-svelte";
   import type { IconComponent } from "$lib/actions/types";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
-  import { restartWorkload, rollbackDeployment } from "$lib/actions/registry";
+  import { startNodeShell, triggerCronJob, setCronJobSuspend, isCronJobSuspended, rerunJob } from "$lib/actions/registry";
   import { isCordoned, setNodeSchedulable } from "$lib/actions/node-ops";
   import { extensions } from "$lib/extensions";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
@@ -27,6 +27,9 @@
   import IngressDetails from "./IngressDetails.svelte";
   import AutoscalerDetails from "./AutoscalerDetails.svelte";
   import NodeDetails from "./NodeDetails.svelte";
+  import SecretDetails from "./SecretDetails.svelte";
+  import ConfigMapDetails from "./ConfigMapDetails.svelte";
+  import NamespaceDetails from "./NamespaceDetails.svelte";
   import GenericDetails from "./GenericDetails.svelte";
 
   /**
@@ -109,9 +112,9 @@
     return tabs;
   });
 
-  // The active sub-tab is backed by the store so header buttons, keyboard
-  // shortcuts and the command palette all drive it in place. Clamp to a valid
-  // tab for the current kind (e.g. ignore "shell" on a non-pod).
+  // The active sub-tab is backed by the store (per tab) so header buttons,
+  // keyboard shortcuts and the command palette all drive it in place. Clamp
+  // to a valid tab for the current kind (e.g. ignore "shell" on a non-pod).
   let activeSubtab = $derived<Subtab>(
     subtabs.includes(uiStore.detailSubtab as Subtab) ? (uiStore.detailSubtab as Subtab) : "overview"
   );
@@ -120,37 +123,43 @@
     uiStore.detailSubtab = t;
   }
 
-  // Reset to Overview whenever the selected resource changes. Tracks only the
-  // uid so flipping subtabs doesn't retrigger the reset.
-  let lastUid = "";
+  // Reset to Overview when the resource shown in the SAME tab changes: another
+  // row previewed in a table's aside, or a breadcrumb drill-down. A tab switch
+  // (different tab id) keeps each tab's own sub-tab — a fresh tab starts on
+  // Overview by default, so a YAML editor never leaks from one detail into the
+  // next. Keyed on tab id + uid so flipping sub-tabs doesn't retrigger.
+  let lastKey = "";
   $effect(() => {
     const uid = resource?.metadata.uid ?? "";
-    if (uid !== lastUid) {
-      lastUid = uid;
-      uiStore.detailSubtab = "overview";
-    }
+    const tabId = uiStore.activeTabId;
+    const key = `${tabId}:${uid}`;
+    if (key === lastKey) return;
+    const sameTab = lastKey.startsWith(`${tabId}:`);
+    lastKey = key;
+    if (sameTab) uiStore.detailSubtab = "overview";
   });
 
-  let restartLoading = $state(false);
-  let rollbackLoading = $state(false);
   let cordonLoading = $state(false);
+  let nodeShellLoading = $state(false);
+  let triggerLoading = $state(false);
+  let suspendLoading = $state(false);
+  let rerunLoading = $state(false);
 
   let resourceType = $derived(deriveResourceType(kind));
   let isScalable = $derived(deriveIsScalable(resourceType));
   let isRestartable = $derived(deriveIsRestartable(resourceType));
   let isRollbackable = $derived(deriveIsRollbackable(kind));
   let currentReplicas = $derived(deriveCurrentReplicas(resource));
+  let cronSuspended = $derived(resource ? isCronJobSuspended(resource) : false);
 
-  async function doRestart() {
-    if (!resource) return;
-    restartLoading = true;
-    try {
-      await restartWorkload(resource);
-    } catch (err) {
-      toastStore.error("Restart failed", String(err));
-    } finally {
-      restartLoading = false;
-    }
+  // Restart and Rollback confirm first (WorkloadConfirmDialogs) — like Scale
+  // and Delete, and unlike the fire-and-forget they used to be.
+  function doRestart() {
+    if (resource) dialogStore.openRestart(resource);
+  }
+
+  function doRollback() {
+    if (resource) dialogStore.openRollback(resource);
   }
 
   async function doToggleCordon() {
@@ -165,15 +174,50 @@
     }
   }
 
-  async function doRollback() {
+  async function doNodeShell() {
     if (!resource) return;
-    rollbackLoading = true;
+    nodeShellLoading = true;
     try {
-      await rollbackDeployment(resource);
-    } catch (err) {
-      toastStore.error("Rollback failed", String(err));
+      await startNodeShell(resource);
     } finally {
-      rollbackLoading = false;
+      nodeShellLoading = false;
+    }
+  }
+
+  async function doTrigger() {
+    if (!resource) return;
+    triggerLoading = true;
+    try {
+      await triggerCronJob(resource);
+    } catch (err) {
+      toastStore.error("Trigger failed", String(err));
+    } finally {
+      triggerLoading = false;
+    }
+  }
+
+  async function doToggleSuspend() {
+    if (!resource) return;
+    const suspend = !cronSuspended;
+    suspendLoading = true;
+    try {
+      await setCronJobSuspend(resource, suspend);
+    } catch (err) {
+      toastStore.error(suspend ? "Suspend failed" : "Resume failed", String(err));
+    } finally {
+      suspendLoading = false;
+    }
+  }
+
+  async function doRerun() {
+    if (!resource) return;
+    rerunLoading = true;
+    try {
+      await rerunJob(resource);
+    } catch (err) {
+      toastStore.error("Re-run failed", String(err));
+    } finally {
+      rerunLoading = false;
     }
   }
 
@@ -184,11 +228,11 @@
 </script>
 
 {#if resource}
-  <div data-testid="detail-panel" class="flex h-full flex-col bg-[var(--bg-primary)]">
+  <div data-testid="detail-panel" data-subtab={activeSubtab} data-kind={kind} class="flex h-full flex-col bg-[var(--bg-primary)]">
     {#if aside}
     <!-- Aside header: identity on the left, icon actions on the right. The
          labelled actions of the page header would not fit a 440px panel, and
-         Logs / Shell / Edit already have subtabs below. -->
+         Logs / Shell / YAML have their subtabs below. -->
     <div class="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border-color)] bg-[var(--bg-primary)] pl-4 pr-2">
       <div class="flex min-w-0 flex-1 flex-col">
         <span class="truncate text-[13px] font-semibold leading-4 text-[var(--text-primary)]" title={resource.metadata.name} data-testid="detail-resource-name">{resource.metadata.name}</span>
@@ -201,16 +245,26 @@
           <Button variant="muted" size="icon-sm" onclick={() => resource && dialogStore.openScale(resource)} title="Scale (s)" aria-label="Scale"><Scale class="h-3.5 w-3.5" /></Button>
         {/if}
         {#if isRestartable}
-          <Button variant="muted" size="icon-sm" onclick={doRestart} disabled={restartLoading} title="Restart" aria-label="Restart"><RotateCcw class="h-3.5 w-3.5" /></Button>
+          <Button variant="muted" size="icon-sm" onclick={doRestart} title="Restart…" aria-label="Restart"><RotateCcw class="h-3.5 w-3.5" /></Button>
         {/if}
         {#if isRollbackable}
-          <Button variant="muted" size="icon-sm" onclick={doRollback} disabled={rollbackLoading} title="Rollback" aria-label="Rollback"><History class="h-3.5 w-3.5" /></Button>
+          <Button variant="muted" size="icon-sm" onclick={doRollback} title="Rollback…" aria-label="Rollback"><History class="h-3.5 w-3.5" /></Button>
+        {/if}
+        {#if kind === "cronjob"}
+          <Button variant="muted" size="icon-sm" onclick={doTrigger} disabled={triggerLoading} title="Trigger now" aria-label="Trigger now"><Play class="h-3.5 w-3.5" /></Button>
+          <Button variant="muted" size="icon-sm" onclick={doToggleSuspend} disabled={suspendLoading} title={cronSuspended ? "Resume" : "Suspend"} aria-label={cronSuspended ? "Resume" : "Suspend"}>
+            {#if cronSuspended}<Play class="h-3.5 w-3.5" />{:else}<Pause class="h-3.5 w-3.5" />{/if}
+          </Button>
+        {/if}
+        {#if kind === "job"}
+          <Button variant="muted" size="icon-sm" onclick={doRerun} disabled={rerunLoading} title="Re-run" aria-label="Re-run"><RefreshCw class="h-3.5 w-3.5" /></Button>
         {/if}
         {#if kind === "node" && resource}
           {@const cordoned = isCordoned(resource)}
           <Button variant="muted" size="icon-sm" onclick={doToggleCordon} disabled={cordonLoading} title={cordoned ? "Uncordon" : "Cordon"} aria-label={cordoned ? "Uncordon" : "Cordon"}>
             {#if cordoned}<CircleCheck class="h-3.5 w-3.5" />{:else}<Ban class="h-3.5 w-3.5" />{/if}
           </Button>
+          <Button variant="muted" size="icon-sm" onclick={doNodeShell} disabled={nodeShellLoading} title="Node shell" aria-label="Node shell"><Terminal class="h-3.5 w-3.5" /></Button>
           <Button variant="muted" size="icon-sm" class="text-[var(--status-failed)]" onclick={() => resource && dialogStore.openDrain(resource.metadata.name)} title="Drain" aria-label="Drain"><Droplets class="h-3.5 w-3.5" /></Button>
         {/if}
         <Button variant="muted" size="icon-sm" class="hover:text-[var(--status-failed)]" onclick={handleDelete} title="Delete" aria-label="Delete"><Trash2 class="h-3.5 w-3.5" /></Button>
@@ -268,7 +322,10 @@
         {/if}
       </div>
 
-      <!-- Right: Action buttons -->
+      <!-- Right: operations. Logs / Shell / YAML are subtabs below, so the
+           header carries only the actions that change the cluster (plus the
+           editor entry point, which is the one subtab worth a labelled
+           shortcut). -->
       <div class="flex items-center gap-2">
         {#if isScalable}
           <Button variant="outline" size="md" class="gap-2" onclick={() => resource && dialogStore.openScale(resource)} title="Scale (s)">
@@ -276,28 +333,43 @@
             Scale
           </Button>
         {/if}
-        {#if showLogsButton}
-          <Button variant="outline" size="md" class="gap-2" onclick={() => setSubtab("logs")} title="Logs (l)">
-            <ScrollText class="h-3.5 w-3.5" />
-            Logs
-          </Button>
-        {/if}
-        {#if kind === "pod"}
-          <Button variant="outline" size="md" class="gap-2" onclick={() => setSubtab("shell")} title="Shell (t)">
-            <Terminal class="h-3.5 w-3.5" />
-            Shell
-          </Button>
-        {/if}
         {#if isRestartable}
-          <Button variant="outline" size="md" class="gap-2" onclick={doRestart} disabled={restartLoading} title="Restart">
+          <Button variant="outline" size="md" class="gap-2" onclick={doRestart} title="Restart (asks for confirmation)">
             <RotateCcw class="h-3.5 w-3.5" />
-            {restartLoading ? "Restarting..." : "Restart"}
+            Restart
           </Button>
         {/if}
         {#if isRollbackable}
-          <Button variant="outline" size="md" class="gap-2" onclick={doRollback} disabled={rollbackLoading} title="Rollback">
+          <Button variant="outline" size="md" class="gap-2" onclick={doRollback} title="Roll back to the previous revision (asks for confirmation)">
             <History class="h-3.5 w-3.5" />
-            {rollbackLoading ? "Rolling back..." : "Rollback"}
+            Rollback
+          </Button>
+        {/if}
+        {#if kind === "cronjob"}
+          <Button variant="outline" size="md" class="gap-2" onclick={doTrigger} disabled={triggerLoading} title="Create a Job from this CronJob's template now">
+            <Play class="h-3.5 w-3.5" />
+            {triggerLoading ? "Triggering..." : "Trigger now"}
+          </Button>
+          <Button
+            variant="outline"
+            size="md"
+            class="gap-2"
+            onclick={doToggleSuspend}
+            disabled={suspendLoading}
+            title={cronSuspended ? "Resume scheduling" : "Stop scheduling new jobs"}
+          >
+            {#if cronSuspended}
+              <Play class="h-3.5 w-3.5" />
+            {:else}
+              <Pause class="h-3.5 w-3.5" />
+            {/if}
+            {suspendLoading ? "Working..." : cronSuspended ? "Resume" : "Suspend"}
+          </Button>
+        {/if}
+        {#if kind === "job"}
+          <Button variant="outline" size="md" class="gap-2" onclick={doRerun} disabled={rerunLoading} title="Create a new Job with the same spec">
+            <RefreshCw class="h-3.5 w-3.5" />
+            {rerunLoading ? "Creating..." : "Re-run"}
           </Button>
         {/if}
         {#if kind === "node" && resource}
@@ -317,6 +389,10 @@
             {/if}
             {cordonLoading ? "Working..." : cordoned ? "Uncordon" : "Cordon"}
           </Button>
+          <Button variant="outline" size="md" class="gap-2" onclick={doNodeShell} disabled={nodeShellLoading} title="Open a host shell on this node (privileged pod)">
+            <Terminal class="h-3.5 w-3.5" />
+            {nodeShellLoading ? "Starting..." : "Node shell"}
+          </Button>
           <Button
             variant="destructive"
             size="md"
@@ -333,7 +409,7 @@
         {/each}
         <Button variant="outline" size="md" class="gap-2" onclick={() => setSubtab("yaml")} title="Edit YAML (e)">
           <Pencil class="h-3.5 w-3.5" />
-          Edit
+          Edit YAML
         </Button>
         <Button variant="destructive" size="md" class="gap-2" onclick={handleDelete} title="Delete Resource">
           <Trash2 class="h-3.5 w-3.5" />
@@ -390,6 +466,12 @@
             <AutoscalerDetails {resource} flavor={autoscalerKind} />
           {:else if kind === "node"}
             <NodeDetails {resource} />
+          {:else if kind === "secret"}
+            <SecretDetails {resource} />
+          {:else if kind === "configmap"}
+            <ConfigMapDetails {resource} />
+          {:else if kind === "namespace"}
+            <NamespaceDetails {resource} />
           {:else}
             <GenericDetails {resource} />
           {/if}

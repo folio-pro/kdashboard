@@ -88,3 +88,50 @@ export function onOpen(state: ScaleDialogState): void {
 export function getButtonLabel(loading: boolean): string {
   return loading ? "Scaling..." : "Scale";
 }
+
+// ---------------------------------------------------------------------------
+// Autoscaler awareness
+// ---------------------------------------------------------------------------
+
+export interface OwningAutoscaler {
+  name: string;
+  min: number | null;
+  max: number | null;
+}
+
+/**
+ * The HorizontalPodAutoscaler whose scaleTargetRef is this workload, if any.
+ * The dialog shows it before the user commits: a manual scale under an HPA is
+ * overwritten on the controller's next sync, which the detail page said but
+ * the dialog — where the decision is made — did not.
+ */
+export function findOwningAutoscaler(
+  autoscalers: Array<{ metadata: { name: string; namespace?: string | null }; spec?: Record<string, unknown> }>,
+  target: { kind: string; name: string; namespace: string },
+): OwningAutoscaler | null {
+  for (const hpa of autoscalers) {
+    if ((hpa.metadata.namespace ?? "") !== target.namespace) continue;
+    const ref = hpa.spec?.scaleTargetRef as { kind?: string; name?: string } | undefined;
+    if (!ref || ref.name !== target.name) continue;
+    if ((ref.kind ?? "").toLowerCase() !== target.kind.toLowerCase()) continue;
+    const min = hpa.spec?.minReplicas;
+    const max = hpa.spec?.maxReplicas;
+    return {
+      name: hpa.metadata.name,
+      min: typeof min === "number" ? min : null,
+      max: typeof max === "number" ? max : null,
+    };
+  }
+  return null;
+}
+
+/** The warning line for a scale under an autoscaler, or "" when there is none. */
+export function autoscalerWarning(hpa: OwningAutoscaler | null, replicas: number): string {
+  if (!hpa) return "";
+  const range = hpa.min !== null && hpa.max !== null ? ` (${hpa.min}–${hpa.max})` : "";
+  const outside =
+    (hpa.min !== null && replicas < hpa.min) || (hpa.max !== null && replicas > hpa.max)
+      ? " This value is outside its range, so it will be corrected immediately."
+      : " The HPA will override this value on its next sync.";
+  return `Managed by HPA ${hpa.name}${range}.${outside}`;
+}

@@ -25,7 +25,9 @@ class ResourceSearchStore {
 
   results: SearchHit[] = $derived.by(() => {
     this.version;
-    return this.active ? this.index.search(this.query) : [];
+    if (!this.active) return [];
+    // "" is the all-namespaces scope, where nothing is nearer than anything else.
+    return this.index.search(this.query, 30, k8sStore.currentNamespace || undefined);
   });
 
   /** The palette's input changed (or closed: pass ""). Kicks the lazy load. */

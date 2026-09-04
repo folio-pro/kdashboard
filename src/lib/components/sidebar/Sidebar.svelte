@@ -48,12 +48,20 @@
     navigateToCrdTable(crd);
   }
 
+  // A mid-session outage (reachable=false) outranks "connected": the boot
+  // handshake succeeded once, but the dot must say what the cluster is doing
+  // NOW, and the tooltip how old the rows on screen are.
   let statusColor = $derived(
-    k8sStore.connectionStatus === "connected"
-      ? "var(--accent)"
-      : k8sStore.connectionStatus === "connecting"
-        ? "var(--status-pending)"
-        : "var(--status-failed)"
+    !k8sStore.reachable
+      ? "var(--status-failed)"
+      : k8sStore.connectionStatus === "connected"
+        ? "var(--accent)"
+        : k8sStore.connectionStatus === "connecting"
+          ? "var(--status-pending)"
+          : "var(--status-failed)"
+  );
+  let statusTitle = $derived(
+    k8sStore.reachable ? `Connection ${k8sStore.connectionStatus}` : k8sStore.unreachableTooltip,
   );
 
   // CRDs already surfaced as fixed sidebar items (Scaling): hide them from the
@@ -102,7 +110,7 @@
   let clusterSubline = $derived.by(() => {
     const parts: string[] = [];
     const nodes = k8sStore.resourceCounts["nodes"];
-    if (nodes !== undefined) parts.push(`${nodes} nodes`);
+    if (nodes !== undefined) parts.push(`${nodes} ${nodes === 1 ? "node" : "nodes"}`);
     parts.push(k8sStore.currentNamespace ? `ns/${k8sStore.currentNamespace}` : "all namespaces");
     return parts.join(" · ");
   });
@@ -209,8 +217,8 @@
             <span
               class="h-2 w-2 shrink-0 rounded-full"
               role="img"
-              aria-label={`Connection ${k8sStore.connectionStatus}`}
-              title={`Connection ${k8sStore.connectionStatus}`}
+              aria-label={statusTitle}
+              title={statusTitle}
               style={`background: ${statusColor}; box-shadow: 0 0 0 3px color-mix(in srgb, ${statusColor} 16%, transparent);`}
             ></span>
             <div class="flex min-w-0 flex-1 flex-col">

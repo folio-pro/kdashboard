@@ -445,3 +445,66 @@ describe("usage meters", () => {
     expect(usageMeter(res({}), "podMemory", NO_CONTEXT)).toBeNull();
   });
 });
+
+describe("getCellValue — controllers, jobs, ingresses, secrets, nodes", () => {
+  const kind = (k: string, partial: Parameters<typeof res>[0]) => ({ ...res(partial), kind: k });
+
+  test("replicasets show desired/current/ready counters", () => {
+    const rs = kind("ReplicaSet", { spec: { replicas: 3 }, status: { replicas: 3, readyReplicas: 2 } });
+    expect(getCellValue(rs, "rsDesired")).toBe("3");
+    expect(getCellValue(rs, "rsCurrent")).toBe("3");
+    expect(getCellValue(rs, "rsReady")).toBe("2");
+    // Controllers omit zero counters; the cell says 0, not "-".
+    expect(getCellValue(kind("ReplicaSet", { spec: { replicas: 0 }, status: {} }), "rsReady")).toBe("0");
+  });
+
+  test("statefulsets and daemonsets", () => {
+    expect(getCellValue(kind("StatefulSet", { spec: { replicas: 2 }, status: { readyReplicas: 2 } }), "stsReady")).toBe("2/2");
+    const ds = kind("DaemonSet", { status: { desiredNumberScheduled: 3, currentNumberScheduled: 3, numberReady: 2, numberAvailable: 2 } });
+    expect(getCellValue(ds, "dsDesired")).toBe("3");
+    expect(getCellValue(ds, "dsReady")).toBe("2");
+    expect(getCellValue(ds, "dsAvailable")).toBe("2");
+  });
+
+  test("jobs: completions and duration", () => {
+    const job = kind("Job", { spec: { completions: 1 }, status: { succeeded: 1, startTime: "2026-09-04T12:00:00Z", completionTime: "2026-09-04T12:00:42Z" } });
+    expect(getCellValue(job, "jobCompletions")).toBe("1/1");
+    expect(getCellValue(job, "jobDuration")).toBe("42s");
+    expect(getCellValue(kind("Job", { status: {} }), "jobDuration")).toBe("-");
+  });
+
+  test("cronjobs: schedule, suspend, active, last schedule", () => {
+    const cj = kind("CronJob", { spec: { schedule: "*/2 * * * *", suspend: true }, status: { active: [{ name: "x" }], lastScheduleTime: new Date(Date.now() - 90_000).toISOString() } });
+    expect(getCellValue(cj, "cjSchedule")).toBe("*/2 * * * *");
+    expect(getCellValue(cj, "cjSuspend")).toBe("true");
+    expect(getCellValue(cj, "cjActive")).toBe("1");
+    expect(getCellValue(cj, "cjLastSchedule")).not.toBe("-");
+    expect(getCellValue(kind("CronJob", { spec: { schedule: "0 3 * * *" } }), "cjSuspend")).toBe("false");
+    expect(getCellValue(kind("CronJob", { spec: { schedule: "0 3 * * *" } }), "cjLastSchedule")).toBe("-");
+  });
+
+  test("ingresses: class, hosts and address", () => {
+    const ing = kind("Ingress", {
+      spec: { ingressClassName: "nginx", rules: [{ host: "shop.example.com" }, { host: "api.example.com" }] },
+      status: { loadBalancer: { ingress: [{ ip: "10.0.0.9" }] } },
+    });
+    expect(getCellValue(ing, "ingressClass")).toBe("nginx");
+    expect(getCellValue(ing, "ingressHosts")).toBe("shop.example.com, api.example.com");
+    expect(getCellValue(ing, "ingressAddress")).toBe("10.0.0.9");
+    expect(getCellValue(kind("Ingress", { spec: { rules: [{}] } }), "ingressHosts")).toBe("*");
+    expect(getCellValue(kind("Ingress", { spec: {} }), "ingressAddress")).toBe("-");
+  });
+
+  test("secret type lives at the top level, service type under spec", () => {
+    const secret = { ...res({ data: { a: "b" } }), kind: "Secret", type: "kubernetes.io/tls" };
+    expect(getCellValue(secret, "type")).toBe("kubernetes.io/tls");
+    expect(getCellValue(kind("Service", { spec: { type: "NodePort" } }), "type")).toBe("NodePort");
+  });
+
+  test("node status is its Ready condition", () => {
+    const ready = kind("Node", { status: { conditions: [{ type: "Ready", status: "True" }] } });
+    const notReady = kind("Node", { status: { conditions: [{ type: "Ready", status: "False", reason: "KubeletNotReady" }] } });
+    expect(getCellValue(ready, "status")).toBe("Ready");
+    expect(getCellValue(notReady, "status")).toBe("NotReady");
+  });
+});

@@ -1,6 +1,6 @@
 // Pure constants extracted from LogViewer.svelte — no Svelte imports, no $state/$derived.
 
-import type { LogLine } from "./log-viewer";
+import type { LineLevel } from "./log-viewer";
 
 // --- Types ---
 
@@ -36,28 +36,33 @@ export const TAIL_OPTIONS: TailLines[] = [100, 500, 1000, 5000];
 
 // --- Level display constants ---
 
-export const LEVEL_BADGE_COLORS: Record<LogLine["level"], string> = {
+export const LEVEL_BADGE_COLORS: Record<LineLevel, string> = {
   error: "text-[var(--log-error)]",
   warn: "text-[var(--log-warn)]",
   info: "text-[var(--log-info)]",
   debug: "text-[var(--log-debug)]",
 };
 
-export const LEVEL_LABELS: Record<LogLine["level"], string> = {
+export const LEVEL_LABELS: Record<LineLevel, string> = {
   error: "ERROR",
   warn: "WARN",
   info: "INFO",
   debug: "DEBUG",
 };
 
-export const MESSAGE_COLORS: Record<LogLine["level"], string> = {
+export const MESSAGE_COLORS: Record<LineLevel, string> = {
   error: "text-[var(--log-error)]",
   warn: "text-[var(--log-warn)]",
   info: "text-[var(--text-secondary)]",
   debug: "text-[var(--text-secondary)]",
 };
 
-export const LEVEL_PILL_COLORS: Record<LogLine["level"], string> = {
+/** Message colour for a line, unlevelled lines reading as ordinary output. */
+export function messageColor(level: LineLevel | null): string {
+  return level === null ? MESSAGE_COLORS.info : MESSAGE_COLORS[level];
+}
+
+export const LEVEL_PILL_COLORS: Record<LineLevel, string> = {
   error: "bg-[var(--log-error)]/15 text-[var(--log-error)]",
   warn: "bg-[var(--log-warn)]/15 text-[var(--log-warn)]",
   info: "bg-[var(--log-info)]/15 text-[var(--log-info)]",

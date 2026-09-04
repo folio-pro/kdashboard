@@ -31,9 +31,11 @@
     <IconComponent class="h-4 w-4" />
   </button>
 {:else}
+  <!-- scroll-mt matches the sticky section header's height, so scrolling a
+       row into view never parks it underneath the header. -->
   <button
     class={cn(
-      "flex w-full min-w-0 items-center gap-2.5 border-l-2 px-[13px] py-[6px] text-[12px] transition-colors",
+      "flex w-full min-w-0 items-center gap-2.5 border-l-2 px-[13px] py-[6px] text-[12px] transition-colors scroll-mt-8",
       active
         ? "border-[var(--accent)] bg-[var(--sidebar-hover)] text-[var(--text-primary)]"
         : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--text-primary)]"

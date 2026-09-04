@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   computeWorkloadStats,
   computePodStats,
+  isPodNeedingAttention,
   computeDeploymentStats,
   computeServiceStats,
   computeStatefulSetStats,
@@ -158,6 +159,23 @@ describe("computePodStats", () => {
     const result = computePodStats(items);
     const restartsStat = result.stats.find((s) => s.key === "restarts");
     expect(restartsStat?.value).toBe(0);
+  });
+
+  test("Unknown and phase-less pods count in the strip, so the chips add up to the total", () => {
+    const items = [
+      makeResource({ status: { phase: "Running" } }),
+      makeResource({ status: { phase: "Unknown" } }),
+      makeResource({ status: {} }),
+    ];
+    const result = computePodStats(items);
+    const byKey = Object.fromEntries(result.stats.map((s) => [s.key, s.value]));
+    expect(byKey.total).toBe(3);
+    expect(byKey.unknown).toBe(2);
+    expect(byKey.running + byKey.failed + byKey.pending + byKey.succeeded + byKey.unknown).toBe(byKey.total);
+    expect(result.stats.find((s) => s.key === "unknown")?.filterable).toBe(true);
+    expect(result.healthSegments.reduce((s, seg) => s + seg.value, 0)).toBe(3);
+    // Without such a pod the chip stays out of the strip.
+    expect(computePodStats([makeResource({ status: { phase: "Running" } })]).stats.some((s) => s.key === "unknown")).toBe(false);
   });
 
   test("health segments add up to total", () => {
@@ -706,5 +724,32 @@ describe("stat cards sum invariant", () => {
     ];
     const result = computeIngressStats(items);
     expect(filterableSum(result.stats)).toBe(getTotal(result.stats));
+  });
+});
+
+describe("isPodNeedingAttention — every failing pod counts", () => {
+  test("a pod in phase Failed needs attention even with no waiting container", () => {
+    const r = makeResource({ status: { phase: "Failed", containerStatuses: [{ restartCount: 0, state: { terminated: { exitCode: 1, reason: "Error" } } }] } });
+    expect(isPodNeedingAttention(r)).toBe(true);
+  });
+
+  test("an unschedulable pending pod needs attention", () => {
+    const r = makeResource({ status: { phase: "Pending", conditions: [{ type: "PodScheduled", status: "False", reason: "Unschedulable" }] } });
+    expect(isPodNeedingAttention(r)).toBe(true);
+  });
+
+  test("a healthy running pod and a completed pod do not", () => {
+    expect(isPodNeedingAttention(makeResource({ status: { phase: "Running", containerStatuses: [{ restartCount: 1, state: { running: {} } }] } }))).toBe(false);
+    expect(isPodNeedingAttention(makeResource({ status: { phase: "Succeeded", containerStatuses: [{ restartCount: 0, state: { terminated: { exitCode: 0, reason: "Completed" } } }] } }))).toBe(false);
+  });
+
+  test("the pod stats expose a Completed chip so the strip adds up", () => {
+    const result = computePodStats([
+      makeResource({ status: { phase: "Running" } }),
+      makeResource({ status: { phase: "Succeeded" } }),
+      makeResource({ status: { phase: "Succeeded" } }),
+    ]);
+    expect(result.stats.find((s) => s.key === "succeeded")?.value).toBe(2);
+    expect(result.stats.find((s) => s.key === "succeeded")?.filterable).toBe(true);
   });
 });

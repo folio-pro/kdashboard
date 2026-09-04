@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Badge } from "$lib/components/ui";
   import { ChevronRight, Network, Lock } from "lucide-svelte";
-  import type { Resource } from "$lib/types";
+  import type { Resource, ResourceList } from "$lib/types";
+  import { invoke } from "$lib/ipc/core";
   import MetadataSection from "./MetadataSection.svelte";
   import LabelsSection from "./LabelsSection.svelte";
   import DetailSection from "./DetailSection.svelte";
@@ -58,6 +59,34 @@
   let labels = $derived(resource.metadata.labels ?? {});
   let annotations = $derived(resource.metadata.annotations ?? {});
 
+  // The Services in the Ingress's namespace, so a backend pointing at a name
+  // that does not exist is flagged instead of printed as if it were fine.
+  // null until listed: nothing is marked on a guess. Re-listed whenever the
+  // namespace changes: the aside keeps this component mounted while the user
+  // moves between rows, so a one-time list would judge an Ingress in one
+  // namespace by the Services of another.
+  let serviceNames = $state<Set<string> | null>(null);
+
+  $effect(() => {
+    const namespace = resource.metadata.namespace;
+    let cancelled = false;
+    serviceNames = null;
+    invoke<ResourceList>("list_resources", { resourceType: "services", namespace })
+      .then((result) => {
+        if (!cancelled) serviceNames = new Set(result.items.map((s) => s.metadata.name));
+      })
+      .catch(() => {
+        // Cannot list Services here — leave the backends unmarked.
+      });
+    return () => { cancelled = true; };
+  });
+
+  function serviceMissing(name: string | undefined): boolean {
+    return !!name && serviceNames !== null && !serviceNames.has(name);
+  }
+
+  let defaultBackendMissing = $derived(serviceMissing(defaultBackend?.service?.name));
+
 </script>
 
 <div class="select-text">
@@ -70,7 +99,7 @@
         <KvField label="Load Balancer" value={loadBalancerIngress.map((i) => i.ip ?? i.hostname ?? "").join(", ")} />
       {/if}
       {#if defaultBackendStr}
-        <KvField label="Default Backend" value={defaultBackendStr} />
+        <KvField label="Default Backend" value={defaultBackendMissing ? `${defaultBackendStr} (service not found)` : defaultBackendStr} />
       {/if}
     </KvGrid>
   </DetailSection>
@@ -111,11 +140,21 @@
             <span class="text-[13px] font-semibold text-[var(--text-primary)]">{rule.host ?? "*"}</span>
             {#if rule.http?.paths}
               {#each rule.http.paths as path}
+                {@const missing = serviceMissing(path.backend?.service?.name)}
                 <div class="flex items-center gap-2.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
                   <Badge appearance="surface" bordered mono>{path.pathType ?? "Prefix"}</Badge>
                   <span class="font-mono text-[13px] text-[var(--text-secondary)]">{path.path ?? "/"}</span>
                   <ChevronRight class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
-                  <span class="font-mono text-[13px] font-medium text-[var(--text-primary)]">{path.backend?.service?.name ?? "?"}:{path.backend?.service?.port?.number ?? path.backend?.service?.port?.name ?? "?"}</span>
+                  <span
+                    class="font-mono text-[13px] font-medium"
+                    style:color={missing ? "var(--status-pending)" : "var(--text-primary)"}
+                    title={missing ? `Service ${path.backend?.service?.name} does not exist in this namespace` : undefined}
+                    data-testid="ingress-backend"
+                    data-missing={missing ? "true" : undefined}
+                  >{path.backend?.service?.name ?? "?"}:{path.backend?.service?.port?.number ?? path.backend?.service?.port?.name ?? "?"}</span>
+                  {#if missing}
+                    <Badge tone="warning" size="xs">not found</Badge>
+                  {/if}
                 </div>
               {/each}
             {/if}

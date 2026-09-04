@@ -36,6 +36,10 @@ describe("DialogStore", () => {
     expect(store.deleteOpen).toBe(false);
     expect(store.deleteResource).toBeNull();
     expect(store.upsellOpen).toBe(false);
+    expect(store.restartOpen).toBe(false);
+    expect(store.restartResources).toEqual([]);
+    expect(store.rollbackOpen).toBe(false);
+    expect(store.rollbackResource).toBeNull();
   });
 
   // --- Scale dialog ---
@@ -92,6 +96,57 @@ describe("DialogStore", () => {
 
     expect(store.deleteOpen).toBe(false);
     expect(store.deleteResource).toBeNull();
+  });
+
+  // --- Restart confirmation ---
+
+  test("openRestart with one resource opens the dialog with a single target", () => {
+    const resource = makeResource();
+    store.openRestart(resource);
+
+    expect(store.restartOpen).toBe(true);
+    expect(store.restartResources).toEqual([resource]);
+  });
+
+  test("openRestart with a list keeps every target (bulk restart)", () => {
+    const a = makeResource({ metadata: { name: "a" } as Resource["metadata"] });
+    const b = makeResource({ metadata: { name: "b" } as Resource["metadata"] });
+    store.openRestart([a, b]);
+
+    expect(store.restartOpen).toBe(true);
+    expect(store.restartResources.map((r) => r.metadata.name)).toEqual(["a", "b"]);
+  });
+
+  test("openRestart with an empty list is a no-op", () => {
+    store.openRestart([]);
+    expect(store.restartOpen).toBe(false);
+    expect(store.restartResources).toEqual([]);
+  });
+
+  test("closeRestart resets all restart state", () => {
+    store.openRestart(makeResource());
+    store.closeRestart();
+
+    expect(store.restartOpen).toBe(false);
+    expect(store.restartResources).toEqual([]);
+  });
+
+  // --- Rollback confirmation ---
+
+  test("openRollback stores the deployment and opens the dialog", () => {
+    const resource = makeResource();
+    store.openRollback(resource);
+
+    expect(store.rollbackOpen).toBe(true);
+    expect(store.rollbackResource).toBe(resource);
+  });
+
+  test("closeRollback resets all rollback state", () => {
+    store.openRollback(makeResource());
+    store.closeRollback();
+
+    expect(store.rollbackOpen).toBe(false);
+    expect(store.rollbackResource).toBeNull();
   });
 
   // --- Upsell dialog ---

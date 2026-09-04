@@ -262,13 +262,20 @@
         </span>
       {:else if column.key === "podReady"}
         <!-- Tiles say which container; the fraction says how many. Amber when
-             not every container is ready, so a 1/2 stands out from a 2/2. -->
+             not every container is ready, so a 1/2 stands out from a 2/2 — but
+             not for a pod that has finished: a Completed pod's 0/1 is the
+             expected end state, so it reads muted rather than unhealthy. -->
         {@const ready = podReadyCount(resource)}
+        {@const finished = resource.status?.phase === "Succeeded"}
         <div class="flex items-center gap-2 overflow-hidden">
           <ContainersCell {resource} {density} />
           <span
             class="shrink-0 font-mono tabular-nums"
-            style:color={ready.total > 0 && ready.ready < ready.total ? "var(--status-pending)" : "var(--text-secondary)"}
+            style:color={finished
+              ? "var(--text-muted)"
+              : ready.total > 0 && ready.ready < ready.total
+                ? "var(--status-pending)"
+                : "var(--text-secondary)"}
           >{ready.ready}/{ready.total}</span>
         </div>
       {:else if column.key === "deployReady"}

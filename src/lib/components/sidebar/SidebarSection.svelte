@@ -22,11 +22,12 @@
 </script>
 
 <!-- The header sticks to the top of the scroll container while its rows pass
-     underneath, and doubles as the collapse toggle. -->
+     underneath, and doubles as the collapse toggle. It is painted opaque on
+     purpose: a translucent fade let the row sliding under it show through as
+     a half-clipped item, which read as the header overlapping the list. -->
 <div class="section mt-3.5">
   <div
-    class="section-header sticky top-0 z-[1] border-t border-[var(--border-color)]"
-    style="background: linear-gradient(var(--sidebar-bg) 82%, transparent); backdrop-filter: blur(2px);"
+    class="section-header sticky top-0 z-[1] border-t border-[var(--border-color)] bg-[var(--sidebar-bg)]"
   >
     <button
       type="button"

@@ -4,6 +4,7 @@
   import { Button } from "$lib/components/ui";
   import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { toastStore } from "$lib/stores/toast.svelte";
   import { scheduleFlush } from "$lib/utils/frame-scheduler";
   import type { Resource } from "$lib/types";
   import { onMount, untrack } from "svelte";
@@ -16,6 +17,12 @@
     resetLogIdCounter,
     buildStreamRequest,
     streamEmptyStateMessage,
+    filterLogs,
+    formatLogsForExport,
+    exportFileName,
+    readWrapPreference,
+    writeWrapPreference,
+    ALL_CONTAINERS,
   } from "./log-viewer";
   import { createLogStream } from "./log-stream.svelte";
   import {
@@ -24,7 +31,7 @@
     SINCE_SECONDS,
     LEVEL_BADGE_COLORS,
     LEVEL_LABELS,
-    MESSAGE_COLORS,
+    messageColor,
     type TailLines,
     type SinceDuration,
   } from "./log-constants";
@@ -40,7 +47,14 @@
   let logs = $state.raw<LogLine[]>([]);
   let filterText = $state("");
   let showTimestamps = $state(true);
+  /** A container name, or ALL_CONTAINERS. */
   let selectedContainer = $state("");
+
+  // Line wrap is a per-machine display preference, so it lives in
+  // localStorage like the sidebar state rather than in cluster settings.
+  const wrapStorage = typeof localStorage === "undefined" ? undefined : localStorage;
+  let wrapLines = $state(readWrapPreference(wrapStorage));
+  $effect(() => writeWrapPreference(wrapStorage, wrapLines));
   let containerSourcePod = $state<Resource | null>(null);
   let deploymentPodNames = $state<string[]>([]);
   let podsLoading = $state(false);
@@ -63,8 +77,14 @@
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: 0,
     getScrollElement: () => logContainer ?? null,
-    estimateSize: () => 22,
+    estimateSize: () => 26,
     overscan: 30,
+    // Inset the first and last rows from the frame. Rows used to start at the
+    // very top edge of the scroll box, so the first line sat flush under the
+    // border — and under the panel header it visually merges with — and read
+    // as clipped; the last line likewise touched the bottom edge.
+    paddingStart: 4,
+    paddingEnd: 4,
   });
 
   function measureElement(el: HTMLDivElement) {
@@ -163,34 +183,12 @@
   }
 
   // --- Derived state ---
-  let filteredLogs = $derived.by(() => {
-    const hasPodFilter = podFilter !== null;
-    const hasLevelFilter = levelFilter !== "all";
-    const hasTextFilter = filterText.length > 0;
-
-    if (!hasPodFilter && !hasLevelFilter && !hasTextFilter) return logs;
-
-    let textMatcher: ((msg: string) => boolean) | null = null;
-    if (hasTextFilter) {
-      if (useRegex) {
-        try {
-          const regex = new RegExp(filterText, "i");
-          textMatcher = (msg) => regex.test(msg);
-        } catch {
-          textMatcher = null;
-        }
-      } else {
-        const lower = filterText.toLowerCase();
-        textMatcher = (msg) => msg.toLowerCase().includes(lower);
-      }
-    }
-
-    return logs.filter((l) =>
-      (!hasPodFilter || l.podName === podFilter) &&
-      (!hasLevelFilter || l.level === levelFilter) &&
-      (!textMatcher || textMatcher(l.message))
-    );
-  });
+  // filterLogs returns `logs` itself when no filter is active, so the common
+  // case allocates nothing. Level semantics (what `info` does with unlevelled
+  // lines) are defined once, in levelMatches().
+  let filteredLogs = $derived(
+    filterLogs(logs, { podFilter, levelFilter, filterText, useRegex }),
+  );
 
   $effect.pre(() => {
     const count = filteredLogs.length;
@@ -264,13 +262,18 @@
     return [] as string[];
   });
 
+  // Keep the selection valid for the CURRENT pod: switching to a pod whose
+  // containers differ used to keep the old name and stream a container the new
+  // pod does not have. "All containers" only stands while there are several.
   $effect(() => {
     const names = containers;
-    if (names.length > 0 && !selectedContainer) {
-      selectedContainer = names[0];
-    } else if (names.length === 0) {
+    if (names.length === 0) {
       selectedContainer = "";
+      return;
     }
+    const valid =
+      selectedContainer === ALL_CONTAINERS ? names.length > 1 : names.includes(selectedContainer);
+    if (!valid) selectedContainer = names[0];
   });
 
   // --- Streaming lifecycle ---
@@ -315,6 +318,7 @@
         isDeployment,
         deploymentPodNames,
         container: selectedContainer,
+        containers,
         tailLines,
         sinceSeconds: SINCE_SECONDS.get(sinceDuration) ?? null,
         // Always ask the backend for timestamps; showTimestamps only decides
@@ -365,6 +369,29 @@
     if (isStreaming) startStreaming();
   }
 
+  // --- Export (the displayed lines, i.e. after every filter) ---
+  function exportText(): string {
+    return formatLogsForExport(filteredLogs, { timestamps: showTimestamps });
+  }
+
+  async function copyLogs() {
+    await navigator.clipboard.writeText(exportText());
+  }
+
+  async function downloadLogs() {
+    const defaultName = exportFileName(k8sStore.selectedResource?.metadata?.name, selectedContainer);
+    try {
+      // null: the user cancelled the save dialog — nothing to report.
+      const saved = await invoke<{ path: string } | null>("save_text_file", {
+        defaultName,
+        content: exportText(),
+      });
+      if (saved) toastStore.success("Logs saved", saved.path);
+    } catch (err) {
+      toastStore.error("Could not save logs", err instanceof Error ? err.message : String(err));
+    }
+  }
+
   // --- Log detail / navigation ---
   function selectLog(log: LogLine) {
     selectedLog = log;
@@ -413,7 +440,11 @@
     <div class="relative flex h-full flex-col">
       <!-- Log Entries (virtualized) -->
       <div
-        class="relative min-h-0 flex-1 overflow-y-auto rounded-sm border border-[var(--border-color)] bg-[var(--log-bg)] font-mono"
+        data-testid="log-scroll"
+        class={cn(
+          "relative min-h-0 flex-1 overflow-y-auto rounded-sm border border-[var(--border-color)] bg-[var(--log-bg)] font-mono",
+          wrapLines ? "overflow-x-hidden" : "overflow-x-auto",
+        )}
         bind:this={logContainer}
         onscroll={handleScroll}
       >
@@ -453,15 +484,20 @@
                   {#if showTimestamps && line.timestamp}
                     <span class="shrink-0 text-[11px] leading-[20px] text-[var(--log-timestamp)]">{line.timestamp}</span>
                   {/if}
-                  <span
-                    class={cn("shrink-0 text-[11px] leading-[20px] font-semibold", LEVEL_BADGE_COLORS[line.level])}
-                  >
-                    {LEVEL_LABELS[line.level]}
-                  </span>
+                  <!-- No badge for a line that declares no level: a guessed
+                       one is wrong on its face (nginx access lines are not
+                       DEBUG). -->
+                  {#if line.level}
+                    <span
+                      class={cn("shrink-0 text-[11px] leading-[20px] font-semibold", LEVEL_BADGE_COLORS[line.level])}
+                    >
+                      {LEVEL_LABELS[line.level]}
+                    </span>
+                  {/if}
                   {#if line.isJson && line.jsonFormatted}
-                    <pre class="min-w-0 whitespace-pre-wrap break-all text-[11px] leading-[20px] text-[var(--text-secondary)]">{@html getJsonHighlighted(line)}</pre>
+                    <pre class={cn("min-w-0 text-[11px] leading-[20px] text-[var(--text-secondary)]", wrapLines ? "whitespace-pre-wrap break-all" : "whitespace-pre")}>{@html getJsonHighlighted(line)}</pre>
                   {:else}
-                    <span class={cn("min-w-0 break-all text-[11px] leading-[20px]", MESSAGE_COLORS[line.level])}>
+                    <span class={cn("min-w-0 text-[11px] leading-[20px]", wrapLines ? "whitespace-pre-wrap break-all" : "whitespace-pre", messageColor(line.level))}>
                       {line.message}
                     </span>
                   {/if}
@@ -506,6 +542,8 @@
     bind:showTimestamps
     {showPrevious}
     bind:useRegex
+    bind:wrapLines
+    hasLines={filteredLogs.length > 0}
     {logPodNames}
     onStartStreaming={startStreaming}
     onStopStreaming={stopStreaming}
@@ -514,6 +552,8 @@
     onTailSelect={handleTailSelect}
     onTogglePrevious={togglePrevious}
     onClear={clearLogs}
+    onCopy={copyLogs}
+    onDownload={downloadLogs}
   />
 
   <!-- Log Detail Sheet -->

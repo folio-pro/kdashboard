@@ -15,7 +15,8 @@ declare global {
     /** Invoke a backend command; resolves with the handler result or rejects with its Error. */
     invoke(cmd: string, args: Record<string, unknown>): Promise<unknown>;
     /** Subscribe to a backend event channel. */
-    on(channel: string, cb: (event: unknown, payload: unknown) => void): void;
+    /** Subscribe; the returned closure unsubscribes (function identity does not survive contextBridge, so `off` alone cannot). */
+    on(channel: string, cb: (event: unknown, payload: unknown) => void): () => void;
     /** Unsubscribe a previously-registered channel listener (same fn reference). */
     off(channel: string, cb: (event: unknown, payload: unknown) => void): void;
     /** Open a URL in the default browser. */

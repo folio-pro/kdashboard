@@ -12,7 +12,7 @@ import { cpuCell, memoryCell, formatCpu, formatBytes } from "$lib/stores/metrics
 import type { AutoscalerSummary } from "$lib/utils/autoscaler";
 import { formatReplicas, formatTargets } from "$lib/utils/autoscaler";
 import { podOwner, podReadyCount, podStatus } from "$lib/utils/pod-status";
-import { deploymentStatus, shortImage, templateImages } from "$lib/utils/workload-status";
+import { deploymentStatus, nodeStatus, shortImage, templateImages } from "$lib/utils/workload-status";
 import { serviceExternal, servicePortsLabel, serviceSelector, type EndpointSummary } from "$lib/utils/service-info";
 
 /**
@@ -73,6 +73,22 @@ function count(value: unknown): string {
   return (Array.isArray(value) ? value.length : 0).toString();
 }
 
+/** A numeric field, "0" when absent (controllers omit zero counters). */
+function num(value: unknown): string {
+  return typeof value === "number" ? value.toString() : "0";
+}
+
+/** Wall time between a Job's start and completion (or now while it runs). */
+function jobDuration(status: Json): string {
+  const start = typeof status.startTime === "string" ? Date.parse(status.startTime) : NaN;
+  if (Number.isNaN(start)) return NONE;
+  const end = typeof status.completionTime === "string" ? Date.parse(status.completionTime) : Date.now();
+  const secs = Math.max(0, Math.round((end - start) / 1000));
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m${secs % 60}s`;
+  return `${Math.floor(secs / 3600)}h${Math.floor((secs % 3600) / 60)}m`;
+}
+
 /**
  * When an Event was last observed: lastTimestamp for classic events, then the
  * series / eventTime fields the events.k8s.io shapes use, then firstTimestamp.
@@ -110,6 +126,8 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
       // A pod's status is what kubectl prints, not its phase: a Running pod
       // with a crash-looping container reads CrashLoopBackOff.
       if (resource.kind === "Pod") return podStatus(resource).label;
+      // A node's status is its Ready condition (plus pressure), not a phase.
+      if (resource.kind === "Node") return nodeStatus(resource).label;
       return str(status.phase ?? status.status);
     case "data": {
       const data = resource.data ?? spec.data ?? status.data;
@@ -154,9 +172,58 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
     case "available":
       return ((status.availableReplicas as number) ?? 0).toString();
 
+    // ReplicaSets / StatefulSets / DaemonSets: the counters kubectl prints.
+    case "rsDesired":
+      return num(spec.replicas);
+    case "rsCurrent":
+      return num(status.replicas);
+    case "rsReady":
+      return num(status.readyReplicas);
+    case "stsReady":
+      return `${(status.readyReplicas as number) ?? 0}/${(spec.replicas as number) ?? 0}`;
+    case "dsDesired":
+      return num(status.desiredNumberScheduled);
+    case "dsCurrent":
+      return num(status.currentNumberScheduled);
+    case "dsReady":
+      return num(status.numberReady);
+    case "dsAvailable":
+      return num(status.numberAvailable);
+
+    // Jobs / CronJobs.
+    case "jobCompletions":
+      return `${(status.succeeded as number) ?? 0}/${(spec.completions as number) ?? 1}`;
+    case "jobDuration":
+      return jobDuration(status);
+    case "cjSchedule":
+      return str(spec.schedule);
+    case "cjSuspend":
+      return bool(spec.suspend ?? false);
+    case "cjActive":
+      return count(status.active);
+    case "cjLastSchedule": {
+      void ctx.ageTick;
+      const last = status.lastScheduleTime;
+      return typeof last === "string" && last !== "" ? formatAge(last) : NONE;
+    }
+
+    // Ingresses.
+    case "ingressClass":
+      return str(spec.ingressClassName ?? meta.annotations?.["kubernetes.io/ingress.class"]);
+    case "ingressHosts": {
+      const rules = spec.rules as Array<{ host?: string }> | undefined;
+      const hosts = (rules ?? []).map((r) => r.host).filter((h): h is string => Boolean(h));
+      return summarize(hosts.length > 0 ? hosts : (rules ?? []).length > 0 ? ["*"] : [], 3);
+    }
+    case "ingressAddress": {
+      const lb = (status.loadBalancer as { ingress?: Array<{ ip?: string; hostname?: string }> } | undefined)?.ingress;
+      return summarize((lb ?? []).map((i) => i.ip ?? i.hostname).filter((a): a is string => Boolean(a)), 3);
+    }
+
     // --- Services / networking ---------------------------------------------
     case "type":
-      return str(spec.type);
+      // Secrets carry `type` at the top level; Services under spec.
+      return str(resource.type ?? spec.type);
     case "clusterIP":
       return str(spec.clusterIP);
     case "externalIP": {
@@ -359,6 +426,7 @@ export const isStatusColumn = (key: string): boolean =>
 export function statusDetail(resource: Resource, key: string): string {
   if (key === "deployStatus") return deploymentStatus(resource).detail ?? "";
   if ((key === "status" || key === "phase") && resource.kind === "Pod") return podStatus(resource).reason ?? "";
+  if ((key === "status" || key === "phase") && resource.kind === "Node") return nodeStatus(resource).detail ?? "";
   return "";
 }
 export const isContainersColumn = (key: string): boolean => key === "containers";

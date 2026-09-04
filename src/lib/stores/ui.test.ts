@@ -162,6 +162,35 @@ describe("UiStore", () => {
       expect(store.detailSubtab).toBe("yaml");
     });
 
+    test("detailSubtab is per tab: a new detail starts on Overview and each tab keeps its own", () => {
+      store.showDetails("web", "Deployment", "default");
+      const first = store.activeTabId;
+      store.detailSubtab = "yaml";
+      expect(store.detailSubtab).toBe("yaml");
+
+      // Opening another resource must not inherit the YAML sub-tab.
+      store.showDetails("app-config", "ConfigMap", "default");
+      expect(store.activeTabId).not.toBe(first);
+      expect(store.detailSubtab).toBe("overview");
+      store.detailSubtab = "events";
+
+      // Switching back restores the first tab's sub-tab, and vice versa.
+      store.activateTab(first);
+      expect(store.detailSubtab).toBe("yaml");
+      store.closeTab(first);
+      expect(store.detailSubtab).toBe("events");
+    });
+
+    test("detailSubtab defaults to overview on a table tab and survives a round trip", () => {
+      expect(store.detailSubtab).toBe("overview");
+      store.detailSubtab = "logs"; // the table's aside preview
+      store.showDetails("web", "Deployment", "default");
+      expect(store.detailSubtab).toBe("overview");
+      store.backToPrevious();
+      expect(store.activeView).toBe("table");
+      expect(store.detailSubtab).toBe("logs");
+    });
+
     test("backToPrevious from the default pods tab reopens it (only tab)", () => {
       // the pods table is the only tab, closing it re-creates it
       store.backToPrevious();

@@ -78,6 +78,9 @@ export interface Tab {
   selectedRowIndex?: number;
   /** Table views: the detail aside is open for the selected resource (ephemeral). */
   previewOpen?: boolean;
+  /** Detail views (and a table's aside): the DetailPanel sub-tab in use. Per
+   *  tab, so a YAML editor left open in one detail never leaks into the next. */
+  detailSubtab?: DetailSubtab;
 }
 
 const EMPTY_SELECTED_ROWS: Set<string> = new Set();
@@ -143,11 +146,6 @@ export class UiStoreLogic {
   sidebarCollapsed = false;
   commandPaletteOpen = false;
   previousView: ActiveView | null = null;
-
-  // Active sub-tab inside the resource DetailPanel (Overview/Logs/Shell/YAML/
-  // Events). Lifted to the store so header buttons, keyboard shortcuts and the
-  // command palette can switch it in-place instead of opening a new top tab.
-  detailSubtab: DetailSubtab = "overview";
 
   // Tab system
   tabs: Tab[] = [mkPodsTab()];
@@ -325,6 +323,19 @@ export class UiStoreLogic {
   set previewOpen(v: boolean) {
     const t = this.activeTab;
     if (t) t.previewOpen = v;
+  }
+
+  // Active sub-tab inside the resource DetailPanel (Overview/Logs/Shell/YAML/
+  // Events). On the store so header buttons, keyboard shortcuts and the
+  // command palette can switch it in place instead of opening a new top tab;
+  // stored PER TAB so every freshly opened detail starts on Overview and a
+  // tab keeps its sub-tab across switches.
+  get detailSubtab(): DetailSubtab {
+    return this.activeTab?.detailSubtab ?? "overview";
+  }
+  set detailSubtab(v: DetailSubtab) {
+    const t = this.activeTab;
+    if (t) t.detailSubtab = v;
   }
 
   get selectedRowIndex(): number {
