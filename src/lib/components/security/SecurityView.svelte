@@ -2,8 +2,9 @@
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { Badge, SegmentedControl, StatTile, type BadgeTone } from "$lib/components/ui";
-  import { Shield, ShieldAlert, ShieldCheck, ChevronDown, ChevronRight } from "lucide-svelte";
+  import { Shield, ShieldAlert, ShieldCheck, ShieldQuestionMark, ChevronDown, ChevronRight } from "lucide-svelte";
   import { securityStore } from "$lib/stores/security.svelte";
+  import { podScanLabel, podScanSummary, vulnTotal } from "$lib/stores/security.logic";
   import { rbacStore } from "$lib/stores/rbac.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
     import RbacPanel from "./RbacPanel.svelte";
@@ -37,10 +38,6 @@
       next.add(key);
     }
     expandedPods = next;
-  }
-
-  function vulnTotal(v: { critical: number; high: number; medium: number; low: number; unknown: number }): number {
-    return v.critical + v.high + v.medium + v.low + v.unknown;
   }
 
   /**
@@ -149,7 +146,9 @@
       <div class="space-y-1">
         {#each securityStore.overview!.pods as pod}
           {@const podKey = `${pod.namespace}/${pod.name}`}
-          <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+          {@const scan = podScanSummary(pod)}
+          {@const label = podScanLabel(scan)}
+          <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]" data-testid="security-pod" data-scan-state={label?.tone ?? "vulnerable"}>
             <button
               class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-tertiary)]"
               onclick={() => togglePod(podKey)}
@@ -160,7 +159,10 @@
                 <ChevronRight class="h-3.5 w-3.5 text-[var(--text-muted)]" />
               {/if}
 
-              {#if pod.compliant}
+              <!-- A pod nobody scanned is neither compliant nor not: it is unknown. -->
+              {#if scan.scanned === 0}
+                <ShieldQuestionMark class="h-4 w-4 text-[var(--text-muted)]" />
+              {:else if pod.compliant}
                 <ShieldCheck class="h-4 w-4 text-[var(--status-running)]" />
               {:else}
                 <ShieldAlert class="h-4 w-4 text-[var(--status-failed)]" />
@@ -180,8 +182,13 @@
                     </Badge>
                   {/if}
                 {/each}
-                {#if vulnTotal(pod.total_vulns) === 0}
-                  <span class="text-[12px] text-[var(--text-muted)]">No vulnerabilities</span>
+                {#if label}
+                  <span
+                    class="text-[12px]"
+                    style:color={label.tone === "success" ? "var(--status-running)" : "var(--text-muted)"}
+                  >{label.text}</span>
+                {:else if scan.missing > 0}
+                  <span class="text-[12px] text-[var(--text-muted)]">· {scan.missing} not scanned</span>
                 {/if}
               </div>
             </button>
@@ -205,6 +212,9 @@
                         <td class="max-w-[300px] truncate px-3 py-1.5 font-mono text-[var(--text-primary)]" title={img.image}>
                           {img.image}
                         </td>
+                        {#if img.status === "failed"}
+                          <td class="px-3 py-1.5 text-right text-[var(--text-muted)]" colspan="5" title={img.error ?? ""}>scan failed</td>
+                        {:else}
                         <td
                           class="px-3 py-1.5 text-right {img.vulns.critical > 0 ? 'font-medium' : ''}"
                           style={img.vulns.critical > 0 ? `color: ${severityVar.critical};` : ""}
@@ -225,6 +235,13 @@
                         </td>
                         <td class="px-3 py-1.5 text-right">{img.vulns.low}</td>
                         <td class="px-3 py-1.5 text-right font-medium">{vulnTotal(img.vulns)}</td>
+                        {/if}
+                      </tr>
+                    {/each}
+                    {#each pod.unscanned_images ?? [] as image (image)}
+                      <tr class="border-t border-[var(--border-color)]/50 text-[var(--text-muted)]">
+                        <td class="max-w-[300px] truncate px-3 py-1.5 font-mono" title={image}>{image}</td>
+                        <td class="px-3 py-1.5 text-right" colspan="5">not scanned</td>
                       </tr>
                     {/each}
                   </tbody>

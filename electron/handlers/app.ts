@@ -7,6 +7,7 @@
 //   - run_kubectl          (spawns the kubectl binary; same flag blocklist)
 //   - bench_config         (env-driven)
 //   - write_bench_results  (path must match KDASH_BENCH_OUT)
+//   - save_text_file       (native save dialog + write; log downloads)
 //
 // NOTE: `close_splashscreen` is owned by the internal module in
 // electron/main.ts (it needs the window-reveal logic that lives there). We
@@ -17,7 +18,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { app } from 'electron';
+import { app, dialog } from 'electron';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 import { getKubeconfigPath, setKubeconfigPath, getVersionApi } from '../k8s/client.js';
@@ -476,5 +477,41 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
       throw new Error(`write ${targetPath}: ${(e as Error).message}`);
     }
     return null;
+  });
+
+  // --- save_text_file ---
+  // Renderer call: invoke('save_text_file', { defaultName, content }).
+  // Opens the native save dialog (suggesting ~/Downloads/<defaultName>) and
+  // writes `content` there. Resolves { path } once written, or null when the
+  // user cancelled — a cancel is not an error the renderer should toast.
+  handlers.set('save_text_file', async (args, ctx) => {
+    const content = typeof args.content === 'string' ? args.content : null;
+    if (content === null) {
+      throw new Error('save_text_file: missing content');
+    }
+    // basename(): the renderer names the file, never the directory.
+    const defaultName =
+      typeof args.defaultName === 'string' && args.defaultName.length > 0
+        ? path.basename(args.defaultName)
+        : 'export.txt';
+
+    let defaultPath = defaultName;
+    try {
+      defaultPath = path.join(app.getPath('downloads'), defaultName);
+    } catch {
+      // No downloads directory on this platform/profile — let the dialog pick.
+    }
+
+    const win = ctx.mainWindow();
+    const options = { title: 'Save as', defaultPath };
+    const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return null;
+
+    try {
+      await fs.promises.writeFile(result.filePath, content, 'utf8');
+    } catch (e) {
+      throw new Error(`write ${result.filePath}: ${(e as Error).message}`);
+    }
+    return { path: result.filePath };
   });
 }

@@ -20,7 +20,9 @@
 //
 // Renderer arg keys (source of truth — src/.../log-viewer.ts buildStreamRequest):
 //   stream_pod_logs:       { name, namespace, container, tailLines,
-//                            sinceSeconds, timestamps, previous }
+//                            sinceSeconds, timestamps, previous,
+//                            containers? }   (2+ names: one reader per
+//                            container, lines prefixed `[container] `)
 //   stream_multi_pod_logs: { pods, namespace, container, tailLines,
 //                            sinceSeconds, timestamps, previous }
 //   (container/previous may be null; sinceSeconds may be null; the renderer
@@ -365,6 +367,18 @@ async function streamPodLogs(args: Record<string, unknown>, ctx: HandlerCtx): Pr
     throw new Error('stream_pod_logs: missing required arg "name"');
   }
 
+  // `containers` (two or more names) streams every container of the pod under
+  // this one session, each line prefixed `[container] ` the way the multi-pod
+  // stream prefixes pod names. The renderer's "All containers" choice needs
+  // this here: the session is single-slot, so it cannot open one stream per
+  // container itself — each start would abort the previous.
+  const containers = Array.isArray(args.containers)
+    ? (args.containers as unknown[]).filter((c): c is string => typeof c === 'string' && c.length > 0)
+    : [];
+  if (containers.length > 1) {
+    return streamPodContainers(ctx, namespace, name, containers, args);
+  }
+
   const session = beginSession();
 
   let drained: Promise<void>;
@@ -376,6 +390,48 @@ async function streamPodLogs(args: Record<string, unknown>, ctx: HandlerCtx): Pr
   }
 
   reportWhenDrained(ctx, session, [drained]);
+  return null;
+}
+
+/**
+ * ONE pod, N containers, one logical stream. Mirrors streamMultiPodLogs: a
+ * container that fails to connect emits a `[container] [error: …]` line and
+ * the rest keep streaming; the command only fails when none could start.
+ */
+async function streamPodContainers(
+  ctx: HandlerCtx,
+  namespace: string,
+  podName: string,
+  containers: string[],
+  args: Record<string, unknown>,
+): Promise<null> {
+  const session = beginSession();
+  const drains: Array<Promise<void>> = [];
+
+  const dial = async (container: string): Promise<void> => {
+    if (isStale(session)) return;
+    try {
+      const { drained } = await openStream(ctx, session, namespace, podName, container, args, container);
+      // See streamMultiPodLogs: a reader dying before allSettled subscribes
+      // must not surface as an unhandled rejection.
+      void drained.catch(() => {});
+      drains.push(drained);
+    } catch (err) {
+      if (!isStale(session)) {
+        ctx.emit(LOG_CHANNEL, [`[${container}] [error: ${messageOf(err)}]`]);
+      }
+    }
+  };
+  await mapWithConcurrency(containers, MULTI_POD_DIAL_CONCURRENCY, dial);
+
+  if (isStale(session)) return null;
+
+  if (drains.length === 0) {
+    if (activeSession === session) activeSession = null;
+    throw new Error(`Failed to start log stream for ${namespace}/${podName}: no container log could be opened`);
+  }
+
+  reportWhenDrained(ctx, session, drains);
   return null;
 }
 

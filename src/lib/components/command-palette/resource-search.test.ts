@@ -212,3 +212,46 @@ describe("ResourceSearchIndex", () => {
     expect(MIN_SEARCH_LENGTH).toBe(2);
   });
 });
+
+describe("ResourceSearchIndex — active namespace boost", () => {
+  const items: Record<string, Resource[]> = {
+    deployments: [
+      res("Deployment", "web-api", "shop-staging"),
+      res("Deployment", "web-api", "shop"),
+      res("Deployment", "web-api", "billing"),
+    ],
+    pods: [res("Pod", "web-api-7f9c-x2k", "shop-staging"), res("Pod", "web-api-7f9c-m1q", "shop")],
+  };
+  const listFn = async (type: string) => items[type] ?? [];
+
+  async function loaded() {
+    const index = new ResourceSearchIndex(listFn, { types: ["deployments", "pods"] });
+    await index.ensureLoaded([]);
+    return index;
+  }
+
+  test("equal-score hits from the active namespace come first, kind order otherwise intact", async () => {
+    const index = await loaded();
+    const key = (h: { resourceType: string; resource: Resource }) => `${h.resourceType}/${h.resource.metadata.namespace}/${h.resource.metadata.name}`;
+    expect(index.search("web-api", 30, "shop").map(key)).toEqual([
+      "deployments/shop/web-api",
+      "deployments/shop-staging/web-api",
+      "deployments/billing/web-api",
+      "pods/shop/web-api-7f9c-m1q",
+      "pods/shop-staging/web-api-7f9c-x2k",
+    ]);
+  });
+
+  test("a better score still beats the active namespace", async () => {
+    const index = await loaded();
+    // Exact match in shop-staging outranks a prefix match in shop.
+    const hits = index.search("web-api-7f9c-x2k", 30, "shop");
+    expect(hits[0].resource.metadata.namespace).toBe("shop-staging");
+  });
+
+  test("without a preferred namespace equal hits keep list order", async () => {
+    const index = await loaded();
+    const names = index.search("web-api").map((h) => h.resource.metadata.namespace);
+    expect(names.slice(0, 3)).toEqual(["shop-staging", "shop", "billing"]);
+  });
+});

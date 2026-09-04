@@ -108,16 +108,18 @@ async function fetchNodeInfo(): Promise<NodeInfo[]> {
     const cpuCap = cpuRaw ? parseCpu(cpuRaw) : 0;
     const memCap = memRaw ? parseMemory(memRaw) : 0;
 
-    if (instanceType !== '') {
-      result.push({
-        name,
-        instance_type: instanceType,
-        provider,
-        region,
-        cpu_capacity: cpuCap,
-        memory_capacity_bytes: memCap,
-      });
-    }
+    // Every node is listed — get_node_metrics needs the capacity of nodes
+    // without a cloud instance-type label too (kind, bare metal, k3s), or their
+    // CPU/memory meters read 0%. Pricing lookups skip nodes with no
+    // instance_type (see resolvePricing / resolveNodeRates).
+    result.push({
+      name,
+      instance_type: instanceType,
+      provider,
+      region,
+      cpu_capacity: cpuCap,
+      memory_capacity_bytes: memCap,
+    });
   }
   return result;
 }
