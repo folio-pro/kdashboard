@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import { DoubleClickIntent } from "./double-click-intent";
   import type { Resource } from "$lib/types";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
@@ -211,31 +212,20 @@
     uiStore.selectedRowIndex = index;
     k8sStore.selectResource(resource);
     uiStore.previewOpen = true;
-    lastClicked = { uid: resource.metadata.uid, at: Date.now() };
+    doubleClick.click(resource.metadata.uid);
   }
 
   function openInTab(resource: Resource) {
     openResourceDetail(resource);
   }
 
-  // The list is live: between the two clicks of a double-click the watch can
-  // insert a row above the cursor (a CronJob spawning a pod), so the row under
-  // the pointer on the second click is not the one the user clicked first.
-  // The double-click therefore opens the resource of the FIRST click, which
-  // is also the one previewed in the aside — never a neighbour.
-  let lastClicked: { uid: string; at: number } | null = null;
-  const DOUBLE_CLICK_WINDOW_MS = 700;
+  // A double-click opens the row of the FIRST click, which is also the one
+  // previewed in the aside — see DoubleClickIntent for why.
+  const doubleClick = new DoubleClickIntent();
   function handleRowDoubleClick(resource: Resource) {
-    const first = lastClicked;
-    lastClicked = null;
-    if (first && first.uid !== resource.metadata.uid && Date.now() - first.at < DOUBLE_CLICK_WINDOW_MS) {
-      const intended = k8sStore.resources.items.find((r) => r.metadata.uid === first.uid);
-      if (intended) {
-        openInTab(intended);
-        return;
-      }
-    }
-    openInTab(resource);
+    const uid = doubleClick.resolve(resource.metadata.uid);
+    const intended = uid === resource.metadata.uid ? resource : k8sStore.resources.items.find((r) => r.metadata.uid === uid);
+    openInTab(intended ?? resource);
   }
 
   function closePreview() {

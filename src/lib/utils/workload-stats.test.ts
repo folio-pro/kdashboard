@@ -161,6 +161,23 @@ describe("computePodStats", () => {
     expect(restartsStat?.value).toBe(0);
   });
 
+  test("Unknown and phase-less pods count in the strip, so the chips add up to the total", () => {
+    const items = [
+      makeResource({ status: { phase: "Running" } }),
+      makeResource({ status: { phase: "Unknown" } }),
+      makeResource({ status: {} }),
+    ];
+    const result = computePodStats(items);
+    const byKey = Object.fromEntries(result.stats.map((s) => [s.key, s.value]));
+    expect(byKey.total).toBe(3);
+    expect(byKey.unknown).toBe(2);
+    expect(byKey.running + byKey.failed + byKey.pending + byKey.succeeded + byKey.unknown).toBe(byKey.total);
+    expect(result.stats.find((s) => s.key === "unknown")?.filterable).toBe(true);
+    expect(result.healthSegments.reduce((s, seg) => s + seg.value, 0)).toBe(3);
+    // Without such a pod the chip stays out of the strip.
+    expect(computePodStats([makeResource({ status: { phase: "Running" } })]).stats.some((s) => s.key === "unknown")).toBe(false);
+  });
+
   test("health segments add up to total", () => {
     const items = [
       makeResource({ status: { phase: "Running" } }),

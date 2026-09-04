@@ -8,6 +8,7 @@
   import ColumnPicker from "./ColumnPicker.svelte";
   import type { Column } from "$lib/types";
   import { isClusterScopedType } from "$lib/resource-catalog";
+  import { k8sStore } from "$lib/stores/k8s.svelte";
 
   /**
    * One 44px bar: title, namespace, saved views, then the search box (which
@@ -39,9 +40,9 @@
     {resourceTypeLabel}
   </h1>
 
-  <!-- A Node or a ClusterRole lives in no namespace: a picker here would
-       promise a scope the list cannot have. -->
-  {#if !isClusterScopedType(resourceType)}
+  <!-- A Node, a ClusterRole or a cluster-scoped CRD lives in no namespace: a
+       picker here would promise a scope the list cannot have. -->
+  {#if !isClusterScopedType(resourceType) && !k8sStore.isClusterScopedCrd(resourceType)}
     <NamespacePicker />
   {/if}
 

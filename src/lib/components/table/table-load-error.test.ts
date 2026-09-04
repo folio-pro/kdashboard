@@ -21,6 +21,14 @@ describe("classifyLoadError", () => {
     expect(classifyLoadError("", "Pods").kind).toBe("unreachable");
   });
 
+  test("an HTTP 5xx came from a reachable server: not an outage, the server's message stands", () => {
+    const v = classifyLoadError("Failed to load resources: 500 Internal Server Error: conversion webhook for foo.example.com failed", "Foos");
+    expect(v.kind).toBe("unknown");
+    expect(v.title).toBe("Could not load foos");
+    expect(v.detail).toContain("conversion webhook");
+    expect(classifyLoadError("HTTP-Code: 503 Service Unavailable", "Pods").kind).toBe("unknown");
+  });
+
   test("anything else keeps the raw message and a plain retry", () => {
     const v = classifyLoadError("Failed to load resources: something odd", "Leases");
     expect(v.kind).toBe("unknown");
