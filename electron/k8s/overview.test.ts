@@ -164,6 +164,19 @@ describe('workloads', () => {
     expect(out[1].restarts).toBe(6);
     expect(out[4].pod).toEqual({ name: 'failing-job-x', namespace: 'shop', container: 'main' });
   });
+
+  test('a workload only borrows pods from its own namespace, even when another namespace has one of the same name', () => {
+    const broken = pod('web-7f9c8d-a', {
+      metadata: { name: 'web-7f9c8d-a', namespace: 'staging', ownerReferences: [{ kind: 'ReplicaSet', name: 'web-7f9c8d', controller: true }] },
+      status: { phase: 'Pending', containerStatuses: [{ name: 'app', image: 'nope:1', ready: false, restartCount: 0, state: { waiting: { reason: 'ImagePullBackOff', message: 'Back-off pulling image "nope:1"' } } }] },
+    });
+    const short = (ns: string) => ({ ...dep('web', { replicas: 2 }, { readyReplicas: 1, conditions: [{ type: 'Available', status: 'True' }] }), metadata: { name: 'web', namespace: ns } }) as V1Deployment;
+    const out = workloadProblems({ deployments: [short('prod'), short('staging')] }, [broken]);
+    expect(out.map((p) => [p.namespace, p.cause, p.pod?.namespace ?? null])).toEqual([
+      ['prod', 'unknown', null],
+      ['staging', 'image-pull', 'staging'],
+    ]);
+  });
 });
 
 describe('storage and networking', () => {
