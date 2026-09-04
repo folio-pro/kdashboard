@@ -9,6 +9,7 @@ import {
   nodePressure,
   overviewTiles,
   pct,
+  problemActions,
   restartTargetFor,
   topReasons,
 } from "./overview.logic";
@@ -19,7 +20,7 @@ const node = (over: Partial<NodeSummary> = {}): NodeSummary => ({
   ...over,
 });
 const problem = (over: Partial<Problem> = {}): Problem => ({
-  id: "Pod/ns/p", severity: "critical", kind: "Pod", name: "p", namespace: "ns", reason: "CrashLoopBackOff", detail: null, owner: null, since: null, restarts: 0, ready: null, desired: null, ...over,
+  id: "Pod/ns/p", severity: "critical", kind: "Pod", name: "p", namespace: "ns", reason: "CrashLoopBackOff", detail: null, owner: null, since: null, restarts: 0, ready: null, desired: null, cause: "unknown", pod: null, ...over,
 });
 const overview = (over: Partial<ClusterOverview> = {}): ClusterOverview => ({
   scope: "cluster", namespace: null, nodes: [node(), node({ name: "m", pressure: ["MemoryPressure"] })],
@@ -66,6 +67,40 @@ describe("problem helpers", () => {
     expect(restartTargetFor(problem({ kind: "Pod", owner: null }))).toBeNull();
     expect(restartTargetFor(problem({ kind: "Node", name: "n" }))).toBeNull();
   });
+
+  describe("problemActions", () => {
+    const podRef = { name: "web-7f9c8d-a", namespace: "shop", container: "app" };
+    test("restart only for causes a restart can fix", () => {
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "crash", pod: podRef })).restart).toBe(true);
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "oom", pod: podRef })).restart).toBe(true);
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "unknown" })).restart).toBe(true);
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "image-pull", pod: podRef })).restart).toBe(false);
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "config", pod: podRef })).restart).toBe(false);
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "unschedulable", pod: podRef })).restart).toBe(false);
+      // Never for things a rolling restart cannot touch, whatever the cause.
+      expect(problemActions(problem({ kind: "Job", name: "j", cause: "crash" })).restart).toBe(false);
+      expect(problemActions(problem({ kind: "Node", name: "n", cause: "unknown" })).restart).toBe(false);
+    });
+    test("the pod: the diagnosis wins over the snapshot, a pod problem points at itself", () => {
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "image-pull", pod: podRef })).pod).toEqual(podRef);
+      const fromDiagnosis = { name: "web-7f9c8d-b", namespace: "shop", container: null };
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "crash", pod: podRef }), { cause: "image-pull", pod: fromDiagnosis })).toMatchObject({ pod: fromDiagnosis, restart: false, yaml: true });
+      expect(problemActions(problem({ kind: "Pod", name: "p", namespace: "ns" })).pod).toEqual({ name: "p", namespace: "ns", container: null });
+      expect(problemActions(problem({ kind: "Node", name: "n", namespace: null })).pod).toBeNull();
+      expect(problemActions(problem({ kind: "Service", name: "svc", cause: "no-endpoints" })).pod).toBeNull();
+    });
+    test("YAML for problems whose fix is an edit; older payloads without a cause still get the default actions", () => {
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "config" })).yaml).toBe(true);
+      expect(problemActions(problem({ kind: "PersistentVolumeClaim", name: "pvc", cause: "pvc-pending" })).yaml).toBe(true);
+      expect(problemActions(problem({ kind: "Service", name: "svc", cause: "lb-pending" })).yaml).toBe(true);
+      expect(problemActions(problem({ kind: "Deployment", name: "web", cause: "crash" })).yaml).toBe(false);
+      expect(problemActions(problem({ kind: "Job", name: "j", cause: "job-failed" })).yaml).toBe(false);
+      const legacy = { ...problem({ kind: "Deployment", name: "web" }) } as Partial<Problem> as Problem;
+      delete (legacy as Partial<Problem>).cause;
+      delete (legacy as Partial<Problem>).pod;
+      expect(problemActions(legacy)).toEqual({ pod: null, restart: true, yaml: false });
+    });
+  });
 });
 
 describe("overview tiles", () => {
@@ -73,7 +108,7 @@ describe("overview tiles", () => {
     const tiles = overviewTiles(overview());
     expect(tiles.map((t) => [t.label, t.value, t.tone])).toEqual([
       ["Nodes", "2/2", "warning"],
-      ["Pods", "312", "error"],
+      ["Pods", "312", "warning"],
       ["Problems", "2", "error"],
       ["Warnings · last hour", "17", "warning"],
     ]);

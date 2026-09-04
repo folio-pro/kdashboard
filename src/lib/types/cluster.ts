@@ -52,4 +52,8 @@ export interface DiagnosticResult {
   health: "healthy" | "degraded" | "unhealthy";
   issues: DiagnosticIssue[];
   checked_at: string;
+  /** Machine-readable root cause (see electron/k8s/pod-cause.ts); absent on older payloads. */
+  cause?: import("./overview").ProblemCause;
+  /** The pod that best explains the verdict, for "open pod" / "view logs". */
+  pod?: import("./overview").PodRef | null;
 }

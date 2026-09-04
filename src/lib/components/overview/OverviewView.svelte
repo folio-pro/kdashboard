@@ -23,6 +23,16 @@
   function handleRefresh() {
     overviewStore.loadOverview(k8sStore.currentNamespace);
   }
+
+  // The header's namespace picker scopes THIS view: "" is the whole cluster,
+  // anything else one namespace. openAppView issued the first load, so only
+  // a change re-loads (the backend keeps a short per-namespace cache).
+  let lastNamespace: string | undefined;
+  $effect(() => {
+    const ns = k8sStore.currentNamespace;
+    if (lastNamespace !== undefined && lastNamespace !== ns) overviewStore.loadOverview(ns);
+    lastNamespace = ns;
+  });
   function openProblem(p: Problem) {
     void openRelatedResourceTab(kindToResourceType(p.kind), p.name, p.namespace ?? undefined);
   }
@@ -59,7 +69,9 @@
 >
   {#snippet badge()}
     {#if overview}
-      <Badge tone={overview.scope === "cluster" ? "success" : "warning"}>
+      <!-- Same scope badge as Problems: what the data covers, in the words the
+           picker beside it uses. -->
+      <Badge tone={overview.scope === "cluster" ? "success" : "warning"} data-testid="overview-scope">
         {overview.scope === "cluster" ? "whole cluster" : `namespace ${overview.namespace}`}
       </Badge>
       {#if overview.partial.length > 0}

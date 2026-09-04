@@ -7,14 +7,20 @@ import type {
   CoreV1Event,
   V1DaemonSet,
   V1Deployment,
+  V1Endpoints,
   V1Job,
   V1Node,
+  V1PersistentVolumeClaim,
   V1Pod,
+  V1Service,
   V1StatefulSet,
 } from '@kubernetes/client-node';
 
 import { controllerRef, workloadKey, workloadOf } from './owners';
+import { iso, podCause, worstPodCause, type PodCause, type PodRef, type ProblemCause } from './pod-cause';
 import { parseCpu, parseMemory } from './quantity';
+
+export type { PodRef, ProblemCause } from './pod-cause';
 
 // ---------------------------------------------------------------------------
 // Wire types (mirrored in src/lib/types/overview.ts)
@@ -52,11 +58,13 @@ export interface PodPhaseCounts {
 
 export type ProblemSeverity = 'critical' | 'warning';
 
+export type ProblemKind = 'Pod' | 'Deployment' | 'StatefulSet' | 'DaemonSet' | 'Job' | 'Node' | 'PersistentVolumeClaim' | 'Service';
+
 export interface Problem {
   /** Stable id for selection: kind/namespace/name. */
   id: string;
   severity: ProblemSeverity;
-  kind: 'Pod' | 'Deployment' | 'StatefulSet' | 'DaemonSet' | 'Job' | 'Node';
+  kind: ProblemKind;
   name: string;
   namespace: string | null;
   /** Short reason: CrashLoopBackOff, Unavailable, 2/3 ready, MemoryPressure… */
@@ -71,6 +79,10 @@ export interface Problem {
   /** Ready / desired for workloads, null for pods and nodes. */
   ready: number | null;
   desired: number | null;
+  /** Machine-readable category the UI keys its actions on. */
+  cause: ProblemCause;
+  /** The most relevant pod (a workload's worst pod, a job's last failed pod, the pod itself), or null. */
+  pod: PodRef | null;
 }
 
 export interface WarningEvent {
@@ -112,17 +124,14 @@ export interface ClusterOverview {
 // ---------------------------------------------------------------------------
 
 const PRESSURE_CONDITIONS = new Set(['MemoryPressure', 'DiskPressure', 'PIDPressure', 'NetworkUnavailable']);
-// Mirror of src/lib/utils/pod-status.ts BROKEN_REASON / podProblem — edit both together.
-const BROKEN_REASON = /error|crash|backoff|oom|invalid|cannotrun|deadline|killed/i;
 
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
 
-function iso(d: Date | string | undefined | null): string | null {
-  if (!d) return null;
-  const date = d instanceof Date ? d : new Date(d);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+function ms(d: Date | string | undefined | null): number | null {
+  const s = iso(d);
+  return s ? new Date(s).getTime() : null;
 }
 
 /** Sum of the app containers' requests — what the scheduler reserves for the
@@ -251,6 +260,8 @@ function problem(
     restarts: 0,
     ready: null,
     desired: null,
+    cause: 'unknown',
+    pod: null,
     ...extra,
   };
 }
@@ -261,44 +272,36 @@ function podOwner(pod: V1Pod): string | null {
   return w.kind === 'Pod' ? null : workloadKey(w);
 }
 
-/** The first thing wrong with a pod, or null. Mirrors the renderer's podProblem. */
+/** The first thing wrong with a pod, or null. Mirrors the renderer's podProblem; the judgement itself lives in pod-cause.ts. */
 export function podProblem(pod: V1Pod): Problem | null {
-  const name = pod.metadata?.name ?? '';
-  const ns = pod.metadata?.namespace ?? null;
-  if (pod.metadata?.deletionTimestamp) return null; // going away on purpose
-  const statuses = [
-    ...(pod.status?.initContainerStatuses ?? []).map((s) => ({ s, init: true })),
-    ...(pod.status?.containerStatuses ?? []).map((s) => ({ s, init: false })),
-  ];
-  let restarts = 0;
-  for (const { s } of statuses) restarts += s.restartCount ?? 0;
-  for (const { s, init } of statuses) {
-    const w = s.state?.waiting;
-    const t = s.state?.terminated;
-    const last = s.lastState?.terminated;
-    if (w?.reason && BROKEN_REASON.test(w.reason)) {
-      const detail = [init ? `init container ${s.name}` : `container ${s.name}`, w.message ?? (last?.reason ? `last exit: ${last.reason}${last.exitCode !== undefined ? ` (${last.exitCode})` : ''}` : null)]
-        .filter(Boolean)
-        .join(' — ');
-      return problem('critical', 'Pod', name, ns, w.reason, detail, iso(last?.finishedAt ?? pod.status?.startTime), { owner: podOwner(pod), restarts });
-    }
-    if (t && (t.exitCode ?? 0) !== 0 && !init) {
-      return problem('critical', 'Pod', name, ns, t.reason ?? `ExitCode ${t.exitCode}`, `container ${s.name}${t.message ? ` — ${t.message}` : ''}`, iso(t.finishedAt), { owner: podOwner(pod), restarts });
-    }
+  const c = podCause(pod);
+  if (!c) return null;
+  return problem(c.severity, 'Pod', pod.metadata?.name ?? '', pod.metadata?.namespace ?? null, c.reason, c.detail, c.since, {
+    owner: podOwner(pod),
+    restarts: c.restarts,
+    cause: c.cause,
+    pod: c.pod,
+  });
+}
+
+/** Broken pods grouped under the workload that owns them ("Deployment/web", "Job/export-1"). */
+export function podCausesByWorkload(pods: readonly V1Pod[]): Map<string, PodCause[]> {
+  const out = new Map<string, PodCause[]>();
+  for (const pod of pods) {
+    const owner = podOwner(pod);
+    if (!owner) continue;
+    const c = podCause(pod);
+    if (!c) continue;
+    const list = out.get(owner) ?? [];
+    list.push(c);
+    out.set(owner, list);
   }
-  if (pod.status?.phase === 'Failed') {
-    return problem('critical', 'Pod', name, ns, pod.status.reason ?? 'Failed', pod.status.message ?? null, iso(pod.status.startTime), { owner: podOwner(pod), restarts });
-  }
-  const scheduled = pod.status?.conditions?.find((c) => c.type === 'PodScheduled');
-  if (pod.status?.phase === 'Pending' && scheduled && scheduled.status !== 'True' && scheduled.reason) {
-    return problem('warning', 'Pod', name, ns, scheduled.reason, scheduled.message ?? null, iso(scheduled.lastTransitionTime ?? pod.metadata?.creationTimestamp), { owner: podOwner(pod), restarts });
-  }
-  // Ready=False for a long-running pod that is not otherwise broken: probes failing.
-  const ready = pod.status?.conditions?.find((c) => c.type === 'Ready');
-  if (pod.status?.phase === 'Running' && ready && ready.status !== 'True' && ready.reason === 'ContainersNotReady') {
-    return problem('warning', 'Pod', name, ns, 'NotReady', ready.message ?? null, iso(ready.lastTransitionTime), { owner: podOwner(pod), restarts });
-  }
-  return null;
+  return out;
+}
+
+/** "pod-name: ImagePullBackOff — container app — Back-off pulling image" — the line a workload problem borrows from its worst pod. */
+function podLine(c: PodCause): string {
+  return `${c.pod.name}: ${c.reason}${c.detail ? ` — ${c.detail}` : ''}`;
 }
 
 export function podProblems(pods: V1Pod[]): Problem[] {
@@ -321,8 +324,22 @@ export interface WorkloadLists {
   jobs: V1Job[];
 }
 
-export function workloadProblems(lists: Partial<WorkloadLists>): Problem[] {
+/**
+ * Workload problems. When `pods` is given, each problem borrows its cause,
+ * pod reference and detail from the worst pod the workload owns, so a
+ * Deployment reads "bad-image-abc: ImagePullBackOff — …" instead of the
+ * controller's generic "does not have minimum availability".
+ */
+export function workloadProblems(lists: Partial<WorkloadLists>, pods: readonly V1Pod[] = []): Problem[] {
   const out: Problem[] = [];
+  const byWorkload = podCausesByWorkload(pods);
+  /** Cause / pod / detail borrowed from the worst owned pod; `fallback` when the workload has no broken pod. */
+  const fromPods = (kind: ProblemKind, name: string, fallback: ProblemCause, detail: string | null): Partial<Problem> => {
+    const worst = worstPodCause(byWorkload.get(`${kind}/${name}`));
+    if (!worst) return { cause: fallback, detail };
+    return { cause: worst.cause, pod: worst.pod, detail: podLine(worst), restarts: worst.restarts };
+  };
+
   for (const d of lists.deployments ?? []) {
     const name = d.metadata?.name ?? '';
     const ns = d.metadata?.namespace ?? null;
@@ -333,37 +350,126 @@ export function workloadProblems(lists: Partial<WorkloadLists>): Problem[] {
     const failure = cond('ReplicaFailure');
     const progressing = cond('Progressing');
     const available = cond('Available');
-    const extra = { ready, desired, since: iso(progressing?.lastUpdateTime ?? available?.lastTransitionTime) };
+    const since = iso(progressing?.lastUpdateTime ?? available?.lastTransitionTime);
+    const extra = (fallback: ProblemCause, detail: string | null) => ({ ready, desired, since, ...fromPods('Deployment', name, fallback, detail) });
     if (d.spec?.paused || desired === 0) continue;
-    if (failure?.status === 'True') out.push(problem('critical', 'Deployment', name, ns, 'ReplicaFailure', failure.message ?? failure.reason ?? null, extra.since, extra));
-    else if (progressing?.status === 'False') out.push(problem('critical', 'Deployment', name, ns, progressing.reason ?? 'Failed', progressing.message ?? null, extra.since, extra));
-    else if (available?.status === 'False') out.push(problem('critical', 'Deployment', name, ns, 'Unavailable', available.message ?? available.reason ?? null, extra.since, extra));
-    else if (ready < desired) out.push(problem('warning', 'Deployment', name, ns, `${ready}/${desired} ready`, progressing?.message ?? null, extra.since, extra));
+    if (failure?.status === 'True') out.push(problem('critical', 'Deployment', name, ns, 'ReplicaFailure', null, since, extra('unknown', failure.message ?? failure.reason ?? null)));
+    else if (progressing?.status === 'False') out.push(problem('critical', 'Deployment', name, ns, progressing.reason ?? 'Failed', null, since, extra('progress-deadline', progressing.message ?? null)));
+    else if (available?.status === 'False') out.push(problem('critical', 'Deployment', name, ns, 'Unavailable', null, since, extra('unknown', available.message ?? available.reason ?? null)));
+    else if (ready < desired) out.push(problem('warning', 'Deployment', name, ns, `${ready}/${desired} ready`, null, since, extra('unknown', progressing?.message ?? null)));
   }
   for (const s of lists.statefulsets ?? []) {
+    const name = s.metadata?.name ?? '';
     const desired = s.spec?.replicas ?? 1;
     const ready = num(s.status?.readyReplicas);
     if (desired > 0 && ready < desired) {
-      out.push(problem(ready === 0 ? 'critical' : 'warning', 'StatefulSet', s.metadata?.name ?? '', s.metadata?.namespace ?? null, `${ready}/${desired} ready`, null, null, { ready, desired }));
+      out.push(problem(ready === 0 ? 'critical' : 'warning', 'StatefulSet', name, s.metadata?.namespace ?? null, `${ready}/${desired} ready`, null, null, { ready, desired, ...fromPods('StatefulSet', name, 'unknown', null) }));
     }
   }
   for (const ds of lists.daemonsets ?? []) {
+    const name = ds.metadata?.name ?? '';
     const desired = num(ds.status?.desiredNumberScheduled);
     const ready = num(ds.status?.numberReady);
     if (desired > 0 && ready < desired) {
-      out.push(problem(ready === 0 ? 'critical' : 'warning', 'DaemonSet', ds.metadata?.name ?? '', ds.metadata?.namespace ?? null, `${ready}/${desired} ready`, null, null, { ready, desired }));
+      out.push(problem(ready === 0 ? 'critical' : 'warning', 'DaemonSet', name, ds.metadata?.namespace ?? null, `${ready}/${desired} ready`, null, null, { ready, desired, ...fromPods('DaemonSet', name, 'unknown', null) }));
     }
   }
   for (const j of lists.jobs ?? []) {
+    const name = j.metadata?.name ?? '';
     const conds = j.status?.conditions ?? [];
     const failed = conds.find((c) => c.type === 'Failed' && c.status === 'True');
     if (failed || num(j.status?.failed) > 0) {
       const complete = conds.some((c) => c.type === 'Complete' && c.status === 'True');
       if (complete) continue;
       const ownerRef = controllerRef(j.metadata);
-      out.push(problem(failed ? 'critical' : 'warning', 'Job', j.metadata?.name ?? '', j.metadata?.namespace ?? null, failed?.reason ?? `${num(j.status?.failed)} failed`, failed?.message ?? null, iso(failed?.lastTransitionTime ?? j.status?.startTime), {
+      const worst = worstPodCause(byWorkload.get(`Job/${name}`));
+      const detail = [failed?.message ?? null, worst ? podLine(worst) : null].filter(Boolean).join(' · ') || null;
+      out.push(problem(failed ? 'critical' : 'warning', 'Job', name, j.metadata?.namespace ?? null, failed?.reason ?? `${num(j.status?.failed)} failed`, detail, iso(failed?.lastTransitionTime ?? j.status?.startTime), {
         owner: ownerRef ? `${ownerRef.kind}/${ownerRef.name}` : null,
+        cause: 'job-failed',
+        pod: worst?.pod ?? null,
       }));
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Storage and networking
+// ---------------------------------------------------------------------------
+
+/** A PVC may legitimately sit Pending for a moment (WaitForFirstConsumer); older than this it is stuck. */
+export const PVC_PENDING_GRACE_MS = 2 * 60_000;
+/** Cloud providers take a while to hand out an address; older than this the LoadBalancer is stuck. */
+export const LB_PENDING_GRACE_MS = 5 * 60_000;
+
+/** The newest event with `reason` about one object, or null. */
+function latestEventFor(events: readonly CoreV1Event[], kind: string, namespace: string | null, name: string, reason: string): CoreV1Event | null {
+  let best: CoreV1Event | null = null;
+  let bestT = -1;
+  for (const e of events) {
+    const o = e.involvedObject;
+    if (e.reason !== reason || o?.kind !== kind || o?.name !== name || (o?.namespace ?? e.metadata?.namespace ?? null) !== namespace) continue;
+    const t = ms(eventTime(e)) ?? 0;
+    if (t > bestT) { best = e; bestT = t; }
+  }
+  return best;
+}
+
+/** PVCs still Pending after the grace period — a warning carrying the provisioner's last complaint. */
+export function pvcProblems(pvcs: readonly V1PersistentVolumeClaim[], events: readonly CoreV1Event[], now = Date.now()): Problem[] {
+  const out: Problem[] = [];
+  for (const pvc of pvcs) {
+    if (pvc.status?.phase !== 'Pending' || pvc.metadata?.deletionTimestamp) continue;
+    const name = pvc.metadata?.name ?? '';
+    const ns = pvc.metadata?.namespace ?? null;
+    const created = ms(pvc.metadata?.creationTimestamp);
+    if (created === null || now - created < PVC_PENDING_GRACE_MS) continue;
+    const failed = latestEventFor(events, 'PersistentVolumeClaim', ns, name, 'ProvisioningFailed');
+    // A WaitForFirstConsumer class binds when a pod first mounts the claim;
+    // an unused claim staying Pending is by design, not a problem.
+    if (!failed && latestEventFor(events, 'PersistentVolumeClaim', ns, name, 'WaitForFirstConsumer')) continue;
+    const sc = pvc.spec?.storageClassName;
+    const detail = failed?.message ?? (sc ? `waiting for a volume from storage class "${sc}"` : 'waiting for a volume');
+    out.push(problem('warning', 'PersistentVolumeClaim', name, ns, 'Pending', detail, iso(pvc.metadata?.creationTimestamp), { cause: 'pvc-pending' }));
+  }
+  return out;
+}
+
+function readyAddresses(ep: V1Endpoints | undefined): number {
+  let n = 0;
+  for (const subset of ep?.subsets ?? []) n += subset.addresses?.length ?? 0;
+  return n;
+}
+
+/**
+ * Selector Services with no ready endpoint, and LoadBalancers still waiting
+ * for an address. `endpoints` is null when Endpoints could not be listed; the
+ * endpoint check is then skipped rather than reporting every Service empty.
+ * One problem per Service (ids are kind/namespace/name): "No endpoints" wins
+ * and mentions the pending LoadBalancer when both apply.
+ */
+export function serviceProblems(services: readonly V1Service[], endpoints: readonly V1Endpoints[] | null, now = Date.now()): Problem[] {
+  const out: Problem[] = [];
+  const byKey = new Map<string, V1Endpoints>();
+  for (const ep of endpoints ?? []) byKey.set(`${ep.metadata?.namespace ?? ''}/${ep.metadata?.name ?? ''}`, ep);
+  for (const svc of services) {
+    if (svc.metadata?.deletionTimestamp) continue;
+    const type = svc.spec?.type ?? 'ClusterIP';
+    if (type === 'ExternalName') continue;
+    const name = svc.metadata?.name ?? '';
+    const ns = svc.metadata?.namespace ?? null;
+    const selector = svc.spec?.selector ?? {};
+    const selectorText = Object.entries(selector).map(([k, v]) => `${k}=${v}`).join(',');
+    const noEndpoints = selectorText !== '' && endpoints !== null && readyAddresses(byKey.get(`${ns ?? ''}/${name}`)) === 0;
+    const created = ms(svc.metadata?.creationTimestamp);
+    const hasAddress = (svc.status?.loadBalancer?.ingress ?? []).some((i) => i.ip || i.hostname);
+    const lbPending = type === 'LoadBalancer' && !hasAddress && created !== null && now - created >= LB_PENDING_GRACE_MS;
+    const since = iso(svc.metadata?.creationTimestamp);
+    if (noEndpoints) {
+      out.push(problem('warning', 'Service', name, ns, 'No endpoints', `selector ${selectorText} matches no ready pod${lbPending ? '; the LoadBalancer has no external address yet either' : ''}`, since, { cause: 'no-endpoints' }));
+    } else if (lbPending) {
+      out.push(problem('warning', 'Service', name, ns, 'LoadBalancer pending', 'no external IP or hostname has been assigned by the cloud provider', since, { cause: 'lb-pending' }));
     }
   }
   return out;
@@ -404,9 +510,9 @@ export function recentWarnings(events: CoreV1Event[], sinceMs: number, limit = 5
 // ---------------------------------------------------------------------------
 
 const SEVERITY_RANK: Record<ProblemSeverity, number> = { critical: 0, warning: 1 };
-const KIND_RANK: Record<Problem['kind'], number> = { Node: 0, Deployment: 1, StatefulSet: 2, DaemonSet: 3, Job: 4, Pod: 5 };
+const KIND_RANK: Record<Problem['kind'], number> = { Node: 0, Deployment: 1, StatefulSet: 2, DaemonSet: 3, Job: 4, Pod: 5, PersistentVolumeClaim: 6, Service: 7 };
 
-/** Critical first, then nodes before workloads before pods, then oldest first. */
+/** Critical first, then nodes before workloads before pods before storage/networking, then oldest first. */
 export function orderProblems(problems: Problem[]): Problem[] {
   return [...problems].sort((a, b) => {
     if (SEVERITY_RANK[a.severity] !== SEVERITY_RANK[b.severity]) return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];

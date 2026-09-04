@@ -1,7 +1,8 @@
 // Cluster overview handler — one command that feeds the Overview and Problems
 // views: nodes with requests/usage, pod phase counts, every current problem
-// (nodes, workloads, pods), the last hour of Warning events and the top pods
-// by usage.
+// (nodes, workloads, pods, stuck PVCs, Services without endpoints or without a
+// LoadBalancer address), the last hour of Warning events and the top pods by
+// usage.
 //
 // Commands:
 //   - get_cluster_overview  { namespace?: string | null }
@@ -15,9 +16,12 @@ import type {
   CoreV1Event,
   V1DaemonSet,
   V1Deployment,
+  V1Endpoints,
   V1Job,
   V1Node,
+  V1PersistentVolumeClaim,
   V1Pod,
+  V1Service,
   V1StatefulSet,
 } from '@kubernetes/client-node';
 
@@ -32,7 +36,9 @@ import {
   orderProblems,
   podPhaseCounts,
   podProblems,
+  pvcProblems,
   recentWarnings,
+  serviceProblems,
   summarizeNodes,
   workloadProblems,
   type ClusterOverview,
@@ -72,13 +78,16 @@ export async function getClusterOverview(namespace: string | null): Promise<Clus
   const apps = getAppsV1Api();
   const batch = getBatchV1Api();
 
-  const [nodes, pods, deployments, statefulsets, daemonsets, jobs, events, usage, top] = await Promise.all([
+  const [nodes, pods, deployments, statefulsets, daemonsets, jobs, pvcs, services, endpoints, events, usage, top] = await Promise.all([
     listScoped<V1Node>(() => core.listNode(), null, null),
     listScoped<V1Pod>(() => core.listPodForAllNamespaces(), (ns) => core.listNamespacedPod({ namespace: ns }), namespace),
     listScoped<V1Deployment>(() => apps.listDeploymentForAllNamespaces(), (ns) => apps.listNamespacedDeployment({ namespace: ns }), namespace),
     listScoped<V1StatefulSet>(() => apps.listStatefulSetForAllNamespaces(), (ns) => apps.listNamespacedStatefulSet({ namespace: ns }), namespace),
     listScoped<V1DaemonSet>(() => apps.listDaemonSetForAllNamespaces(), (ns) => apps.listNamespacedDaemonSet({ namespace: ns }), namespace),
     listScoped<V1Job>(() => batch.listJobForAllNamespaces(), (ns) => batch.listNamespacedJob({ namespace: ns }), namespace),
+    listScoped<V1PersistentVolumeClaim>(() => core.listPersistentVolumeClaimForAllNamespaces(), (ns) => core.listNamespacedPersistentVolumeClaim({ namespace: ns }), namespace),
+    listScoped<V1Service>(() => core.listServiceForAllNamespaces(), (ns) => core.listNamespacedService({ namespace: ns }), namespace),
+    listScoped<V1Endpoints>(() => core.listEndpointsForAllNamespaces(), (ns) => core.listNamespacedEndpoints({ namespace: ns }), namespace),
     listScoped<CoreV1Event>(
       () => core.listEventForAllNamespaces({ fieldSelector: 'type=Warning' }),
       (ns) => core.listNamespacedEvent({ namespace: ns, fieldSelector: 'type=Warning' }),
@@ -89,18 +98,20 @@ export async function getClusterOverview(namespace: string | null): Promise<Clus
   ]);
 
   const partial: string[] = [];
-  const scopes = { nodes, pods, deployments, statefulsets, daemonsets, jobs, events };
+  const scopes = { nodes, pods, deployments, statefulsets, daemonsets, jobs, persistentvolumeclaims: pvcs, services, endpoints, events };
   for (const [kind, listed] of Object.entries(scopes)) if (listed.scope === null) partial.push(kind);
   // The overview is "cluster" scoped when every namespaced kind listed cluster-wide.
-  const namespacedScopes = [pods, deployments, statefulsets, daemonsets, jobs, events].map((l) => l.scope).filter((s) => s !== null);
+  const namespacedScopes = [pods, deployments, statefulsets, daemonsets, jobs, pvcs, services, endpoints, events].map((l) => l.scope).filter((s) => s !== null);
   const scope: ClusterOverview['scope'] = namespacedScopes.length > 0 && namespacedScopes.every((s) => s === 'cluster') ? 'cluster' : 'namespace';
 
   const nodeRows = summarizeNodes(nodes.items, pods.scope === null ? null : pods.items, usage);
   const problems = orderProblems(
     foldPodsIntoOwners([
       ...nodeProblems(nodeRows),
-      ...workloadProblems({ deployments: deployments.items, statefulsets: statefulsets.items, daemonsets: daemonsets.items, jobs: jobs.items }),
+      ...workloadProblems({ deployments: deployments.items, statefulsets: statefulsets.items, daemonsets: daemonsets.items, jobs: jobs.items }, pods.items),
       ...podProblems(pods.items),
+      ...pvcProblems(pvcs.items, events.items),
+      ...serviceProblems(services.items, endpoints.scope === null ? null : endpoints.items),
     ]),
   );
   const warnings = recentWarnings(events.items, Date.now() - WARNING_WINDOW_MS);

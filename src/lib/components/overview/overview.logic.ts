@@ -1,6 +1,6 @@
 // Pure helpers for the Overview and Problems views.
 
-import type { ClusterOverview, NodeSummary, Problem, ProblemKind, ProblemSeverity } from "$lib/types";
+import type { ClusterOverview, DiagnosisVerdict, NodeSummary, PodRef, Problem, ProblemCause, ProblemKind, ProblemSeverity } from "$lib/types";
 import { parseWorkloadRef, type WorkloadRef } from "$lib/utils/pod-status";
 
 export interface Tile {
@@ -77,7 +77,10 @@ export function overviewTiles(o: ClusterOverview): Tile[] {
       label: "Pods",
       value: String(p.total),
       note: `${p.running} Running · ${p.pending} Pending · ${p.failed} Failed${p.succeeded ? ` · ${p.succeeded} Succeeded` : ""}`,
-      tone: p.failed > 0 ? "error" : p.pending > 0 ? "warning" : "success",
+      // The tone colours the headline count, and "32" is not the thing that is
+      // wrong — the note says what is. Failed or Pending pods therefore lift
+      // the tile to warning, never to error: the Problems tile carries red.
+      tone: p.failed > 0 || p.pending > 0 ? "warning" : "success",
     },
     {
       label: "Problems",
@@ -113,4 +116,45 @@ export function restartTargetFor(p: Problem): WorkloadRef | null {
   if (p.kind !== "Pod") return null;
   const owner = parseWorkloadRef(p.owner);
   return owner && RESTARTABLE.has(owner.kind) ? owner : null;
+}
+
+/** Causes a rolling restart can plausibly fix. A missing secret or a bad image tag only comes back the same. */
+const RESTART_CAUSES: ReadonlySet<ProblemCause> = new Set(["crash", "oom", "unknown"]);
+
+export const CAUSE_LABEL: Record<ProblemCause, string> = {
+  "image-pull": "Image cannot be pulled",
+  config: "Configuration error",
+  crash: "Crash loop",
+  oom: "Out of memory",
+  unschedulable: "Unschedulable",
+  "progress-deadline": "Rollout stuck",
+  "job-failed": "Job failed",
+  "pvc-pending": "Volume not provisioned",
+  "no-endpoints": "No endpoints",
+  "lb-pending": "LoadBalancer pending",
+  unknown: "",
+};
+
+export interface ProblemActions {
+  /** The pod "Open pod" / "View pod logs" land on; null when the problem has none. */
+  pod: PodRef | null;
+  /** Offer the rolling restart — only when the cause is one a restart can fix. */
+  restart: boolean;
+  /** Offer "Open <kind> YAML" — the fix for image/config/scheduling/rollout problems is an edit. */
+  yaml: boolean;
+}
+
+/**
+ * Which actions the detail panel offers for a problem. The diagnosis, when it
+ * has run, knows the owned pods better than the overview snapshot and wins.
+ * A pod-kind problem points at itself. `cause` falls back to "unknown" for
+ * payloads from an older backend so the panel never loses its buttons.
+ */
+export function problemActions(p: Problem, verdict?: Partial<DiagnosisVerdict> | null): ProblemActions {
+  const cause: ProblemCause = verdict?.cause ?? p.cause ?? "unknown";
+  const self: PodRef | null = p.kind === "Pod" && p.namespace ? { name: p.name, namespace: p.namespace, container: null } : null;
+  const pod = verdict?.pod ?? p.pod ?? self;
+  const restart = restartTargetFor(p) !== null && RESTART_CAUSES.has(cause);
+  const yaml = p.kind !== "Node" && (cause === "image-pull" || cause === "config" || cause === "unschedulable" || cause === "progress-deadline" || cause === "oom" || cause === "pvc-pending" || cause === "no-endpoints" || cause === "lb-pending");
+  return { pod, restart, yaml };
 }
