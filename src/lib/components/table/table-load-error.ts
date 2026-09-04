@@ -16,8 +16,12 @@ export interface LoadErrorView {
 
 const NOT_FOUND = /\b404\b|not found|could not find the requested resource|the server doesn't have a resource type/i;
 const FORBIDDEN = /\b403\b|forbidden|cannot list resource|is forbidden/i;
+// Transport failures only. An HTTP 5xx is an answer from a reachable server
+// (a CRD's broken conversion webhook, an aggregated API down) and falls
+// through to "unknown" with the server's own message — same rule as the
+// store's isNetworkErrorMessage.
 const UNREACHABLE =
-  /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|EHOSTUNREACH|fetch failed|socket hang up|network|unable to connect|connection refused|timed out|\b50[0-9]\b|dial tcp|no such host|TLS|certificate/i;
+  /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|EHOSTUNREACH|fetch failed|socket hang up|network|unable to connect|connection refused|timed out|dial tcp|no such host|TLS|certificate/i;
 
 export function classifyLoadError(message: string | null | undefined, resourceTypeLabel: string): LoadErrorView {
   const raw = (message ?? "").trim();

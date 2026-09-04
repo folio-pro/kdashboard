@@ -85,7 +85,7 @@ export function isPodNeedingAttention(resource: Resource): boolean {
 }
 
 export function computePodStats(items: Resource[]): WorkloadStatsResult {
-  let running = 0, pending = 0, failed = 0, succeeded = 0, totalRestarts = 0, needsAttention = 0;
+  let running = 0, pending = 0, failed = 0, succeeded = 0, unknown = 0, totalRestarts = 0, needsAttention = 0;
 
   for (const item of items) {
     const status = classifyPodStatus(item);
@@ -93,6 +93,7 @@ export function computePodStats(items: Resource[]): WorkloadStatsResult {
     else if (status === "pending") pending++;
     else if (status === "failed") failed++;
     else if (status === "succeeded") succeeded++;
+    else unknown++;
     totalRestarts += getTotalRestarts(item);
     if (isPodNeedingAttention(item)) needsAttention++;
   }
@@ -107,12 +108,16 @@ export function computePodStats(items: Resource[]): WorkloadStatsResult {
       // Completed pods are part of the total; without a chip the numbers in
       // the strip never added up (16 pods = 11 Running + 2 Failing + ...?).
       { key: "succeeded", label: "Completed", value: succeeded, color: "var(--text-muted)", subtitle: "finished", filterable: true },
+      // A pod whose phase is Unknown (or missing — a kubelet that stopped
+      // reporting) is still part of the total; only shown when there is one.
+      ...(unknown > 0 ? [{ key: "unknown", label: "Unknown", value: unknown, color: "var(--text-muted)", subtitle: "no phase", filterable: true }] : []),
       { key: "restarts", label: "Restarts", value: totalRestarts, color: "var(--text-muted)", subtitle: "total", filterable: false },
     ],
     healthSegments: [
       { key: "running", value: running, color: "var(--status-running)" },
       { key: "pending", value: pending, color: "var(--status-pending)" },
       { key: "failed", value: failed, color: "var(--status-failed)" },
+      ...(unknown > 0 ? [{ key: "unknown", value: unknown, color: "var(--text-muted)" }] : []),
     ],
     needsAttention,
   };
