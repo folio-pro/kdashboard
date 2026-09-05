@@ -1,194 +1,329 @@
 <div align="center">
 
-<img src="build/icon.png" alt="kdashboard" width="96" height="96" />
+<img src="build/icon.png" alt="kdashboard logo" width="112" height="112" />
 
 # kdashboard
 
-**A desktop IDE for Kubernetes.**
+### The desktop IDE for Kubernetes.
 
-Multi-context, multi-namespace resource management with topology, cost
-visibility, security overview, and diagnostics — built on Electron and
-Svelte 5, available for macOS, Linux, and Windows.
+One window for every cluster you operate: live resource tables, a diagnosis
+engine that tells you *why* something is broken, streaming logs, in-pod shells,
+a YAML editor with revision diffs, topology, RBAC, cost and security — built on
+Electron and Svelte 5 for macOS, Linux and Windows.
 
-[![Latest release](https://img.shields.io/github/v/release/folio-pro/kdashboard?display_name=tag&sort=semver&color=blue)](https://github.com/folio-pro/kdashboard/releases/latest)
-[![License: FSL-1.1-Apache-2.0](https://img.shields.io/badge/License-FSL--1.1--Apache--2.0-blue.svg)](LICENSE.md)
-[![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron)](https://www.electronjs.org)
-[![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte)](https://svelte.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org)
+<br />
 
-[Download](https://github.com/folio-pro/kdashboard/releases/latest) · [Features](#features) · [Install](#installation) · [Quick start](#quick-start) · [Development](#development) · [Architecture](#architecture) · [Contributing](CONTRIBUTING.md)
+[![Latest release](https://img.shields.io/github/v/release/folio-pro/kdashboard?display_name=tag&sort=semver&label=release&color=16a34a)](https://github.com/folio-pro/kdashboard/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/folio-pro/kdashboard/total?color=16a34a)](https://github.com/folio-pro/kdashboard/releases)
+[![Tests](https://github.com/folio-pro/kdashboard/actions/workflows/tests.yml/badge.svg)](https://github.com/folio-pro/kdashboard/actions/workflows/tests.yml)
+[![Build & Release](https://github.com/folio-pro/kdashboard/actions/workflows/build.yml/badge.svg)](https://github.com/folio-pro/kdashboard/actions/workflows/build.yml)
+[![License: FSL-1.1-Apache-2.0](https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg)](LICENSE.md)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#installation)
+
+[![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](https://www.electronjs.org)
+[![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Bun](https://img.shields.io/badge/Bun-runtime-000000?logo=bun&logoColor=white)](https://bun.sh)
+
+<br />
+
+**[Download](https://github.com/folio-pro/kdashboard/releases/latest)** ·
+[Highlights](#highlights) ·
+[Tour](#tour) ·
+[Install](#installation) ·
+[Quick start](#quick-start) ·
+[Shortcuts](#keyboard-shortcuts) ·
+[Extensions](#extensions) ·
+[Architecture](#architecture) ·
+[Development](#development) ·
+[Contributing](#contributing)
+
+<br />
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/pods-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/pods-light.png" />
+  <img src="docs/screenshots/pods-dark.png" alt="kdashboard — Pods across all namespaces, with live CPU and memory usage, status chips and attention markers" width="100%" />
+</picture>
+
+<sub>Pods across every namespace of a Kind cluster, with live usage from <code>metrics.k8s.io</code>. Dark and light themes ship in the box.</sub>
 
 </div>
 
----
+<br />
 
 ## Why kdashboard
 
-Running clusters through `kubectl` is fast but noisy, and most GUI
-alternatives struggle on clusters with thousands of resources. kdashboard
-is a desktop app with the ergonomics of an IDE — built for operators who
-switch between contexts and namespaces all day and want a single place to
-inspect, debug, and act on workloads.
+`kubectl` is fast but noisy. Most GUIs are either a thin wrapper around it or
+fall over on clusters with thousands of objects. kdashboard is built like an
+IDE, for people who switch between contexts and namespaces all day:
 
-## Features
+- **It tells you what is wrong, not just that something is.** The Problems
+  view correlates workload status, events and pod conditions into a diagnosis
+  with a next step, and links straight to the logs that explain it.
+- **It never leaves the cluster half-read.** Lists stream through shared
+  watchers, tables are virtualised, and payloads are projected down to the
+  columns on screen. Ten thousand pods scroll like ten.
+- **It works with what you already have.** Your kubeconfig, your RBAC, your
+  metrics-server, optionally your Prometheus and a local `trivy`. No agent in
+  the cluster, no server on the host, nothing phones home.
 
-- **Multi-context, multi-namespace** — switch contexts without reloading,
-  pin favourites, and scope views per namespace. Namespaces are filtered by
-  what your RBAC actually allows, so the picker never lists namespaces you
-  cannot read.
-- **Flat sidebar** — the whole resource tree in one scroll with sticky
-  section headers, `kubectl` short names (`po`, `deploy`, `svc`, …), live
-  counts, and a 44px collapsed rail. Beyond the usual workloads: ServiceAccounts,
-  Endpoints/EndpointSlices, IngressClasses, CSIDrivers, VolumeAttachments,
-  PriorityClasses, RuntimeClasses, Leases, and admission webhook configurations.
-- **Resource topology** — interactive graph of Deployments, Services,
-  Ingresses, Pods, and their relationships.
-- **Pod lifecycle tools** — streaming logs with regex filtering, exec via
-  embedded xterm.js, and port-forwarding with one click.
-- **Node lifecycle tools** — cordon, uncordon, and drain. The drain evicts
-  through the `policy/v1` Eviction API, so PodDisruptionBudgets are honoured;
-  static and DaemonSet pods are skipped, and unmanaged or `emptyDir` pods only
-  go if you explicitly opt in.
-- **Live usage** — CPU and memory per pod from `metrics.k8s.io`, shown against
-  each pod's request, plus an hour of history in the detail panel when you
-  point Settings → Kubernetes at a Prometheus.
-- **Helm releases** — every release read straight from its `sh.helm.release.v1`
-  Secret: values, rendered manifest, `NOTES.txt`, and full revision history.
-  No `helm` binary and no extra RBAC. Read-only — installs and rollbacks stay
-  in your pipeline.
-- **Cost visibility** — per-namespace and per-workload cost estimates, with
-  cloud pricing data refreshed by a scheduled job.
-- **Security overview** — RBAC, NetworkPolicy, PodSecurity, and image
-  posture at a glance.
-- **Diagnostics** — surface events, warnings, and common failure modes for
-  each resource.
-- **Cluster events feed** — a kubectl-style Events view in the sidebar:
-  live-updating, newest first, Normal/Warning stat cards that filter on
-  click, and search across reason and message.
-- **CRD-aware** — custom resources are first-class citizens. CRD discovery
-  falls back to the discovery API (`/apis`) when listing
-  `CustomResourceDefinition` objects is forbidden, so it works without
-  cluster-scoped RBAC. Autoscalers (HPA, VPA, and Datadog's
-  `WatermarkPodAutoscaler`) are fixed entries with full table support.
-- **Command palette** — keyboard-first navigation for every action.
-- **YAML editor** — CodeMirror 6 with schema linting and diff view.
-- **Session restore** — open tabs and the selected context/namespace come
-  back the way you left them.
-- **Built for large clusters** — virtualised tables, projected list payloads
-  with lazy detail hydration, and shared incremental watchers that stream
-  deltas instead of polling.
+## Highlights
 
-## Screenshots
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <b>Multi-context, multi-namespace</b><br />
+      Switch contexts without reloading, pin favourites, scope every view per namespace or go cluster-wide. The namespace picker only lists what your RBAC lets you read.
+    </td>
+    <td width="50%" valign="top">
+      <b>Problems &amp; Overview</b><br />
+      A cluster health page and a diagnosis engine: crash loops, image pulls, unschedulable pods, failed jobs, pending volumes, services with no endpoints — each with a cause and a suggested fix.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <b>Debug in place</b><br />
+      Streaming logs with level filters, regex search and time windows. An embedded xterm.js shell into any container, node shells via a privileged debug pod, ephemeral debug containers and one-click port-forwards you can save.
+    </td>
+    <td valign="top">
+      <b>Change safely</b><br />
+      CodeMirror 6 YAML editor with schema linting, a diff before apply, revision history with side-by-side pod-template diffs, quick-edit for images and env, and confirmations on every destructive action.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <b>Topology &amp; NetworkPolicy</b><br />
+      An interactive graph of Deployments, Services, Ingresses, Pods, ConfigMaps and Secrets with a NetworkPolicy overlay that shows what can actually talk to what.
+    </td>
+    <td valign="top">
+      <b>Security &amp; RBAC explorer</b><br />
+      Image vulnerability posture through a local <code>trivy</code> or <code>grype</code>, PodSecurity compliance, and a permissions explorer that answers "can this ServiceAccount get pods in shop?" across every Role, ClusterRole and group.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <b>Cost &amp; Rightsizing</b><br />
+      Per-namespace and per-pod cost estimates from a scheduled cloud pricing dataset, plus request recommendations against real usage with an <i>Apply</i> button that writes the patch.
+    </td>
+    <td valign="top">
+      <b>Helm, CRDs, Events</b><br />
+      Every Helm release read from its <code>sh.helm.release.v1</code> Secret (values, manifest, notes, history) with no <code>helm</code> binary. CRDs are first-class with printer columns. A kubectl-style live Events feed.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <b>Built for large clusters</b><br />
+      Virtualised tables, lean list projections with lazy detail hydration, shared incremental watchers batched at 50 ms, and a frame scheduler that keeps draining when the window is in the background.
+    </td>
+    <td valign="top">
+      <b>Keyboard first</b><br />
+      A command palette that searches resources across the cluster and exposes every action, Vim-style navigation in tables, single-key shortcuts for logs, shell, edit and scale, session restore and eleven themes.
+    </td>
+  </tr>
+</table>
+
+## Tour
+
+### Know what is broken before anyone pages you
+
+The Overview aggregates nodes, pods, problems and last-hour warnings for a
+namespace or the whole cluster. Problems groups everything that needs
+attention, explains it, and links to the pod logs or the object that caused it.
 
 <p align="center">
-  <img src="docs/screenshots/pods.png" alt="Pods view" width="100%" />
+  <img src="docs/screenshots/overview.png" alt="Cluster overview: node capacity, needs-attention list, warnings from the last hour and top consumers" width="100%" />
 </p>
+
+<p align="center">
+  <img src="docs/screenshots/problems.png" alt="Problems view diagnosing a CrashLoopBackOff deployment with a suggested next step" width="100%" />
+</p>
+
+### Debug without leaving the window
+
+A pod detail shows containers, requests against limits, live usage, conditions,
+network, related objects and port-forwarding in one scroll. Logs stream with
+level filters and regex search; the shell is a real terminal.
+
+<p align="center">
+  <img src="docs/screenshots/pod-detail.png" alt="Pod detail: containers, usage against limits, conditions, network and related resources" width="100%" />
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/logs.png" alt="Streaming pod logs with level filters, time window and regex search" /></td>
+    <td width="50%"><img src="docs/screenshots/shell.png" alt="Interactive shell inside a container via embedded xterm.js" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Streaming logs — all containers, level chips, time window, regex filter</sub></td>
+    <td align="center"><sub>Shell into any container, or a node</sub></td>
+  </tr>
+</table>
+
+### Change things safely
+
+Edit YAML with schema linting and a diff before apply. Every Deployment keeps
+its revision history; pick two revisions to see exactly what changed in the pod
+template before you roll back.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/yaml-editor.png" alt="CodeMirror YAML editor with folding, search and apply" /></td>
+    <td width="50%"><img src="docs/screenshots/revision-diff.png" alt="Deployment revision history with a side-by-side pod template diff" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>YAML editor with history and diff-before-apply</sub></td>
+    <td align="center"><sub>Revision history with side-by-side template diff and rollback</sub></td>
+  </tr>
+</table>
+
+### Understand how it fits together
+
+<p align="center">
+  <img src="docs/screenshots/topology.png" alt="Namespace topology graph of workloads, services, ingresses, config and pods" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/rbac.png" alt="RBAC explorer answering whether a ServiceAccount can get pods in a namespace, with a verb matrix and grant chain" width="100%" />
+</p>
+
+### Keep it lean
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/rightsizing.png" alt="Rightsizing: over- and under-provisioned workloads with recommended requests and monthly delta" /></td>
+    <td width="50%"><img src="docs/screenshots/cost.png" alt="Cost visibility: monthly estimate per namespace and per pod" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Rightsizing verdicts with one-click request patches</sub></td>
+    <td align="center"><sub>Cost per namespace and per pod</sub></td>
+  </tr>
+</table>
+
+### And the rest
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/helm.png" alt="Helm release detail: user-supplied values next to chart defaults" /></td>
+    <td width="33%"><img src="docs/screenshots/events.png" alt="Live cluster events feed with Normal and Warning filters" /></td>
+    <td width="33%"><img src="docs/screenshots/command-palette.png" alt="Command palette with resource actions and navigation" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Helm releases without the <code>helm</code> binary</sub></td>
+    <td align="center"><sub>Live Events feed</sub></td>
+    <td align="center"><sub>Command palette (<kbd>⌘K</kbd>)</sub></td>
+  </tr>
+</table>
 
 ## Installation
 
-### macOS — Homebrew (recommended)
+### macOS
+
+Homebrew is the recommended install and the only update channel on macOS.
 
 ```bash
 brew install folio-pro/tap/kdashboard
+brew upgrade --cask kdashboard      # later
 ```
 
-Update later with:
+<details>
+<summary><b>Direct download and the Gatekeeper prompt</b></summary>
+<br />
+
+Download `kdashboard-<version>-arm64.dmg` (Apple Silicon) or
+`kdashboard-<version>-x64.dmg` (Intel) from the
+[latest release](https://github.com/folio-pro/kdashboard/releases/latest).
+
+Releases carry an ad-hoc code signature but no Apple Developer ID and no
+notarization yet, so Gatekeeper shows the unidentified-developer prompt on
+first launch. Open the app once via right-click → **Open**, or strip the
+quarantine flag:
 
 ```bash
-brew upgrade --cask kdashboard
+xattr -cr /Applications/Kdashboard.app
 ```
 
-Because macOS builds are not signed with an Apple Developer ID, Squirrel.Mac
-refuses to install updates in place — Homebrew is the update channel there.
-The app still notifies you when a new version is available and points you at
-the `brew upgrade` command. (Windows and Linux use the in-app auto-updater,
-backed by `electron-updater`.)
+Because the build is unsigned, Squirrel.Mac cannot install updates in place.
+The app still tells you when a new version is out and points you at
+`brew upgrade`.
 
-### Pre-built binaries
+</details>
 
-Grab the [latest release](https://github.com/folio-pro/kdashboard/releases/latest)
-for your platform (see all past builds on the
-[Releases page](https://github.com/folio-pro/kdashboard/releases)):
+### Linux
 
-- **macOS** — `kdashboard-<version>-<arch>.dmg` / `.zip` (Apple Silicon and Intel)
-- **Linux** — `.AppImage`
-- **Windows** — `kdashboard-Setup-<version>.exe` (NSIS installer)
+```bash
+curl -LO https://github.com/folio-pro/kdashboard/releases/latest/download/Kdashboard-<version>.AppImage
+chmod +x Kdashboard-<version>.AppImage && ./Kdashboard-<version>.AppImage
+```
 
-> **macOS note — unsigned builds.** Releases carry an ad-hoc code signature
-> (`codesign --sign -`) but no Apple Developer ID and no notarization. The
-> ad-hoc signature is what keeps macOS from reporting the app as *"damaged
-> and can't be opened"*, but Gatekeeper still shows the unidentified-developer
-> prompt on first launch. Open the app once via right-click → **Open**, or
-> strip the quarantine flag:
->
-> ```bash
-> xattr -cr /Applications/Kdashboard.app
-> ```
->
-> Building from source (see [Development](#development)) also avoids the
-> prompt. Proper Developer ID signing + notarization will replace this
-> workaround once the certificates are provisioned.
+### Windows
 
-### Build from source
+Download and run `kdashboard-Setup-<version>.exe` from the
+[latest release](https://github.com/folio-pro/kdashboard/releases/latest).
 
-See [Development](#development) below.
+Linux and Windows builds update themselves in-app through `electron-updater`.
+All past builds are on the [Releases page](https://github.com/folio-pro/kdashboard/releases).
+
+### From source
+
+See [Development](#development).
 
 ## Quick start
 
-1. Launch kdashboard.
-2. It auto-discovers contexts from `~/.kube/config` (and `KUBECONFIG` if set).
-3. Pick a context from the cluster rail, choose a namespace, and browse
-   resources — the app opens directly on the Pods list.
-4. Press `⌘K` / `Ctrl+K` to open the command palette.
+1. Launch kdashboard. It discovers contexts from `~/.kube/config` and
+   `$KUBECONFIG`; you can also import another kubeconfig from Settings.
+2. Pick a context in the cluster rail and a namespace in the picker. The app
+   opens on Pods.
+3. Press <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd>. Type a resource name to jump to it
+   anywhere in the cluster, or an action to run it on the selected object.
+4. Optional: point **Settings → Kubernetes** at a Prometheus for an hour of
+   CPU and memory history in every detail panel, and install
+   [`trivy`](https://github.com/aquasecurity/trivy) or `grype` locally for
+   image scanning in the Security view.
 
-kdashboard does not require any in-cluster agent. It talks to the Kubernetes
-API using your existing kubeconfig and credentials.
+kdashboard needs no in-cluster agent. It talks to the API server with your
+existing credentials and honours your RBAC.
 
-## Development
+## Keyboard shortcuts
 
-### Prerequisites
+| Keys | Action |
+| --- | --- |
+| <kbd>⌘K</kbd> | Command palette |
+| <kbd>j</kbd> / <kbd>k</kbd>, <kbd>⏎</kbd> | Move through a table, open the selected row |
+| <kbd>/</kbd> | Filter the current table |
+| <kbd>r</kbd> | Refresh |
+| <kbd>l</kbd> · <kbd>t</kbd> · <kbd>e</kbd> | Logs · Shell · Edit YAML for the selected object |
+| <kbd>s</kbd> · <kbd>d</kbd> | Scale · Delete (with confirmation) |
+| <kbd>⌘L</kbd> · <kbd>⌘T</kbd> | Logs · Terminal for the open detail |
+| <kbd>⌘B</kbd> · <kbd>⌘W</kbd> · <kbd>⌘,</kbd> | Toggle sidebar · Close tab · Settings |
+| <kbd>Esc</kbd> | Back |
 
-- Node.js 20+ and [Bun](https://bun.sh)
-- A reachable cluster — `scripts/dev-cluster.sh` spins up a seeded
-  [Kind](https://kind.sigs.k8s.io) cluster for manual testing
+On Linux and Windows read <kbd>⌘</kbd> as <kbd>Ctrl</kbd>. The status bar
+always shows the shortcuts that apply to the current view.
 
-### Setup
+## Extensions
 
-```bash
-git clone https://github.com/folio-pro/kdashboard.git
-cd kdashboard
-bun install
+kdashboard loads user extensions from the `extensions` folder under its
+user-data directory (**Settings → Extensions → Open folder**). An extension is
+an ES module that registers commands, row and detail actions, settings tabs,
+status-bar hints and components in named UI slots, and can call the same IPC
+the app uses against the cluster. The core renders correctly with nothing
+installed.
+
+```js
+export default {
+  activate(ctx) {
+    ctx.registerCommand({
+      id: "audit-log.open",
+      label: "Open audit log",
+      category: "Audit",
+      action: () => ctx.toast.info("Audit log", `Context ${ctx.cluster.context}`),
+    });
+  },
+};
 ```
 
-### Run
-
-```bash
-bun run dev:electron      # Electron app (main + preload + renderer)
-bun run dev               # Renderer only, in the browser
-```
-
-### Test
-
-```bash
-bun test                      # Frontend unit tests
-bun test ./electron           # Electron backend unit tests
-bun run test:integration      # Backend integration tests (node:test)
-bun run test:e2e              # Playwright E2E
-bun run benchmark             # Playwright performance benchmarks
-```
-
-`bun run test` runs the two unit suites together. Typecheck the backend with
-`bun run typecheck:electron`.
-
-### Build a release
-
-```bash
-bun run build:electron
-```
-
-`electron-vite build` compiles into `out/`, then `electron-builder` writes the
-installers to `release/`. On macOS the `afterPack` hook
-(`scripts/sign-adhoc.mjs`) ad-hoc signs the bundle.
+The full API is documented in [docs/extensions.md](docs/extensions.md).
 
 ## Architecture
 
@@ -207,50 +342,108 @@ installers to `release/`. On macOS the `afterPack` hook
 ```
 
 - **Renderer** — Svelte 5 with runes, Tailwind 4, bits-ui primitives,
-  TanStack Virtual for large lists, xterm.js for terminals, CodeMirror 6
-  for YAML editing. It never touches Node or Electron APIs directly.
+  TanStack Virtual for large lists, xterm.js for terminals, CodeMirror 6 for
+  YAML. It never touches Node or Electron APIs directly. Every store is a
+  plain, unit-testable `.logic.ts` class with a thin `.svelte.ts` reactive
+  subclass on top.
 - **Main process** — TypeScript on `@kubernetes/client-node`. Handler modules
-  under [`electron/handlers/`](electron/handlers) register commands into a
-  central dispatcher ([`electron/dispatch.ts`](electron/dispatch.ts)); shared
-  watchers stream resource deltas, and logs, exec, and port-forwards are
-  pushed to the UI over named event channels.
-- **IPC** — a single `k8s:invoke` channel exposed through the preload
-  contextBridge, plus event channels for streams. No HTTP server runs on the
-  host.
+  under [`electron/handlers/`](electron/handlers) register commands into one
+  dispatcher ([`electron/dispatch.ts`](electron/dispatch.ts)). Shared watchers
+  stream resource deltas; logs, exec, port-forwards and watch events are pushed
+  to the UI over named event channels.
+- **IPC** — a single `k8s:invoke` channel through the preload contextBridge,
+  plus event channels for streams. No HTTP server runs on the host.
+- **Kind registry** — [`electron/k8s/kinds.ts`](electron/k8s/kinds.ts) is the
+  one source of truth for API coordinates, scope, aliases and the per-kind list
+  projection. Adding a built-in kind is one row.
 
 Built with [electron-vite](https://electron-vite.org) (Vite 7) and packaged
 with [electron-builder](https://www.electron.build).
 
-See [`src/lib/`](src/lib) and [`electron/`](electron) for module layout.
+## Development
+
+### Prerequisites
+
+- Node.js 20+ and [Bun](https://bun.sh)
+- A reachable cluster. `scripts/dev-cluster.sh` spins up a
+  [Kind](https://kind.sigs.k8s.io) cluster seeded with sample workloads for
+  manual testing.
+
+### Setup and run
+
+```bash
+git clone https://github.com/folio-pro/kdashboard.git
+cd kdashboard
+bun install                 # electron is a trustedDependency; this downloads its binary
+
+bun run dev:electron        # full app with HMR
+bun run dev                 # renderer only, in the browser (mocked IPC; the e2e target)
+```
+
+### Test
+
+```bash
+bun run test                # frontend + Electron unit suites
+bun run test:integration    # node:test against a real cluster (KDASH_TEST_CONTEXT=…)
+bun run test:e2e            # Playwright, starts the dev server itself
+bun run benchmark           # Playwright performance benchmarks
+bun run typecheck:electron  # tsc on electron/
+bunx svelte-check           # renderer typecheck
+```
+
+### Build a release
+
+```bash
+bun run build:electron      # electron-vite build -> out/, electron-builder -> release/
+```
+
+On macOS the `afterPack` hook (`scripts/sign-adhoc.mjs`) ad-hoc signs the
+bundle. See [CLAUDE.md](CLAUDE.md) for the conventions and invariants the
+codebase relies on.
 
 ## Roadmap
 
-- Helm release browser and values editor
-- Prometheus metrics overlay on topology
-- Cluster health scorecard
-- Plugin API for custom views
+- Signed and notarized macOS builds with in-app updates
+- Prometheus-backed history on the topology and node views
+- Cluster health scorecard with trends over time
+- More first-party extensions
 
-Track progress and discuss priorities in
+Priorities are discussed in
 [GitHub Discussions](https://github.com/folio-pro/kdashboard/discussions).
+Bugs and feature requests go in
+[Issues](https://github.com/folio-pro/kdashboard/issues).
 
 ## Contributing
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the
-development process, commit conventions, and CLA. For security issues, see
-[SECURITY.md](SECURITY.md) — do not open public issues for vulnerabilities.
+development process, commit conventions and CLA, and the
+[Code of Conduct](CODE_OF_CONDUCT.md). For security issues see
+[SECURITY.md](SECURITY.md) — please do not open public issues for
+vulnerabilities.
 
 ## License
 
 Source-available under the Functional Source License, Version 1.1, with an
 Apache 2.0 future grant (**FSL-1.1-Apache-2.0**). Every release automatically
-converts to Apache 2.0 on the second anniversary of its publication.
+converts to Apache 2.0 on the second anniversary of its publication. You can
+use it freely for anything except offering it as a competing hosted product.
 
 See [LICENSE.md](LICENSE.md) for the full terms, [NOTICE](NOTICE) for
-attribution, and [TRADEMARK.md](TRADEMARK.md) for use of the kdashboard
-name and logo.
+attribution, and [TRADEMARK.md](TRADEMARK.md) for use of the kdashboard name
+and logo.
+
+## Star history
+
+<a href="https://star-history.com/#folio-pro/kdashboard&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=folio-pro/kdashboard&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=folio-pro/kdashboard&type=Date" />
+    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=folio-pro/kdashboard&type=Date" width="100%" />
+  </picture>
+</a>
 
 ---
 
 <div align="center">
-<sub>Built with <a href="https://www.electronjs.org">Electron</a>, <a href="https://svelte.dev">Svelte</a>, and <a href="https://github.com/kubernetes-client/javascript">@kubernetes/client-node</a>.</sub>
+<sub>Built with <a href="https://www.electronjs.org">Electron</a>, <a href="https://svelte.dev">Svelte</a> and <a href="https://github.com/kubernetes-client/javascript">@kubernetes/client-node</a>. If kdashboard saves you time, a ⭐ helps others find it.</sub>
 </div>
