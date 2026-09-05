@@ -38,6 +38,15 @@ interface ToolResult {
   isError?: boolean;
 }
 
+/**
+ * MCP tool annotations (spec hints agent CLIs use to decide whether a call
+ * needs the user's OK): every read tool is readOnly + idempotent; Safe
+ * Mutations are writes, and only delete_pod is destructive.
+ */
+const READ_ONLY = { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false };
+const MUTATION = { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false };
+const DESTRUCTIVE = { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: false };
+
 const text = (value: string): ToolResult => ({ content: [{ type: 'text', text: value }] });
 const errorText = (value: string): ToolResult => ({ isError: true, content: [{ type: 'text', text: value }] });
 const json = (value: unknown): ToolResult => text(JSON.stringify(value, null, 2));
@@ -102,6 +111,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'get_current_context',
     {
+      annotations: READ_ONLY,
       description:
         'Where am I? Returns the active Kubernetes context name, the apiserver URL and the list of ' +
         'namespaces visible to the user. Call this first to orient yourself before using other tools.',
@@ -120,6 +130,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'list_resources',
     {
+      annotations: READ_ONLY,
       description:
         'List Kubernetes resources of one type. resourceType is plural lowercase (pods, deployments, ' +
         'services, statefulsets, daemonsets, replicasets, configmaps, secrets, ingresses, nodes, ' +
@@ -147,6 +158,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'get_resource',
     {
+      annotations: READ_ONLY,
       description:
         'Fetch one resource as full YAML (managedFields stripped). Use after list_resources to inspect ' +
         'spec and status in detail.',
@@ -169,6 +181,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'get_pod_logs',
     {
+      annotations: READ_ONLY,
       description:
         "Read a pod's logs. Set previous=true for the crashed previous container instance " +
         '(essential for CrashLoopBackOff diagnosis). Defaults to the last 200 lines.',
@@ -210,6 +223,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'list_events',
     {
+      annotations: READ_ONLY,
       description:
         'List recent Kubernetes events. Give resourceType+name to filter to one resource ' +
         '(e.g. why a pod is Pending); otherwise returns namespace-wide (or cluster-wide) events.',
@@ -234,6 +248,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'top_pods',
     {
+      annotations: READ_ONLY,
       description:
         'Live CPU/memory usage per pod and container (from metrics-server). Compare against requests/limits ' +
         'from get_resource when optimizing workload resources.',
@@ -250,6 +265,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'top_nodes',
     {
+      annotations: READ_ONLY,
       description: 'Live CPU/memory usage and capacity per node.',
       inputSchema: {},
     },
@@ -266,6 +282,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'scale_workload',
     {
+      annotations: MUTATION,
       description:
         'Safe Mutation: scale a Deployment, StatefulSet or ReplicaSet to a replica count. ' +
         'The user must approve unless they disabled approval in settings.',
@@ -294,6 +311,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'restart_rollout',
     {
+      annotations: MUTATION,
       description:
         'Safe Mutation: rolling restart of a Deployment, StatefulSet or DaemonSet ' +
         '(kubectl rollout restart). The user must approve unless they disabled approval in settings.',
@@ -319,6 +337,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'delete_pod',
     {
+      annotations: DESTRUCTIVE,
       description:
         'Safe Mutation: delete ONE pod (its controller will recreate it). Cannot delete anything else. ' +
         'The user must approve unless they disabled approval in settings.',
@@ -343,6 +362,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
   server.registerTool(
     'update_container_resources',
     {
+      annotations: MUTATION,
       description:
         "Safe Mutation: set one container's CPU/memory requests and/or limits on a Deployment, " +
         'StatefulSet, DaemonSet or ReplicaSet. Quantities are Kubernetes strings ("250m", "128Mi"). ' +

@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto';
 import * as pty from 'node-pty';
 
 import type { HandlerCtx } from '../dispatch.js';
-import { onConfigChange } from '../k8s/client.js';
+import { getActiveContextName, onConfigChange } from '../k8s/client.js';
 import { makeOutputCoalescer, type OutputCoalescer } from '../util/output-coalescer.js';
 import { startAgentMcpServer, stopAgentMcpServer } from './mcp-server.js';
 import { getAgentProfile } from './profiles.js';
@@ -72,6 +72,8 @@ export interface AgentSessionDeps {
 interface AgentSession {
   id: string;
   profileId: string;
+  /** Kube context the session started on — the only context it may ever see. */
+  pinnedContext: string | undefined;
   pty: pty.IPty;
   output: OutputCoalescer;
   /** Guards double-teardown: exit event after an explicit stop, etc. */
@@ -118,11 +120,15 @@ export async function startAgentSession(
   // Kill the previous session first — single slot.
   await endSession('replaced', deps.ctx);
 
-  // Pinned-context kill switch: any kubeconfig/context change ends the session.
+  // Pinned-context kill switch. onConfigChange also fires for changes that
+  // keep the context (re-selecting the current one, editing the kubeconfig
+  // in-app), so only an actual context switch ends the session.
   if (!contextWatchInstalled) {
     contextWatchInstalled = true;
     onConfigChange(() => {
-      void endSession('context-switch', lastCtx);
+      if (session && getActiveContextName() !== session.pinnedContext) {
+        void endSession('context-switch', lastCtx);
+      }
     });
   }
   lastCtx = deps.ctx;
@@ -157,6 +163,7 @@ export async function startAgentSession(
     const created: AgentSession = {
       id: randomUUID(),
       profileId: profile.id,
+      pinnedContext: getActiveContextName(),
       pty: child,
       output,
       ended: false,

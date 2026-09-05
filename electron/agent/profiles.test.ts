@@ -20,14 +20,16 @@ describe('claude profile', () => {
     };
     expect(config.mcpServers.kdashboard.type).toBe('http');
     expect(config.mcpServers.kdashboard.url).toBe(INPUT.mcpUrl);
-    expect(config.mcpServers.kdashboard.headers.Authorization).toBe('Bearer deadbeef');
+    // The token travels via env, not argv: claude expands `${VAR}` at load.
+    expect(config.mcpServers.kdashboard.headers.Authorization).toBe('Bearer ${KDASHBOARD_MCP_TOKEN}');
+    expect(args[2]).not.toContain('deadbeef');
     expect(args[3]).toBe('--allowedTools');
     expect(args[4]).toBe('mcp__kdashboard');
     // `--` is required: --allowedTools is variadic and would otherwise eat the
     // prompt, leaving the session sitting on an empty input box.
     expect(args[5]).toBe('--');
     expect(args[6]).toBe(INPUT.prompt);
-    expect(env).toEqual({});
+    expect(env).toEqual({ KDASHBOARD_MCP_TOKEN: 'deadbeef' });
   });
 
   test('omits the prompt argument when there is no prompt', () => {
@@ -44,6 +46,8 @@ describe('codex profile', () => {
       `mcp_servers.kdashboard.url="${INPUT.mcpUrl}"`,
       '-c',
       'mcp_servers.kdashboard.bearer_token_env_var="KDASHBOARD_MCP_TOKEN"',
+      '-c',
+      'mcp_servers.kdashboard.default_tools_approval_mode="approve"',
       INPUT.prompt,
     ]);
     expect(env.KDASHBOARD_MCP_TOKEN).toBe('deadbeef');

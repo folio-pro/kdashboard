@@ -8,13 +8,15 @@
 //
 // CLI facts verified 2026-08-16 (see .scratch/ai-agent/SPEC.md):
 //  - claude: `--strict-mcp-config --mcp-config <json>` for a fully
-//    self-contained MCP config; `--allowedTools mcp__<server>` pre-approves all
-//    tools of that server; a positional prompt after `--` starts interactive
-//    with it (the `--` is required: --allowedTools is variadic).
+//    self-contained MCP config (`${VAR}` in headers expands from the env);
+//    `--allowedTools mcp__<server>` pre-approves all tools of that server; a
+//    positional prompt after `--` starts interactive with it (the `--` is
+//    required: --allowedTools is variadic).
 //  - codex: native streamable-HTTP MCP via `mcp_servers.<name>.url` +
 //    `bearer_token_env_var`, injectable per-invocation with `-c` overrides
-//    (merge over the user's config.toml — accepted limitation); positional
-//    prompt starts the TUI with it.
+//    (merge over the user's config.toml — accepted limitation);
+//    `default_tools_approval_mode="approve"` pre-approves the server's tools;
+//    positional prompt starts the TUI with it.
 
 import { execFile } from 'node:child_process';
 
@@ -44,8 +46,13 @@ export interface AgentProfile {
 /** MCP server key the agent sees; tool names become mcp__kdashboard__<tool>. */
 const MCP_SERVER_NAME = 'kdashboard';
 
-/** Env var codex reads the bearer token from (bearer_token_env_var). */
-const CODEX_TOKEN_ENV = 'KDASHBOARD_MCP_TOKEN';
+/**
+ * Env var carrying the bearer token. Both CLIs read it from the environment
+ * (codex: bearer_token_env_var; claude: `${VAR}` expansion inside the MCP
+ * config, verified 2026-09-05 on claude 2.1.261) so the token never appears
+ * in argv, where any local process could read it from `ps`.
+ */
+const TOKEN_ENV = 'KDASHBOARD_MCP_TOKEN';
 
 // Codex gained native streamable-HTTP MCP in late 2025 (verified working at
 // 0.146.0; earlier builds gated it behind experimental_use_rmcp_client). The
@@ -63,7 +70,8 @@ const claudeProfile: AgentProfile = {
         [MCP_SERVER_NAME]: {
           type: 'http',
           url: mcpUrl,
-          headers: { Authorization: `Bearer ${mcpToken}` },
+          // Literal `${...}`: claude expands it from the env at load time.
+          headers: { Authorization: `Bearer \${${TOKEN_ENV}}` },
         },
       },
     };
@@ -79,7 +87,7 @@ const claudeProfile: AgentProfile = {
         // session opens on an empty input box and the Quick Action is lost.
         ...(prompt ? ['--', prompt] : []),
       ],
-      env: {},
+      env: { [TOKEN_ENV]: mcpToken },
     };
   },
 };
@@ -95,10 +103,18 @@ const codexProfile: AgentProfile = {
         '-c',
         `mcp_servers.${MCP_SERVER_NAME}.url="${mcpUrl}"`,
         '-c',
-        `mcp_servers.${MCP_SERVER_NAME}.bearer_token_env_var="${CODEX_TOKEN_ENV}"`,
+        `mcp_servers.${MCP_SERVER_NAME}.bearer_token_env_var="${TOKEN_ENV}"`,
+        // Pre-approve every kdashboard tool inside codex (verified 2026-09-05
+        // on codex 0.149.1). The default mode ("auto") still prompts for any
+        // tool without a readOnlyHint, so codex's own approval popped on top
+        // of kdashboard's Mutation Approval and `codex exec` refused the call
+        // outright. "approve" never prompts; mutations stay gated by
+        // kdashboard's own approval dialog.
+        '-c',
+        `mcp_servers.${MCP_SERVER_NAME}.default_tools_approval_mode="approve"`,
         ...(prompt ? [prompt] : []),
       ],
-      env: { [CODEX_TOKEN_ENV]: mcpToken },
+      env: { [TOKEN_ENV]: mcpToken },
     };
   },
   versionWarning(version: string): string | null {
