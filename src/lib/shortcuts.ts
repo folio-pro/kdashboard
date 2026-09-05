@@ -147,6 +147,8 @@ export const SHORTCUTS: Shortcut[] = [
     scope: "global",
     allowInInput: true,
     hideHint: true,
+    // The palette owns Ctrl+J for list navigation.
+    enabled: () => !uiStore.commandPaletteOpen,
     match: (e, meta) => meta && e.key === "j",
     run: () => {
       if (agentStore.panelOpen) agentStore.closePanel();

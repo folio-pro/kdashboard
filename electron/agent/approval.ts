@@ -15,6 +15,8 @@ import type { HandlerCtx } from '../dispatch.js';
 /** What the user sees in the approval dialog — enough to make it informed. */
 export interface ApprovalSummary {
   tool: string;
+  /** Kube context the change was reviewed against; execution refuses any other. */
+  context: string | undefined;
   resource: { kind: string; namespace?: string; name: string; container?: string };
   /** Human-readable change lines, e.g. "replicas: 3 → 5". */
   changes: string[];

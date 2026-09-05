@@ -83,6 +83,8 @@ interface AgentSession {
 }
 
 let session: AgentSession | null = null;
+/** start/stop run one at a time: two concurrent starts must never spawn two PTYs. */
+let lifecycle: Promise<unknown> = Promise.resolve();
 let contextWatchInstalled = false;
 /** ctx of the most recent start — the context-switch watcher emits through it. */
 let lastCtx: HandlerCtx | null = null;
@@ -115,10 +117,13 @@ async function endSession(reason: SessionEndReason, ctx: HandlerCtx | null, code
  * Start an Agent Session (replacing any live one). Returns the session id and
  * the profile actually launched.
  */
-export async function startAgentSession(
-  args: StartAgentSessionArgs,
-  deps: AgentSessionDeps,
-): Promise<{ sessionId: string }> {
+export function startAgentSession(args: StartAgentSessionArgs, deps: AgentSessionDeps): Promise<{ sessionId: string }> {
+  const next = lifecycle.then(() => startSerialized(args, deps));
+  lifecycle = next.catch(() => undefined);
+  return next;
+}
+
+async function startSerialized(args: StartAgentSessionArgs, deps: AgentSessionDeps): Promise<{ sessionId: string }> {
   // Kill the previous session first — single slot.
   await endSession('replaced', deps.ctx);
 
@@ -199,11 +204,12 @@ export function resizeAgentTerminal(cols: number, rows: number): void {
   session.pty.resize(cols, rows);
 }
 
-export async function stopAgentSession(ctx: HandlerCtx | null): Promise<void> {
-  await endSession('stopped', ctx);
+export function stopAgentSession(ctx: HandlerCtx | null): Promise<void> {
+  lifecycle = lifecycle.then(() => endSession('stopped', ctx));
+  return lifecycle as Promise<void>;
 }
 
 /** Cleanup for renderer reload/crash and app quit — no event, nobody listens. */
-export async function stopAllAgentSessions(): Promise<void> {
-  await endSession('stopped', null);
+export function stopAllAgentSessions(): Promise<void> {
+  return stopAgentSession(null);
 }

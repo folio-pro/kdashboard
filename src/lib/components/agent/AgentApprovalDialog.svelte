@@ -40,7 +40,8 @@
               Agent requests a change
             </h3>
             <p id="agent-approval-desc" class="mt-1 text-[11px] text-[var(--text-muted)]">
-              The AI agent wants to run <span class="font-mono">{current.tool}</span> on your cluster.
+              The AI agent wants to run <span class="font-mono">{current.tool}</span> on
+              {#if current.context}<span class="font-mono">{current.context}</span>{:else}your cluster{/if}.
             </p>
           </div>
         </div>

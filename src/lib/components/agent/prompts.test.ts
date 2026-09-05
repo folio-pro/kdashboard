@@ -141,5 +141,9 @@ describe("presets and contextual prompts", () => {
     const regex = buildLogsPrompt(ctx, { namespace: "shop", kind: "Deployment", name: "web", filterText: "err.*", useRegex: true });
     expect(regex).toContain("/err.*/");
     expect(regex).toContain("list_resources pods");
+    // A deployment view narrowed to one pod targets that pod, not all of them.
+    const one = buildLogsPrompt(ctx, { namespace: "shop", kind: "Deployment", name: "web", pod: "web-abc" });
+    expect(one).toContain('the pod "web-abc" of the Deployment "web"');
+    expect(one).not.toContain("list_resources pods");
   });
 });

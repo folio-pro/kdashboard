@@ -60,6 +60,7 @@ import * as updater from './handlers/updater';
 import * as agent from './agent/handlers';
 import { stopAllAgentSessions } from './agent/session';
 import { stopExternalMcp, syncExternalMcp } from './agent/external';
+import { denyAllPending } from './agent/approval';
 
 // ---------------------------------------------------------------------------
 // Theme chrome
@@ -124,6 +125,9 @@ function stopStreamingSubsystems(): void {
   portforward.stopAllPortForwards();
   watch.stopAllWatches();
   void stopAllAgentSessions();
+  // An external-endpoint mutation waiting on the dialog can never be answered
+  // by a renderer that just went away — deny now instead of after the timeout.
+  denyAllPending();
 }
 
 // ---------------------------------------------------------------------------

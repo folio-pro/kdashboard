@@ -138,6 +138,9 @@
 
   // --- Panel resize (drag the top edge) -------------------------------------
 
+  /** Tears down an in-flight drag; also run on unmount (⌘J mid-drag). */
+  let cancelResize: (() => void) | null = null;
+
   function startResize(event: PointerEvent): void {
     event.preventDefault();
     const startY = event.clientY;
@@ -151,14 +154,17 @@
     const onUp = (): void => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      cancelResize = null;
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    cancelResize = onUp;
   }
 
   onMount(() => {
     return () => {
       destroyed = true;
+      cancelResize?.();
       unsubOutput?.();
       unsubOutput = null;
       unsubClear?.();

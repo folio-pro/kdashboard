@@ -746,12 +746,20 @@ function optQuantityMap(args: Record<string, unknown>, key: string): Record<stri
   return v as Record<string, string>;
 }
 
+export interface ContainerResourcesPatch {
+  apiVersion: string;
+  kind: string;
+  metadata: { name: string; namespace: string };
+  spec: { template: { spec: { containers: Array<{ name: string; resources: Record<string, Record<string, string>> }> } } };
+}
+
 /**
- * update_container_resources: strategic-merge patch one container's resource
- * requests/limits on a workload's pod template (strategic, so the containers
- * array merges by name instead of being replaced).
+ * The strategic-merge patch body for update_container_resources: one
+ * container's requests/limits on a workload's pod template (strategic, so the
+ * containers array merges by name instead of being replaced). Pure — validates
+ * the raw args and is unit-tested.
  */
-async function updateContainerResources(args: Record<string, unknown>): Promise<null> {
+export function containerResourcesPatch(args: Record<string, unknown>): ContainerResourcesPatch {
   const kind = reqStr(args, 'kind');
   const name = reqStr(args, 'name');
   const namespace = reqStr(args, 'namespace');
@@ -771,19 +779,16 @@ async function updateContainerResources(args: Record<string, unknown>): Promise<
   if (requests) resources.requests = requests;
   if (limits) resources.limits = limits;
 
-  const patchSpec = {
+  return {
     apiVersion,
     kind: pascalKind,
     metadata: { name, namespace },
-    spec: {
-      template: {
-        spec: {
-          containers: [{ name: container, resources }],
-        },
-      },
-    },
-  } as unknown as KubernetesObject;
+    spec: { template: { spec: { containers: [{ name: container, resources }] } } },
+  };
+}
 
+async function updateContainerResources(args: Record<string, unknown>): Promise<null> {
+  const patchSpec = containerResourcesPatch(args) as unknown as KubernetesObject;
   try {
     await objectApi().patch(
       patchSpec,

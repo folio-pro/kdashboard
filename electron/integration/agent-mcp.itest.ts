@@ -487,6 +487,16 @@ describe('integration: agent diagnosis tools and external endpoint', { skip: !en
     })) as TextResult;
     assert.notEqual(none.isError, true, resultText(none));
     assert.match(resultText(none), /no lines matching/);
+
+    // nginx's entrypoint logs a few "/docker-entrypoint.sh" lines at start.
+    const some = (await c.callTool({
+      name: 'get_pod_logs',
+      arguments: { namespace: TEST_NAMESPACE, pod, grep: 'entrypoint|no-such-term' },
+    })) as TextResult;
+    assert.notEqual(some.isError, true, resultText(some));
+    const lines = resultText(some).split('\n').filter((l) => l.length > 0 && !l.startsWith('…'));
+    assert.ok(lines.length > 0, 'expected matching lines');
+    for (const line of lines) assert.ok(/entrypoint/i.test(line), `non-matching line returned: ${line}`);
   });
 
   test('get_rightsizing and query_prometheus answer with structured results', async () => {

@@ -70,20 +70,21 @@ export function capped<T>(items: T[], hint: string, cap = LIST_CAP): { items: T[
   return { items: items.slice(0, cap), note: `truncated: showing ${cap} of ${items.length} — ${hint}` };
 }
 
-/** `/re/` or `/re/i` → RegExp; anything else → case-insensitive substring. */
+/**
+ * Case-insensitive substring match; `a|b` matches lines containing any term.
+ * Deliberately not a regex: the pattern comes from the agent and a
+ * backtracking regex on every log line could stall the main process.
+ */
 export function logMatcher(pattern: string): (line: string) => boolean {
-  const re = /^\/(.+)\/([a-z]*)$/.exec(pattern);
-  if (re) {
-    try {
-      const regex = new RegExp(re[1], re[2].includes('i') ? re[2] : `${re[2]}i`);
-      return (line) => regex.test(line);
-    } catch {
-      // Not a valid regex after all: treat the inner text as a substring.
-      pattern = re[1];
-    }
-  }
-  const needle = pattern.toLowerCase();
-  return (line) => line.toLowerCase().includes(needle);
+  const terms = pattern
+    .split('|')
+    .map((t) => t.trim().toLowerCase())
+    .filter((t) => t.length > 0);
+  if (terms.length === 0) return () => true;
+  return (line) => {
+    const lower = line.toLowerCase();
+    return terms.some((t) => lower.includes(t));
+  };
 }
 
 /**
@@ -176,7 +177,7 @@ function readTool<S extends Shape>(
 interface MutationSpec<S extends Shape> extends ToolSpec<S> {
   destructive?: boolean;
   /** What the user sees in the approval dialog. */
-  summary: (args: Args<S>) => Omit<ApprovalSummary, 'tool'>;
+  summary: (args: Args<S>) => Omit<ApprovalSummary, 'tool' | 'context'>;
   execute: (args: Args<S>) => Promise<unknown>;
 }
 
@@ -192,13 +193,24 @@ function mutationTool<S extends Shape>(server: McpServer, deps: AgentToolDeps, n
     { ...rest, description, annotations: destructive ? DESTRUCTIVE : MUTATION },
     guarded(deps, async (args) => {
       const change = summary(args).changes.join('; ');
+      // The context the user reviews is the only one the change may hit: the
+      // external endpoint follows the active context, and it can move while
+      // the approval dialog is open.
+      const context = getActiveContextName();
       if (deps.requireApproval()) {
-        const approved = await requestApproval({ tool: name, ...summary(args) }, deps.ctx);
+        const approved = await requestApproval({ ...summary(args), tool: name, context }, deps.ctx);
         if (!approved) {
           return text(
             `The user DENIED this ${name} request (${change}). Do not retry the same change; ask the user or propose an alternative.`,
           );
         }
+      }
+      const now = getActiveContextName();
+      if (now !== context) {
+        return errorText(
+          `Not applied: the change was approved for context "${context ?? '(none)'}" but the active context is now ` +
+            `"${now ?? '(none)'}". Ask the user to re-request it.`,
+        );
       }
       await execute(args);
       return text(`Done: ${name} — ${change}`);
@@ -280,7 +292,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
       description:
         "Read a pod's logs. Set previous=true for the crashed previous container instance " +
         '(essential for CrashLoopBackOff diagnosis). Defaults to the last 200 lines. ' +
-        'Use grep (case-insensitive substring or /regex/) to keep only matching lines — the filter runs ' +
+        'Use grep (case-insensitive substring; "a|b" = any of) to keep only matching lines — the filter runs ' +
         `server-side in kdashboard over up to ${LOG_GREP_WINDOW} lines, so it is the cheap way to find errors in a chatty pod.`,
       inputSchema: {
         namespace: z.string(),
@@ -289,7 +301,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
         tailLines: z.number().int().positive().max(2000).optional(),
         previous: z.boolean().optional(),
         sinceSeconds: z.number().int().positive().optional().describe('only lines newer than this many seconds'),
-        grep: z.string().optional().describe('substring (case-insensitive) or /regex/ to filter lines'),
+        grep: z.string().optional().describe('case-insensitive substring, "a|b" for any of several'),
       },
     },
     async ({ namespace, pod, container, tailLines, previous, sinceSeconds, grep }) => {

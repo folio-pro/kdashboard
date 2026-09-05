@@ -30,13 +30,16 @@ describe('logMatcher', () => {
     expect(m('all good')).toBe(false);
   });
 
-  test('/re/ is a regex, case-insensitive unless flags say otherwise', () => {
-    expect(logMatcher('/err(or)?:\\s\\d+/')('ERROR: 42')).toBe(true);
-    expect(logMatcher('/^warn/')('a warn')).toBe(false);
+  test('"a|b" matches lines containing any term', () => {
+    const m = logMatcher('error | fatal');
+    expect(m('FATAL: disk full')).toBe(true);
+    expect(m('an Error occurred')).toBe(true);
+    expect(m('warning only')).toBe(false);
   });
 
-  test('an invalid regex falls back to substring', () => {
-    expect(logMatcher('/[/')('a [ b')).toBe(true);
+  test('regex metacharacters are literal, never a pattern', () => {
+    expect(logMatcher('(a+)+$')('(a+)+$ literal')).toBe(true);
+    expect(logMatcher('(a+)+$')('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!')).toBe(false);
   });
 });
 

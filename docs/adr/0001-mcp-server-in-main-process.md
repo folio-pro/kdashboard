@@ -10,5 +10,5 @@ The embedded AI agent feature gives agent CLIs (claude, codex) tool access to th
 
 ## Consequences
 
-- The app runs a local HTTP listener (previously it had none); it must only be alive while an Agent Session is, and must require the session token on every request.
+- The app runs a local HTTP listener (previously it had none). The per-session endpoint is only alive while an Agent Session is and requires the session token on every request. A second, opt-in external endpoint (Settings → AI Agent) listens on a fixed loopback port with a persisted token for other MCP clients; it follows the active context and lives from enablement until quit, with the same Mutation Approval gate.
 - Codex needs a reasonably recent version for native streamable-HTTP MCP; the app should detect and warn.

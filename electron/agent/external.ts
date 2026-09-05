@@ -32,8 +32,16 @@ let lastError: string | null = null;
 let lastEnabled = false;
 let applied: { port: number; token: string } | null = null;
 
-/** Bring the endpoint in line with `settings`. Idempotent. */
-export async function syncExternalMcp(settings: ExternalMcpSettings, options: AgentMcpOptions): Promise<void> {
+/** Lifecycle changes run one at a time, in call order — the newest settings win. */
+let queue: Promise<void> = Promise.resolve();
+
+/** Bring the endpoint in line with `settings`. Idempotent, serialized. */
+export function syncExternalMcp(settings: ExternalMcpSettings, options: AgentMcpOptions): Promise<void> {
+  queue = queue.then(() => apply(settings, options));
+  return queue;
+}
+
+async function apply(settings: ExternalMcpSettings, options: AgentMcpOptions): Promise<void> {
   const enabled = settings.agent_external_mcp_enabled === true;
   const token = typeof settings.agent_external_mcp_token === 'string' ? settings.agent_external_mcp_token : '';
   const port =
@@ -71,7 +79,11 @@ export function externalMcpStatus(): ExternalMcpStatus {
 }
 
 /** App quit / tests. */
-export async function stopExternalMcp(): Promise<void> {
-  applied = null;
-  await stopExternalMcpServer();
+export function stopExternalMcp(): Promise<void> {
+  queue = queue.then(async () => {
+    applied = null;
+    lastEnabled = false;
+    await stopExternalMcpServer();
+  });
+  return queue;
 }

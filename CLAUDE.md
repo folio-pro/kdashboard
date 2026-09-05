@@ -7,9 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 kdashboard — an Electron + Svelte 5 desktop IDE for Kubernetes. Three processes:
 the sandboxed renderer (`src/`), the preload bridge (`electron/preload.ts`), and
 the Node main process (`electron/`) which talks to clusters via
-`@kubernetes/client-node`. No in-cluster agent. The only HTTP listener on the
-host is the loopback MCP endpoint of the embedded AI agent (`electron/agent/`),
-alive only while an Agent Session runs.
+`@kubernetes/client-node`. No in-cluster agent. The only HTTP listeners on the
+host are the loopback MCP endpoints of the AI agent feature (`electron/agent/`):
+a per-session one (random port, alive only while an Agent Session runs) and an
+opt-in external one (fixed port, Settings → AI Agent) for other MCP clients.
 
 ## Commands
 

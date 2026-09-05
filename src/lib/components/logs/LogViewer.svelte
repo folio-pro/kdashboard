@@ -182,6 +182,7 @@
           namespace: resource.metadata.namespace ?? k8sStore.currentNamespace,
           kind: resource.kind,
           name: resource.metadata.name,
+          pod: podFilter ?? undefined,
           container: selectedContainer && selectedContainer !== ALL_CONTAINERS ? selectedContainer : undefined,
           filterText,
           useRegex,

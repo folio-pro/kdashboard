@@ -223,6 +223,8 @@ export interface LogsPromptInput {
   /** The pod being streamed, or the deployment whose pods are aggregated. */
   kind: string;
   name: string;
+  /** For a workload view narrowed to one of its pods. */
+  pod?: string;
   container?: string;
   filterText?: string;
   useRegex?: boolean;
@@ -242,7 +244,9 @@ export function buildLogsPrompt(ctx: PresetContext, input: LogsPromptInput): str
   const target =
     input.kind.toLowerCase() === "pod"
       ? `the pod "${input.name}"${container}`
-      : `the pods of the ${input.kind} "${input.name}"${container} (list_resources pods, then get_pod_logs each)`;
+      : input.pod
+        ? `the pod "${input.pod}"${container} of the ${input.kind} "${input.name}"`
+        : `the pods of the ${input.kind} "${input.name}"${container} (list_resources pods, then get_pod_logs each)`;
   return (
     `${presetOrientation(ctx)} The user is reading the logs of ${target} in namespace "${input.namespace}".` +
     `${filter}${level}${previous} Read those logs with get_pod_logs, explain what is going on — errors, anomalies, ` +

@@ -23,6 +23,8 @@ export interface AgentProfileStatus {
 export interface ApprovalRequest {
   id: string;
   tool: string;
+  /** Kube context the change targets. */
+  context?: string;
   resource: { kind: string; namespace?: string; name: string; container?: string };
   changes: string[];
 }

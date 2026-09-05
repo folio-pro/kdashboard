@@ -114,6 +114,14 @@ describe('integration: agent session lifecycle', { skip: !enabled }, () => {
     assert.ok(agentSessionRunning());
   });
 
+  test('two concurrent starts leave exactly one session running', async () => {
+    const [a, b] = await Promise.all([startFakeSession(), startFakeSession()]);
+    assert.notEqual(a.sessionId, b.sessionId);
+    assert.ok(agentSessionRunning());
+    // The loser was torn down as "replaced"; only one PTY is alive.
+    assert.equal(endedEvents().filter((e) => e.reason === 'replaced').length, 1);
+  });
+
   test('stop_agent_session kills the process and the endpoint', async () => {
     await startFakeSession();
     await dispatch('stop_agent_session');
