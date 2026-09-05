@@ -2,7 +2,9 @@
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { Badge, Button, SearchField } from "$lib/components/ui";
-  import { AlertTriangle } from "lucide-svelte";
+  import { AlertTriangle, Bot } from "lucide-svelte";
+  import { agentStore } from "$lib/stores/agent.svelte";
+  import { buildProblemsSweepPrompt } from "$lib/components/agent/prompts";
   import { overviewStore } from "$lib/stores/overview.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
@@ -88,6 +90,26 @@
   loadingMessage="Looking for trouble…"
   errorMessage="Could not scan the cluster"
 >
+  {#snippet headerActions()}
+    {#if overview && overview.problems.length > 0}
+      <Button
+        size="xs"
+        variant="outline"
+        title="Ask the AI agent to investigate every current problem"
+        onclick={() =>
+          void agentStore.quickAction(
+            buildProblemsSweepPrompt(
+              { context: k8sStore.currentContext, namespace: overview.namespace ?? undefined },
+              overview.problems.length,
+            ),
+          )}
+        data-testid="problems-investigate-all"
+      >
+        <Bot class="h-3 w-3" /> Investigate all with agent
+      </Button>
+    {/if}
+  {/snippet}
+
   {#snippet badge()}
     {#if overview}
       <Badge tone={overview.problems.length === 0 ? "success" : severityCounts.critical > 0 ? "error" : "warning"}>{overview.problems.length} active</Badge>

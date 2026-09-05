@@ -57,6 +57,10 @@ import * as nodeShell from './handlers/node-shell';
 import * as portforward from './handlers/portforward';
 import * as watch from './handlers/watch';
 import * as updater from './handlers/updater';
+import * as agent from './agent/handlers';
+import { stopAllAgentSessions } from './agent/session';
+import { stopExternalMcp, syncExternalMcp } from './agent/external';
+import { denyAllPending } from './agent/approval';
 
 // ---------------------------------------------------------------------------
 // Theme chrome
@@ -120,6 +124,10 @@ function stopStreamingSubsystems(): void {
   terminal.stopAllTerminalSessions();
   portforward.stopAllPortForwards();
   watch.stopAllWatches();
+  void stopAllAgentSessions();
+  // An external-endpoint mutation waiting on the dialog can never be answered
+  // by a renderer that just went away — deny now instead of after the timeout.
+  denyAllPending();
 }
 
 // ---------------------------------------------------------------------------
@@ -325,6 +333,7 @@ function buildHandlerModules(): HandlerModule[] {
     portforward, // start_port_forward, stop_port_forward
     watch, // start_resource_watch, stop_resource_watch
     updater, // __updater_check, __updater_download (+ background update-available notice)
+    agent, // get_agent_profiles, start_agent_session, send_agent_input, resize_agent_terminal, stop_agent_session, respond_agent_approval
   ];
 
   return modules;
@@ -409,7 +418,19 @@ function bootstrap(): void {
     }
   });
 
+  // Mutation Approval toggle: settings-backed (default: require approval).
+  // Shared by Agent Sessions and the external MCP endpoint.
+  const requireApproval = (): boolean => appHandlers.getSettingsSync().agent_require_approval !== false;
+  agent.setRequireApprovalProvider(requireApproval);
+
   const { dispatch } = buildDispatcher(buildHandlerModules(), ctx);
+
+  // External MCP endpoint (Settings → AI Agent): follows the settings file.
+  const externalMcpOptions = { dispatch, ctx, requireApproval };
+  void syncExternalMcp(appHandlers.getSettingsSync(), externalMcpOptions);
+  appHandlers.onSettingsSaved((settings) => {
+    void syncExternalMcp(settings, externalMcpOptions);
+  });
 
   // ONE channel for every renderer invoke(). Errors propagate as rejected
   // promises in the renderer (the shim leaves them unwrapped).
@@ -519,6 +540,13 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   fixPathEnv();
 
   app.whenReady().then(bootstrap);
+
+  // The external MCP endpoint outlives windows (a reload or a closed window
+  // must not break a Claude Desktop session mid-investigation); only quit
+  // ends it. Pending approvals deny themselves by timeout meanwhile.
+  app.on('before-quit', () => {
+    void stopExternalMcp();
+  });
 
   app.on('window-all-closed', () => {
     // On macOS the app stays alive without windows; stop the streams so a

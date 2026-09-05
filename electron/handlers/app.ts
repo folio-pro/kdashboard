@@ -45,6 +45,10 @@ interface AppSettings {
   namespace?: string | null;
   theme_mode?: string | null;
   kubeconfig_path?: string | null;
+  agent_require_approval?: boolean;
+  agent_external_mcp_enabled?: boolean;
+  agent_external_mcp_port?: number;
+  agent_external_mcp_token?: string;
   table_density?: string | null;
   context_customizations?: Record<string, ContextCustomization> | null;
   // Extra renderer-only keys (e.g. pinned_resources) are preserved verbatim.
@@ -114,6 +118,13 @@ function currentSettings(): AppSettings {
  */
 export function getSettingsSync(): AppSettings {
   return currentSettings();
+}
+
+const settingsListeners = new Set<(settings: AppSettings) => void>();
+
+/** Called after every successful save_settings with the new settings. */
+export function onSettingsSaved(listener: (settings: AppSettings) => void): void {
+  settingsListeners.add(listener);
 }
 
 // ===========================================================================
@@ -398,6 +409,13 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
 
     persistSettings(next);
     settingsState = next;
+    for (const listener of settingsListeners) {
+      try {
+        listener(next);
+      } catch {
+        // a broken listener must not fail the save
+      }
+    }
     return null;
   });
 

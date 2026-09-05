@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Badge, Button } from "$lib/components/ui";
-  import { ScrollText, ExternalLink, RefreshCw, Stethoscope, FileCode, Box } from "lucide-svelte";
+  import { ScrollText, ExternalLink, RefreshCw, Stethoscope, FileCode, Box, Bot } from "lucide-svelte";
   import { formatAge, formatTimestamp } from "$lib/utils/age";
   import { cn } from "$lib/utils";
   import type { DiagnosisVerdict, PodRef, Problem } from "$lib/types";
@@ -12,6 +12,12 @@
   import { openRelatedResourceTab, openResourceDetail } from "$lib/actions/navigation";
   import { kindToResourceType } from "$lib/utils/related-resources";
   import { CAUSE_LABEL, problemActions } from "./overview.logic";
+  import { agentStore } from "$lib/stores/agent.svelte";
+  import { buildProblemPrompt } from "$lib/components/agent/prompts";
+
+  function investigate(): void {
+    void agentStore.quickAction(buildProblemPrompt({ context: k8sStore.currentContext }, problem));
+  }
 
   interface Props {
     problem: Problem;
@@ -90,6 +96,7 @@
         <Button size="sm" variant="outline" onclick={openYaml} data-testid="action-yaml"><FileCode class="h-3 w-3" /> Open {problem.kind} YAML</Button>
       {/if}
       <Button size="sm" variant="outline" onclick={onOpen}><ExternalLink class="h-3 w-3" /> Open detail</Button>
+      <Button size="sm" variant="outline" onclick={investigate} data-testid="action-agent"><Bot class="h-3 w-3" /> Investigate with agent</Button>
     </div>
   </div>
 

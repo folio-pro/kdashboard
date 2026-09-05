@@ -41,4 +41,14 @@ export interface AppSettings {
   watched_resources?: WatchedResource[];
   /** Key/value storage for user extensions (`<extension id>.<key>`). */
   extensions?: Record<string, unknown>;
+  /** Require Mutation Approval for agent Safe Mutations. Default (absent) = true. */
+  agent_require_approval?: boolean;
+  /** Agent Profile last launched — preselected next time. */
+  agent_last_profile?: string;
+  /** Serve kdashboard's MCP endpoint to external AI tools (Claude Desktop, Cursor…). */
+  agent_external_mcp_enabled?: boolean;
+  /** Loopback port of the external endpoint. Default 47831. */
+  agent_external_mcp_port?: number;
+  /** Bearer token external clients must send; generated in the renderer when enabled. */
+  agent_external_mcp_token?: string;
 }

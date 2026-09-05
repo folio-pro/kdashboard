@@ -66,7 +66,8 @@ IDE, for people who switch between contexts and namespaces all day:
   columns on screen. Ten thousand pods scroll like ten.
 - **It works with what you already have.** Your kubeconfig, your RBAC, your
   metrics-server, optionally your Prometheus and a local `trivy`. No agent in
-  the cluster, no server on the host, nothing phones home.
+  the cluster, nothing phones home — even the AI agent is your own Claude Code
+  or Codex CLI, talking to the cluster through a loopback-only endpoint.
 
 ## Highlights
 
@@ -109,6 +110,16 @@ IDE, for people who switch between contexts and namespaces all day:
     <td valign="top">
       <b>Helm, CRDs, Events</b><br />
       Every Helm release read from its <code>sh.helm.release.v1</code> Secret (values, manifest, notes, history) with no <code>helm</code> binary. CRDs are first-class with printer columns. A kubectl-style live Events feed.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <b>AI agent, bring your own CLI</b><br />
+      Run Claude Code or Codex in a bottom panel (<kbd>⌘J</kbd>) wired to the cluster through an MCP endpoint kdashboard serves on localhost: read tools (resources, logs with grep, events, metrics, Prometheus, the Problems scan, rightsizing) plus four mutations, each behind an Approve / Deny dialog. Quick Actions, presets and "investigate with agent" buttons start it already pointed at the right thing.
+    </td>
+    <td valign="top">
+      <b>MCP server for your AI tools</b><br />
+      Optionally expose the same tool surface on a fixed localhost port with a bearer token, so Claude Desktop, Claude Code, Cursor or Codex use kdashboard as their Kubernetes MCP server — with the same in-app approval on every mutation. Copy-paste client configs in Settings.
     </td>
   </tr>
   <tr>
@@ -199,6 +210,16 @@ template before you roll back.
     <td align="center"><sub>Cost per namespace and per pod</sub></td>
   </tr>
 </table>
+
+### Ask your own AI agent
+
+The agent panel runs the Claude Code or Codex CLI you already have, in a real
+terminal, with kdashboard as its only door to the cluster. Pick "Why is it
+crashing?" on a pod, "Diagnose rollout" on a deployment, "Investigate with
+agent" on a Problem or an alert, or a preset such as "Cluster health check";
+the agent reads through the MCP tools and asks — in the app — before it
+scales, restarts, deletes a pod or changes container resources. Hide the
+panel and the session keeps going; "Resume" continues the last conversation.
 
 ### And the rest
 
@@ -295,6 +316,7 @@ existing credentials and honours your RBAC.
 | <kbd>l</kbd> · <kbd>t</kbd> · <kbd>e</kbd> | Logs · Shell · Edit YAML for the selected object |
 | <kbd>s</kbd> · <kbd>d</kbd> | Scale · Delete (with confirmation) |
 | <kbd>⌘L</kbd> · <kbd>⌘T</kbd> | Logs · Terminal for the open detail |
+| <kbd>⌘J</kbd> | AI agent panel |
 | <kbd>⌘B</kbd> · <kbd>⌘W</kbd> · <kbd>⌘,</kbd> | Toggle sidebar · Close tab · Settings |
 | <kbd>Esc</kbd> | Back |
 
@@ -352,7 +374,15 @@ The full API is documented in [docs/extensions.md](docs/extensions.md).
   stream resource deltas; logs, exec, port-forwards and watch events are pushed
   to the UI over named event channels.
 - **IPC** — a single `k8s:invoke` channel through the preload contextBridge,
-  plus event channels for streams. No HTTP server runs on the host.
+  plus event channels for streams. The only HTTP listeners on the host are the
+  loopback MCP endpoints of the AI agent (below).
+- **AI agent** — [`electron/agent/`](electron/agent) spawns the user's agent
+  CLI in a local PTY and serves it an MCP endpoint from the main process
+  (random port, per-session token, pinned to the kube context it started on),
+  so the agent sees exactly the cluster the UI sees. Tools re-enter the same
+  dispatcher the renderer uses; the four Safe Mutations block on an in-app
+  approval. An opt-in external endpoint on a fixed port serves other MCP
+  clients. See [ADR 0001](docs/adr/0001-mcp-server-in-main-process.md).
 - **Kind registry** — [`electron/k8s/kinds.ts`](electron/k8s/kinds.ts) is the
   one source of truth for API coordinates, scope, aliases and the per-kind list
   projection. Adding a built-in kind is one row.

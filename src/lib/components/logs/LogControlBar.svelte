@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    Bot,
     Box,
     Check,
     Clock,
@@ -59,6 +60,7 @@
     onClear,
     onCopy,
     onDownload,
+    onAskAgent,
   }: {
     /** A container name, or ALL_CONTAINERS. */
     selectedContainer: string;
@@ -91,6 +93,8 @@
     /** Copies the displayed lines; resolves once they are on the clipboard. */
     onCopy: () => Promise<void>;
     onDownload: () => void;
+    /** Hand the current logs (pod, container, filter) to the AI agent. */
+    onAskAgent: () => void;
   } = $props();
 
   // "all pods" is the null pod filter; SelectMenu keys on the item value, so it
@@ -300,6 +304,17 @@
     onclick={onDownload}
   >
     <Download class="h-3 w-3" />
+  </Button>
+
+  <Button
+    variant="toolbar"
+    size="icon-sm"
+    title="Analyze these logs with the AI agent"
+    aria-label="Analyze logs with AI agent"
+    onclick={onAskAgent}
+    data-testid="logs-ask-agent"
+  >
+    <Bot class="h-3 w-3" />
   </Button>
 
   <Button variant="toolbar" size="icon-sm" title="Clear logs" aria-label="Clear logs" onclick={onClear}>

@@ -9,6 +9,7 @@
 // from fixtures/seed.yaml); without it every test is skipped.
 
 import { buildDispatcher, type HandlerCtx } from '../dispatch';
+import * as agent from '../agent/handlers';
 import * as connection from '../handlers/connection';
 import * as resources from '../handlers/resources';
 import * as workloadOps from '../handlers/workload-ops';
@@ -45,7 +46,7 @@ export function dispatch<T = unknown>(cmd: string, args?: Record<string, unknown
   if (!dispatcher) {
     setActiveContext(TEST_CONTEXT as string);
     const built = buildDispatcher(
-      [connection, resources, workloadOps, nodeOps, metrics, helm, topology, security, openapi, overview, rightsizing, rbac, netpol],
+      [connection, resources, workloadOps, nodeOps, metrics, helm, topology, security, openapi, overview, rightsizing, rbac, netpol, agent],
       ctx,
     );
     dispatcher = (c, a) => built.dispatch(c, a);

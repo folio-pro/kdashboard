@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { V1ReplicaSet } from '@kubernetes/client-node';
 
-import { revisionTemplateYaml } from './workload-ops';
+import { containerResourcesPatch, revisionTemplateYaml } from './workload-ops';
 
 function rs(template: Record<string, unknown> | undefined): V1ReplicaSet {
   return { metadata: { name: 'web-abc' }, spec: template ? { template } : {} } as unknown as V1ReplicaSet;
@@ -231,5 +231,27 @@ describe('buildRerunJob', () => {
     const src = failedJob();
     src.spec = {} as V1Job['spec'];
     expect(() => buildRerunJob(src, NOW)).toThrow(/no pod template/);
+  });
+});
+
+describe('containerResourcesPatch', () => {
+  const base = { kind: 'Deployment', name: 'api', namespace: 'shop', container: 'app' };
+
+  test('requests-only and limits-only patches target one container by name', () => {
+    const requests = containerResourcesPatch({ ...base, requests: { cpu: '250m' } });
+    expect(requests.apiVersion).toBe('apps/v1');
+    expect(requests.kind).toBe('Deployment');
+    expect(requests.spec.template.spec.containers).toEqual([{ name: 'app', resources: { requests: { cpu: '250m' } } }]);
+
+    const limits = containerResourcesPatch({ ...base, kind: 'statefulset', limits: { memory: '128Mi' } });
+    expect(limits.kind).toBe('StatefulSet');
+    expect(limits.spec.template.spec.containers[0].resources).toEqual({ limits: { memory: '128Mi' } });
+  });
+
+  test('rejects unsupported kinds, empty updates and malformed quantity maps', () => {
+    expect(() => containerResourcesPatch({ ...base, kind: 'Pod', requests: { cpu: '1' } })).toThrow(/Unsupported kind/);
+    expect(() => containerResourcesPatch(base)).toThrow(/at least one/);
+    expect(() => containerResourcesPatch({ ...base, requests: ['cpu'] })).toThrow(/Invalid 'requests'/);
+    expect(() => containerResourcesPatch({ ...base, limits: { cpu: 1 } })).toThrow(/quantities must be strings/);
   });
 });

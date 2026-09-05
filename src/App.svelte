@@ -22,6 +22,8 @@
   import QuickEditDialog from "$lib/components/details/QuickEditDialog.svelte";
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import WorkloadConfirmDialogs from "$lib/components/details/WorkloadConfirmDialogs.svelte";
+  import AgentApprovalDialog from "$lib/components/agent/AgentApprovalDialog.svelte";
+  import { agentStore } from "$lib/stores/agent.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
@@ -285,6 +287,14 @@
         {/if}
       </div>
 
+      <!-- AI Agent bottom panel (lazy: WTerm ~52 kB only when opened) -->
+      {#if agentStore.panelOpen}
+        <LazyView
+          loader={() => import("$lib/components/agent/AgentPanel.svelte")}
+          name="AI agent"
+        />
+      {/if}
+
       <!-- Status Bar -->
       <StatusBar />
     </div>
@@ -317,6 +327,9 @@
     resource={dialogStore.quickEditResource}
   />
 {/if}
+
+<!-- Always mounted: a Mutation Approval can arrive with no other dialog open. -->
+<AgentApprovalDialog />
 
 {#if dialogStore.drainOpen && dialogStore.drainNodeName}
   <DrainDialog bind:open={dialogStore.drainOpen} nodeName={dialogStore.drainNodeName} />

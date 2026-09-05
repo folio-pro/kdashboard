@@ -1,11 +1,19 @@
 <script lang="ts">
-  import { Bell } from "lucide-svelte";
+  import { Bell, Bot } from "lucide-svelte";
   import { Badge, Button, toneStyle } from "$lib/components/ui";
   import { Popover, PopoverTrigger, PopoverContent } from "$lib/components/ui/popover";
   import { cn } from "$lib/utils";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { alertStore } from "$lib/stores/alerts.svelte";
-  import { describeWatched } from "$lib/stores/alerts.logic";
+  import { describeWatched, type Alert } from "$lib/stores/alerts.logic";
+  import { agentStore } from "$lib/stores/agent.svelte";
+  import { buildAlertPrompt } from "$lib/components/agent/prompts";
+
+  function investigate(a: Alert): void {
+    const watched = alertStore.watched.find((w) => w.id === a.watchedId);
+    if (!watched) return;
+    void agentStore.quickAction(buildAlertPrompt({ context: k8sStore.currentContext }, watched, a));
+  }
 
   /** The status-bar bell: watched resources of this context and the recent alerts. */
 </script>
@@ -41,9 +49,16 @@
     {:else}
       <ul class="max-h-[200px] overflow-y-auto py-1">
         {#each alertStore.recent as a (a.at + a.title)}
-          <li class="px-3 py-1">
-            <div class="truncate font-medium text-[var(--tone)]" style={toneStyle(a.level === "error" ? "error" : a.level === "warning" ? "warning" : "neutral")} title={a.title}>{a.title}</div>
-            <div class="truncate text-[var(--text-muted)]" title={a.body}>{a.body}</div>
+          <li class="flex items-start gap-2 px-3 py-1">
+            <div class="min-w-0 flex-1">
+              <div class="truncate font-medium text-[var(--tone)]" style={toneStyle(a.level === "error" ? "error" : a.level === "warning" ? "warning" : "neutral")} title={a.title}>{a.title}</div>
+              <div class="truncate text-[var(--text-muted)]" title={a.body}>{a.body}</div>
+            </div>
+            {#if alertStore.watched.some((w) => w.id === a.watchedId)}
+              <Button variant="ghost-tone" tone="neutral" size="inline-xs" title="Investigate with the AI agent" onclick={() => investigate(a)}>
+                <Bot class="h-3 w-3" />
+              </Button>
+            {/if}
           </li>
         {/each}
       </ul>

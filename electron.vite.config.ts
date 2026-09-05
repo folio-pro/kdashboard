@@ -1,4 +1,5 @@
-import { defineConfig } from "electron-vite";
+import { defineConfig, type Plugin } from "electron-vite";
+import { relocateEsmShimCode } from "./electron/build/esm-shim";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
@@ -17,8 +18,27 @@ import { rendererAlias, codemirrorDedupe, vendorChunks, rendererPort } from "./v
 // un-bundles it AND makes electron-builder copy it into the asar.
 // electron-updater is the one exception — handlers/updater.ts require()s it
 // lazily at runtime, so it has to ship as real files inside the asar.
+/**
+ * electron-vite's ESM shim (`__dirname`, `__filename`, `require`) can land in
+ * the wrong place — see electron/build/esm-shim.ts. This post plugin runs
+ * after electron-vite's and moves the shim after the real last top-level
+ * import.
+ */
+function relocateEsmShim(): Plugin {
+  return {
+    name: "kdash:relocate-esm-shim",
+    enforce: "post",
+    renderChunk(code, _chunk, { format }) {
+      if (format !== "es") return null;
+      const relocated = relocateEsmShimCode(code);
+      return relocated === code ? null : { code: relocated, map: null };
+    },
+  };
+}
+
 export default defineConfig({
   main: {
+    plugins: [relocateEsmShim()],
     build: {
       // ws probes for two optional native accelerators (bufferutil,
       // utf-8-validate) inside a try/catch and falls back to pure JS when they
@@ -33,7 +53,12 @@ export default defineConfig({
       },
       rollupOptions: {
         input: { index: path.resolve("electron/main.ts") },
-        external: ["electron"],
+        // node-pty is a NATIVE module (pty.node + spawn-helper binaries): it
+        // cannot be bundled, so it is the second entry under `dependencies`
+        // (electron-builder ships production deps automatically) and is
+        // asarUnpack'ed so the binaries can be exec'd. Listed here too so the
+        // bundler never tries to inline it.
+        external: ["electron", "node-pty"],
       },
     },
   },

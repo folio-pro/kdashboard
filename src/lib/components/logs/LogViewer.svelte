@@ -37,6 +37,8 @@
   } from "./log-constants";
   import { getJsonHighlighted } from "./log-highlighting";
   import LogControlBar from "./LogControlBar.svelte";
+  import { agentStore } from "$lib/stores/agent.svelte";
+  import { buildLogsPrompt } from "$lib/components/agent/prompts";
   import LogDetailSheet from "./LogDetailSheet.svelte";
 
   // --- Core state ---
@@ -168,6 +170,28 @@
   let tailLines = $state<TailLines>(100);
   let sinceDuration = $state<SinceDuration>("1d");
   let showPrevious = $state(false);
+
+  /** Hand the current view (resource, container, filter) to the AI agent. */
+  function askAgent(): void {
+    const resource = k8sStore.selectedResource;
+    if (!resource) return;
+    void agentStore.quickAction(
+      buildLogsPrompt(
+        { context: k8sStore.currentContext },
+        {
+          namespace: resource.metadata.namespace ?? k8sStore.currentNamespace,
+          kind: resource.kind,
+          name: resource.metadata.name,
+          pod: podFilter ?? undefined,
+          container: selectedContainer && selectedContainer !== ALL_CONTAINERS ? selectedContainer : undefined,
+          filterText,
+          useRegex,
+          level: levelFilter,
+          previous: showPrevious,
+        },
+      ),
+    );
+  }
   let useRegex = $state(false);
   let selectedLog = $state<LogLine | null>(null);
 
@@ -554,6 +578,7 @@
     onClear={clearLogs}
     onCopy={copyLogs}
     onDownload={downloadLogs}
+    onAskAgent={askAgent}
   />
 
   <!-- Log Detail Sheet -->
