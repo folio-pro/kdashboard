@@ -29,7 +29,7 @@ import {
 import * as path from 'node:path';
 import { buildDispatcher, type HandlerCtx, type HandlerModule } from './dispatch';
 import { setKubeconfigPath } from './k8s/client';
-import { fixPathEnv } from './path-fix';
+import { fixPathEnv, realPathFixDeps } from './path-fix';
 
 // Handler modules — each exports register(handlers, ctx). See dispatch.ts.
 import * as appHandlers from './handlers/app';
@@ -108,6 +108,31 @@ const isDev = !app.isPackaged;
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * Settles once process.env.PATH is usable for spawning tools (see path-fix.ts).
+ * Every command is held on it, so a kubectl/trivy/auth-plugin spawn can never
+ * run against the bare GUI PATH — while the window itself boots regardless.
+ */
+let pathReady: Promise<void> = Promise.resolve();
+
+/**
+ * Commands the renderer issues while booting that never spawn anything (they
+ * read local files only), so they must not wait for the login-shell probe:
+ * on a first launch with no cached PATH that wait would hold back the window
+ * reveal and the theme/contexts by the whole probe (0.5–2 s). The internal
+ * `__*` bridge commands (window show, shell open, …) are exempt the same way.
+ */
+const PATH_INDEPENDENT_COMMANDS = new Set([
+  'get_settings',
+  'save_settings',
+  'list_extensions',
+  'get_app_metadata',
+  'bench_config',
+  'close_splashscreen',
+  'get_contexts',
+  'get_current_context',
+]);
 
 // ---------------------------------------------------------------------------
 // Streaming cleanup
@@ -423,7 +448,11 @@ function bootstrap(): void {
   const requireApproval = (): boolean => appHandlers.getSettingsSync().agent_require_approval !== false;
   agent.setRequireApprovalProvider(requireApproval);
 
-  const { dispatch } = buildDispatcher(buildHandlerModules(), ctx);
+  const { dispatch: rawDispatch } = buildDispatcher(buildHandlerModules(), ctx);
+  const dispatch = async (cmd: string, args: Record<string, unknown> | undefined): Promise<unknown> => {
+    if (!PATH_INDEPENDENT_COMMANDS.has(cmd) && !cmd.startsWith('__')) await pathReady;
+    return rawDispatch(cmd, args);
+  };
 
   // External MCP endpoint (Settings → AI Agent): follows the settings file.
   const externalMcpOptions = { dispatch, ctx, requireApproval };
@@ -535,9 +564,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   });
 
   // Adopt the login shell's PATH so GUI launches can find kubectl / trivy / grype
-  // / cloud auth plugins (macOS/Linux GUI apps don't inherit it). Synchronous and
-  // must run before any handler spawns a process.
-  fixPathEnv();
+  // / cloud auth plugins (macOS/Linux GUI apps don't inherit it). The probe is
+  // a full login shell (0.5–2 s), so it runs in the background: the cached
+  // result applies at once and dispatch waits on `pathReady` otherwise.
+  pathReady = fixPathEnv(realPathFixDeps(path.join(app.getPath('userData'), 'login-shell.path')));
 
   app.whenReady().then(bootstrap);
 

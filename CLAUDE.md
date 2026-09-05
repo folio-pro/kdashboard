@@ -43,7 +43,7 @@ bun test ./electron -t "drain"              # single test by name
 bun run test:integration     # node:test via tsx against a real cluster
 bun run test:e2e             # Playwright (starts `bun run dev` itself)
 bunx playwright test e2e/resource-table.spec.ts -g "sorts"   # single e2e test
-bun run benchmark            # Playwright perf benchmarks
+bun run benchmark            # frontend perf harness, prod build, 3 runs (scripts/bench/README.md)
 ```
 
 Integration tests run under **Node, not Bun** — the apiserver TLS bridge uses
@@ -183,6 +183,19 @@ correctly with nothing registered.
   outside the repo tree.
 - `codemirrorDedupe` in `vite.shared.ts` prevents "Unrecognized extension value"
   from duplicated CodeMirror copies.
+- electron-vite does **not** minify by default; all three bundles set
+  `minify: "esbuild"` explicitly (main is ~10 MB unminified, ~3.4 MB minified,
+  because `@kubernetes/client-node` ships three generated layers per API).
+- The main entry is `electron/bootstrap.ts`, not `main.ts`: it enables Node's
+  on-disk compile cache and then `await import('./main')`s, so the real bundle
+  is a separate chunk the cache covers. Keep the `await` (Electron holds
+  `ready` until the entry has evaluated; main.ts's module scope must run
+  first) and keep `chunkFileNames` flat (`__dirname`-relative preload and
+  renderer paths break if the chunk lands under `chunks/`).
+- `fixPathEnv` (login-shell PATH probe) is async and cached in
+  `<userData>/login-shell.path`; `dispatch` waits on `pathReady`, so nothing
+  that spawns a tool can run against the bare GUI PATH. Don't add spawn
+  paths that bypass the dispatcher.
 - Two Vite configs on purpose: `electron.vite.config.ts` (app) and
   `vite.config.ts` (renderer-only, used by `dev` and the Playwright webServer).
   Shared renderer settings live in `vite.shared.ts`.
