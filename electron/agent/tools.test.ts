@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { contextGuardMessage, logMatcher, thin } from './tools';
+import { capped, contextGuardMessage, logMatcher, thin } from './tools';
 
 describe('contextGuardMessage', () => {
   test('null while the pinned context is still active', () => {
@@ -47,5 +47,14 @@ describe('thin', () => {
     expect(out.length).toBeLessThanOrEqual(30);
     expect(out[0]).toBe(0);
     expect(thin([1, 2, 3], 30)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('capped', () => {
+  test('passes short lists through and annotates cut ones', () => {
+    expect(capped([1, 2], 'x', 3)).toEqual({ items: [1, 2] });
+    const cut = capped([1, 2, 3, 4], 'narrow by namespace', 3);
+    expect(cut.items).toEqual([1, 2, 3]);
+    expect(cut.note).toBe('truncated: showing 3 of 4 — narrow by namespace');
   });
 });

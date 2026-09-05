@@ -28,7 +28,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { getActiveContextName } from '../k8s/client.js';
 import type { HandlerCtx } from '../dispatch.js';
 import { denyAllPending } from './approval.js';
-import { registerAgentTools, type AgentToolDeps, type Dispatch } from './tools.js';
+import { contextGuardMessage, registerAgentTools, type AgentToolDeps, type Dispatch } from './tools.js';
 
 export interface McpEndpoint {
   url: string;
@@ -42,6 +42,14 @@ export interface AgentMcpOptions {
   requireApproval: () => boolean;
 }
 
+interface ListenOptions extends AgentMcpOptions {
+  token: string;
+  /** 0 = any free port. */
+  port: number;
+  /** See AgentToolDeps.refusal. */
+  refusal: () => string | null;
+}
+
 interface McpInstance {
   httpServer: http.Server;
   url: string;
@@ -50,47 +58,57 @@ interface McpInstance {
   servers: Map<string, McpServer>;
 }
 
-interface CreateOptions extends AgentMcpOptions {
-  token: string;
-  /** 0 = any free port. */
-  port: number;
-  pinnedContext: string | undefined | null;
+/** One endpoint slot: at most one listener, restarted on start(). */
+class EndpointSlot {
+  private instance: McpInstance | null = null;
+
+  get endpoint(): McpEndpoint | null {
+    return this.instance ? { url: this.instance.url, token: this.instance.token } : null;
+  }
+
+  async start(options: ListenOptions): Promise<McpEndpoint> {
+    await this.stop();
+    this.instance = await listen(options);
+    return this.endpoint!;
+  }
+
+  async stop(): Promise<void> {
+    const current = this.instance;
+    if (!current) return;
+    this.instance = null;
+    await closeInstance(current);
+  }
 }
 
-let instance: McpInstance | null = null;
-let external: McpInstance | null = null;
+const session = new EndpointSlot();
+const external = new EndpointSlot();
 
 /** True while the SESSION endpoint is listening (i.e. an Agent Session is alive). */
 export function agentMcpRunning(): boolean {
-  return instance !== null;
+  return session.endpoint !== null;
 }
 
 /**
- * Start the session endpoint (single slot — a running instance is stopped
- * first). `dispatch` is the same command dispatcher the renderer drives, so
- * tools and UI share one behavior; `ctx` reaches the renderer for approval
- * requests.
+ * Start the session endpoint (a running one is stopped first). `dispatch` is
+ * the same command dispatcher the renderer drives, so tools and UI share one
+ * behavior; `ctx` reaches the renderer for approval requests. Pinned at start:
+ * tools fail closed if the UI switches context.
  */
-export async function startAgentMcpServer(options: AgentMcpOptions): Promise<McpEndpoint> {
-  await stopAgentMcpServer();
-  instance = await createInstance({
+export function startAgentMcpServer(options: AgentMcpOptions): Promise<McpEndpoint> {
+  const pinned = getActiveContextName();
+  return session.start({
     ...options,
     token: randomBytes(32).toString('hex'),
     port: 0,
-    // Pinned at session start: tools fail closed if the UI switches context.
-    pinnedContext: getActiveContextName(),
+    refusal: () => contextGuardMessage(pinned, getActiveContextName()),
   });
-  return { url: instance.url, token: instance.token };
 }
 
 /** Stop the session endpoint and drop every live MCP session. Safe to call when idle. */
 export async function stopAgentMcpServer(): Promise<void> {
-  const current = instance;
-  if (!current) return;
-  instance = null;
   // A dead endpoint can never deliver an approval answer — deny, don't hang.
-  denyAllPending();
-  await closeInstance(current);
+  if (session.endpoint) denyAllPending();
+  await session.stop();
 }
 
 export interface ExternalMcpOptions extends AgentMcpOptions {
@@ -103,24 +121,19 @@ export interface ExternalMcpOptions extends AgentMcpOptions {
  * a context: external clients see whatever the UI has active, exactly like a
  * Quick Action would. Throws when the port is taken.
  */
-export async function startExternalMcpServer(options: ExternalMcpOptions): Promise<McpEndpoint> {
-  await stopExternalMcpServer();
-  external = await createInstance({ ...options, pinnedContext: null });
-  return { url: external.url, token: external.token };
+export function startExternalMcpServer(options: ExternalMcpOptions): Promise<McpEndpoint> {
+  return external.start({ ...options, refusal: () => null });
 }
 
-export async function stopExternalMcpServer(): Promise<void> {
-  const current = external;
-  if (!current) return;
-  external = null;
-  await closeInstance(current);
+export function stopExternalMcpServer(): Promise<void> {
+  return external.stop();
 }
 
 export function externalMcpEndpoint(): McpEndpoint | null {
-  return external ? { url: external.url, token: external.token } : null;
+  return external.endpoint;
 }
 
-async function createInstance(options: CreateOptions): Promise<McpInstance> {
+async function listen(options: ListenOptions): Promise<McpInstance> {
   const { token, port } = options;
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const servers = new Map<string, McpServer>();
@@ -129,7 +142,7 @@ async function createInstance(options: CreateOptions): Promise<McpInstance> {
     dispatch: options.dispatch,
     ctx: options.ctx,
     requireApproval: options.requireApproval,
-    pinnedContext: options.pinnedContext,
+    refusal: options.refusal,
   };
 
   const httpServer = http.createServer((req, res) => {

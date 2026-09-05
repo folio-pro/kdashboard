@@ -7,6 +7,9 @@
 //   - Presets from the panel header (cluster-wide questions),
 //   - contextual "investigate" buttons (Problems view, alerts, log viewer).
 
+import type { Problem, WatchedResource } from "$lib/types";
+import type { Alert } from "$lib/stores/alerts.logic";
+
 export interface PromptContext {
   context: string;
   namespace?: string;
@@ -55,8 +58,12 @@ export const QUICK_ACTIONS: QuickActionDef[] = [
   { id: "ask-about", label: "Ask Agent About This…", resourceTypes: null },
 ];
 
+export function quickActionApplies(action: QuickActionDef, resourceType: string): boolean {
+  return action.resourceTypes === null || action.resourceTypes.includes(resourceType);
+}
+
 export function quickActionsFor(resourceType: string): QuickActionDef[] {
-  return QUICK_ACTIONS.filter((a) => a.resourceTypes === null || a.resourceTypes.includes(resourceType));
+  return QUICK_ACTIONS.filter((a) => quickActionApplies(a, resourceType));
 }
 
 const TOOLS_HINT =
@@ -171,15 +178,8 @@ export function buildPresetPrompt(preset: PresetId, ctx: PresetContext): string 
 // Contextual entry points — Problems view, alerts, log viewer
 // ---------------------------------------------------------------------------
 
-export interface ProblemLike {
-  kind: string;
-  name: string;
-  namespace: string | null;
-  reason: string;
-  detail?: string | null;
-  owner?: string | null;
-  restarts?: number;
-}
+type ProblemLike = Pick<Problem, "kind" | "name" | "namespace" | "reason"> &
+  Partial<Pick<Problem, "detail" | "owner" | "restarts">>;
 
 /** "Investigate with agent" on one Problem: reason and detail travel along. */
 export function buildProblemPrompt(ctx: PresetContext, problem: ProblemLike): string {
@@ -204,16 +204,11 @@ export function buildProblemsSweepPrompt(ctx: PresetContext, count: number): str
   );
 }
 
-export interface AlertLike {
-  title: string;
-  body: string;
-}
-
 /** "Investigate" on a recent alert from a watched resource. */
 export function buildAlertPrompt(
   ctx: PresetContext,
-  watched: { kind: string; name: string; namespace?: string | null },
-  alert: AlertLike,
+  watched: Pick<WatchedResource, "kind" | "name" | "namespace">,
+  alert: Pick<Alert, "title" | "body">,
 ): string {
   const where = watched.namespace ? ` in namespace "${watched.namespace}"` : "";
   return (

@@ -415,18 +415,14 @@ function bootstrap(): void {
   });
 
   // Mutation Approval toggle: settings-backed (default: require approval).
-  agent.setRequireApprovalProvider(
-    () => appHandlers.getSettingsSync().agent_require_approval !== false,
-  );
+  // Shared by Agent Sessions and the external MCP endpoint.
+  const requireApproval = (): boolean => appHandlers.getSettingsSync().agent_require_approval !== false;
+  agent.setRequireApprovalProvider(requireApproval);
 
   const { dispatch } = buildDispatcher(buildHandlerModules(), ctx);
 
   // External MCP endpoint (Settings → AI Agent): follows the settings file.
-  const externalMcpOptions = {
-    dispatch,
-    ctx,
-    requireApproval: () => appHandlers.getSettingsSync().agent_require_approval !== false,
-  };
+  const externalMcpOptions = { dispatch, ctx, requireApproval };
   void syncExternalMcp(appHandlers.getSettingsSync(), externalMcpOptions);
   appHandlers.onSettingsSaved((settings) => {
     void syncExternalMcp(settings, externalMcpOptions);

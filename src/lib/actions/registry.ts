@@ -21,7 +21,7 @@ import { extensions } from "$lib/extensions";
 import { invoke } from "$lib/ipc/core";
 import { open as shellOpen } from "$lib/ipc/shell";
 import { agentStore } from "$lib/stores/agent.svelte";
-import { QUICK_ACTIONS, quickActionsFor, buildQuickActionPrompt } from "$lib/components/agent/prompts";
+import { QUICK_ACTIONS, quickActionApplies, buildQuickActionPrompt } from "$lib/components/agent/prompts";
 
 export { SCALABLE_TYPES, RESTARTABLE_TYPES, ALERTABLE_TYPES, LOG_TYPES, GROUP_ORDER, groupActions, getResourceUrl } from "./registry.logic.js";
 import { SCALABLE_TYPES, RESTARTABLE_TYPES, ALERTABLE_TYPES, LOG_TYPES, GROUP_ORDER, getResourceUrl as getResourceUrlPure } from "./registry.logic.js";
@@ -588,7 +588,7 @@ export const resourceActions: ActionDef[] = [
     tier: "green",
     group: "navigate",
     priority: 60 + i,
-    appliesTo: (rt) => quickActionsFor(rt).includes(qa),
+    appliesTo: (rt) => quickActionApplies(qa, rt),
     execute: (resource) => {
       void agentStore.quickAction(
         buildQuickActionPrompt(qa.id, {
