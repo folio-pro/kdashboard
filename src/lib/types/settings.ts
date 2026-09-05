@@ -31,4 +31,8 @@ export interface AppSettings {
   pinned_resources?: PinnedResource[];
   /** Base URL of a Prometheus reachable from this machine. Empty = disabled. */
   prometheus_url?: string;
+  /** Require Mutation Approval for agent Safe Mutations. Default (absent) = true. */
+  agent_require_approval?: boolean;
+  /** Agent Profile last launched — preselected next time. */
+  agent_last_profile?: string;
 }

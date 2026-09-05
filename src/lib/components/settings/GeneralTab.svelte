@@ -1,6 +1,7 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
   import { Check } from "lucide-svelte";
+  import { Checkbox } from "$lib/components/ui/checkbox";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { THEME_COLORS, DARK_THEMES, LIGHT_THEMES, type ThemeOption } from "./settings-constants";
 
@@ -111,4 +112,30 @@
       </button>
     {/each}
   </div>
+</section>
+
+<!-- AI Agent -->
+<section>
+  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">AI Agent</h2>
+  <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+    The embedded agent can request a small set of cluster changes (scale, restart, delete pod, update resources) through its tools.
+  </p>
+
+  <label class="mt-4 flex cursor-pointer items-start gap-2.5">
+    <Checkbox
+      checked={settingsStore.settings.agent_require_approval !== false}
+      onCheckedChange={(checked) => {
+        settingsStore.settings.agent_require_approval = checked === true;
+        settingsStore.saveSettings();
+      }}
+      class="mt-0.5"
+    />
+    <span class="flex flex-col">
+      <span class="text-[12px] font-medium text-[var(--text-primary)]">Require approval for agent mutations</span>
+      <span class="text-[11px] leading-relaxed text-[var(--text-muted)]">
+        Every change the agent requests shows an Approve / Deny dialog before touching the cluster.
+        Turning this off lets the agent modify your cluster without asking — only do this on clusters where that is acceptable.
+      </span>
+    </span>
+  </label>
 </section>

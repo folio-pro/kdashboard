@@ -18,7 +18,10 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: { index: path.resolve("electron/main.ts") },
-        external: ["electron"],
+        // node-pty is a NATIVE module (pty.node + spawn-helper binaries): it
+        // cannot be bundled, so it stays external and is shipped via the
+        // electron-builder files list (package.json build.files).
+        external: ["electron", "node-pty"],
       },
     },
   },

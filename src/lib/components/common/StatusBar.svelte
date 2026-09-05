@@ -1,8 +1,9 @@
 <script lang="ts">
   import { Kbd, Spinner } from "$lib/components/ui";
   import { cn } from "$lib/utils";
-  import { Unplug } from "lucide-svelte";
+  import { Unplug, Bot } from "lucide-svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { agentStore } from "$lib/stores/agent.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
   import { hintsForView } from "$lib/shortcuts";
@@ -54,6 +55,26 @@
     >
       <Unplug class="h-3 w-3" />
       <span>{k8sStore.portForwards.length}</span>
+    </button>
+
+    <span class="h-3 w-px bg-[var(--border-color)]"></span>
+
+    <!-- AI agent: toggle the bottom panel -->
+    <button
+      class={cn(
+        "flex items-center gap-1 transition-colors hover:text-[var(--text-primary)]",
+        agentStore.panelOpen && "text-[var(--accent)]",
+        agentStore.status === "running" && !agentStore.panelOpen && "text-[var(--text-secondary)]"
+      )}
+      title="AI agent"
+      onclick={() => (agentStore.panelOpen ? agentStore.closePanel() : agentStore.openPanel())}
+    >
+      <Bot class="h-3 w-3" />
+      {#if agentStore.status === "running"}
+        <span class="h-[6px] w-[6px] animate-pulse rounded-full bg-[var(--status-running)]"></span>
+      {:else if agentStore.approvals.length > 0}
+        <span class="h-[6px] w-[6px] rounded-full bg-[var(--status-warning)]"></span>
+      {/if}
     </button>
 
     {#if k8sStore.isLoading}

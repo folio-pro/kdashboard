@@ -58,6 +58,16 @@ inspect, debug, and act on workloads.
   in your pipeline.
 - **Cost visibility** — per-namespace and per-workload cost estimates, with
   cloud pricing data refreshed by a scheduled job.
+- **Embedded AI agent** — run your own Claude Code or Codex CLI in a bottom
+  terminal panel, wired to the cluster through an MCP endpoint kdashboard
+  serves on localhost (same context, TLS and credentials as the UI). The agent
+  gets read tools (resources, logs, events, metrics) plus exactly four
+  mutations — scale, rolling restart, delete pod, update container
+  resources — each gated behind an in-app Approve/Deny dialog (toggleable in
+  Settings). Quick Actions on Pods and Deployments ("why is it crashing?",
+  "optimize resources") start the agent already pointed at the resource.
+  Bring your own CLI and subscription; kdashboard never proxies your cluster
+  to a third party itself.
 - **Security overview** — RBAC, NetworkPolicy, PodSecurity, and image
   posture at a glance.
 - **Diagnostics** — surface events, warnings, and common failure modes for

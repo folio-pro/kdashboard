@@ -1,7 +1,7 @@
 import {
   FileText, Terminal, Scale, RotateCcw, History, Trash2,
   ClipboardCopy, GitFork, Pencil, Copy, FileJson,
-  ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets, GitCompare,
+  ExternalLink, Pin, PinOff, Ban, CircleCheck, Droplets, GitCompare, Bot,
 } from "lucide-svelte";
 import type { ActionDef, BulkActionDef } from "./types";
 import type { Resource } from "$lib/types";
@@ -16,6 +16,8 @@ import { isCordoned, setNodeSchedulable } from "./node-ops";
 import { extensions } from "$lib/extensions";
 import { invoke } from "$lib/ipc/core";
 import { open as shellOpen } from "$lib/ipc/shell";
+import { agentStore } from "$lib/stores/agent.svelte";
+import { QUICK_ACTIONS, quickActionsFor, buildQuickActionPrompt } from "$lib/components/agent/prompts";
 
 export { SCALABLE_TYPES, RESTARTABLE_TYPES, LOG_TYPES, GROUP_ORDER, groupActions, getResourceUrl } from "./registry.logic.js";
 import { SCALABLE_TYPES, RESTARTABLE_TYPES, LOG_TYPES, GROUP_ORDER, getResourceUrl as getResourceUrlPure } from "./registry.logic.js";
@@ -393,6 +395,29 @@ export const resourceActions: ActionDef[] = [
     appliesTo: () => true,
     execute: (resource) => dialogStore.openDelete(resource),
   },
+
+  // --- AI Agent Quick Actions (navigate group, below the built-ins) ---
+  // Curated per resource type plus a generic fallback; each starts (or feeds)
+  // the Agent Session with a prompt oriented at the selected resource.
+  ...QUICK_ACTIONS.map((qa, i): ActionDef => ({
+    id: `agent-${qa.id}`,
+    label: qa.label,
+    icon: Bot,
+    tier: "green",
+    group: "navigate",
+    priority: 60 + i,
+    appliesTo: (rt) => quickActionsFor(rt).includes(qa),
+    execute: (resource) => {
+      void agentStore.quickAction(
+        buildQuickActionPrompt(qa.id, {
+          context: k8sStore.currentContext,
+          namespace: resource.metadata.namespace ?? undefined,
+          kind: resource.kind,
+          name: resource.metadata.name,
+        }),
+      );
+    },
+  })),
 ];
 
 /** Bulk actions for multi-select */

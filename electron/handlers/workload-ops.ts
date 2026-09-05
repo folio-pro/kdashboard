@@ -467,6 +467,81 @@ async function rollbackDeployment(args: Record<string, unknown>): Promise<string
 }
 
 // ---------------------------------------------------------------------------
+// Container resource requests/limits
+// ---------------------------------------------------------------------------
+
+/** Workload kinds whose pod template supports a strategic containers patch. */
+const RESOURCE_PATCH_KINDS = new Set(['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet']);
+
+/** Validate a `{ cpu?, memory? }`-style quantity map argument. */
+function optQuantityMap(args: Record<string, unknown>, key: string): Record<string, string> | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'object' || Array.isArray(v)) {
+    throw new Error(`Invalid '${key}' argument`);
+  }
+  for (const value of Object.values(v as Record<string, unknown>)) {
+    if (typeof value !== 'string') {
+      throw new Error(`Invalid '${key}' argument: quantities must be strings (e.g. "250m", "128Mi")`);
+    }
+  }
+  return v as Record<string, string>;
+}
+
+/**
+ * update_container_resources: strategic-merge patch one container's resource
+ * requests/limits on a workload's pod template (strategic, so the containers
+ * array merges by name instead of being replaced).
+ */
+async function updateContainerResources(args: Record<string, unknown>): Promise<null> {
+  const kind = reqStr(args, 'kind');
+  const name = reqStr(args, 'name');
+  const namespace = reqStr(args, 'namespace');
+  const container = reqStr(args, 'container');
+  const requests = optQuantityMap(args, 'requests');
+  const limits = optQuantityMap(args, 'limits');
+  if (!requests && !limits) {
+    throw new Error("Provide at least one of 'requests' or 'limits'");
+  }
+
+  const { apiVersion, kind: pascalKind } = apiResourceForKind(kind);
+  if (!RESOURCE_PATCH_KINDS.has(pascalKind)) {
+    throw new Error(`Unsupported kind for update_container_resources: ${kind}`);
+  }
+
+  const resources: Record<string, Record<string, string>> = {};
+  if (requests) resources.requests = requests;
+  if (limits) resources.limits = limits;
+
+  const patchSpec = {
+    apiVersion,
+    kind: pascalKind,
+    metadata: { name, namespace },
+    spec: {
+      template: {
+        spec: {
+          containers: [{ name: container, resources }],
+        },
+      },
+    },
+  } as unknown as KubernetesObject;
+
+  try {
+    await objectApi().patch(
+      patchSpec,
+      undefined, // pretty
+      undefined, // dryRun
+      undefined, // fieldManager
+      undefined, // force
+      PatchStrategy.StrategicMergePatch,
+    );
+    return null;
+  } catch (err) {
+    throw new Error(k8sErrorMessage(err));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -475,6 +550,7 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
   handlers.set('delete_resource', async (args) => deleteResource(args));
   handlers.set('scale_workload', async (args) => scaleWorkload(args));
   handlers.set('restart_workload', async (args) => restartWorkload(args));
+  handlers.set('update_container_resources', async (args) => updateContainerResources(args));
   handlers.set('rollback_deployment', async (args) => rollbackDeployment(args));
   handlers.set('list_deployment_revisions', async (args) => listDeploymentRevisions(args));
 }
