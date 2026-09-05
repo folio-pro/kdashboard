@@ -416,7 +416,7 @@ bun run dev                 # renderer only, in the browser (mocked IPC; the e2e
 bun run test                # frontend + Electron unit suites
 bun run test:integration    # node:test against a real cluster (KDASH_TEST_CONTEXT=…)
 bun run test:e2e            # Playwright, starts the dev server itself
-bun run benchmark           # Playwright performance benchmarks
+bun run benchmark           # frontend perf harness (scripts/bench/README.md)
 bun run typecheck:electron  # tsc on electron/
 bunx svelte-check           # renderer typecheck
 ```

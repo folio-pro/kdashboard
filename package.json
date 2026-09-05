@@ -19,8 +19,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
-    "benchmark": "tsx scripts/run-playwright-benchmarks.ts",
-    "benchmark:ci": "tsx scripts/run-playwright-benchmarks.ts ./benchmark-results.json",
+    "benchmark": "./scripts/bench/frontend.sh",
+    "benchmark:ci": "RUNS=1 LABEL=ci ./scripts/bench/frontend.sh",
     "fetch-pricing": "bun scripts/fetch-pricing.ts",
     "test": "bun test && bun test ./electron"
   },

@@ -99,6 +99,10 @@
       k8sStore.error = "Failed to load kubeconfig contexts. Check your kubeconfig file.";
       return;
     }
+    // loadContexts reports its failure through the store rather than by
+    // throwing. Without contexts nothing below can work, and a later step's
+    // own failure would overwrite the message the overlay is showing.
+    if (k8sStore.connectionStatus !== "connected") return;
 
     // Benchmark mode (env KDASH_BENCH=1): drive the real list path and exit.
     try {
@@ -120,18 +124,13 @@
       return;
     }
 
-    try {
-      await k8sStore.loadNamespaces();
-    } catch (err) {
-      console.error("[initApp] loadNamespaces failed", err);
-      k8sStore.connectionStatus = "error";
-      k8sStore.error = "Connected, but failed to list namespaces. Check RBAC permissions.";
-      return;
-    }
-
-    // The restored namespace may not exist in THIS cluster — snap to a real
-    // one now that the cluster's namespace list is known.
-    k8sStore.restoreNamespace();
+    // The namespace list and the restored tab's data are fetched TOGETHER.
+    // Listing namespaces is the slowest boot call on a remote cluster (the
+    // list plus one access review per namespace, in waves of 16), and the
+    // tab's list does not need it: with no namespace list loaded yet,
+    // restoreNamespace() trusts the persisted namespace as-is. Waiting for
+    // the namespaces first cost the table a full round of that latency.
+    const namespacesLoaded = k8sStore.loadNamespaces();
 
     // Re-hydrate the restored active tab so it isn't blank on cold boot. The
     // selected resource and visible list are ephemeral (never persisted), so a
@@ -142,6 +141,28 @@
       await bootstrapActiveTab();
     } catch (err) {
       console.error("[initApp] bootstrapActiveTab failed", err);
+    }
+
+    // A namespace-list failure is reported by the store (loadNamespaces never
+    // throws) and is not fatal: a restricted-RBAC user can still work in the
+    // persisted namespace, which the tab above already listed.
+    try {
+      await namespacesLoaded;
+    } catch (err) {
+      console.error("[initApp] loadNamespaces failed", err);
+    }
+
+    // The restored namespace may not exist in THIS cluster — snap to a real
+    // one now that the cluster's namespace list is known, and refetch the tab
+    // if that moved it (the list above was for the namespace that is gone).
+    const restoredNamespace = k8sStore.currentNamespace;
+    k8sStore.restoreNamespace();
+    if (k8sStore.currentNamespace !== restoredNamespace) {
+      try {
+        await bootstrapActiveTab();
+      } catch (err) {
+        console.error("[initApp] bootstrapActiveTab (namespace snapped) failed", err);
+      }
     }
 
     // Fire-and-forget: sidebar counts are nice-to-have, never block init.

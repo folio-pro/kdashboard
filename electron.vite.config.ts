@@ -40,6 +40,13 @@ export default defineConfig({
   main: {
     plugins: [relocateEsmShim()],
     build: {
+      // electron-vite leaves every bundle UNMINIFIED by default (`minify: false`
+      // for main, preload and renderer alike). Main alone weighs ~10 MB
+      // unminified because @kubernetes/client-node ships three generated
+      // layers per API plus ~700 model classes; the same code minifies to
+      // ~4 MB. Every byte is read and parsed on each launch, so minifying is
+      // a cold-start and memory win with no runtime cost.
+      minify: "esbuild",
       // ws probes for two optional native accelerators (bufferutil,
       // utf-8-validate) inside a try/catch and falls back to pure JS when they
       // are absent — which they are here, deliberately: they are native, and
@@ -52,18 +59,28 @@ export default defineConfig({
         ignore: ["bufferutil", "utf-8-validate"],
       },
       rollupOptions: {
-        input: { index: path.resolve("electron/main.ts") },
+        // bootstrap.ts enables Node's compile cache, then dynamically imports
+        // ./main — which electron-vite therefore emits as its own chunk, the one
+        // the cache covers. See electron/bootstrap.ts.
+        input: { index: path.resolve("electron/bootstrap.ts") },
         // node-pty is a NATIVE module (pty.node + spawn-helper binaries): it
         // cannot be bundled, so it is the second entry under `dependencies`
         // (electron-builder ships production deps automatically) and is
         // asarUnpack'ed so the binaries can be exec'd. Listed here too so the
         // bundler never tries to inline it.
         external: ["electron", "node-pty"],
+        output: {
+          // Keep the ./main chunk next to index.js instead of under chunks/:
+          // main.ts resolves the preload and renderer files relative to
+          // __dirname, which is the chunk's own directory.
+          chunkFileNames: "[name]-[hash].js",
+        },
       },
     },
   },
   preload: {
     build: {
+      minify: "esbuild",
       rollupOptions: {
         input: { index: path.resolve("electron/preload.ts") },
         external: ["electron"],
@@ -86,6 +103,7 @@ export default defineConfig({
       dedupe: codemirrorDedupe,
     },
     build: {
+      minify: "esbuild",
       chunkSizeWarningLimit: 1500,
       rollupOptions: {
         input: {
