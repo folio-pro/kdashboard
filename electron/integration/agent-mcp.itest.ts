@@ -64,6 +64,29 @@ async function freshClient(): Promise<Client> {
   return client;
 }
 
+/**
+ * Name of a test-nginx pod whose containers are all running. Other suites in
+ * the same CI run restart and scale that deployment, so at any moment one of
+ * its pods may still be creating — and the log API answers 400 for those.
+ */
+async function runningNginxPod(c: Client): Promise<string> {
+  return waitFor(
+    async () => {
+      const pods = JSON.parse(
+        resultText(await c.callTool({ name: 'list_resources', arguments: { resourceType: 'pods', namespace: TEST_NAMESPACE } })),
+      ) as { items: Array<{ metadata: { name: string }; status?: { phase?: string; containerStatuses?: Array<{ ready?: boolean }> } }> };
+      const pod = pods.items.find(
+        (i) =>
+          i.metadata.name.startsWith('test-nginx') &&
+          i.status?.phase === 'Running' &&
+          (i.status.containerStatuses ?? []).every((cs) => cs.ready === true),
+      );
+      return pod?.metadata.name;
+    },
+    { timeoutMs: 60_000, intervalMs: 500, label: 'a running test-nginx pod' },
+  );
+}
+
 /** Wait for the next agent-approval-request and answer it. */
 async function answerNextApproval(approved: boolean): Promise<void> {
   const seen = emitted.length;
@@ -167,20 +190,11 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
 
   test('get_pod_logs reads logs from a fixture pod', async () => {
     const c = await freshClient();
-    const pods = JSON.parse(
-      resultText(
-        await c.callTool({
-          name: 'list_resources',
-          arguments: { resourceType: 'pods', namespace: TEST_NAMESPACE },
-        }),
-      ),
-    ) as { items: Array<{ metadata: { name: string } }> };
-    const pod = pods.items.find((i) => i.metadata.name.startsWith('test-nginx'));
-    assert.ok(pod, 'fixture pod test-nginx-* not found');
+    const pod = await runningNginxPod(c);
 
     const result = (await c.callTool({
       name: 'get_pod_logs',
-      arguments: { namespace: TEST_NAMESPACE, pod: pod.metadata.name, tailLines: 50 },
+      arguments: { namespace: TEST_NAMESPACE, pod, tailLines: 50 },
     })) as TextResult;
     assert.notEqual(result.isError, true, resultText(result));
     assert.equal(typeof resultText(result), 'string');
@@ -411,15 +425,11 @@ describe('integration: agent diagnosis tools and external endpoint', { skip: !en
 
   test('get_pod_logs grep keeps only matching lines and says so when nothing matches', async () => {
     const c = await freshClient();
-    const pods = JSON.parse(
-      resultText(await c.callTool({ name: 'list_resources', arguments: { resourceType: 'pods', namespace: TEST_NAMESPACE } })),
-    ) as { items: Array<{ metadata: { name: string } }> };
-    const pod = pods.items.find((i) => i.metadata.name.startsWith('test-nginx'));
-    assert.ok(pod, 'fixture pod test-nginx-* not found');
+    const pod = await runningNginxPod(c);
 
     const none = (await c.callTool({
       name: 'get_pod_logs',
-      arguments: { namespace: TEST_NAMESPACE, pod: pod.metadata.name, grep: 'zzz-no-such-line-zzz' },
+      arguments: { namespace: TEST_NAMESPACE, pod, grep: 'zzz-no-such-line-zzz' },
     })) as TextResult;
     assert.notEqual(none.isError, true, resultText(none));
     assert.match(resultText(none), /no lines matching/);
@@ -460,7 +470,9 @@ describe('integration: agent diagnosis tools and external endpoint', { skip: !en
     const other =
       contexts.find((c) => c !== TEST_CONTEXT && c.startsWith('kind-')) ??
       contexts.find((c) => c !== TEST_CONTEXT && /^(orbstack|docker-desktop|minikube|k3d-)/.test(c));
-    if (!other) return t.skip('kubeconfig has no second local context to switch to');
+    // The endpoint/auth checks above matter on their own (CI has a single
+    // context), so this is a diagnostic, not a skip of the whole test.
+    if (!other) return t.diagnostic('kubeconfig has no second local context: follow-active check not exercised');
     try {
       setActiveContext(other);
       // Not pinned: the tool tries to answer for the NEW context instead of
