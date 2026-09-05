@@ -172,17 +172,24 @@ class AgentStore {
     if (!this.profilesLoaded) await this.loadProfiles();
   }
 
+  /**
+   * Hide the panel. The session keeps running: Mutation Approvals still
+   * surface (the dialog is always mounted) and the status bar shows the
+   * running dot. Stop is an explicit action, never a side effect of hiding.
+   */
   closePanel(): void {
     this.panelOpen = false;
-    // Closing the panel ends the session (spec: no headless agent sessions —
-    // an agent nobody is watching must not keep cluster access).
-    if (this.status === "running" || this.status === "starting") void this.stop();
   }
+
+  /** Quick Action prompt that arrived while a session was still starting. */
+  private queuedPrompt: string | null = null;
 
   async start(prompt?: string): Promise<void> {
     await this.ensureSubscribed();
     if (!this.selectedProfileId) return;
+    if (this.status === "starting") return;
     this.status = "starting";
+    this.queuedPrompt = null;
     this.endedReason = null;
     this.exitCode = null;
     this.outputBuffer = "";
@@ -200,8 +207,15 @@ class AgentStore {
       this.status = "running";
       settingsStore.settings.agent_last_profile = this.selectedProfileId;
       settingsStore.saveSettings();
+      const queued = this.queuedPrompt;
+      this.queuedPrompt = null;
+      if (queued !== null) {
+        this.sendInput(queued);
+        this.focusRequest++;
+      }
     } catch (err) {
       this.status = "idle";
+      this.queuedPrompt = null;
       toastStore.error("Agent failed to start", String(err));
     }
   }
@@ -251,8 +265,29 @@ class AgentStore {
       this.focusRequest++;
       return;
     }
+    if (this.status === "starting") {
+      // Two Quick Actions in quick succession must not spawn two sessions:
+      // the second prompt is typed into the first session once it is up.
+      this.queuedPrompt = prompt;
+      return;
+    }
     await this.start(prompt);
     this.focusRequest++;
+  }
+
+  /**
+   * A terminal re-mounted onto a LIVE session (the panel was hidden and shown
+   * again). The replayed output buffer restores the scrollback, but a
+   * full-screen TUI only repaints on SIGWINCH — and the PTY only sends one
+   * when the size actually changes. Jiggle the width so the agent repaints
+   * its frame at the real geometry.
+   */
+  repaint(cols: number, rows: number): void {
+    this.terminalSize = { cols, rows };
+    if (this.status !== "running") return;
+    invoke("resize_agent_terminal", { cols: Math.max(1, cols - 1), rows })
+      .then(() => invoke("resize_agent_terminal", { cols, rows }))
+      .catch(() => {});
   }
 
   respondApproval(id: string, approved: boolean): void {

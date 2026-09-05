@@ -30,6 +30,7 @@
     title,
     icon,
     contentClass,
+    disabled = false,
   }: {
     items: { value: T; label: string; onSelect: () => void }[];
     value: T;
@@ -38,6 +39,8 @@
     title: string;
     icon?: Snippet;
     contentClass?: string;
+    /** Greys out the trigger and keeps the menu shut. */
+    disabled?: boolean;
   } = $props();
 
   let open = $state(false);
@@ -53,6 +56,7 @@
     class={buttonVariants({ variant: "toolbar", size: "sm", mono: true })}
     {title}
     aria-label={title}
+    {disabled}
   >
     {#if icon}{@render icon()}{/if}
     <span class="max-w-[140px] truncate">{label ?? value}</span>

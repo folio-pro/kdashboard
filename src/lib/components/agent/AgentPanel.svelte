@@ -61,6 +61,12 @@
 
     initPromise ??= (async () => {
       try {
+        // WTerm measures its host asynchronously (ResizeObserver): right
+        // after init() it still reports the default 80 columns. Replaying a
+        // session's output at that width hard-wraps every line, and WTerm
+        // does not reflow — so the replay waits for the first measurement.
+        let measured!: () => void;
+        const firstMeasure = new Promise<void>((resolve) => (measured = resolve));
         const term = new WTerm(host, {
           autoResize: true,
           cursorBlink: true,
@@ -70,9 +76,17 @@
           // Unconditional: the store keeps the size so the next session can
           // spawn its PTY at the right geometry, and only forwards it to a
           // live PTY.
-          onResize: (cols, rows) => agentStore.resize(cols, rows),
+          onResize: (cols, rows) => {
+            agentStore.resize(cols, rows);
+            measured();
+          },
         });
         await term.init();
+        if (destroyed) {
+          term.destroy();
+          return;
+        }
+        await Promise.race([firstMeasure, new Promise((r) => setTimeout(r, 250))]);
         if (destroyed) {
           term.destroy();
           return;
@@ -86,7 +100,7 @@
         // Publishes the real geometry: a pending start() is waiting for it.
         agentStore.attachTerminal(term.cols, term.rows);
         if (agentStore.status === "running") {
-          agentStore.resize(term.cols, term.rows);
+          agentStore.repaint(term.cols, term.rows);
           term.focus();
         }
       } catch (err) {
@@ -188,10 +202,11 @@
           value: p.id,
           label: p.available ? p.displayName : `${p.displayName} (not installed)`,
           onSelect: () => {
-            if (p.available && !running) agentStore.selectedProfileId = p.id;
+            if (p.available) agentStore.selectedProfileId = p.id;
           },
         }))}
         contentClass="min-w-[170px]"
+        disabled={running}
       />
     {/if}
 
@@ -230,8 +245,8 @@
       <Button
         variant="toolbar"
         size="icon-sm"
-        title="Close panel"
-        aria-label="Close agent panel"
+        title={running ? "Hide panel (session keeps running)" : "Hide panel"}
+        aria-label="Hide agent panel"
         onclick={() => agentStore.closePanel()}
       >
         <X class="h-3 w-3" />

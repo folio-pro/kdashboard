@@ -225,8 +225,8 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
     {
       annotations: READ_ONLY,
       description:
-        'List recent Kubernetes events. Give resourceType+name to filter to one resource ' +
-        '(e.g. why a pod is Pending); otherwise returns namespace-wide (or cluster-wide) events.',
+        'List recent Kubernetes events, newest first. Give resourceType+name to filter to one resource ' +
+        `(e.g. why a pod is Pending); otherwise returns namespace-wide (or cluster-wide) events. Returns at most ${LIST_CAP}.`,
       inputSchema: {
         namespace: z.string().optional(),
         resourceType: z.string().optional().describe('plural lowercase, e.g. "pods" — requires name'),
@@ -236,11 +236,26 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
     guarded(
       deps,
       async ({ namespace, resourceType, name }: { namespace?: string; resourceType?: string; name?: string }) => {
-        const events =
+        const events = (
           resourceType && name
             ? await deps.dispatch('get_resource_events', { resourceType, name, namespace: namespace ?? '' })
-            : await deps.dispatch('get_events', { namespace });
-        return json(events);
+            : await deps.dispatch('get_events', { namespace })
+        ) as Array<{ last_timestamp?: unknown; first_timestamp?: unknown }>;
+        // Newest first, then cap: a cluster-wide listing can be thousands of
+        // events, and the agent wants the recent ones. Timestamps arrive as
+        // Date objects from the k8s client (strings once JSON-serialised).
+        const stamp = (e: { last_timestamp?: unknown; first_timestamp?: unknown }): number => {
+          const raw = e.last_timestamp ?? e.first_timestamp;
+          const ms = raw instanceof Date ? raw.getTime() : typeof raw === 'string' ? Date.parse(raw) : NaN;
+          return Number.isNaN(ms) ? 0 : ms;
+        };
+        const sorted = [...events].sort((a, b) => stamp(b) - stamp(a));
+        return json({
+          events: sorted.slice(0, LIST_CAP),
+          ...(sorted.length > LIST_CAP
+            ? { note: `truncated: showing the ${LIST_CAP} most recent of ${sorted.length} events — narrow by namespace or resource` }
+            : {}),
+        });
       },
     ),
   );
@@ -257,8 +272,15 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
       },
     },
     guarded(deps, async ({ namespace }: { namespace?: string }) => {
-      const metrics = await deps.dispatch('get_pod_metrics', { namespace });
-      return json(metrics);
+      const metrics = (await deps.dispatch('get_pod_metrics', { namespace })) as { pods?: unknown[] };
+      const pods = metrics.pods ?? [];
+      return json({
+        ...metrics,
+        pods: pods.slice(0, LIST_CAP),
+        ...(pods.length > LIST_CAP
+          ? { note: `truncated: showing ${LIST_CAP} of ${pods.length} pods — narrow by namespace` }
+          : {}),
+      });
     }),
   );
 

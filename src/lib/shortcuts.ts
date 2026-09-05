@@ -2,6 +2,7 @@ import { k8sStore } from "./stores/k8s.svelte.js";
 import { uiStore } from "./stores/ui.svelte.js";
 import { contextMenuStore } from "./stores/context-menu.svelte.js";
 import { dialogStore } from "./stores/dialogs.svelte.js";
+import { agentStore } from "./stores/agent.svelte.js";
 import { SCALABLE_TYPES } from "./actions/registry.js";
 import { isInputElement, overlayOpen } from "./utils/dom.js";
 import type { ActiveView } from "./stores/ui.svelte.js";
@@ -137,6 +138,19 @@ export const SHORTCUTS: Shortcut[] = [
     run: () => {
       if (uiStore.activeView === "terminal") uiStore.backToPrevious();
       else uiStore.showTerminal();
+    },
+  },
+  {
+    id: "toggle-agent",
+    keys: "⌘J",
+    label: "AI Agent",
+    scope: "global",
+    allowInInput: true,
+    hideHint: true,
+    match: (e, meta) => meta && e.key === "j",
+    run: () => {
+      if (agentStore.panelOpen) agentStore.closePanel();
+      else void agentStore.openPanel();
     },
   },
   {

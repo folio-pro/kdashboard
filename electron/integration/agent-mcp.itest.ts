@@ -193,7 +193,8 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
       arguments: { namespace: TEST_NAMESPACE },
     })) as TextResult;
     assert.notEqual(result.isError, true, resultText(result));
-    assert.ok(Array.isArray(JSON.parse(resultText(result))));
+    const parsed = JSON.parse(resultText(result)) as { events: unknown[] };
+    assert.ok(Array.isArray(parsed.events));
   });
 
   test('top_pods returns metrics or a structured message', async () => {

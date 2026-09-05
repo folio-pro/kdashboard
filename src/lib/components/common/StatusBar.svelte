@@ -77,7 +77,7 @@
         agentStore.panelOpen && "text-[var(--accent)]",
         agentStore.status === "running" && !agentStore.panelOpen && "text-[var(--text-secondary)]"
       )}
-      title="AI agent"
+      title={agentStore.status === "running" && !agentStore.panelOpen ? "AI agent (running, hidden)" : "AI agent"}
       onclick={() => (agentStore.panelOpen ? agentStore.closePanel() : agentStore.openPanel())}
     >
       <Bot class="h-3 w-3" />

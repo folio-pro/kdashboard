@@ -11,13 +11,14 @@
   import CommandItem from "$lib/components/ui/command/CommandItem.svelte";
   import {
     Server, FolderOpen, GitBranch, TrendingUp,
-    Settings as SettingsIcon, Terminal, RefreshCw, ScrollText,
+    Settings as SettingsIcon, Terminal, RefreshCw, ScrollText, Bot,
     Trash2, ClipboardCopy, Tag,
   } from "lucide-svelte";
   import { RESOURCE_ITEMS } from "$lib/resource-catalog";
   import { resourceIcon } from "$lib/resource-icons";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
+  import { agentStore } from "$lib/stores/agent.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { extensions } from "$lib/extensions";
   import { restartWorkload, rollbackDeployment, SCALABLE_TYPES, RESTARTABLE_TYPES } from "$lib/actions/registry";
@@ -301,6 +302,18 @@
         },
       },
       {
+        id: "action-agent",
+        label: "Open AI Agent",
+        description: "Toggle the embedded agent panel",
+        category: "Actions",
+        hint: "\u2318J",
+        action: () => {
+          if (agentStore.panelOpen) agentStore.closePanel();
+          else void agentStore.openPanel();
+          close();
+        },
+      },
+      {
         id: "action-refresh",
         label: "Refresh Resources",
         description: "Reload current resource list",
@@ -402,6 +415,7 @@
     if (item.id === "action-settings") return SettingsIcon;
     if (item.id === "action-logs") return ScrollText;
     if (item.id === "action-terminal") return Terminal;
+    if (item.id === "action-agent") return Bot;
     if (item.id === "action-refresh") return RefreshCw;
     return resourceIcon("");
   }
