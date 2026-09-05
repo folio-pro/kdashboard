@@ -8,7 +8,7 @@
 // need to be reachable).
 
 import assert from 'node:assert/strict';
-import { after, afterEach, describe, test } from 'node:test';
+import { after, afterEach, before, describe, test } from 'node:test';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -53,6 +53,60 @@ async function connectClient(url: string, token: string): Promise<Client> {
   await client.connect(transport);
   return client;
 }
+
+/**
+ * The deployment the Safe Mutation tests scale, restart, patch and delete
+ * pods of. Their own, not the shared test-nginx: the integration files run
+ * in parallel and a rollout here would empty test-nginx's Endpoints while
+ * another suite asserts on them.
+ */
+const MUTATION_DEPLOYMENT = 'agent-nginx';
+const MUTATION_DEPLOYMENT_YAML = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${MUTATION_DEPLOYMENT}
+  namespace: ${TEST_NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ${MUTATION_DEPLOYMENT}
+  template:
+    metadata:
+      labels:
+        app: ${MUTATION_DEPLOYMENT}
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+`;
+
+async function mutationPods(): Promise<string[]> {
+  const list = (await dispatch('list_resources', { resourceType: 'pods', namespace: TEST_NAMESPACE })) as {
+    items: Array<{ metadata: { name: string }; status?: { phase?: string } }>;
+  };
+  return list.items.filter((i) => i.metadata.name.startsWith(`${MUTATION_DEPLOYMENT}-`)).map((i) => i.metadata.name);
+}
+
+before(async () => {
+  if (!enabled) return;
+  await dispatch('get_current_context');
+  await dispatch('apply_yaml', { yaml: MUTATION_DEPLOYMENT_YAML });
+  await waitFor(async () => (await mutationPods()).length > 0 || undefined, {
+    timeoutMs: 120_000,
+    label: `${MUTATION_DEPLOYMENT} pod`,
+  });
+});
+
+after(async () => {
+  if (!enabled) return;
+  await dispatch('delete_resource', { kind: 'Deployment', namespace: TEST_NAMESPACE, name: MUTATION_DEPLOYMENT }).catch(() => {});
+});
 
 /** One connected client per test, torn down in afterEach. */
 let client: Client | null = null;
@@ -232,7 +286,7 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
 
     const pending = c.callTool({
       name: 'scale_workload',
-      arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: 'test-nginx', replicas: 2 },
+      arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: MUTATION_DEPLOYMENT, replicas: 2 },
     });
     await answerNextApproval(true);
     const result = (await pending) as TextResult;
@@ -242,7 +296,7 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
     const yaml = resultText(
       await c.callTool({
         name: 'get_resource',
-        arguments: { kind: 'Deployment', name: 'test-nginx', namespace: TEST_NAMESPACE },
+        arguments: { kind: 'Deployment', name: MUTATION_DEPLOYMENT, namespace: TEST_NAMESPACE },
       }),
     );
     assert.match(yaml, /replicas: 2/);
@@ -250,7 +304,7 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
     // Restore the fixture's replica count.
     const restore = c.callTool({
       name: 'scale_workload',
-      arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: 'test-nginx', replicas: 1 },
+      arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: MUTATION_DEPLOYMENT, replicas: 1 },
     });
     await answerNextApproval(true);
     await restore;
@@ -261,13 +315,13 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
     const before = resultText(
       await c.callTool({
         name: 'get_resource',
-        arguments: { kind: 'Deployment', name: 'test-nginx', namespace: TEST_NAMESPACE },
+        arguments: { kind: 'Deployment', name: MUTATION_DEPLOYMENT, namespace: TEST_NAMESPACE },
       }),
     );
 
     const pending = c.callTool({
       name: 'scale_workload',
-      arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: 'test-nginx', replicas: 5 },
+      arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: MUTATION_DEPLOYMENT, replicas: 5 },
     });
     await answerNextApproval(false);
     const result = (await pending) as TextResult;
@@ -277,7 +331,7 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
     const after_ = resultText(
       await c.callTool({
         name: 'get_resource',
-        arguments: { kind: 'Deployment', name: 'test-nginx', namespace: TEST_NAMESPACE },
+        arguments: { kind: 'Deployment', name: MUTATION_DEPLOYMENT, namespace: TEST_NAMESPACE },
       }),
     );
     const replicasOf = (yaml: string): string => /replicas: \d+/.exec(yaml)?.[0] ?? '';
@@ -290,7 +344,7 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
 
     const result = (await c.callTool({
       name: 'restart_rollout',
-      arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: 'test-nginx' },
+      arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: MUTATION_DEPLOYMENT },
     })) as TextResult;
     assert.notEqual(result.isError, true, resultText(result));
     assert.equal(
@@ -309,7 +363,7 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
       arguments: {
         kind: 'Deployment',
         namespace: TEST_NAMESPACE,
-        name: 'test-nginx',
+        name: MUTATION_DEPLOYMENT,
         container: 'nginx',
         requests: { cpu: '15m', memory: '48Mi' },
       },
@@ -319,7 +373,7 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
     const yaml = resultText(
       await c.callTool({
         name: 'get_resource',
-        arguments: { kind: 'Deployment', name: 'test-nginx', namespace: TEST_NAMESPACE },
+        arguments: { kind: 'Deployment', name: MUTATION_DEPLOYMENT, namespace: TEST_NAMESPACE },
       }),
     );
     assert.match(yaml, /cpu: 15m/);
@@ -342,10 +396,10 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
         ) as { items: Array<{ metadata: { name: string } }> }
       ).items
         .map((i) => i.metadata.name)
-        .filter((n) => n.startsWith('test-nginx'));
+        .filter((n) => n.startsWith(`${MUTATION_DEPLOYMENT}-`));
 
     const [victim] = await listPods();
-    assert.ok(victim, 'no test-nginx pod to delete');
+    assert.ok(victim, `no ${MUTATION_DEPLOYMENT} pod to delete`);
 
     const result = (await c.callTool({
       name: 'delete_pod',
@@ -381,7 +435,7 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
 
       const mutation = (await c.callTool({
         name: 'scale_workload',
-        arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: 'test-nginx', replicas: 3 },
+        arguments: { kind: 'Deployment', namespace: TEST_NAMESPACE, name: MUTATION_DEPLOYMENT, replicas: 3 },
       })) as TextResult;
       assert.equal(mutation.isError, true);
       assert.equal(
