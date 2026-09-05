@@ -162,6 +162,35 @@ describe("UiStore", () => {
       expect(store.detailSubtab).toBe("yaml");
     });
 
+    test("detailSubtab is per tab: a new detail starts on Overview and each tab keeps its own", () => {
+      store.showDetails("web", "Deployment", "default");
+      const first = store.activeTabId;
+      store.detailSubtab = "yaml";
+      expect(store.detailSubtab).toBe("yaml");
+
+      // Opening another resource must not inherit the YAML sub-tab.
+      store.showDetails("app-config", "ConfigMap", "default");
+      expect(store.activeTabId).not.toBe(first);
+      expect(store.detailSubtab).toBe("overview");
+      store.detailSubtab = "events";
+
+      // Switching back restores the first tab's sub-tab, and vice versa.
+      store.activateTab(first);
+      expect(store.detailSubtab).toBe("yaml");
+      store.closeTab(first);
+      expect(store.detailSubtab).toBe("events");
+    });
+
+    test("detailSubtab defaults to overview on a table tab and survives a round trip", () => {
+      expect(store.detailSubtab).toBe("overview");
+      store.detailSubtab = "logs"; // the table's aside preview
+      store.showDetails("web", "Deployment", "default");
+      expect(store.detailSubtab).toBe("overview");
+      store.backToPrevious();
+      expect(store.activeView).toBe("table");
+      expect(store.detailSubtab).toBe("logs");
+    });
+
     test("backToPrevious from the default pods tab reopens it (only tab)", () => {
       // the pods table is the only tab, closing it re-creates it
       store.backToPrevious();
@@ -239,6 +268,63 @@ describe("UiStore", () => {
     test("filterLower returns lowercase", () => {
       store.setFilter("MyDeployment");
       expect(store.filterLower).toBe("mydeployment");
+    });
+  });
+
+  describe("facets", () => {
+    const ns = { key: "namespace", op: ":" as const, value: "kube" };
+    const rst = { key: "restarts", op: ">" as const, value: "2" };
+
+    test("addFacets appends new identities only", () => {
+      store.addFacets([ns]);
+      store.addFacets([ns, rst]);
+      expect(store.facets).toEqual([ns, rst]);
+    });
+
+    test("addFacets drops repeats inside one batch", () => {
+      // `ns:kube ns:kube` committed at once: the chip list is keyed by identity.
+      store.addFacets([ns, { ...ns }, rst, { ...ns }]);
+      expect(store.facets).toEqual([ns, rst]);
+    });
+
+    test("the setter and applyFilterState never store a duplicate", () => {
+      store.facets = [ns, ns];
+      expect(store.facets).toEqual([ns]);
+      store.applyFilterState({ facets: [rst, rst, ns], text: "", statFilter: null });
+      expect(store.facets).toEqual([rst, ns]);
+    });
+
+    test("removeFacet and popFacet work by position", () => {
+      store.addFacets([ns, rst]);
+      expect(store.popFacet()).toEqual(rst);
+      store.removeFacet(0);
+      expect(store.facets).toEqual([]);
+      expect(store.popFacet()).toBeUndefined();
+    });
+  });
+
+  describe("activeTab memo", () => {
+    test("tracks the active tab across open, move, close and array replacement", () => {
+      const pods = store.activeTab!;
+      store.openTab("logs", { label: "logs" });
+      const logs = store.activeTab!;
+      expect(logs).not.toBe(pods);
+      expect(logs.type).toBe("logs");
+      // Same id, same object, repeated reads.
+      expect(store.activeTab).toBe(logs);
+      // Moving the tab changes its index; the memo must follow it.
+      store.moveTab(logs.id, "left");
+      expect(store.activeTab).toBe(logs);
+      expect(store.tabs[0]).toBe(logs);
+      // Replacing the array with fresh objects (a session restore) must not
+      // keep handing out the stale object.
+      const fresh = store.tabs.map((t) => ({ ...t }));
+      store.tabs = fresh;
+      expect(store.activeTab).toBe(fresh[0]);
+      expect(store.activeTab).not.toBe(logs);
+      // Closing the active tab falls back to another tab.
+      store.closeTab(fresh[0].id);
+      expect(store.activeTab?.id).toBe(pods.id);
     });
   });
 
@@ -657,11 +743,11 @@ describe("UiStore", () => {
       expect(deserializeTabs(bad)).toBeNull();
     });
 
-    test("deserializeTabs drops unknown tab types (e.g. legacy overview) but keeps the rest", () => {
+    test("deserializeTabs drops unknown tab types (e.g. a removed view) but keeps the rest", () => {
       const mixed = JSON.stringify({
         version: TABS_STORAGE_VERSION,
         tabs: [
-          { id: "tab-overview", type: "overview", label: "Overview", closable: true },
+          { id: "tab-overview", type: "legacy-view", label: "Legacy", closable: true },
           { id: "tab-1", type: "table", label: "Pods", closable: true, resourceType: "pods" },
         ],
         activeTabId: "tab-overview",

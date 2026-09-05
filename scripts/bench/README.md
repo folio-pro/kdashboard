@@ -1,7 +1,36 @@
-# List benchmark harness
+# Benchmark harnesses
 
-End-to-end benchmark for the resource-list path: it drives the **real** Tauri
-backend (kube list → Rust serialize → IPC → Svelte render) against a local
+Two harnesses, one comparer:
+
+| | what it measures | needs a cluster |
+|---|---|---|
+| `frontend.sh` | renderer only, production build: table mount / scroll / filter / type switch / watch churn, retained JS heap | no |
+| `run.sh` | the real Electron app: `list_resources` backend + paint per kind, sidebar counts, then an idle window on the pods table with a live watch — CPU % and memory per process | yes (`kind`) |
+
+Both write JSON under `benchmark-out/`; `compare.ts` diffs two of them.
+
+## Frontend (no cluster)
+
+```bash
+LABEL=baseline ./scripts/bench/frontend.sh          # 3 runs, production build, median
+# ...change code...
+LABEL=after ./scripts/bench/frontend.sh
+bun scripts/bench/compare.ts benchmark-out/frontend-baseline.json benchmark-out/frontend-after.json
+```
+
+It runs `e2e/perf-bench.spec.ts` against `vite build` + `vite preview` (the
+bench store hook is opted in with `VITE_KDASH_BENCH=1`, see `src/main.ts`), so
+the numbers are for the optimized bundle and the production Svelte runtime —
+`DEV=1` uses the dev server instead. `RUNS` sets the repetitions (median is
+reported per metric), `RENDERER_PORT` the port (default 1421).
+
+Heap numbers are taken after a forced GC (retained memory, not garbage), so
+`retainedAfterClearMB` and `churnHeapGrowthMB` are the leak detectors.
+
+## End-to-end list benchmark (`run.sh`)
+
+End-to-end benchmark for the resource-list path: it drives the **real**
+backend (kube list → serialize → IPC → Svelte render) against a local
 `kind` cluster, with no WebDriver.
 
 ## How it works
@@ -15,9 +44,15 @@ backend (kube list → Rust serialize → IPC → Svelte render) against a local
    results JSON, and exits the app.
 3. `run.sh` waits for the results file and prints a summary table.
 
+After the list phase the runner sits on the pods table with its watch running
+and samples `app.getAppMetrics()` over a 15 s window (`idle` in the JSON):
+CPU % per process type (browser = main, tab = renderer, GPU, utility), working
+set / private bytes per process, and the renderer's JS heap. That is the
+footprint a user pays for leaving the app open.
+
 Two numbers per type:
 
-- **backendMs** — time of `invoke("list_resources")` alone: kube list + Rust
+- **backendMs** — time of `invoke("list_resources")` alone: kube list +
   serialize + IPC + JS parse. This is the accurate, focus-independent metric.
 - **e2eMs** — backendMs plus the time to flush Svelte reactivity and paint the
   virtual table. Note: `requestAnimationFrame` is throttled when the window is

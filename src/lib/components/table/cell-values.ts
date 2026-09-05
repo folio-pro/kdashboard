@@ -9,6 +9,11 @@
 import type { NodeCostInfo, NodeMetricsInfo, PodUsageInfo, Resource } from "$lib/types";
 import { formatAge } from "$lib/utils/age";
 import { cpuCell, memoryCell, formatCpu, formatBytes } from "$lib/stores/metrics.logic";
+import type { AutoscalerSummary } from "$lib/utils/autoscaler";
+import { formatReplicas, formatTargets } from "$lib/utils/autoscaler";
+import { podOwner, podReadyCount, podStatus } from "$lib/utils/pod-status";
+import { deploymentStatus, nodeStatus, shortImage, templateImages } from "$lib/utils/workload-status";
+import { serviceExternal, servicePortsLabel, serviceSelector, type EndpointSummary } from "$lib/utils/service-info";
 
 /**
  * Everything a cell needs that does not live on the Resource itself. The row
@@ -24,6 +29,18 @@ export interface CellContext {
   nodeMetrics?: NodeMetricsInfo;
   /** metrics-server usage for this pod, when the row is a Pod. */
   podUsage?: PodUsageInfo;
+  /**
+   * The normalized autoscaler, when the row is an HPA/VPA/WPA. Built once by
+   * the row rather than per cell: five of this table's columns read from it,
+   * and re-normalizing the object five times per row is five times the work
+   * for the same answer.
+   */
+  autoscaler?: AutoscalerSummary;
+  /**
+   * EndpointSlice summary for a Service row: undefined while the slices for
+   * its namespace are not loaded, null when it has none.
+   */
+  endpoints?: EndpointSummary | null;
 }
 
 /** Placeholder for "this resource has no such value". */
@@ -54,6 +71,22 @@ function bool(value: unknown): string {
 
 function count(value: unknown): string {
   return (Array.isArray(value) ? value.length : 0).toString();
+}
+
+/** A numeric field, "0" when absent (controllers omit zero counters). */
+function num(value: unknown): string {
+  return typeof value === "number" ? value.toString() : "0";
+}
+
+/** Wall time between a Job's start and completion (or now while it runs). */
+function jobDuration(status: Json): string {
+  const start = typeof status.startTime === "string" ? Date.parse(status.startTime) : NaN;
+  if (Number.isNaN(start)) return NONE;
+  const end = typeof status.completionTime === "string" ? Date.parse(status.completionTime) : Date.now();
+  const secs = Math.max(0, Math.round((end - start) / 1000));
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m${secs % 60}s`;
+  return `${Math.floor(secs / 3600)}h${Math.floor((secs % 3600) / 60)}m`;
 }
 
 /**
@@ -90,6 +123,11 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
       return formatAge(meta.creation_timestamp);
     case "status":
     case "phase":
+      // A pod's status is what kubectl prints, not its phase: a Running pod
+      // with a crash-looping container reads CrashLoopBackOff.
+      if (resource.kind === "Pod") return podStatus(resource).label;
+      // A node's status is its Ready condition (plus pressure), not a phase.
+      if (resource.kind === "Node") return nodeStatus(resource).label;
       return str(status.phase ?? status.status);
     case "data": {
       const data = resource.data ?? spec.data ?? status.data;
@@ -107,6 +145,14 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
       if (!statuses) return "0";
       return statuses.reduce((sum, c) => sum + (c.restartCount ?? 0), 0).toString();
     }
+    case "podReady": {
+      const { ready: r, total } = podReadyCount(resource);
+      return `${r}/${total}`;
+    }
+    case "controlledBy": {
+      const owner = podOwner(resource);
+      return owner ? `${owner.short}/${owner.name}` : NONE;
+    }
     case "node":
       return str(spec.nodeName ?? status.nodeName);
     case "ip":
@@ -115,25 +161,86 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
     // --- Workloads ---------------------------------------------------------
     case "deployReady":
       return `${(status.readyReplicas as number) ?? 0}/${(spec.replicas as number) ?? 0}`;
+    case "deployStatus":
+      return deploymentStatus(resource).label;
+    case "images":
+      return summarize(templateImages(resource).map(shortImage), 3);
+    case "pods":
+      return ((status.replicas as number) ?? 0).toString();
     case "upToDate":
       return ((status.updatedReplicas as number) ?? 0).toString();
     case "available":
       return ((status.availableReplicas as number) ?? 0).toString();
 
+    // ReplicaSets / StatefulSets / DaemonSets: the counters kubectl prints.
+    case "rsDesired":
+      return num(spec.replicas);
+    case "rsCurrent":
+      return num(status.replicas);
+    case "rsReady":
+      return num(status.readyReplicas);
+    case "stsReady":
+      return `${(status.readyReplicas as number) ?? 0}/${(spec.replicas as number) ?? 0}`;
+    case "dsDesired":
+      return num(status.desiredNumberScheduled);
+    case "dsCurrent":
+      return num(status.currentNumberScheduled);
+    case "dsReady":
+      return num(status.numberReady);
+    case "dsAvailable":
+      return num(status.numberAvailable);
+
+    // Jobs / CronJobs.
+    case "jobCompletions":
+      return `${(status.succeeded as number) ?? 0}/${(spec.completions as number) ?? 1}`;
+    case "jobDuration":
+      return jobDuration(status);
+    case "cjSchedule":
+      return str(spec.schedule);
+    case "cjSuspend":
+      return bool(spec.suspend ?? false);
+    case "cjActive":
+      return count(status.active);
+    case "cjLastSchedule": {
+      void ctx.ageTick;
+      const last = status.lastScheduleTime;
+      return typeof last === "string" && last !== "" ? formatAge(last) : NONE;
+    }
+
+    // Ingresses.
+    case "ingressClass":
+      return str(spec.ingressClassName ?? meta.annotations?.["kubernetes.io/ingress.class"]);
+    case "ingressHosts": {
+      const rules = spec.rules as Array<{ host?: string }> | undefined;
+      const hosts = (rules ?? []).map((r) => r.host).filter((h): h is string => Boolean(h));
+      return summarize(hosts.length > 0 ? hosts : (rules ?? []).length > 0 ? ["*"] : [], 3);
+    }
+    case "ingressAddress": {
+      const lb = (status.loadBalancer as { ingress?: Array<{ ip?: string; hostname?: string }> } | undefined)?.ingress;
+      return summarize((lb ?? []).map((i) => i.ip ?? i.hostname).filter((a): a is string => Boolean(a)), 3);
+    }
+
     // --- Services / networking ---------------------------------------------
     case "type":
-      return str(spec.type);
+      // Secrets carry `type` at the top level; Services under spec.
+      return str(resource.type ?? spec.type);
     case "clusterIP":
       return str(spec.clusterIP);
     case "externalIP": {
-      const lb = status.loadBalancer as { ingress?: Array<{ ip: string }> } | undefined;
-      if (lb?.ingress?.length) return lb.ingress.map((e) => e.ip).join(", ");
-      return (spec.externalIPs as string[])?.join(", ") ?? NONE;
+      const external = serviceExternal(resource);
+      if (external.label) return external.label;
+      return external.pending ? "<pending>" : NONE;
     }
-    case "ports": {
-      const ports = spec.ports as Array<{ port: number; protocol?: string }> | undefined;
-      if (!ports) return NONE;
-      return ports.map((p) => `${p.port}/${p.protocol ?? "TCP"}`).join(", ");
+    case "ports":
+      return servicePortsLabel(resource) || NONE;
+    case "selector":
+      return summarize(serviceSelector(resource), 3);
+    case "endpoints": {
+      // Blank (not "-") until the slices are loaded, so a half-rendered table
+      // never claims a service has no backends.
+      if (ctx.endpoints === undefined) return "";
+      if (ctx.endpoints === null) return NONE;
+      return `${ctx.endpoints.ready}/${ctx.endpoints.total}`;
     }
     case "endpointAddresses": {
       // Endpoints keeps addresses under subsets[]; show the first few with the
@@ -183,9 +290,18 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
     }
 
     // --- Autoscalers -------------------------------------------------------
-    case "vpaTarget":
-      // VPA uses spec.targetRef; WPA (Datadog) uses spec.scaleTargetRef.
-      return refLabel((spec.targetRef ?? spec.scaleTargetRef) as { kind?: string; name?: string });
+    // All five read the summary the row already built (see CellContext), which
+    // is what lets one set of columns serve HPA, VPA and WPA alike.
+    case "autoscalerReference":
+      return ctx.autoscaler?.reference ?? NONE;
+    case "autoscalerMin":
+      return ctx.autoscaler?.min?.toString() ?? NONE;
+    case "autoscalerMax":
+      return ctx.autoscaler?.max?.toString() ?? NONE;
+    case "autoscalerReplicas":
+      return ctx.autoscaler ? formatReplicas(ctx.autoscaler) : NONE;
+    case "autoscalerTargets":
+      return ctx.autoscaler ? formatTargets(ctx.autoscaler) : NONE;
     case "vpaUpdateMode":
       return str((spec.updatePolicy as { updateMode?: string } | undefined)?.updateMode);
 
@@ -269,13 +385,13 @@ export function getCellValue(resource: Resource, key: string, ctx: CellContext):
 
 /** Numeric / identifier cells, rendered in monospace tabular figures. */
 const MONO_COLUMNS = new Set([
-  "age", "ready", "deployReady", "upToDate", "available",
+  "age", "ready", "podReady", "controlledBy", "deployReady", "upToDate", "available", "pods", "endpoints", "selector",
   "rsDesired", "rsCurrent", "rsReady", "stsReady",
   "dsDesired", "dsCurrent", "dsReady", "dsAvailable",
   "jobCompletions", "jobDuration", "cjSchedule", "cjActive", "cjLastSchedule",
   "clusterIP", "externalIP", "ports", "ingressHosts", "ingressAddress",
-  "data", "hpaReference", "hpaMinPods", "hpaMaxPods", "hpaCurrentReplicas",
-  "vpaTarget", "version", "instanceType", "nodeCost", "ip",
+  "data", "autoscalerReference", "autoscalerMin", "autoscalerMax",
+  "autoscalerReplicas", "version", "instanceType", "nodeCost", "ip",
   "bindingRole", "bindingSubjects", "saSecrets", "endpointAddresses",
   "sliceEndpoints", "slicePorts", "scProvisioner", "vaAttacher", "vaVolume",
   "vaNode", "pcValue", "leaseHolder", "webhookCount", "webhookNames",
@@ -293,11 +409,26 @@ const TAG_COLUMNS = new Set([
 /** Usage meters: node capacity (cpuUsage/memUsage) and pods (podCpu/podMemory). */
 const USAGE_COLUMNS = new Set(["cpuUsage", "memUsage", "podCpu", "podMemory"]);
 
+/** The autoscaler TARGETS column, which paints text plus a pressure bar. */
+export const isAutoscalerTargetsColumn = (key: string): boolean => key === "autoscalerTargets";
+
 export const isMonoColumn = (key: string): boolean => MONO_COLUMNS.has(key);
 export const isTagColumn = (key: string): boolean => TAG_COLUMNS.has(key);
 export const isUsageColumn = (key: string): boolean => USAGE_COLUMNS.has(key);
 export const isStatusColumn = (key: string): boolean =>
-  key === "status" || key === "phase" || key === "eventType";
+  key === "status" || key === "phase" || key === "eventType" || key === "deployStatus";
+
+/**
+ * The muted note a status cell carries after its pill: why a pod is Pending
+ * (Unschedulable), the condition reason behind a Deployment's state
+ * (MinimumReplicasUnavailable). Empty when the word says it all.
+ */
+export function statusDetail(resource: Resource, key: string): string {
+  if (key === "deployStatus") return deploymentStatus(resource).detail ?? "";
+  if ((key === "status" || key === "phase") && resource.kind === "Pod") return podStatus(resource).reason ?? "";
+  if ((key === "status" || key === "phase") && resource.kind === "Node") return nodeStatus(resource).detail ?? "";
+  return "";
+}
 export const isContainersColumn = (key: string): boolean => key === "containers";
 
 // ---------------------------------------------------------------------------
@@ -362,9 +493,64 @@ export function usageMeter(resource: Resource, key: string, ctx: CellContext): U
     : podMeter(resource, ctx.podUsage, key);
 }
 
-/** Bar colour: green under pressure, amber when tight, red when over. */
-export function usageBarColor(percent: number): string {
-  if (percent >= 90) return "var(--status-failed)";
-  if (percent >= 70) return "var(--status-pending)";
-  return "var(--status-running)";
+// ---------------------------------------------------------------------------
+// Autoscaler pressure
+// ---------------------------------------------------------------------------
+
+export interface AutoscalerPressure {
+  /**
+   * One entry per metric. Split rather than pre-joined because the two halves
+   * have different priority when the column runs out of room: an external
+   * metric name is long and skippable, the reading is the whole point. The row
+   * lets the name truncate and pins the value.
+   */
+  parts: Array<{ name: string; value: string }>;
+  /**
+   * Fill of the bar. An autoscaler with several metrics scales on whichever is
+   * furthest along, so the bar tracks that one — the others are in the text.
+   */
+  percent: number | null;
+  /** Where a watermark band's floor sits on the same scale, for WPA. */
+  lowPercent: number | null;
+  /** Whether to draw a track at all — see AutoscalerSummary.hasMeter. */
+  meter: boolean;
+  /** Hover text: every metric spelled out, plus why the bar may be stuck. */
+  title: string;
 }
+
+/**
+ * The TARGETS cell for an autoscaler row, or null when the row is not one (or
+ * declares no metric at all).
+ */
+export function autoscalerPressure(summary: AutoscalerSummary | undefined): AutoscalerPressure | null {
+  if (!summary || summary.targets.length === 0) return null;
+
+  let binding = summary.targets[0]!;
+  for (const t of summary.targets) {
+    if ((t.percent ?? -1) > (binding.percent ?? -1)) binding = t;
+  }
+
+  const spelled = summary.targets.map((t) => `${t.name}: ${t.currentLabel} of ${t.targetLabel}`);
+  if (summary.dryRun) spelled.push("dry run: nothing is being scaled");
+  if (summary.limitedReason) spelled.push(`limited: ${summary.limitedReason}`);
+
+  return {
+    parts: summary.targets.map((t) => ({
+      name: t.name,
+      value: `${t.currentLabel}/${t.targetLabel}`,
+    })),
+    percent: binding.percent,
+    lowPercent: binding.lowPercent,
+    meter: summary.hasMeter,
+    title: spelled.join(" \u00b7 "),
+  };
+}
+
+/** Whether the bar's percent label should take the bar's colour (only when it is warning anyone). */
+export function usagePercentIsLoud(percent: number): boolean {
+  return percent >= 70;
+}
+
+/** Counts and ages read right-aligned, so digits line up down the column. */
+const RIGHT_ALIGNED_COLUMNS = new Set(["restarts", "age", "eventCount"]);
+export const isRightAlignedColumn = (key: string): boolean => RIGHT_ALIGNED_COLUMNS.has(key);

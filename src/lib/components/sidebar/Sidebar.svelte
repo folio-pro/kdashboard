@@ -11,37 +11,16 @@
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore, RESOURCE_TAB_TYPES, type ActiveView } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
-  import { openResourceDetail, navigateToResourceTable, navigateToCrdTable } from "$lib/actions/navigation";
+  import { openResourceDetail, navigateToResourceTable, navigateToCrdTable, openAppView, isAppView } from "$lib/actions/navigation";
   import { settingsStore } from "$lib/stores/settings.svelte";
-  import { topologyStore } from "$lib/stores/topology.svelte";
-  import { costStore } from "$lib/stores/cost.svelte";
-  import { securityStore } from "$lib/stores/security.svelte";
-  import { helmStore } from "$lib/stores/helm.svelte";
   import { sidebarStore } from "$lib/stores/sidebar.svelte";
   import { RESOURCE_SECTIONS } from "$lib/resource-catalog";
   import { filterGroups, resourceMatches, crdMatches } from "./sidebar-filter";
 
   const sections = RESOURCE_SECTIONS;
 
-  /**
-   * Sidebar entries that are standalone views rather than resource lists.
-   * Their catalog `type` IS the view name, which is what lets both handlers
-   * below be table lookups instead of parallel if-chains — previously ten
-   * branches across two functions encoding that single fact, where adding a
-   * sixth view meant remembering to touch both.
-   *
-   * The value is the data the view needs on entry, or null if it loads itself.
-   */
-  const VIRTUAL_VIEWS: Record<string, ((namespace: string) => void) | null> = {
-    portforwards: null,
-    topology: (ns) => topologyStore.loadNamespaceTopology(ns),
-    cost: (ns) => costStore.loadCostOverview(ns),
-    security: (ns) => securityStore.loadSecurityOverview(ns),
-    helm: (ns) => helmStore.loadReleases(ns),
-  };
-
   function isItemActive(type: string): boolean {
-    if (type in VIRTUAL_VIEWS) return uiStore.activeView === type;
+    if (isAppView(type)) return uiStore.activeView === type;
 
     // Views that sit "inside" a resource type, and so keep its catalog entry
     // lit. Derived from RESOURCE_TAB_TYPES rather than re-listing its members:
@@ -57,9 +36,8 @@
   }
 
   function handleItemClick(resourceType: string) {
-    if (resourceType in VIRTUAL_VIEWS) {
-      uiStore.showView(resourceType as ActiveView);
-      VIRTUAL_VIEWS[resourceType]?.(k8sStore.currentNamespace);
+    if (isAppView(resourceType)) {
+      openAppView(resourceType, k8sStore.currentNamespace);
       return;
     }
     const item = sections.flatMap((s) => s.items).find((i) => i.type === resourceType);
@@ -70,12 +48,20 @@
     navigateToCrdTable(crd);
   }
 
+  // A mid-session outage (reachable=false) outranks "connected": the boot
+  // handshake succeeded once, but the dot must say what the cluster is doing
+  // NOW, and the tooltip how old the rows on screen are.
   let statusColor = $derived(
-    k8sStore.connectionStatus === "connected"
-      ? "var(--accent)"
-      : k8sStore.connectionStatus === "connecting"
-        ? "var(--status-pending)"
-        : "var(--status-failed)"
+    !k8sStore.reachable
+      ? "var(--status-failed)"
+      : k8sStore.connectionStatus === "connected"
+        ? "var(--accent)"
+        : k8sStore.connectionStatus === "connecting"
+          ? "var(--status-pending)"
+          : "var(--status-failed)"
+  );
+  let statusTitle = $derived(
+    k8sStore.reachable ? `Connection ${k8sStore.connectionStatus}` : k8sStore.unreachableTooltip,
   );
 
   // CRDs already surfaced as fixed sidebar items (Scaling): hide them from the
@@ -124,7 +110,7 @@
   let clusterSubline = $derived.by(() => {
     const parts: string[] = [];
     const nodes = k8sStore.resourceCounts["nodes"];
-    if (nodes !== undefined) parts.push(`${nodes} nodes`);
+    if (nodes !== undefined) parts.push(`${nodes} ${nodes === 1 ? "node" : "nodes"}`);
     parts.push(k8sStore.currentNamespace ? `ns/${k8sStore.currentNamespace}` : "all namespaces");
     return parts.join(" · ");
   });
@@ -145,23 +131,26 @@
   });
 
   // Flat list: every CRD group is always visible, so load counts for all of
-  // them (only fetch the ones not already loaded).
+  // them (only fetch the ones not already loaded). One call for every group:
+  // this effect reads crdCounts, which each response rewrites, so a call per
+  // group re-ran it once per response and re-requested every group still
+  // pending — O(groups²) get_crd_counts on connect. The store additionally
+  // skips CRDs whose count is already in flight.
   $effect(() => {
+    const missing: CrdInfo[] = [];
     for (const group of visibleCrdGroups) {
-      const missing = group.resources.filter(
-        (crd) => !(k8sStore.crdKey(crd) in k8sStore.crdCounts),
-      );
-      if (missing.length > 0) {
-        k8sStore.loadCrdCounts(missing);
+      for (const crd of group.resources) {
+        if (!(k8sStore.crdKey(crd) in k8sStore.crdCounts)) missing.push(crd);
       }
     }
+    if (missing.length > 0) k8sStore.loadCrdCounts(missing);
   });
 
 </script>
 
 <TooltipProvider delayDuration={300}>
   <aside
-    class="flex h-full flex-row border-r border-t border-[var(--border-color)] bg-[var(--sidebar-bg)]"
+    class="flex h-full flex-row border-r border-[var(--border-color)] bg-[var(--sidebar-bg)]"
   >
     {#if uiStore.sidebarCollapsed}
       <!-- Collapsed: single column with group labels + icons -->
@@ -228,8 +217,8 @@
             <span
               class="h-2 w-2 shrink-0 rounded-full"
               role="img"
-              aria-label={`Connection ${k8sStore.connectionStatus}`}
-              title={`Connection ${k8sStore.connectionStatus}`}
+              aria-label={statusTitle}
+              title={statusTitle}
               style={`background: ${statusColor}; box-shadow: 0 0 0 3px color-mix(in srgb, ${statusColor} 16%, transparent);`}
             ></span>
             <div class="flex min-w-0 flex-1 flex-col">

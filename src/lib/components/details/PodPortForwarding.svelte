@@ -1,13 +1,18 @@
 <script lang="ts">
-  import { Play, Box, Info, Square, ExternalLink, ArrowRight } from "lucide-svelte";
+  import { Play, Box, Info, Square, ExternalLink, ArrowRight, Bookmark, BookmarkCheck } from "lucide-svelte";
   import { Button, Input, Spinner } from "$lib/components/ui";
   import { open } from "$lib/ipc/shell";
   import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { portForwardStore } from "$lib/stores/port-forwards.svelte";
+  import { describeTarget, inferForwardTarget } from "$lib/stores/port-forwards.logic";
   import { getContainerIconUrl } from "$lib/utils/container-icon";
+  import type { Resource } from "$lib/types";
   import type { PortInfo, SpecContainer } from "./pod-utils";
 
   interface Props {
     allPorts: PortInfo[];
+    /** The pod itself — a saved forward follows its owning workload. */
+    pod?: Pick<Resource, "metadata">;
     podName: string;
     namespace: string;
     specContainerMap: Map<string, SpecContainer>;
@@ -15,7 +20,17 @@
     onIconError: (url: string) => void;
   }
 
-  let { allPorts, podName, namespace, specContainerMap, failedIcons, onIconError }: Props = $props();
+  let { allPorts, pod, podName, namespace, specContainerMap, failedIcons, onIconError }: Props = $props();
+
+  // Where a saved forward would point: the Deployment/StatefulSet/DaemonSet
+  // behind the pod when known, else the pod itself.
+  let saveTarget = $derived(pod ? inferForwardTarget(pod) : { kind: "Pod" as const, name: podName });
+
+  function toggleSaved(pf: typeof k8sStore.portForwards[0]) {
+    const saved = portForwardStore.savedFor(pf) ?? portForwardStore.findEquivalent(pf, saveTarget);
+    if (saved) portForwardStore.forget(saved.id);
+    else portForwardStore.save(pf, saveTarget);
+  }
 
   let portInputs = $state<Record<number, string>>({});
   let portForwardingPorts = $state<Set<number>>(new Set());
@@ -89,7 +104,11 @@
   {/if}
 {/snippet}
 
-<div class="flex flex-col gap-[7px]">
+<!-- Container query on the list, not the viewport: the same card sits in the
+     full-width detail tab and in the 320–440px aside. Past ~460px each port is
+     one line; under it the forward controls drop to a second line under the
+     name so the input and button never get squeezed out. -->
+<div class="@container flex flex-col gap-[7px]">
   {#each allPorts as port}
     {@const activePf = activeForwardsByPort.get(port.containerPort)}
     {@const forwarded = !!activePf}
@@ -98,38 +117,64 @@
     {@const rawIcon = getContainerIconUrl(containerImage)}
     {@const portIcon = rawIcon && !failedIcons.has(rawIcon) ? rawIcon : null}
     <div
-      class="flex items-center gap-3 rounded-md border px-3 py-2.5 {forwarded ? '' : 'border-[var(--border-color)] bg-[var(--bg-secondary)]'}"
+      class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2.5 {forwarded ? '' : 'border-[var(--border-color)] bg-[var(--bg-secondary)]'}"
       style={forwarded
         ? "border-color: color-mix(in srgb, var(--accent) 28%, transparent); background-color: color-mix(in srgb, var(--accent) 9%, transparent);"
         : ""}
     >
-      <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-[var(--bg-tertiary)]">
-        {@render containerIcon(portIcon, port.containerName)}
-      </span>
-      <span class="min-w-[80px] truncate text-[12px] font-medium text-[var(--text-primary)]" title={port.containerName}>{port.containerName}</span>
-      <span class="min-w-[72px] font-mono text-[12px] text-[var(--text-secondary)]">{port.containerPort}/{port.protocol}</span>
-      <ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-      {#if forwarded && activePf}
-        <Button
-          variant="link"
-          size="inline-sm"
-          mono
-          onclick={() => open(`http://localhost:${activePf.local_port}`)}
-          title="Open in browser"
-        >localhost:{activePf.local_port} <ExternalLink class="h-3 w-3" /></Button>
-        <span class="ml-auto inline-flex items-center gap-1.5 text-[12px] text-[var(--status-running)]">
-          <span class="h-1.5 w-1.5 rounded-full bg-[var(--status-running)]"></span>active
+      <!-- Identity: icon · container · port. Takes the line on its own when narrow. -->
+      <div class="flex min-w-0 flex-1 items-center gap-3">
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-[var(--bg-tertiary)]">
+          {@render containerIcon(portIcon, port.containerName)}
         </span>
-        <Button
-          variant="toolbar"
-          size="sm"
-          class="hover:border-[var(--status-failed)]"
-          onclick={() => handleStopPortForward(port.containerPort)}
-        >
-          <Square class="h-3 w-3 text-[var(--status-failed)]" /> Stop
-        </Button>
+        <span class="min-w-0 truncate text-[12px] font-medium text-[var(--text-primary)]" title={port.containerName}>{port.containerName}</span>
+        <span class="shrink-0 font-mono text-[12px] text-[var(--text-secondary)]">{port.containerPort}/{port.protocol}</span>
+      </div>
+      <!-- Forward controls: inline on the right when there is room, a full
+           second line (indented under the name) when there is not. -->
+      {#if forwarded && activePf}
+        {@const savedEntry = portForwardStore.savedFor(activePf) ?? portForwardStore.findEquivalent(activePf, saveTarget)}
+        <div class="flex items-center gap-2 @max-[460px]:w-full @max-[460px]:pl-9">
+          <ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
+          <Button
+            variant="link"
+            size="inline-sm"
+            mono
+            class="min-w-0 truncate"
+            onclick={() => open(`http://localhost:${activePf.local_port}`)}
+            title="Open in browser"
+          >localhost:{activePf.local_port} <ExternalLink class="h-3 w-3 shrink-0" /></Button>
+          <span class="ml-auto inline-flex shrink-0 items-center gap-1.5 text-[12px] text-[var(--status-running)]">
+            <span class="h-1.5 w-1.5 rounded-full bg-[var(--status-running)]"></span>active
+          </span>
+          <Button
+            variant="toolbar"
+            size="icon-sm"
+            class="shrink-0"
+            onclick={() => toggleSaved(activePf)}
+            title={savedEntry
+              ? `Saved as ${describeTarget(savedEntry)} → localhost:${savedEntry.local_port}. Click to forget.`
+              : `Save this forward (${describeTarget({ target_kind: saveTarget.kind, target_name: saveTarget.name })} → localhost:${activePf.local_port}) so it can be restarted and reconnects when the pod changes`}
+            data-testid="save-port-forward"
+          >
+            {#if savedEntry}
+              <BookmarkCheck class="h-3.5 w-3.5 text-[var(--accent)]" />
+            {:else}
+              <Bookmark class="h-3.5 w-3.5" />
+            {/if}
+          </Button>
+          <Button
+            variant="toolbar"
+            size="sm"
+            class="shrink-0 hover:border-[var(--status-failed)]"
+            onclick={() => handleStopPortForward(port.containerPort)}
+          >
+            <Square class="h-3 w-3 text-[var(--status-failed)]" /> Stop
+          </Button>
+        </div>
       {:else}
-        <div class="ml-auto flex items-center gap-2">
+        <div class="flex items-center gap-2 @max-[460px]:w-full @max-[460px]:pl-9">
+          <ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
           <span class="font-mono text-[12px] text-[var(--text-muted)]">localhost:</span>
           <Input
             type="text"
@@ -147,7 +192,7 @@
           <Button
             variant="toolbar"
             size="sm"
-            class="hover:border-[var(--status-running)]"
+            class="ml-auto shrink-0 hover:border-[var(--status-running)]"
             onclick={() => handlePortForward(port.containerPort)}
             disabled={loading}
           >

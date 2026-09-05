@@ -1,6 +1,8 @@
-import type { AppSettings, ContextCustomization, PinnedResource } from "../types/index.js";
+import { isTableDensity, type AppSettings, type ContextCustomization, type PinnedResource, type SavedPortForward, type SavedView, type TableDensity, type WatchedResource } from "../types/index.js";
 
 export type { AppSettings, ContextCustomization, PinnedResource };
+
+type IdListKey = "saved_views" | "saved_port_forwards" | "watched_resources";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   context: "",
@@ -26,6 +28,9 @@ export class SettingsStoreLogic {
       ...DEFAULT_SETTINGS,
       ...result,
       context_customizations: result.context_customizations ?? {},
+      // Validated here, once: a settings file written by an older build (or by
+      // hand) may carry a value the density union does not know.
+      table_density: isTableDensity(result.table_density) ? result.table_density : DEFAULT_SETTINGS.table_density,
     };
     this.applyTheme(this.settings.theme_mode);
   }
@@ -40,7 +45,7 @@ export class SettingsStoreLogic {
 
   /**
    * Persist settings. No-op in the logic class; overridden in the Svelte store
-   * to call Tauri invoke.
+   * to call the backend.
    */
   saveSettings(): void {
     // no-op — overridden in SvelteStore subclass
@@ -52,7 +57,7 @@ export class SettingsStoreLogic {
     this.saveSettings();
   }
 
-  updateDensity(density: "comfortable" | "compact"): void {
+  updateDensity(density: TableDensity): void {
     this.settings.table_density = density;
     this.saveSettings();
   }
@@ -83,6 +88,57 @@ export class SettingsStoreLogic {
 
   getContextCustomization(context: string): ContextCustomization | undefined {
     return this.settings.context_customizations?.[context];
+  }
+
+  // --- id-keyed lists (saved views, saved forwards, watched resources) -------
+  // Three lists, one shape: `{id}` items, insert-or-replace by id, remove by
+  // id, and a stable empty reference so `$derived` readers do not re-run.
+
+  private static readonly EMPTY: readonly never[] = [];
+
+  private list<K extends IdListKey>(key: K): NonNullable<AppSettings[K]> {
+    return (this.settings[key] ?? SettingsStoreLogic.EMPTY) as NonNullable<AppSettings[K]>;
+  }
+
+  private upsert<K extends IdListKey>(key: K, item: NonNullable<AppSettings[K]>[number]): void {
+    const rest = (this.list(key) as Array<{ id: string }>).filter((x) => x.id !== item.id);
+    (this.settings as Record<K, unknown>)[key] = [...rest, item];
+    this.saveSettings();
+  }
+
+  private removeById(key: IdListKey, id: string): void {
+    (this.settings as Record<IdListKey, unknown>)[key] = (this.list(key) as Array<{ id: string }>).filter((x) => x.id !== id);
+    this.saveSettings();
+  }
+
+  get savedViews(): SavedView[] { return this.list("saved_views"); }
+  addSavedView(view: SavedView): void { this.upsert("saved_views", view); }
+  removeSavedView(id: string): void { this.removeById("saved_views", id); }
+
+  get savedPortForwards(): SavedPortForward[] { return this.list("saved_port_forwards"); }
+  /** Insert or replace by id. */
+  upsertSavedPortForward(forward: SavedPortForward): void { this.upsert("saved_port_forwards", forward); }
+  removeSavedPortForward(id: string): void { this.removeById("saved_port_forwards", id); }
+
+  get watchedResources(): WatchedResource[] { return this.list("watched_resources"); }
+  findWatched(context: string, kind: string, name: string, namespace?: string): WatchedResource | undefined {
+    return this.watchedResources.find(
+      (w) => w.context === context && w.kind === kind && w.name === name && (w.namespace ?? "") === (namespace ?? ""),
+    );
+  }
+  watchResource(watched: WatchedResource): void {
+    if (this.findWatched(watched.context, watched.kind, watched.name, watched.namespace)) return;
+    this.upsert("watched_resources", watched);
+  }
+  unwatchResource(id: string): void { this.removeById("watched_resources", id); }
+
+  getExtensionValue(key: string): unknown {
+    return this.settings.extensions?.[key];
+  }
+
+  setExtensionValue(key: string, value: unknown): void {
+    this.settings.extensions = { ...(this.settings.extensions ?? {}), [key]: value };
+    this.saveSettings();
   }
 
   get pinnedResources(): PinnedResource[] {

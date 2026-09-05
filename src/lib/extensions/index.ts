@@ -1,4 +1,6 @@
 export { extensions } from "./registry.svelte";
+export { defineExtension, API_VERSION } from "./api";
+export type { ExtensionContext, ExtensionModule } from "./api";
 export type {
   ActionDef,
   AppEvent,

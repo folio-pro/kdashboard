@@ -1,5 +1,17 @@
 <script lang="ts">
-  import { Box, Clock, History, Regex, Trash2, Play, Square } from "lucide-svelte";
+  import {
+    Box,
+    Check,
+    Clock,
+    Copy,
+    Download,
+    History,
+    Regex,
+    Trash2,
+    Play,
+    Square,
+    WrapText,
+  } from "lucide-svelte";
   import {
     Badge,
     Button,
@@ -9,8 +21,8 @@
     type ButtonVariant,
   } from "$lib/components/ui";
   import { SelectMenu } from "$lib/components/ui/select-menu";
-  import { shortPodName } from "./log-viewer";
-  import type { LogLevel } from "./log-viewer";
+  import { ALL_CONTAINERS, shortPodName } from "./log-viewer";
+  import type { LogLevel, StreamPhase } from "./log-viewer";
   import {
     SINCE_OPTIONS,
     TAIL_OPTIONS,
@@ -23,6 +35,7 @@
     containers,
     filterText = $bindable(),
     isStreaming,
+    streamPhase,
     isDeployment,
     deploymentPodNames,
     podsLoading,
@@ -34,6 +47,8 @@
     showTimestamps = $bindable(),
     showPrevious,
     useRegex = $bindable(),
+    wrapLines = $bindable(),
+    hasLines,
     logPodNames,
     onStartStreaming,
     onStopStreaming,
@@ -42,11 +57,15 @@
     onTailSelect,
     onTogglePrevious,
     onClear,
+    onCopy,
+    onDownload,
   }: {
+    /** A container name, or ALL_CONTAINERS. */
     selectedContainer: string;
     containers: string[];
     filterText: string;
     isStreaming: boolean;
+    streamPhase: StreamPhase;
     isDeployment: boolean;
     deploymentPodNames: string[];
     podsLoading: boolean;
@@ -58,6 +77,9 @@
     showTimestamps: boolean;
     showPrevious: boolean;
     useRegex: boolean;
+    wrapLines: boolean;
+    /** Whether anything is displayed — Copy and Download need lines to act on. */
+    hasLines: boolean;
     logPodNames: string[];
     onStartStreaming: () => void;
     onStopStreaming: () => void;
@@ -66,6 +88,9 @@
     onTailSelect: (value: TailLines) => void;
     onTogglePrevious: () => void;
     onClear: () => void;
+    /** Copies the displayed lines; resolves once they are on the clipboard. */
+    onCopy: () => Promise<void>;
+    onDownload: () => void;
   } = $props();
 
   // "all pods" is the null pod filter; SelectMenu keys on the item value, so it
@@ -78,6 +103,9 @@
    * and tint with it when selected. Expressed as variants rather than an
    * on/off pair of class strings so the selected treatment is defined once,
    * in the design system, for every segmented control in the app.
+   *
+   * What each filter shows is decided by levelMatches() in log-viewer.ts —
+   * in particular `info` keeps lines that carry no level at all.
    */
   const LEVELS: {
     value: LogLevel;
@@ -94,9 +122,42 @@
   const TOGGLES = $derived([
     { icon: Regex, label: "Regex filter", on: useRegex, toggle: () => (useRegex = !useRegex) },
     { icon: Clock, label: "Timestamps", on: showTimestamps, toggle: () => (showTimestamps = !showTimestamps) },
+    { icon: WrapText, label: "Wrap lines", on: wrapLines, toggle: () => (wrapLines = !wrapLines) },
     { icon: History, label: "Previous container logs", on: showPrevious, toggle: onTogglePrevious },
   ]);
 
+  /**
+   * "All containers" only makes sense for a pod with several; a deployment
+   * stream already fans out across pods with one container each, and stacking
+   * both would need a two-part source prefix the rows do not have.
+   */
+  const containerItems = $derived.by(() => {
+    const items = containers.map((c) => ({ value: c, label: c, onSelect: () => onContainerSelect(c) }));
+    if (!isDeployment && containers.length > 1) {
+      items.unshift({
+        value: ALL_CONTAINERS,
+        label: "All containers",
+        onSelect: () => onContainerSelect(ALL_CONTAINERS),
+      });
+    }
+    return items;
+  });
+
+  const containerLabel = $derived(
+    selectedContainer === ALL_CONTAINERS ? "all containers" : selectedContainer,
+  );
+
+  // Copy feedback: the icon flips to a check for a moment, as it does in the
+  // detail sheet, instead of raising a toast for a one-line action.
+  let copied = $state(false);
+  let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function copy() {
+    await onCopy();
+    if (copiedTimer) clearTimeout(copiedTimer);
+    copied = true;
+    copiedTimer = setTimeout(() => (copied = false), 1500);
+  }
 </script>
 
 <div class="flex h-11 shrink-0 items-center gap-2 border-t border-[var(--border-color)] px-4">
@@ -124,7 +185,8 @@
     <SelectMenu
       title="Container"
       value={selectedContainer}
-      items={containers.map((c) => ({ value: c, label: c, onSelect: () => onContainerSelect(c) }))}
+      label={containerLabel}
+      items={containerItems}
       contentClass="min-w-[160px]"
     >
       {#snippet icon()}<Box class="h-3 w-3 text-[var(--text-muted)]" />{/snippet}
@@ -213,14 +275,49 @@
     </Button>
   {/each}
 
+  <!-- Export: both act on the DISPLAYED lines — after the level, pod and text
+       filters — so what leaves the viewer is what the user was looking at. -->
+  <Button
+    variant="toolbar"
+    size="icon-sm"
+    title="Copy logs"
+    aria-label="Copy logs"
+    disabled={!hasLines}
+    onclick={copy}
+  >
+    {#if copied}
+      <Check class="h-3 w-3 text-[var(--status-running)]" />
+    {:else}
+      <Copy class="h-3 w-3" />
+    {/if}
+  </Button>
+  <Button
+    variant="toolbar"
+    size="icon-sm"
+    title="Download logs"
+    aria-label="Download logs"
+    disabled={!hasLines}
+    onclick={onDownload}
+  >
+    <Download class="h-3 w-3" />
+  </Button>
+
   <Button variant="toolbar" size="icon-sm" title="Clear logs" aria-label="Clear logs" onclick={onClear}>
     <Trash2 class="h-3 w-3" />
   </Button>
 
-  {#if isStreaming}
+  <!-- The badge reports the stream phase, not merely "a stream exists": a LIVE
+       badge over a viewer that is still dialling is what made a slow connect
+       look like a hung one. -->
+  {#if streamPhase === "live"}
     <div class="flex shrink-0 items-center gap-1.5">
       <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-running)]"></div>
       <span class="font-mono text-[11px] font-semibold text-[var(--status-running)]">LIVE</span>
+    </div>
+  {:else if streamPhase === "connecting"}
+    <div class="flex shrink-0 items-center gap-1.5">
+      <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--text-muted)]"></div>
+      <span class="font-mono text-[11px] font-semibold text-[var(--text-muted)]">CONNECTING</span>
     </div>
   {/if}
 </div>

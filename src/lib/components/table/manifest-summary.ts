@@ -1,49 +1,85 @@
+import { parseAllDocuments, type Document } from "yaml";
+
 export interface ManifestResource {
   /** Stable key for the {#each} block — index-qualified, since a document may
    *  legitimately repeat the same kind/name pair across separators. */
   key: string;
+  /** Position of the document in the multi-document stream (0-based). */
+  index: number;
   kind: string;
   name: string;
+  /** `metadata.namespace` as written, or null when the manifest omits it. */
+  namespace: string | null;
+  /** The parsed document, kept so the apply path can edit it in place
+   *  (inject a namespace) and re-serialize without losing comments. */
+  doc: Document.Parsed;
+}
+
+export interface ManifestError {
+  /** Document index the error belongs to. */
+  index: number;
+  message: string;
 }
 
 export interface ManifestSummary {
   resources: ManifestResource[];
+  /** Syntax errors plus documents that parsed but carry no `kind`. Empty and
+   *  comment-only documents are ignored rather than reported. */
+  errors: ManifestError[];
+}
+
+function scalarString(doc: Document.Parsed, path: string[]): string | null {
+  const value: unknown = doc.getIn(path, false);
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number") return String(value);
+  return null;
 }
 
 /**
- * Pull the kind/name of each document out of a multi-document YAML string, so
- * the apply dialog can say what is about to hit the cluster.
+ * Parse a multi-document YAML string and pull out what the create dialog
+ * needs to say what is about to hit the cluster: each document's kind, name
+ * and namespace, and every reason a document could not be applied.
  *
- * Deliberately a line scanner rather than a real YAML parse: this runs on
- * arbitrary clipboard content that may not be valid YAML at all, and its only
- * job is to label a preview the user is going to read anyway. Unparseable
- * input must degrade to "no resources detected" (which the dialog surfaces as
- * a warning), never to a thrown error that blocks the preview.
+ * Runs on every keystroke of the editor, so it must never throw: `yaml`
+ * collects syntax errors on the document instead of raising, and non-object
+ * documents ("just some text") surface as a missing `kind` rather than an
+ * exception.
  */
 export function summarizeManifests(yaml: string): ManifestSummary {
   const resources: ManifestResource[] = [];
-  if (!yaml.trim()) return { resources };
+  const errors: ManifestError[] = [];
+  if (!yaml.trim()) return { resources, errors };
 
-  // `---` on its own line separates documents.
-  const docs = yaml.split(/^---\s*$/m);
+  let docs: Document.Parsed[];
+  try {
+    docs = parseAllDocuments(yaml);
+  } catch (err) {
+    // parseAllDocuments only throws on internal bugs; keep the dialog alive.
+    errors.push({ index: 0, message: err instanceof Error ? err.message : String(err) });
+    return { resources, errors };
+  }
 
   for (let i = 0; i < docs.length; i++) {
     const doc = docs[i];
-    if (!doc.trim()) continue;
+    if (doc.errors.length > 0) {
+      errors.push({ index: i, message: doc.errors[0].message.split("\n")[0] });
+      continue;
+    }
+    // Skip blank / comment-only documents — a trailing `---` is not a mistake.
+    // (An empty document still has a Scalar node holding null as contents.)
+    if (doc.contents === null || doc.contents === undefined || doc.toJS() === null) continue;
 
-    // Top-level keys only (column 0): a `kind:` nested under spec.template
-    // describes a pod template, not the document's own kind.
-    const kind = doc.match(/^kind:[ \t]*["']?([A-Za-z0-9.-]+)["']?[ \t]*$/m)?.[1];
-    if (!kind) continue;
+    const kind = scalarString(doc, ["kind"]);
+    if (!kind) {
+      errors.push({ index: i, message: "Document has no `kind` field — this is not a Kubernetes manifest" });
+      continue;
+    }
 
-    // metadata.name is indented under a top-level `metadata:`; take the first
-    // `name:` that follows it.
-    const afterMetadata = doc.split(/^metadata:[ \t]*$/m)[1];
-    const name =
-      afterMetadata?.match(/^[ \t]+name:[ \t]*["']?([^"'\s#]+)["']?/m)?.[1] ?? "(unnamed)";
+    const name = scalarString(doc, ["metadata", "name"]) ?? "(unnamed)";
+    const namespace = scalarString(doc, ["metadata", "namespace"]);
 
-    resources.push({ key: `${i}-${kind}-${name}`, kind, name });
+    resources.push({ key: `${i}-${kind}-${name}`, index: i, kind, name, namespace, doc });
   }
 
-  return { resources };
+  return { resources, errors };
 }

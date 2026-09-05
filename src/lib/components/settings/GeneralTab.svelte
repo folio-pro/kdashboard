@@ -4,12 +4,13 @@
   import { Checkbox } from "$lib/components/ui/checkbox";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { THEME_COLORS, DARK_THEMES, LIGHT_THEMES, type ThemeOption } from "./settings-constants";
+  import type { TableDensity } from "$lib/types";
 
   function selectTheme(themeId: string) {
     settingsStore.updateTheme(themeId);
   }
 
-  function handleDensityChange(density: "comfortable" | "compact") {
+  function handleDensityChange(density: TableDensity) {
     settingsStore.updateDensity(density);
   }
 </script>
@@ -68,12 +69,13 @@
 <section>
   <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Table Display</h2>
   <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
-    Control how resource tables are displayed. Compact mode fits more rows on screen, while comfortable mode gives each row more breathing room.
+    Control how resource tables are displayed. Compact fits more rows on screen; Terminal is denser still, in the mono face.
   </p>
   <div class="mt-4 flex gap-2">
     {#each [
-      { id: "comfortable" as const, label: "Comfortable", desc: "More padding between rows for easier reading", rowCount: 3 },
+      { id: "comfortable" as const, label: "Comfortable", desc: "Room for a status pill on every row", rowCount: 3 },
       { id: "compact" as const, label: "Compact", desc: "Tighter spacing to show more resources at once", rowCount: 5 },
+      { id: "terminal" as const, label: "Terminal", desc: "Mono, 26px rows — like a k9s pane", rowCount: 7 },
     ] as option}
       {@const isActive = settingsStore.settings.table_density === option.id}
       <button
@@ -98,7 +100,7 @@
             <div
               class={cn(
                 "border-b border-[var(--border-color)]/30 last:border-b-0",
-                option.id === "comfortable" ? "py-1.5" : "py-0.5"
+                option.id === "comfortable" ? "py-1.5" : option.id === "compact" ? "py-0.5" : "py-px"
               )}
             >
               <div class="mx-2 flex gap-2">

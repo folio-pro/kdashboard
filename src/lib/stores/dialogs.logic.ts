@@ -27,6 +27,20 @@ export class DialogStoreLogic {
   compareOpen = false;
   compareResource: Resource | null = null;
 
+  // Quick edit (image / env / resources without the YAML editor)
+  quickEditOpen = false;
+  quickEditResource: Resource | null = null;
+
+  // Restart confirmation. A list so the bulk action shares the dialog: one
+  // resource from a header button or context menu, several from multi-select.
+  restartOpen = false;
+  restartResources: Resource[] = [];
+
+  // Rollback confirmation (deployments). The dialog looks up the previous
+  // revision itself so the user sees exactly what the rollback will target.
+  rollbackOpen = false;
+  rollbackResource: Resource | null = null;
+
   openScale(resource: Resource): void {
     this.scaleResource = {
       kind: resource.kind,
@@ -78,5 +92,37 @@ export class DialogStoreLogic {
 
   closeUpsell(): void {
     this.upsellOpen = false;
+  }
+
+  openQuickEdit(resource: Resource): void {
+    this.quickEditResource = resource;
+    this.quickEditOpen = true;
+  }
+
+  closeQuickEdit(): void {
+    this.quickEditOpen = false;
+    this.quickEditResource = null;
+  }
+
+  openRestart(resources: Resource | Resource[]): void {
+    const list = Array.isArray(resources) ? resources : [resources];
+    if (list.length === 0) return;
+    this.restartResources = list;
+    this.restartOpen = true;
+  }
+
+  closeRestart(): void {
+    this.restartOpen = false;
+    this.restartResources = [];
+  }
+
+  openRollback(resource: Resource): void {
+    this.rollbackResource = resource;
+    this.rollbackOpen = true;
+  }
+
+  closeRollback(): void {
+    this.rollbackOpen = false;
+    this.rollbackResource = null;
   }
 }

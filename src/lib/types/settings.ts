@@ -1,3 +1,5 @@
+import type { SavedPortForward, SavedView, TableDensity, WatchedResource } from "./ui";
+
 /** Payload emitted by the main process when an app update is available. */
 export interface UpdateInfo {
   version: string;
@@ -26,11 +28,19 @@ export interface AppSettings {
   namespace: string;
   theme_mode: string;
   kubeconfig_path: string;
-  table_density: "comfortable" | "compact";
+  table_density: TableDensity;
   context_customizations: Record<string, ContextCustomization>;
   pinned_resources?: PinnedResource[];
   /** Base URL of a Prometheus reachable from this machine. Empty = disabled. */
   prometheus_url?: string;
+  /** User-defined table views (filter sets), per resource type. */
+  saved_views?: SavedView[];
+  /** Port forwards the user chose to keep, per context. */
+  saved_port_forwards?: SavedPortForward[];
+  /** Resources watched for desktop alerts, per context. */
+  watched_resources?: WatchedResource[];
+  /** Key/value storage for user extensions (`<extension id>.<key>`). */
+  extensions?: Record<string, unknown>;
   /** Require Mutation Approval for agent Safe Mutations. Default (absent) = true. */
   agent_require_approval?: boolean;
   /** Agent Profile last launched — preselected next time. */

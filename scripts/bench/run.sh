@@ -83,6 +83,11 @@ if command -v jq >/dev/null 2>&1; then
   echo "  ───────────────────────────────────────────────"
   jq -r '.results[] | "  \(.resourceType | (. + "              ")[0:14])  \(.itemCount | tostring | (("     " + .)[-5:]))   \(.backendMs.median | tostring | (("        " + .)[-7:]))   \(.e2eMs.median | tostring | (("        " + .)[-7:]))"' "$OUT_FILE"
   echo ""
+  echo "  idle (pods table + watch, $(jq -r '.idle.window_ms // 0' "$OUT_FILE")ms window):"
+  echo "    cpu%        $(jq -c '.idle.cpu_percent // {}' "$OUT_FILE")"
+  echo "    working set $(jq -c '.idle.working_set_mb // {}' "$OUT_FILE") MB"
+  echo "    renderer js heap $(jq -r '.idle.renderer_js_heap_mb // "n/a"' "$OUT_FILE") MB   main heap $(jq -r '.idle.main_heap_used_mb // "n/a"' "$OUT_FILE") MB"
+  echo ""
   echo "  meta: $(jq -c '.meta' "$OUT_FILE")"
 else
   cat "$OUT_FILE"

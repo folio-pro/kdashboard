@@ -1,20 +1,13 @@
-// Security handler group — ports the Tauri "security" commands to
-// @kubernetes/client-node.
+// Security handler group — scanner detection, per-pod posture, image scans.
 //
-// Rust sources ported (faithful 1:1):
-//   - src-tauri/src/k8s/security.rs
-//       get_security_overview (scanner detection + per-pod posture) and
-//       scan_single_image (single-image scan)
-//   - src-tauri/src/commands/k8s_commands.rs (the #[tauri::command] wrappers)
-//
-// Commands implemented (EXACT Tauri command strings):
+// Commands implemented:
 //   - get_security_overview  (args: { namespace?: string | null })
 //   - scan_image             (args: { image: string })
 //
 // Wire-casing notes (frontend is source of truth):
 //   - get_security_overview: AsyncLoadStore._load sends { namespace } (string | null).
-//   - scan_image: arg key `image` (Rust param `image`).
-// Result SHAPES mirror serde wire-casing in src-tauri/src/k8s/security.rs.
+//   - scan_image: arg key `image`.
+// Result shapes are snake_case on the wire.
 
 import { spawn } from 'node:child_process';
 
@@ -24,10 +17,10 @@ import type { HandlerCtx, HandlerMap } from '../dispatch';
 import { getCoreV1Api } from '../k8s/client';
 
 // ===========================================================================
-// Result types — mirror the serde wire-casing of the Rust structs.
+// Result types — snake_case wire casing.
 // ===========================================================================
 
-/** security.rs VulnerabilityCounts (all snake_case, u32 -> number). */
+/** Vulnerability counts by severity. */
 interface VulnerabilityCounts {
   critical: number;
   high: number;
@@ -36,23 +29,30 @@ interface VulnerabilityCounts {
   unknown: number;
 }
 
-/** security.rs ImageScanResult. */
-interface ImageScanResult {
+/** `failed` carries empty counts: zero findings because nothing was looked
+ *  at, which the UI must not present as "no vulnerabilities". */
+export type ImageScanStatus = 'scanned' | 'failed';
+
+export interface ImageScanResult {
   image: string;
   vulns: VulnerabilityCounts;
   scanned_at: string;
+  status: ImageScanStatus;
+  /** Scanner stderr for a failed scan, trimmed to one line. */
+  error?: string;
 }
 
-/** security.rs PodSecurityInfo. */
-interface PodSecurityInfo {
+export interface PodSecurityInfo {
   name: string;
   namespace: string;
+  /** Scan results, successful or failed, for the pod's images. */
   images: ImageScanResult[];
+  /** Images with no result at all — no scanner installed, or not scanned yet. */
+  unscanned_images: string[];
   total_vulns: VulnerabilityCounts;
   compliant: boolean;
 }
 
-/** security.rs SecurityOverview. */
 interface SecurityOverview {
   pods: PodSecurityInfo[];
   total_vulns: VulnerabilityCounts;
@@ -138,8 +138,8 @@ const SCANNER_CACHE_TTL_MS = 600_000; // 10 min
 
 let scannerCache: { scanner: Scanner; expiresAt: number } | null = null;
 
-/** Mirror Rust detect_scanner(): probe `trivy --version`, then `grype version`.
- *  The result is cached for SCANNER_CACHE_TTL_MS. */
+/** Probe `trivy --version`, then `grype version`. The result is cached for
+ *  SCANNER_CACHE_TTL_MS. */
 async function detectScanner(): Promise<Scanner> {
   if (scannerCache && scannerCache.expiresAt > Date.now()) {
     return scannerCache.scanner;
@@ -375,10 +375,17 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
         let result: ImageScanResult;
         try {
           const vulns = await scanImage(scanner, img);
-          result = { image: img, vulns, scanned_at: now };
-        } catch {
-          // Failed scan -> empty result (faithful to Rust).
-          result = { image: img, vulns: emptyCounts(), scanned_at: now };
+          result = { image: img, vulns, scanned_at: now, status: 'scanned' };
+        } catch (err) {
+          // A failed scan is recorded as such, not as a clean image.
+          const message = err instanceof Error ? err.message : String(err);
+          result = {
+            image: img,
+            vulns: emptyCounts(),
+            scanned_at: now,
+            status: 'failed',
+            error: message.split('\n')[0].slice(0, 300),
+          };
         }
         imageResults.set(img, result);
         putCachedScan(result);
@@ -391,7 +398,23 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
     await Promise.all(workers);
   }
 
-  // Per-pod posture.
+  return {
+    ...summarizePods(podImages, imageResults),
+    scanner,
+    fetched_at: now,
+  };
+}
+
+/**
+ * Fold per-image scan results into per-pod posture. Pure, so the "not
+ * scanned" bookkeeping is testable without a scanner: an image with no result
+ * lands in `unscanned_images`, a failed one keeps its `failed` status, and
+ * only successful scans count toward `total_images_scanned`.
+ */
+export function summarizePods(
+  podImages: ReadonlyArray<readonly [string, string, readonly string[]]>,
+  imageResults: ReadonlyMap<string, ImageScanResult>,
+): Omit<SecurityOverview, 'scanner' | 'fetched_at'> {
   const pods: PodSecurityInfo[] = [];
   const overallVulns = emptyCounts();
   let compliantCount = 0;
@@ -400,11 +423,14 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
   for (const [podName, podNs, images] of podImages) {
     const podVulns = emptyCounts();
     const podImagesResults: ImageScanResult[] = [];
+    const unscanned: string[] = [];
     for (const img of images) {
       const result = imageResults.get(img);
       if (result) {
         mergeCounts(podVulns, result.vulns);
         podImagesResults.push(result);
+      } else {
+        unscanned.push(img);
       }
     }
 
@@ -418,13 +444,14 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
       name: podName,
       namespace: podNs,
       images: podImagesResults,
+      unscanned_images: unscanned,
       total_vulns: podVulns,
       compliant,
     });
   }
 
   // Sort: non-compliant first, then by critical desc, then high desc.
-  // Rust sorts by `compliant` ascending (false < true), so non-compliant first.
+  // `compliant` sorts ascending (false < true), so non-compliant lands first.
   pods.sort((a, b) => {
     const byCompliant = Number(a.compliant) - Number(b.compliant);
     if (byCompliant !== 0) return byCompliant;
@@ -433,14 +460,17 @@ async function getSecurityOverview(namespace: string | undefined): Promise<Secur
     return b.total_vulns.high - a.total_vulns.high;
   });
 
+  let scanned = 0;
+  for (const result of imageResults.values()) {
+    if (result.status === 'scanned') scanned += 1;
+  }
+
   return {
     pods,
     total_vulns: overallVulns,
-    total_images_scanned: imageResults.size,
+    total_images_scanned: scanned,
     compliant_pods: compliantCount,
     non_compliant_pods: nonCompliantCount,
-    scanner,
-    fetched_at: now,
   };
 }
 
@@ -450,7 +480,7 @@ async function scanSingleImage(image: string): Promise<ImageScanResult> {
     throw new Error('No vulnerability scanner found. Install trivy or grype.');
   }
   const vulns = await scanImage(scanner, image);
-  return { image, vulns, scanned_at: new Date().toISOString() };
+  return { image, vulns, scanned_at: new Date().toISOString(), status: 'scanned' };
 }
 
 // ===========================================================================

@@ -1,16 +1,23 @@
 <script lang="ts">
   import { Badge } from "$lib/components/ui";
   import { invoke } from "$lib/ipc/core";
-  import { History } from "lucide-svelte";
+  import { History, GitCompare, X } from "lucide-svelte";
   import { Button } from "$lib/components/ui/button";
+  import { loadCodeMirror, type CodeMirrorModules } from "$lib/utils/codemirror-lazy";
+  import { getExtensions } from "./codemirror-extensions";
+  import type { MergeView as MergeViewType } from "@codemirror/merge";
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import { rollbackDeployment } from "$lib/actions/registry";
   import { toastStore } from "$lib/stores/toast.svelte";
   import { formatAge, formatTimestamp } from "$lib/utils/age";
   import type { Resource } from "$lib/types";
   import {
+    canDiffRevisions,
+    diffAgainstCurrent,
+    orderDiffPair,
     performRollback,
     resourceKey as deriveResourceKey,
+    type RevisionDiff,
     type RevisionInfo,
   } from "./revision-history-card.logic";
 
@@ -26,7 +33,75 @@
   let pendingRevision = $state<RevisionInfo | null>(null);
   let rollbackInFlight = $state(false);
 
+  // --- Revision diff ---------------------------------------------------------
+  // "Diff" on a row compares it with the current revision; clicking a second
+  // row while a diff is open re-targets the pair (older left, newer right).
+  let diff = $state<RevisionDiff | null>(null);
+  let diffError = $state<string | null>(null);
+  let diffContainer: HTMLDivElement | undefined = $state();
+  let mergeView: MergeViewType | null = null;
+  let cm: CodeMirrorModules | null = null;
+
   let resourceKey = $derived(deriveResourceKey(resource));
+  let diffable = $derived(canDiffRevisions(revisions));
+
+  function destroyMergeView() {
+    mergeView?.destroy();
+    mergeView = null;
+  }
+
+  function closeDiff() {
+    destroyMergeView();
+    diff = null;
+    diffError = null;
+  }
+
+  function showDiff(rev: RevisionInfo) {
+    if (diff && diff.base.name !== rev.name && diff.head.name !== rev.name) {
+      // A diff is open: re-anchor on the revision the user is looking at and
+      // compare it with the one they just picked.
+      const anchor = diff.head.is_current ? diff.base : diff.head;
+      diff = orderDiffPair(anchor, rev);
+      return;
+    }
+    diff = diffAgainstCurrent(revisions, rev);
+  }
+
+  $effect(() => {
+    const pair = diff;
+    const container = diffContainer;
+    if (!pair || !container) return;
+    let cancelled = false;
+    diffError = null;
+    void (async () => {
+      try {
+        if (!cm) cm = await loadCodeMirror();
+        if (cancelled) return;
+        const modules = cm;
+        destroyMergeView();
+        const readOnly = [
+          ...getExtensions(modules, "", () => {}, true),
+          modules.EditorView.editable.of(false),
+        ];
+        mergeView = new modules.MergeView({
+          a: { doc: pair.base.template_yaml ?? "", extensions: readOnly },
+          b: { doc: pair.head.template_yaml ?? "", extensions: readOnly },
+          parent: container,
+          highlightChanges: true,
+          gutter: true,
+          collapseUnchanged: { margin: 3, minSize: 4 },
+        });
+        mergeView.dom.style.height = "100%";
+        mergeView.dom.style.minHeight = "0";
+        mergeView.dom.style.overflowY = "auto";
+      } catch (err) {
+        if (!cancelled) diffError = String(err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
 
   function fetchRevisions(): Promise<RevisionInfo[]> {
     return invoke<RevisionInfo[]>("list_deployment_revisions", {
@@ -42,12 +117,13 @@
     // Dismiss any pending rollback so confirmRollback can't target a deployment
     // different from the one the user originally opened the dialog on.
     pendingRevision = null;
+    closeDiff();
 
     loading = true;
     error = null;
     fetchRevisions()
       .then((result) => {
-        if (!cancelled) revisions = result;
+        if (!cancelled) revisions = result ?? [];
       })
       .catch((err) => {
         if (!cancelled) {
@@ -143,21 +219,62 @@
                 {rev.created_at ? formatAge(rev.created_at) : "—"}
               </td>
               <td class="px-4 py-2.5 text-right">
-                <Button
-                  variant="outline"
-                  size="md"
-                  disabled={rev.is_current || rollbackInFlight}
-                  onclick={() => (pendingRevision = rev)}
-                  title={rev.is_current ? "Already the current revision" : `Rollback to revision ${rev.revision}`}
-                >
-                  Rollback
-                </Button>
+                <div class="flex items-center justify-end gap-1.5">
+                  {#if diffable}
+                    <Button
+                      variant={diff && (diff.base.name === rev.name || diff.head.name === rev.name) ? "toolbar" : "ghost"}
+                      size="md"
+                      disabled={rev.is_current && !diff}
+                      onclick={() => showDiff(rev)}
+                      title={rev.is_current ? "Current revision — pick another row to diff against it" : `Diff revision ${rev.revision} against the current one`}
+                      data-testid="revision-diff"
+                    >
+                      <GitCompare class="h-3.5 w-3.5" />
+                      Diff
+                    </Button>
+                  {/if}
+                  <Button
+                    variant="outline"
+                    size="md"
+                    disabled={rev.is_current || rollbackInFlight}
+                    onclick={() => (pendingRevision = rev)}
+                    title={rev.is_current ? "Already the current revision" : `Rollback to revision ${rev.revision}`}
+                  >
+                    Rollback
+                  </Button>
+                </div>
               </td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
+    {#if diff}
+      <div class="border-t border-[var(--border-hover)]" data-testid="revision-diff-panel">
+        <div class="flex items-center gap-2 px-4 py-2">
+          <GitCompare class="h-3.5 w-3.5 text-[var(--text-muted)]" />
+          <span class="text-[12px] text-[var(--text-secondary)]">
+            Pod template
+            <span class="font-mono text-[var(--text-primary)]">#{diff.base.revision}</span>
+            <span class="text-[var(--text-muted)]">→</span>
+            <span class="font-mono text-[var(--text-primary)]">#{diff.head.revision}</span>
+            {#if diff.head.is_current}<span class="text-[var(--text-muted)]">(current)</span>{/if}
+          </span>
+          <span class="text-[11px] text-[var(--text-muted)]">· click another row's Diff to change the pair</span>
+          <div class="flex-1"></div>
+          <Button variant="ghost" size="icon-sm" onclick={closeDiff} title="Close diff">
+            <X class="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        {#if diffError}
+          <div class="px-4 pb-3 text-[12px] text-[var(--status-failed)]">Failed to render diff: {diffError}</div>
+        {:else if diff.base.template_yaml === diff.head.template_yaml}
+          <div class="px-4 pb-3 text-[12px] text-[var(--text-muted)]">The pod templates are identical — this revision only differed in its pod-template-hash.</div>
+        {:else}
+          <div class="h-[320px] border-t border-[var(--border-hover)]" bind:this={diffContainer}></div>
+        {/if}
+      </div>
+    {/if}
   {:else if !loading}
     <div class="border-t border-[var(--border-hover)] px-5 py-4">
       <span class="text-[12px] text-[var(--text-muted)]">No revisions found</span>

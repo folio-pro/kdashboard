@@ -2,13 +2,17 @@ import { test, expect, describe } from "bun:test";
 
 import type { Resource } from "$lib/types";
 import {
+  autoscalerPressure,
   getCellValue as rawGetCellValue,
+  isAutoscalerTargetsColumn,
   isMonoColumn,
   isTagColumn,
   isUsageColumn,
   usageMeter,
   type CellContext,
 } from "./cell-values";
+import { columnsByType } from "./table-columns";
+import { autoscalerSummary } from "$lib/utils/autoscaler";
 
 /** Store-derived context; the tests that care pass their own. */
 const NO_CONTEXT: CellContext = { ageTick: 0 };
@@ -86,6 +90,42 @@ describe("getCellValue — pods and workloads", () => {
 });
 
 describe("getCellValue — services and endpoints", () => {
+  test("pods: effective status, ready fraction, owner", () => {
+    const crashing = res({
+      status: { phase: "Running", containerStatuses: [{ name: "a", ready: true, restartCount: 0, state: { running: {} } }, { name: "b", ready: false, restartCount: 3, state: { waiting: { reason: "CrashLoopBackOff" } } }] },
+    });
+    crashing.kind = "Pod";
+    expect(getCellValue(crashing, "status")).toBe("CrashLoopBackOff");
+    expect(getCellValue(crashing, "podReady")).toBe("1/2");
+    const notPod = res({ status: { phase: "Running" } });
+    expect(getCellValue(notPod, "status")).toBe("Running");
+    const owned = res({});
+    owned.metadata.owner_references = [{ api_version: "apps/v1", kind: "ReplicaSet", name: "api-7d9f", uid: "o", controller: true }];
+    expect(getCellValue(owned, "controlledBy")).toBe("rs/api-7d9f");
+    expect(getCellValue(res({}), "controlledBy")).toBe("-");
+  });
+
+  test("deployments: derived status, images, pod count", () => {
+    const d = res({
+      spec: { replicas: 3, template: { spec: { containers: [{ image: "ghcr.io/shop/api:2.4.1" }, { image: "otel/collector:0.98.0" }] } } },
+      status: { replicas: 4, readyReplicas: 3, updatedReplicas: 1, conditions: [{ type: "Progressing", status: "True", reason: "ReplicaSetUpdated" }] },
+    });
+    expect(getCellValue(d, "deployStatus")).toBe("Progressing");
+    expect(getCellValue(d, "images")).toBe("api:2.4.1, collector:0.98.0");
+    expect(getCellValue(d, "pods")).toBe("4");
+    expect(getCellValue(res({}), "images")).toBe("-");
+  });
+
+  test("services: external pending, ports with targets, endpoints from context", () => {
+    expect(getCellValue(res({ spec: { type: "LoadBalancer" } }), "externalIP")).toBe("<pending>");
+    expect(getCellValue(res({ spec: { ports: [{ port: 80, targetPort: 8080 }, { port: 443, targetPort: 443, nodePort: 30443 }] } }), "ports")).toBe("80→8080/TCP, 443/TCP :30443");
+    expect(getCellValue(res({ spec: { selector: { app: "web" } } }), "selector")).toBe("app=web");
+    const svc = res({});
+    expect(getCellValue(svc, "endpoints")).toBe("");
+    expect(getCellValue(svc, "endpoints", { ageTick: 0, endpoints: null })).toBe("-");
+    expect(getCellValue(svc, "endpoints", { ageTick: 0, endpoints: { ready: 2, total: 3, terminating: 0 } })).toBe("2/3");
+  });
+
   test("externalIP prefers the load balancer, then spec.externalIPs", () => {
     const lb = res({ status: { loadBalancer: { ingress: [{ ip: "1.2.3.4" }] } } });
     expect(getCellValue(lb, "externalIP")).toBe("1.2.3.4");
@@ -221,11 +261,141 @@ describe("column families", () => {
     expect(isUsageColumn("name")).toBe(false);
   });
 
-  test("mono and tag families do not overlap", () => {
-    const both = ["age", "type", "roles", "vpaTarget", "pcGlobalDefault"].filter(
-      (k) => isMonoColumn(k) && isTagColumn(k),
+  test("no declared column belongs to two render families", () => {
+    // Each family is a branch in TableRow's cell markup, and the branches are
+    // tried in order — a key in two families renders as whichever branch comes
+    // first, which is a silent, type-checked-clean way to lose a column.
+    const families = [isMonoColumn, isTagColumn, isUsageColumn, isAutoscalerTargetsColumn];
+    const overlapping = [...new Set(Object.values(columnsByType).flat().map((c) => c.key))].filter(
+      (key) => families.filter((inFamily) => inFamily(key)).length > 1,
     );
-    expect(both).toEqual([]);
+    expect(overlapping).toEqual([]);
+  });
+
+  test("the autoscaler targets column is routed to its own renderer", () => {
+    expect(isAutoscalerTargetsColumn("autoscalerTargets")).toBe(true);
+    expect(isAutoscalerTargetsColumn("autoscalerReplicas")).toBe(false);
+  });
+});
+
+describe("autoscaler cells", () => {
+  const hpa = res({
+    spec: {
+      scaleTargetRef: { kind: "Deployment", name: "api" },
+      minReplicas: 2,
+      maxReplicas: 10,
+      metrics: [
+        { type: "Resource", resource: { name: "cpu", target: { averageUtilization: 80 } } },
+      ],
+    },
+    status: {
+      currentReplicas: 3,
+      desiredReplicas: 5,
+      currentMetrics: [
+        { type: "Resource", resource: { name: "cpu", current: { averageUtilization: 60 } } },
+      ],
+    },
+  });
+  const ctx: CellContext = { ageTick: 0, autoscaler: autoscalerSummary(hpa, "hpa") };
+
+  test("reads every column off the row's summary", () => {
+    expect(getCellValue(hpa, "autoscalerReference", ctx)).toBe("Deployment/api");
+    expect(getCellValue(hpa, "autoscalerMin", ctx)).toBe("2");
+    expect(getCellValue(hpa, "autoscalerMax", ctx)).toBe("10");
+    expect(getCellValue(hpa, "autoscalerReplicas", ctx)).toBe("3 → 5");
+    expect(getCellValue(hpa, "autoscalerTargets", ctx)).toBe("cpu: 60%/80%");
+  });
+
+  test("renders as empty on a row that is not an autoscaler", () => {
+    // The summary is only built for the three autoscaler tables; without it
+    // the columns must degrade to "-" rather than throw.
+    for (const key of ["autoscalerReference", "autoscalerMin", "autoscalerReplicas", "autoscalerTargets"]) {
+      expect(getCellValue(res({}), key)).toBe("-");
+    }
+  });
+
+  test("the pressure bar tracks the metric that is furthest along", () => {
+    const twoMetrics = res({
+      spec: {
+        metrics: [
+          { type: "Resource", resource: { name: "cpu", target: { averageUtilization: 80 } } },
+          { type: "Resource", resource: { name: "memory", target: { averageUtilization: 50 } } },
+        ],
+      },
+      status: {
+        currentMetrics: [
+          { type: "Resource", resource: { name: "cpu", current: { averageUtilization: 20 } } },
+          { type: "Resource", resource: { name: "memory", current: { averageUtilization: 45 } } },
+        ],
+      },
+    });
+    const pressure = autoscalerPressure(autoscalerSummary(twoMetrics, "hpa"))!;
+    // memory is at 90% of its target, cpu at 25% — the bar follows memory.
+    expect(pressure.percent).toBe(90);
+    expect(pressure.title).toContain("memory: 45% of 50%");
+    // Every metric is split, so the row can pin each reading and let only the
+    // names give up width.
+    expect(pressure.parts).toEqual([
+      { name: "cpu", value: "20%/80%" },
+      { name: "memory", value: "45%/50%" },
+    ]);
+  });
+
+  test("splits a metric so the reading can be protected from truncation", () => {
+    // An external metric name is long enough to push the numbers out of the
+    // cell; the split lets the row truncate the name and keep the value.
+    const wpa = res({
+      spec: {
+        metrics: [{
+          type: "External",
+          external: { metricName: "nginx.net.request_per_s", highWatermark: "80", lowWatermark: "40" },
+        }],
+      },
+      status: {
+        currentMetrics: [{ type: "External", external: { metricName: "nginx.net.request_per_s", currentValue: "62" } }],
+      },
+    });
+    const pressure = autoscalerPressure(autoscalerSummary(wpa, "wpa"))!;
+    expect(pressure.parts).toEqual([{ name: "nginx.net.request_per_s", value: "62/40 – 80" }]);
+    expect(pressure.meter).toBe(true);
+  });
+
+  test("a VPA row draws no track, having no ceiling to fill towards", () => {
+    const vpa = res({
+      status: {
+        recommendation: {
+          containerRecommendations: [
+            { containerName: "app", target: { cpu: "250m" }, lowerBound: { cpu: "100m" }, upperBound: { cpu: "1" } },
+          ],
+        },
+      },
+    });
+    const pressure = autoscalerPressure(autoscalerSummary(vpa, "vpa"))!;
+    expect(pressure.meter).toBe(false);
+    expect(pressure.percent).toBeNull();
+  });
+
+  test("names a dry run in the tooltip, since the row's numbers are advisory", () => {
+    const dry = res({
+      spec: {
+        dryRun: true,
+        metrics: [{ type: "Resource", resource: { name: "cpu", highWatermark: "80", lowWatermark: "30" } }],
+      },
+    });
+    expect(autoscalerPressure(autoscalerSummary(dry, "wpa"))!.title).toContain("dry run");
+  });
+
+  test("names the limit in the tooltip when the autoscaler is capped", () => {
+    const capped = res({
+      spec: { metrics: [{ type: "Resource", resource: { name: "cpu", target: { averageUtilization: 80 } } }] },
+      status: { conditions: [{ type: "ScalingLimited", status: "True", reason: "TooManyReplicas" }] },
+    });
+    expect(autoscalerPressure(autoscalerSummary(capped, "hpa"))!.title).toContain("limited: TooManyReplicas");
+  });
+
+  test("has nothing to paint for an autoscaler with no metrics", () => {
+    expect(autoscalerPressure(undefined)).toBeNull();
+    expect(autoscalerPressure(autoscalerSummary(res({}), "hpa"))).toBeNull();
   });
 });
 
@@ -273,5 +443,68 @@ describe("usage meters", () => {
 
   test("a pod with no usage yet has no meter", () => {
     expect(usageMeter(res({}), "podMemory", NO_CONTEXT)).toBeNull();
+  });
+});
+
+describe("getCellValue — controllers, jobs, ingresses, secrets, nodes", () => {
+  const kind = (k: string, partial: Parameters<typeof res>[0]) => ({ ...res(partial), kind: k });
+
+  test("replicasets show desired/current/ready counters", () => {
+    const rs = kind("ReplicaSet", { spec: { replicas: 3 }, status: { replicas: 3, readyReplicas: 2 } });
+    expect(getCellValue(rs, "rsDesired")).toBe("3");
+    expect(getCellValue(rs, "rsCurrent")).toBe("3");
+    expect(getCellValue(rs, "rsReady")).toBe("2");
+    // Controllers omit zero counters; the cell says 0, not "-".
+    expect(getCellValue(kind("ReplicaSet", { spec: { replicas: 0 }, status: {} }), "rsReady")).toBe("0");
+  });
+
+  test("statefulsets and daemonsets", () => {
+    expect(getCellValue(kind("StatefulSet", { spec: { replicas: 2 }, status: { readyReplicas: 2 } }), "stsReady")).toBe("2/2");
+    const ds = kind("DaemonSet", { status: { desiredNumberScheduled: 3, currentNumberScheduled: 3, numberReady: 2, numberAvailable: 2 } });
+    expect(getCellValue(ds, "dsDesired")).toBe("3");
+    expect(getCellValue(ds, "dsReady")).toBe("2");
+    expect(getCellValue(ds, "dsAvailable")).toBe("2");
+  });
+
+  test("jobs: completions and duration", () => {
+    const job = kind("Job", { spec: { completions: 1 }, status: { succeeded: 1, startTime: "2026-09-04T12:00:00Z", completionTime: "2026-09-04T12:00:42Z" } });
+    expect(getCellValue(job, "jobCompletions")).toBe("1/1");
+    expect(getCellValue(job, "jobDuration")).toBe("42s");
+    expect(getCellValue(kind("Job", { status: {} }), "jobDuration")).toBe("-");
+  });
+
+  test("cronjobs: schedule, suspend, active, last schedule", () => {
+    const cj = kind("CronJob", { spec: { schedule: "*/2 * * * *", suspend: true }, status: { active: [{ name: "x" }], lastScheduleTime: new Date(Date.now() - 90_000).toISOString() } });
+    expect(getCellValue(cj, "cjSchedule")).toBe("*/2 * * * *");
+    expect(getCellValue(cj, "cjSuspend")).toBe("true");
+    expect(getCellValue(cj, "cjActive")).toBe("1");
+    expect(getCellValue(cj, "cjLastSchedule")).not.toBe("-");
+    expect(getCellValue(kind("CronJob", { spec: { schedule: "0 3 * * *" } }), "cjSuspend")).toBe("false");
+    expect(getCellValue(kind("CronJob", { spec: { schedule: "0 3 * * *" } }), "cjLastSchedule")).toBe("-");
+  });
+
+  test("ingresses: class, hosts and address", () => {
+    const ing = kind("Ingress", {
+      spec: { ingressClassName: "nginx", rules: [{ host: "shop.example.com" }, { host: "api.example.com" }] },
+      status: { loadBalancer: { ingress: [{ ip: "10.0.0.9" }] } },
+    });
+    expect(getCellValue(ing, "ingressClass")).toBe("nginx");
+    expect(getCellValue(ing, "ingressHosts")).toBe("shop.example.com, api.example.com");
+    expect(getCellValue(ing, "ingressAddress")).toBe("10.0.0.9");
+    expect(getCellValue(kind("Ingress", { spec: { rules: [{}] } }), "ingressHosts")).toBe("*");
+    expect(getCellValue(kind("Ingress", { spec: {} }), "ingressAddress")).toBe("-");
+  });
+
+  test("secret type lives at the top level, service type under spec", () => {
+    const secret = { ...res({ data: { a: "b" } }), kind: "Secret", type: "kubernetes.io/tls" };
+    expect(getCellValue(secret, "type")).toBe("kubernetes.io/tls");
+    expect(getCellValue(kind("Service", { spec: { type: "NodePort" } }), "type")).toBe("NodePort");
+  });
+
+  test("node status is its Ready condition", () => {
+    const ready = kind("Node", { status: { conditions: [{ type: "Ready", status: "True" }] } });
+    const notReady = kind("Node", { status: { conditions: [{ type: "Ready", status: "False", reason: "KubeletNotReady" }] } });
+    expect(getCellValue(ready, "status")).toBe("Ready");
+    expect(getCellValue(notReady, "status")).toBe("NotReady");
   });
 });

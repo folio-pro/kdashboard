@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { cn } from "$lib/utils";
-  import { Menu, MenuItem, MenuSeparator } from "$lib/components/ui";
+  import { Button, Menu, MenuItem, MenuSeparator } from "$lib/components/ui";
   import { uiStore, RESOURCE_TAB_TYPES, VIEW_LABELS, DEFAULT_TAB_ID, type Tab } from "$lib/stores/ui.svelte";
   import {
     Box, Layers, FileText, Terminal, Unplug, Settings,
     ScrollText, Network as TopologyIcon, DollarSign, Shield, Globe, X,
-    Pencil, Database,
+    Pencil, Database, ChevronDown,
   } from "lucide-svelte";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,6 +30,10 @@
     return iconMap[tab.type] ?? Box;
   }
 
+  function tabTitle(tab: Tab): string {
+    return tab.namespace ? `${tab.label} (${tab.namespace || "All"})` : tab.label;
+  }
+
   function handleMiddleClick(e: MouseEvent, tab: Tab) {
     if (e.button === 1 && tab.closable) {
       e.preventDefault();
@@ -36,11 +41,88 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Overflow. Tabs used to shrink to 80px, at which point a label truncated to
+  // its punctuation ("| 6", "( 2") while the count and icon survived. Now a tab
+  // never goes under TAB_MIN_WIDTH: the strip scrolls instead, the active tab
+  // is kept in view, the edges fade where there is more, and the chevron at the
+  // right end lists every tab so a 50-tab session stays navigable.
+  // ---------------------------------------------------------------------------
+
+  /** Below this a label is no longer a word. */
+  const TAB_MIN_WIDTH = 112;
+  /** Width at which a tab has room for its count as well as its label. */
+  const TAB_COMFORT_WIDTH = 150;
+
+  let stripEl: HTMLDivElement | undefined = $state();
+  let stripWidth = $state(0);
+  let scrollLeft = $state(0);
+  let scrollWidth = $state(0);
+
+  /** Once tabs would drop below their comfortable width the counts go first,
+   *  so what remains of each tab is its name. */
+  let crowded = $derived(stripWidth > 0 && uiStore.tabs.length * TAB_COMFORT_WIDTH > stripWidth);
+  let overflowsLeft = $derived(scrollLeft > 1);
+  let overflowsRight = $derived(scrollWidth - scrollLeft - stripWidth > 1);
+
+  function measure() {
+    if (!stripEl) return;
+    scrollLeft = stripEl.scrollLeft;
+    scrollWidth = stripEl.scrollWidth;
+  }
+
+  // Re-measure after the tab set or the available width changes. Reading the
+  // dependencies is the point; the measurement itself waits for the DOM.
+  $effect(() => {
+    void uiStore.tabs.length;
+    void stripWidth;
+    void crowded;
+    void tick().then(measure);
+  });
+
+  // Keep the active tab visible: a tab opened at the far end of a full strip
+  // was otherwise activated out of sight.
+  $effect(() => {
+    const id = uiStore.activeTabId;
+    const strip = stripEl;
+    if (!strip) return;
+    void tick().then(() => {
+      const el = [...strip.querySelectorAll<HTMLElement>("[role=tab]")].find((t) => t.dataset.tabId === id);
+      el?.scrollIntoView({ inline: "nearest", block: "nearest" });
+      measure();
+    });
+  });
+
+  // A mouse wheel has no horizontal axis; let it drive the strip anyway.
+  function handleWheel(e: WheelEvent) {
+    if (!stripEl || e.deltaX !== 0 || e.deltaY === 0) return;
+    if (stripEl.scrollWidth <= stripEl.clientWidth) return;
+    e.preventDefault();
+    stripEl.scrollLeft += e.deltaY;
+  }
+
+  // Overflow menu ("all tabs") state
+  let overflowOpen = $state(false);
+  let overflowMenuEl: HTMLDivElement | undefined = $state();
+
+  function toggleOverflow(e: MouseEvent) {
+    // The window listener that closes menus would otherwise see this click.
+    e.stopPropagation();
+    ctxMenu = null;
+    overflowOpen = !overflowOpen;
+  }
+
+  function pickTab(id: string) {
+    uiStore.activateTab(id);
+    overflowOpen = false;
+  }
+
   // Context menu state
   let ctxMenu = $state<{ x: number; y: number; tabId: string } | null>(null);
 
   function handleContextMenu(e: MouseEvent, tab: Tab) {
     e.preventDefault();
+    overflowOpen = false;
     ctxMenu = { x: e.clientX, y: e.clientY, tabId: tab.id };
   }
 
@@ -56,13 +138,16 @@
   let menuEl: HTMLDivElement | undefined = $state();
 
   $effect(() => {
-    if (!ctxMenu) return;
-    const handler = () => closeCtxMenu();
+    if (!ctxMenu && !overflowOpen) return;
+    const handler = () => {
+      closeCtxMenu();
+      overflowOpen = false;
+    };
     window.addEventListener("click", handler);
     return () => window.removeEventListener("click", handler);
   });
 
-  // Move focus into the menu when it opens. Without this the menu was
+  // Move focus into a menu when it opens. Without this the menu was
   // mouse-only: no roles, no focus and no key handling, so a keyboard user
   // could neither reach it nor escape it.
   $effect(() => {
@@ -70,20 +155,30 @@
     menuEl.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
   });
 
-  function handleMenuKeydown(e: KeyboardEvent) {
-    if (!menuEl) return;
+  $effect(() => {
+    if (!overflowOpen || !overflowMenuEl) return;
+    const current =
+      overflowMenuEl.querySelector<HTMLButtonElement>('button[aria-checked="true"]') ??
+      overflowMenuEl.querySelector<HTMLButtonElement>("button:not(:disabled)");
+    current?.focus();
+    current?.scrollIntoView({ block: "nearest" });
+  });
+
+  /** Escape closes; arrows, Home and End rove between the enabled rows. */
+  function menuKeydown(e: KeyboardEvent, menu: HTMLDivElement | undefined, close: () => void) {
+    if (!menu) return;
 
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      closeCtxMenu();
+      close();
       return;
     }
 
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
 
     e.preventDefault();
-    const items = [...menuEl.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+    const items = [...menu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
     if (items.length === 0) return;
 
     const current = items.indexOf(document.activeElement as HTMLButtonElement);
@@ -105,60 +200,133 @@
 <!-- Hidden while only the default Pods tab is open — same clean-start rule the
      old default Overview tab had. -->
 {#if uiStore.tabs.length > 1 || (uiStore.tabs.length === 1 && uiStore.tabs[0].id !== DEFAULT_TAB_ID)}
-  <div
-    class="flex h-[34px] shrink-0 items-stretch gap-0 overflow-x-auto bg-[var(--bg-primary)] px-2 pt-1"
-    role="tablist"
-  >
-    {#each uiStore.tabs as tab (tab.id)}
-      {@const isActive = uiStore.activeTabId === tab.id}
-      {@const Icon = getIcon(tab)}
-      <button
-        role="tab"
-        aria-selected={isActive}
-        class={cn(
-          "group relative flex max-w-[180px] min-w-[80px] items-center gap-1.5 px-3 text-[11px] transition-colors",
-          isActive
-            ? "rounded-t-md bg-[var(--bg-secondary)] text-[var(--text-primary)]"
-            : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-        )}
-        onclick={() => uiStore.activateTab(tab.id)}
-        onmousedown={(e) => handleMiddleClick(e, tab)}
-        oncontextmenu={(e) => handleContextMenu(e, tab)}
-        title={tab.namespace ? `${tab.label} (${tab.namespace || "All"})` : tab.label}
+  <div class="flex h-[34px] shrink-0 items-stretch bg-[var(--bg-primary)] pt-1">
+    <div class="relative min-w-0 flex-1">
+      <div
+        bind:this={stripEl}
+        bind:clientWidth={stripWidth}
+        class="tab-strip flex h-full items-stretch gap-0 overflow-x-auto overflow-y-hidden pl-2"
+        role="tablist"
+        onscroll={measure}
+        onwheel={handleWheel}
       >
-        {#if isActive}
-          <span class="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent)]"></span>
-        {/if}
-        <Icon class={cn("h-3 w-3 shrink-0", isActive && "text-[var(--accent)]")} />
-        {#if tab.resourceName && RESOURCE_TAB_TYPES.has(tab.type)}
-          <span class="shrink-0 font-semibold">{VIEW_LABELS[tab.type]}</span>
-          <span class="min-w-0 flex-1 truncate">{tab.resourceName}</span>
-        {:else}
-          <span class="min-w-0 flex-1 truncate">{tab.label}</span>
-        {/if}
-        {#if tab.count !== undefined && tab.count > 0}
-          <span class="shrink-0 tabular-nums text-[10px] text-[var(--text-muted)]">{tab.count}</span>
-        {/if}
-        {#if tab.closable}
-          <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-          <span
+        {#each uiStore.tabs as tab (tab.id)}
+          {@const isActive = uiStore.activeTabId === tab.id}
+          {@const Icon = getIcon(tab)}
+          <button
+            role="tab"
+            aria-selected={isActive}
+            data-tab-id={tab.id}
             class={cn(
-              "ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-all",
+              "group relative flex max-w-[180px] min-w-[112px] items-center gap-1.5 px-3 text-[11px] transition-colors",
               isActive
-                ? "opacity-50 hover:opacity-100 hover:bg-[var(--bg-tertiary)]"
-                : "opacity-0 group-hover:opacity-50 hover:opacity-100 hover:bg-[var(--bg-tertiary)]"
+                ? "rounded-t-md bg-[var(--bg-secondary)] text-[var(--text-primary)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
             )}
-            role="button"
-            tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); uiStore.closeTab(tab.id); }}
-            title="Close tab"
-            aria-label="Close {tab.label}"
+            onclick={() => uiStore.activateTab(tab.id)}
+            onmousedown={(e) => handleMiddleClick(e, tab)}
+            oncontextmenu={(e) => handleContextMenu(e, tab)}
+            title={tabTitle(tab)}
           >
-            <X class="h-3 w-3" />
-          </span>
-        {/if}
-      </button>
-    {/each}
+            {#if isActive}
+              <span class="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent)]"></span>
+            {/if}
+            <Icon class={cn("h-3 w-3 shrink-0", isActive && "text-[var(--accent)]")} />
+            {#if tab.resourceName && RESOURCE_TAB_TYPES.has(tab.type)}
+              <span class="shrink-0 font-semibold">{VIEW_LABELS[tab.type]}</span>
+              <span class="min-w-0 flex-1 truncate">{tab.resourceName}</span>
+            {:else}
+              <span class="min-w-0 flex-1 truncate">{tab.label}</span>
+            {/if}
+            {#if tab.count !== undefined && tab.count > 0 && !crowded}
+              <span class="shrink-0 tabular-nums text-[10px] text-[var(--text-muted)]">{tab.count}</span>
+            {/if}
+            {#if tab.closable}
+              <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+              <span
+                class={cn(
+                  "ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-all",
+                  isActive
+                    ? "opacity-50 hover:opacity-100 hover:bg-[var(--bg-tertiary)]"
+                    : "opacity-0 group-hover:opacity-50 hover:opacity-100 hover:bg-[var(--bg-tertiary)]"
+                )}
+                role="button"
+                tabindex="-1"
+                onclick={(e) => { e.stopPropagation(); uiStore.closeTab(tab.id); }}
+                title="Close tab"
+                aria-label="Close {tab.label}"
+              >
+                <X class="h-3 w-3" />
+              </span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+      <!-- Edge fades: the strip's scrollbar is hidden, so these say "more". -->
+      {#if overflowsLeft}
+        <div class="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-[var(--bg-primary)] to-transparent" aria-hidden="true"></div>
+      {/if}
+      {#if overflowsRight}
+        <div class="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--bg-primary)] to-transparent" aria-hidden="true"></div>
+      {/if}
+    </div>
+
+    <!-- Every tab, reachable regardless of how far the strip scrolls. -->
+    <div class="relative flex shrink-0 items-center px-1">
+      <Button
+        variant="muted"
+        size="icon-xs"
+        onclick={toggleOverflow}
+        aria-haspopup="menu"
+        aria-expanded={overflowOpen}
+        title="All tabs ({uiStore.tabs.length})"
+        aria-label="All tabs"
+        data-testid="tab-overflow"
+      >
+        <ChevronDown class="h-3.5 w-3.5" />
+      </Button>
+      {#if overflowOpen}
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <Menu
+          bind:ref={overflowMenuEl}
+          align="right"
+          role="menu"
+          tabindex={-1}
+          aria-label="Open tabs"
+          class="max-h-[60vh] min-w-[220px] max-w-[360px] overflow-y-auto"
+          onclick={(e) => e.stopPropagation()}
+          onkeydown={(e) => menuKeydown(e, overflowMenuEl, () => (overflowOpen = false))}
+        >
+          {#each uiStore.tabs as tab (tab.id)}
+            {@const Icon = getIcon(tab)}
+            <MenuItem
+              selected={uiStore.activeTabId === tab.id}
+              onclick={() => pickTab(tab.id)}
+              title={tabTitle(tab)}
+              class="flex items-center gap-2"
+            >
+              <Icon class="h-3 w-3 shrink-0" />
+              {#if tab.resourceName && RESOURCE_TAB_TYPES.has(tab.type)}
+                <span class="shrink-0 font-semibold">{VIEW_LABELS[tab.type]}</span>
+                <span class="min-w-0 flex-1 truncate">{tab.resourceName}</span>
+              {:else}
+                <span class="min-w-0 flex-1 truncate">{tab.label}</span>
+              {/if}
+              {#if tab.namespace}
+                <span class="shrink-0 truncate text-[10px] text-[var(--text-muted)]">{tab.namespace}</span>
+              {/if}
+              {#if tab.count !== undefined && tab.count > 0}
+                <span class="shrink-0 tabular-nums text-[10px] text-[var(--text-muted)]">{tab.count}</span>
+              {/if}
+            </MenuItem>
+          {/each}
+          <MenuSeparator />
+          <MenuItem role="menuitem" onclick={() => { uiStore.closeAllTabs(); overflowOpen = false; }}>
+            Close All
+          </MenuItem>
+        </Menu>
+      {/if}
+    </div>
   </div>
   <div class="h-px bg-[var(--border-color)]"></div>
 {/if}
@@ -175,7 +343,7 @@
     class="min-w-[180px]"
     style="left: {ctxMenu.x}px; top: {ctxMenu.y}px;"
     onclick={(e) => e.stopPropagation()}
-    onkeydown={handleMenuKeydown}
+    onkeydown={(e) => menuKeydown(e, menuEl, closeCtxMenu)}
   >
     {#if ctxTabObj?.closable}
       <MenuItem role="menuitem" onclick={() => ctxAction(() => uiStore.closeTab(ctxMenu!.tabId))}>
@@ -219,3 +387,14 @@
     </MenuItem>
   </Menu>
 {/if}
+
+<style>
+  /* The strip scrolls, but a scrollbar under a row of tabs reads as a second
+     row of chrome; the edge fades and the overflow menu carry the affordance. */
+  .tab-strip {
+    scrollbar-width: none;
+  }
+  .tab-strip::-webkit-scrollbar {
+    display: none;
+  }
+</style>

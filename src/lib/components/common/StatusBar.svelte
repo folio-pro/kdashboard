@@ -3,6 +3,9 @@
   import { cn } from "$lib/utils";
   import { Unplug, Bot } from "lucide-svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { openAppView } from "$lib/actions/navigation";
+  import { alertStore } from "$lib/stores/alerts.svelte";
+  import AlertsPopover from "./AlertsPopover.svelte";
   import { agentStore } from "$lib/stores/agent.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { extensions } from "$lib/extensions";
@@ -15,7 +18,15 @@
     error: "bg-[var(--status-failed)]",
   };
 
-  let statusColor = $derived(statusColors[k8sStore.connectionStatus] ?? "bg-[var(--text-muted)]");
+  // An outage mid-session outranks the boot-time "connected" (see Sidebar).
+  let statusColor = $derived(
+    k8sStore.reachable
+      ? (statusColors[k8sStore.connectionStatus] ?? "bg-[var(--text-muted)]")
+      : "bg-[var(--status-failed)]",
+  );
+  let statusTitle = $derived(
+    k8sStore.reachable ? `Connection ${k8sStore.connectionStatus}` : k8sStore.unreachableTooltip,
+  );
 
   // Hints come straight from the shortcut registry, so what the bar advertises
   // is by construction what the dispatcher implements.
@@ -36,8 +47,8 @@
   -->
   <div class="flex items-center gap-3">
     <!-- Connection Status -->
-    <div class="flex items-center gap-1.5">
-      <span class={cn("h-[7px] w-[7px] rounded-full", statusColor)}></span>
+    <div class="flex items-center gap-1.5" title={statusTitle}>
+      <span class={cn("h-[7px] w-[7px] rounded-full", statusColor)} role="img" aria-label={statusTitle}></span>
       <span class="font-medium text-[var(--text-secondary)]">{k8sStore.currentContext || "Disconnected"}</span>
     </div>
 
@@ -51,7 +62,7 @@
         k8sStore.portForwards.length > 0 && uiStore.activeView !== "portforwards" && "text-[var(--text-secondary)]"
       )}
       title="Port forwards"
-      onclick={() => uiStore.showView("portforwards")}
+      onclick={() => openAppView("portforwards")}
     >
       <Unplug class="h-3 w-3" />
       <span>{k8sStore.portForwards.length}</span>
@@ -76,6 +87,11 @@
         <span class="h-[6px] w-[6px] rounded-full bg-[var(--status-warning)]"></span>
       {/if}
     </button>
+
+    {#if alertStore.watched.length > 0}
+      <span class="h-3 w-px bg-[var(--border-color)]"></span>
+      <AlertsPopover />
+    {/if}
 
     {#if k8sStore.isLoading}
       <span class="h-3 w-px bg-[var(--border-color)]"></span>

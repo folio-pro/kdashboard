@@ -1,15 +1,6 @@
-// Connection handler group — ports the Tauri "connection" commands to
-// @kubernetes/client-node.
+// Connection handler group — kubeconfig contexts, namespaces, reachability.
 //
-// Rust sources ported (faithful 1:1):
-//   - src-tauri/src/k8s/context.rs   (list_contexts, get_current_context,
-//                                      set_context, list_namespaces)
-//   - src-tauri/src/k8s/client.rs    (resolve_kubeconfig_path / reset)
-//   - src-tauri/src/commands/k8s_commands.rs
-//       get_contexts / get_current_context / get_namespaces /
-//       switch_context / check_connection
-//
-// Commands implemented (EXACT Tauri command strings):
+// Commands implemented:
 //   - get_contexts        -> string[]   (context names from the kubeconfig file)
 //   - get_current_context -> string     (the `current-context` field)
 //   - get_namespaces      -> string[]   (namespace names via CoreV1Api)
@@ -20,8 +11,8 @@
 // Wire-casing notes:
 //   - The frontend calls invoke('switch_context', { context }) — the arg key is
 //     `context` (see src/lib/stores/k8s.svelte.ts + src/lib/benchmark/e2e-runner.ts).
-//   - All five commands return bare scalars / string arrays — no serde struct
-//     wrapping in the Rust originals, so no field-casing concerns here.
+//   - All five commands return bare scalars / string arrays — no struct
+//     wrapping, so there are no field-casing concerns here.
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -30,6 +21,7 @@ import * as path from 'node:path';
 import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
+import type { KubeconfigDoc } from '../k8s/kubeconfig-merge';
 import {
   getActiveContextName,
   getAuthorizationV1Api,
@@ -41,8 +33,8 @@ import {
 import { mapWithConcurrency } from '../util/concurrency';
 
 // ---------------------------------------------------------------------------
-// Return-type aliases — these mirror the Rust `Result<T, String>` payloads.
-// The renderer consumes them via invoke<string[]> / invoke<string> /
+// Return-type aliases. The renderer consumes them via
+// invoke<string[]> / invoke<string> /
 // invoke<boolean> (grep src/lib/stores/k8s.svelte.ts + benchmark/e2e-runner.ts).
 // ---------------------------------------------------------------------------
 
@@ -56,14 +48,13 @@ type ContextName = string;
 type Connected = boolean;
 
 // ---------------------------------------------------------------------------
-// Kubeconfig file resolution — faithful port of Rust resolve_kubeconfig_path().
-// Rust uses the persisted override (with ~ expansion) or ~/.kube/config.
-// It deliberately ignores $KUBECONFIG for path resolution, so we do too here:
+// Kubeconfig file resolution — the persisted override (with ~ expansion), else
+// ~/.kube/config. $KUBECONFIG is deliberately ignored for path resolution here:
 // `getKubeconfigPath()` returns the persisted override (settings) or null.
 // ---------------------------------------------------------------------------
 
 /** Expand a leading `~` to the user's home directory (mirrors expand_tilde). */
-function expandTilde(p: string): string {
+export function expandTilde(p: string): string {
   if (p.startsWith('~')) {
     const home = os.homedir();
     if (home) {
@@ -74,21 +65,27 @@ function expandTilde(p: string): string {
 }
 
 /** Default kubeconfig location: ~/.kube/config (mirrors default_kubeconfig_path). */
-function defaultKubeconfigPath(): string {
+export function defaultKubeconfigPath(): string {
   return path.join(os.homedir() || '.', '.kube', 'config');
 }
 
 /** Resolved path of the active kubeconfig file (mirrors resolve_kubeconfig_path). */
-function resolveKubeconfigPath(): string {
+export function resolveKubeconfigPath(): string {
   const override = getKubeconfigPath();
   return override ? expandTilde(override) : defaultKubeconfigPath();
 }
 
-/** Minimal shape of the kubeconfig YAML we touch. */
-interface KubeconfigYaml {
-  'current-context'?: unknown;
-  contexts?: Array<{ name?: unknown } | null> | unknown;
-  [key: string]: unknown;
+/** The parsed kubeconfig document — shared with the merge/remove logic. */
+type KubeconfigYaml = KubeconfigDoc;
+
+/**
+ * The active kubeconfig as a document, for handlers that rewrite it
+ * (import, remove context). A missing file reads as an empty document.
+ */
+export function readKubeconfigDoc(): { file: string; doc: KubeconfigDoc; exists: boolean } {
+  const file = resolveKubeconfigPath();
+  if (!fs.existsSync(file)) return { file, doc: {}, exists: false };
+  return { file, doc: readKubeconfigYaml(), exists: true };
 }
 
 /**
@@ -113,7 +110,7 @@ function readKubeconfigYaml(): KubeconfigYaml {
   }
   const contents = fs.readFileSync(file, 'utf8');
   const parsed = yamlLoad(contents);
-  // Mirror serde_yaml: an empty/scalar doc has no contexts / current-context.
+  // An empty or scalar document has no contexts / current-context.
   const yaml =
     parsed !== null && typeof parsed === 'object' ? (parsed as KubeconfigYaml) : {};
   kubeconfigCache = { file, mtimeMs: stat.mtimeMs, size: stat.size, yaml };
@@ -122,8 +119,8 @@ function readKubeconfigYaml(): KubeconfigYaml {
 
 // ---------------------------------------------------------------------------
 // list_contexts — read context names from the kubeconfig file.
-// Faithful to context.rs::list_contexts: parse the YAML, pull each
-// contexts[].name, skip entries without a name, default to [].
+// Parse the YAML, pull each contexts[].name, skip entries without a name,
+// default to [].
 // ---------------------------------------------------------------------------
 function listContexts(): NameList {
   const yaml = readKubeconfigYaml();
@@ -145,7 +142,7 @@ function listContexts(): NameList {
 
 // ---------------------------------------------------------------------------
 // get_current_context — read the `current-context` field from the file.
-// context.rs errors with "No current-context found in kubeconfig" when absent.
+// Errors with "No current-context found in kubeconfig" when absent.
 // ---------------------------------------------------------------------------
 function getCurrentContext(): ContextName {
   const yaml = readKubeconfigYaml();
@@ -160,14 +157,15 @@ function getCurrentContext(): ContextName {
 // set_context — write `current-context` back to the kubeconfig FILE, then
 // re-point the shared in-memory KubeConfig so subsequent Api calls use it.
 //
-// Rust context.rs::set_context writes the file and reset_client()s. We persist
-// to the same file (the benchmark relies on this — it restores the original
-// current-context afterwards) AND call setActiveContext() so the cached
-// KubeConfig is invalidated and re-points immediately (the Electron analogue of
-// reset_client()). Note: Rust does NOT validate the context exists before
-// writing, but setActiveContext() throws 'Context not found: <name>' if absent —
-// so we write the file first (matching Rust) and only then sync the in-memory
-// context, swallowing a not-found there to keep file-write behavior identical.
+// We persist to the kubeconfig file (the benchmark relies on this — it restores
+// the original current-context afterwards) AND call setActiveContext() so the
+// cached KubeConfig is invalidated and re-points immediately.
+//
+// Order matters: the file is written FIRST, the in-memory sync runs after.
+// setActiveContext() throws 'Context not found: <name>' for a context absent
+// from the file, and that error is NOT caught — switch_context rejects, but
+// only after the write has already landed. The file stays the source of truth
+// either way.
 // ---------------------------------------------------------------------------
 function setContext(context: string): void {
   const file = resolveKubeconfigPath();
@@ -187,7 +185,7 @@ function setContext(context: string): void {
 
 // ---------------------------------------------------------------------------
 // list_namespaces — namespace names via the Kubernetes API (CoreV1Api).
-// context.rs::list_namespaces: Api::all + ListParams::default, project .name.
+// Lists across all namespaces and projects .metadata.name.
 // ---------------------------------------------------------------------------
 async function listNamespaces(): Promise<NameList> {
   const core = getCoreV1Api();
@@ -261,7 +259,7 @@ async function filterNamespacesByAccess(names: string[]): Promise<string[]> {
 
 // ---------------------------------------------------------------------------
 // check_connection — probe the apiserver with a limit=1 namespace list.
-// k8s_commands.rs::check_connection: get_client() then ns list limit(1).
+// Build the client, then list namespaces with limit=1:
 //   - client build failure  -> "Failed to create client: <e>"
 //   - list failure          -> "Cluster unreachable: <e>"
 //   - success               -> true
@@ -312,10 +310,9 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
         throw new Error('switch_context requires a `context` string argument');
       }
       setContext(context);
-      // Rust also calls clear_k8s_version_cache() here; that cache is owned by
-      // the observability handler group. Re-pointing the shared KubeConfig via
-      // setActiveContext() already invalidates the connection; the version cache
-      // is cleared by that group's switch hook. Return () -> null.
+      // setContext() re-points the shared KubeConfig, which invalidates the
+      // cached config and fires the onConfigChange listeners (namespace access
+      // review, cost caches).
       return null;
     },
   );

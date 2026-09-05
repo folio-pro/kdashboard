@@ -19,13 +19,17 @@
   import ScaleDialog from "$lib/components/details/ScaleDialog.svelte";
   import DrainDialog from "$lib/components/details/DrainDialog.svelte";
   import CompareDialog from "$lib/components/details/CompareDialog.svelte";
+  import QuickEditDialog from "$lib/components/details/QuickEditDialog.svelte";
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
+  import WorkloadConfirmDialogs from "$lib/components/details/WorkloadConfirmDialogs.svelte";
   import AgentApprovalDialog from "$lib/components/agent/AgentApprovalDialog.svelte";
   import { agentStore } from "$lib/stores/agent.svelte";
   import { extensions } from "$lib/extensions";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore, RESOURCE_TAB_TYPES } from "$lib/stores/ui.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
+  import { portForwardStore } from "$lib/stores/port-forwards.svelte";
+  import { alertStore } from "$lib/stores/alerts.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { deleteResource } from "$lib/actions/registry";
   import { initKeyboardShortcuts } from "$lib/utils/keyboard";
@@ -144,6 +148,11 @@
     void k8sStore.loadAllResourceCounts().catch((err) => {
       console.error("[initApp] loadAllResourceCounts failed", err);
     });
+
+    // Saved forwards flagged auto-start come up with the restored context;
+    // alert polling starts only if something is watched.
+    portForwardStore.onContextConnected(k8sStore.currentContext);
+    alertStore.ensurePolling();
   }
 
   /**
@@ -265,6 +274,16 @@
             loader={() => import("$lib/components/crd/CrdTableView.svelte")}
             name="CRDs"
           />
+        {:else if uiStore.activeView === "overview"}
+          <LazyView
+            loader={() => import("$lib/components/overview/OverviewView.svelte")}
+            name="overview"
+          />
+        {:else if uiStore.activeView === "problems"}
+          <LazyView
+            loader={() => import("$lib/components/overview/ProblemsView.svelte")}
+            name="problems"
+          />
         {/if}
       </div>
 
@@ -299,6 +318,16 @@
   <ScaleDialog bind:open={dialogStore.scaleOpen} resource={dialogStore.scaleResource} />
 {/if}
 
+{#if dialogStore.quickEditOpen && dialogStore.quickEditResource}
+  <QuickEditDialog
+    bind:open={
+      () => dialogStore.quickEditOpen,
+      (v) => { if (!v) dialogStore.closeQuickEdit(); }
+    }
+    resource={dialogStore.quickEditResource}
+  />
+{/if}
+
 <!-- Always mounted: a Mutation Approval can arrive with no other dialog open. -->
 <AgentApprovalDialog />
 
@@ -317,6 +346,8 @@
     resource={dialogStore.compareResource}
   />
 {/if}
+
+<WorkloadConfirmDialogs />
 
 {#if dialogStore.deleteOpen && dialogStore.deleteResource}
   <ConfirmDialog

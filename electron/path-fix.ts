@@ -2,9 +2,8 @@
 //
 // On macOS (and Linux) a GUI app launched from Finder/Dock does NOT inherit the
 // login shell's PATH, so bare-command spawns (kubectl, trivy, grype, cloud auth
-// plugins) fail even though they work in a terminal. Faithful port of the Rust
-// fix_path_env() in src-tauri/src/lib.rs: run the user's login shell once,
-// capture its PATH, and adopt it into process.env.
+// plugins) fail even though they work in a terminal. The fix: run the user's
+// login shell once, capture its PATH, and adopt it into process.env.
 //
 // Must run BEFORE app.whenReady() / any spawn. No-op on Windows and when not
 // packaged-from-GUI (a terminal launch already has the right PATH, and re-running

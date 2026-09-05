@@ -1,4 +1,4 @@
-import { Palette, Container, Keyboard } from "lucide-svelte";
+import { Palette, Container, Keyboard, Puzzle } from "lucide-svelte";
 
 export interface ThemeOption {
   id: string;
@@ -47,6 +47,7 @@ export const TABS = [
   { id: "general", label: "General", icon: Palette },
   { id: "kubernetes", label: "Kubernetes", icon: Container },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
+  { id: "extensions", label: "Extensions", icon: Puzzle },
 ] as const;
 
 export type TabId = string;

@@ -21,20 +21,49 @@
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { extensions } from "$lib/extensions";
   import { restartWorkload, rollbackDeployment, SCALABLE_TYPES, RESTARTABLE_TYPES } from "$lib/actions/registry";
-  import { navigateToResourceTable, navigateToCrdTable, switchContext } from "$lib/actions/navigation";
+  import { navigateToResourceTable, navigateToCrdTable, switchContext, openResourceDetail, openAppView, isAppView } from "$lib/actions/navigation";
   import { toastStore } from "$lib/stores/toast.svelte";
   import type { CommandPaletteItem } from "$lib/types";
+  import { getCellValue } from "$lib/components/table/cell-values";
+  import { resourceTypeLabel } from "$lib/resource-catalog";
   import {
     CATEGORY_ORDER,
     filterCommandItems,
     groupByCategory,
     orderGroups,
   } from "./command-palette";
+  import { resourceSearch } from "$lib/stores/resource-search.svelte";
 
   let query = $state("");
   let selectedIndex = $state(0);
 
+  // Global resource search: objects by name across kinds and namespaces, via
+  // the resource-search store (lists lazily while the palette is open).
+  let searchable = $derived(resourceSearch.active);
+  $effect(() => {
+    resourceSearch.setQuery(uiStore.commandPaletteOpen ? query : "");
+  });
+  let searchItems = $derived.by((): CommandPaletteItem[] => {
+    return resourceSearch.results.map(({ resource, resourceType }) => {
+      const ns = resource.metadata.namespace;
+      const status = getCellValue(resource, "status", { ageTick: 0 });
+      const where = [resourceTypeLabel(resourceType), ns].filter(Boolean).join(" · ");
+      return {
+        id: `search:${resourceType}:${ns ?? ""}/${resource.metadata.name}`,
+        label: resource.metadata.name,
+        description: status && status !== "-" ? `${where} · ${status}` : where,
+        category: "Search Results",
+        icon: resourceIcon(resourceType),
+        action: () => {
+          openResourceDetail(resource, resourceType);
+          close();
+        },
+      };
+    });
+  });
+
   const resourceTypes = RESOURCE_ITEMS.filter((i) => !i.virtual);
+  const appViews = RESOURCE_ITEMS.filter((i) => i.virtual && isAppView(i.type));
 
   const scalableTypes = SCALABLE_TYPES;
   const restartableTypes = RESTARTABLE_TYPES;
@@ -178,6 +207,20 @@
       });
     }
 
+    // --- App views (Overview, Problems, Topology, …) ---
+    for (const view of appViews) {
+      items.push({
+        id: `resource-${view.type}`,
+        label: view.name,
+        description: `Open ${view.name}`,
+        category: "Resources",
+        action: () => {
+          if (isAppView(view.type)) openAppView(view.type);
+          close();
+        },
+      });
+    }
+
     // --- CRD Resources ---
     for (const group of k8sStore.crdGroups) {
       for (const crd of group.resources) {
@@ -286,7 +329,9 @@
     return items;
   });
 
-  let filteredItems = $derived.by(() => filterCommandItems(allItems, query));
+  // Search hits are already ranked against the query (including its ns:/kind:
+  // filters), so they bypass the token filter the static items go through.
+  let filteredItems = $derived.by(() => [...searchItems, ...filterCommandItems(allItems, query)]);
 
   let groupedItems = $derived.by(() => groupByCategory(filteredItems));
 
@@ -368,13 +413,17 @@
     <div onkeydown={handleKeydown}>
       <Command>
         <CommandInput
-          placeholder="Search resources, contexts, actions..."
+          placeholder="Search by name across the cluster, or contexts and actions… (ns: kind:)"
           value={query}
           oninput={(e: Event) => { query = (e.target as HTMLInputElement).value; }}
         />
         <CommandList class="max-h-[50vh]">
           {#if filteredItems.length === 0}
-            <CommandEmpty>No results found — try different keywords</CommandEmpty>
+            {#if searchable && resourceSearch.loading}
+              <CommandEmpty>Searching the cluster…</CommandEmpty>
+            {:else}
+              <CommandEmpty>No results found — try different keywords</CommandEmpty>
+            {/if}
           {/if}
           {#each orderedGroups as [category, items], groupIdx}
             {#if groupIdx > 0}
@@ -391,6 +440,8 @@
                   )}
                   onclick={() => item.action()}
                   onmouseenter={() => (selectedIndex = globalIndex)}
+                  aria-selected={globalIndex === selectedIndex}
+                  data-selected={globalIndex === selectedIndex ? "true" : undefined}
                 >
                   <IconComp class="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
                   <div class="flex-1">
@@ -416,6 +467,11 @@
         <span class="flex items-center gap-1.5"><Kbd class="px-1">↑↓</Kbd> Navigate</span>
         <span class="flex items-center gap-1.5"><Kbd class="px-1">↵</Kbd> Open</span>
         <span class="flex items-center gap-1.5"><Kbd class="px-1">esc</Kbd> Close</span>
+        {#if searchable}
+          <span class="ml-auto">
+            {#if resourceSearch.loading}Searching…{:else}{searchItems.length} resource{searchItems.length === 1 ? "" : "s"} matched{/if}
+          </span>
+        {/if}
       </div>
     </div>
   </DialogContent>

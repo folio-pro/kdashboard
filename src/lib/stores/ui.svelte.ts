@@ -3,7 +3,6 @@ import { unshadowState } from "./_unshadow.js";
 import {
   UiStoreLogic,
   type ActiveView,
-  type DetailSubtab,
   type Tab,
   RESOURCE_TAB_TYPES,
   VIEW_LABELS,
@@ -33,7 +32,8 @@ class UiStore extends UiStoreLogic {
   // No activeView field: it is a getter over activeTab.type on UiStoreLogic,
   // and reactive by virtue of reading the `tabs` / `activeTabId` state below.
   override previousView = $state<ActiveView | null>(null);
-  override detailSubtab = $state<DetailSubtab>("overview");
+  // No detailSubtab field: it is a per-tab getter/setter on UiStoreLogic,
+  // reactive through the deep `tabs` state below.
 
   // Tab system
   override tabs = $state<Tab[]>([mkPodsTab()]);
@@ -84,7 +84,7 @@ class UiStore extends UiStoreLogic {
         // we'd only discard.
         void this.activeTabId;
         for (const t of this.tabs) {
-          void t.filter; void t.sortColumn; void t.sortDirection;
+          void t.filter; void t.facets; void t.sortColumn; void t.sortDirection;
           void t.statFilter; void t.label; void t.resourceName;
           void t.resourceType; void t.namespace;
         }

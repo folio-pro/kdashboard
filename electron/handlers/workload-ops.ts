@@ -1,7 +1,5 @@
 // Handler module: workload-ops
 //
-// Ports src-tauri/src/k8s/resources/operations.rs to @kubernetes/client-node.
-//
 // Commands:
 //   apply_yaml               -> apply (create-or-update) a resource from a YAML string (server-side apply)
 //   delete_resource          -> delete a single resource by kind/name/namespace (+ uid/resourceVersion preconditions)
@@ -9,16 +7,21 @@
 //   restart_workload         -> patch pod-template restartedAt annotation
 //   rollback_deployment      -> copy a target ReplicaSet's pod template onto the Deployment
 //   list_deployment_revisions-> list owned ReplicaSets as revisions, newest first
+//   trigger_cronjob          -> create a Job from a CronJob's jobTemplate (kubectl create job --from)
+//   set_cronjob_suspend      -> patch spec.suspend on a CronJob
+//   rerun_job                -> create a fresh Job from an existing Job's spec
 //
-// All field projections, serde wire casing, and error messages mirror the Rust
-// originals. The Svelte UI (src/lib/components/details/revision-history-card.logic.ts)
+// The Svelte UI (src/lib/components/details/revision-history-card.logic.ts)
 // consumes RevisionInfo with snake_case fields — matched exactly below.
 
 import {
   AppsV1Api,
+  BatchV1Api,
   KubernetesObjectApi,
   PatchStrategy,
   type KubernetesObject,
+  type V1CronJob,
+  type V1Job,
   type V1ReplicaSet,
 } from '@kubernetes/client-node';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
@@ -34,8 +37,8 @@ import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 
 /**
  * Summary of a Deployment revision surfaced in the UI for rollback selection.
- * Field names are snake_case to match the Rust serde output and the TS
- * interface in src/lib/components/details/revision-history-card.logic.ts.
+ * Field names are snake_case to match the TS interface in
+ * src/lib/components/details/revision-history-card.logic.ts.
  */
 export interface RevisionInfo {
   revision: number;
@@ -44,6 +47,8 @@ export interface RevisionInfo {
   images: string[];
   replicas: number;
   is_current: boolean;
+  /** The revision's pod template as YAML, for diffing two revisions. */
+  template_yaml: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,7 +64,7 @@ interface KindInfo {
 
 /**
  * Resolve apiVersion + Kind for a kind string, via the canonical kind registry
- * (electron/k8s/kinds.ts). Throws the same unsupported-kind error as Rust.
+ * (electron/k8s/kinds.ts). Throws on an unsupported kind.
  */
 function apiResourceForKind(kind: string): KindInfo {
   const entry = resolveKindOrThrow(kind);
@@ -95,8 +100,158 @@ function appsApi(): AppsV1Api {
   return kc().makeApiClient(AppsV1Api);
 }
 
+function batchApi(): BatchV1Api {
+  return kc().makeApiClient(BatchV1Api);
+}
+
 // ---------------------------------------------------------------------------
-// ReplicaSet revision helpers (ported from operations.rs)
+// Job construction helpers (pure — unit-tested in workload-ops.test.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * A Job's name is also its `job-name` label, so it is capped at 63 characters
+ * (label value limit), not the 253 of a DNS subdomain. Trim the base to make
+ * room for the suffix, never leaving a trailing dash.
+ */
+export function jobNameWithSuffix(base: string, suffix: string, max: number = 63): string {
+  const room = max - suffix.length - 1;
+  let head = base.length > room ? base.slice(0, room) : base;
+  head = head.replace(/[-.]+$/, '');
+  return `${head}-${suffix}`;
+}
+
+/** Characters the apiserver appends to `metadata.generateName`. */
+const GENERATE_NAME_TAIL = 5;
+
+/**
+ * `<base>-<suffix>-` for `metadata.generateName`: the apiserver adds a random
+ * 5-character tail, so two triggers in the same second cannot collide on the
+ * name (a fixed `<base>-<suffix>` was rejected with AlreadyExists). Trimmed so
+ * the final name still fits the 63-character label limit.
+ */
+export function jobGenerateName(base: string, suffix: string): string {
+  return `${jobNameWithSuffix(base, suffix, 63 - GENERATE_NAME_TAIL - 1)}-`;
+}
+
+/** Labels the Job controller stamps on a Job and its pods; never copy them. */
+const CONTROLLER_LABEL_RE = /^(controller-uid|job-name|batch\.kubernetes\.io\/.*)$/;
+
+function stripControllerLabels(labels: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!labels) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(labels)) {
+    if (!CONTROLLER_LABEL_RE.test(k)) out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Build the Job that `kubectl create job --from=cronjob/<name>` would create:
+ * the CronJob's jobTemplate, named `<cronjob>-manual-<unix-ts>-<random>`, annotated as a
+ * manual instantiation and owned by the CronJob so history limits and
+ * cascading deletes treat it like a scheduled run.
+ */
+export function buildManualJob(cronJob: V1CronJob, now: Date = new Date()): V1Job {
+  const cjName = cronJob.metadata?.name;
+  const namespace = cronJob.metadata?.namespace;
+  const uid = cronJob.metadata?.uid;
+  if (!cjName || !namespace || !uid) {
+    throw new Error('CronJob is missing metadata.name, metadata.namespace or metadata.uid');
+  }
+  const template = cronJob.spec?.jobTemplate;
+  if (!template?.spec) {
+    throw new Error(`CronJob ${cjName} has no jobTemplate.spec to run`);
+  }
+  const ts = Math.floor(now.getTime() / 1000);
+  return {
+    apiVersion: 'batch/v1',
+    kind: 'Job',
+    metadata: {
+      generateName: jobGenerateName(cjName, `manual-${ts}`),
+      namespace,
+      labels: template.metadata?.labels ? { ...template.metadata.labels } : undefined,
+      annotations: {
+        ...(template.metadata?.annotations ?? {}),
+        'cronjob.kubernetes.io/instantiate': 'manual',
+      },
+      ownerReferences: [
+        {
+          apiVersion: 'batch/v1',
+          kind: 'CronJob',
+          name: cjName,
+          uid,
+          controller: false,
+          blockOwnerDeletion: false,
+        },
+      ],
+    },
+    spec: JSON.parse(JSON.stringify(template.spec)) as V1Job['spec'],
+  };
+}
+
+/**
+ * Build a fresh Job from an existing (typically failed) Job: same spec, minus
+ * everything the Job controller owns — the generated selector, the
+ * `controller-uid` / `job-name` / `batch.kubernetes.io/*` labels on the Job
+ * and on its pod template — and minus status and server-set metadata. A
+ * template-only copy would be rejected by the apiserver as a selector
+ * mismatch; a copy that kept the labels would adopt the old Job's pods.
+ */
+export function buildRerunJob(job: V1Job, now: Date = new Date()): V1Job {
+  const name = job.metadata?.name;
+  const namespace = job.metadata?.namespace;
+  if (!name || !namespace) {
+    throw new Error('Job is missing metadata.name or metadata.namespace');
+  }
+  if (!job.spec?.template) {
+    throw new Error(`Job ${name} has no pod template to re-run`);
+  }
+  const spec = JSON.parse(JSON.stringify(job.spec)) as NonNullable<V1Job['spec']>;
+  delete spec.selector;
+  // The old Job's `manualSelector: true` (if any) only made sense with the
+  // selector it was paired with; drop it so the controller generates a fresh one.
+  delete spec.manualSelector;
+  if (spec.template.metadata) {
+    spec.template.metadata.labels = stripControllerLabels(spec.template.metadata.labels);
+    if (spec.template.metadata.labels === undefined) delete spec.template.metadata.labels;
+    if (Object.keys(spec.template.metadata).length === 0) delete spec.template.metadata;
+  }
+  const ts = Math.floor(now.getTime() / 1000);
+  const labels = stripControllerLabels(job.metadata?.labels);
+  const annotations: Record<string, string> = { ...(job.metadata?.annotations ?? {}) };
+  delete annotations['kubectl.kubernetes.io/last-applied-configuration'];
+  delete annotations['batch.kubernetes.io/job-tracking'];
+  annotations['kdashboard.io/rerun-of'] = name;
+  const cronJobOwners = (job.metadata?.ownerReferences ?? []).filter(
+    (ref) => ref.apiVersion === 'batch/v1' && ref.kind === 'CronJob',
+  );
+  return {
+    apiVersion: 'batch/v1',
+    kind: 'Job',
+    metadata: {
+      generateName: jobGenerateName(name, `rerun-${ts}`),
+      namespace,
+      ...(labels ? { labels } : {}),
+      annotations,
+      // A Job spawned by a CronJob keeps pointing at it so history limits
+      // apply. Any other owner (an operator's CR, a workflow step) is not
+      // copied: the garbage collector would delete the rerun with it.
+      ...(cronJobOwners.length > 0
+        ? {
+            ownerReferences: cronJobOwners.map((ref) => ({
+              ...ref,
+              controller: false,
+              blockOwnerDeletion: false,
+            })),
+          }
+        : {}),
+    },
+    spec,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ReplicaSet revision helpers
 // ---------------------------------------------------------------------------
 
 const REVISION_ANNOTATION = 'deployment.kubernetes.io/revision';
@@ -105,7 +260,7 @@ const REVISION_ANNOTATION = 'deployment.kubernetes.io/revision';
 function rsRevision(rs: V1ReplicaSet): number {
   const raw = rs.metadata?.annotations?.[REVISION_ANNOTATION];
   if (raw === undefined) return 0;
-  // Rust parses into u64 — reject anything that isn't a clean non-negative integer.
+  // Reject anything that isn't a clean non-negative integer.
   if (!/^\d+$/.test(raw.trim())) return 0;
   const n = Number(raw);
   return Number.isFinite(n) ? n : 0;
@@ -119,6 +274,26 @@ function rsImages(rs: V1ReplicaSet): string[] {
     if (typeof c.image === 'string') images.push(c.image);
   }
   return images;
+}
+
+/**
+ * The revision's pod template as YAML, minus the `pod-template-hash` label the
+ * Deployment controller stamps on every ReplicaSet: it differs between any
+ * two revisions by construction and would bury the real change in the diff.
+ */
+export function revisionTemplateYaml(rs: V1ReplicaSet): string {
+  const template = rs.spec?.template;
+  if (!template) return '';
+  const copy = JSON.parse(JSON.stringify(template)) as {
+    metadata?: { labels?: Record<string, string> } & Record<string, unknown>;
+  };
+  const labels = copy.metadata?.labels;
+  if (labels) {
+    delete labels['pod-template-hash'];
+    if (Object.keys(labels).length === 0) delete copy.metadata!.labels;
+  }
+  if (copy.metadata && Object.keys(copy.metadata).length === 0) delete copy.metadata;
+  return stringifyYaml(copy);
 }
 
 /**
@@ -211,7 +386,7 @@ async function applyYaml(args: Record<string, unknown>): Promise<string> {
     throw new Error('YAML must contain metadata.name');
   }
 
-  // namespace defaults to "default" (mirrors the Rust unwrap_or("default")).
+  // namespace defaults to "default".
   if (metaObj && typeof metaObj.namespace !== 'string') {
     metaObj.namespace = 'default';
   }
@@ -389,6 +564,7 @@ async function listDeploymentRevisions(args: Record<string, unknown>): Promise<R
       images: rsImages(rs),
       replicas: rs.status?.replicas ?? 0,
       is_current: idx === currentIdx,
+      template_yaml: revisionTemplateYaml(rs),
     };
   });
 }
@@ -464,6 +640,88 @@ async function rollbackDeployment(args: Record<string, unknown>): Promise<string
   }
 
   return `Rolled back to revision ${targetRev}`;
+}
+
+/**
+ * trigger_cronjob: create a Job from the CronJob's jobTemplate right now.
+ * Returns the created Job's name so the UI can point at it.
+ */
+async function triggerCronJob(args: Record<string, unknown>): Promise<{ name: string; namespace: string }> {
+  const name = reqStr(args, 'name');
+  const namespace = reqStr(args, 'namespace');
+
+  let cronJob: V1CronJob;
+  try {
+    cronJob = await batchApi().readNamespacedCronJob({ name, namespace });
+  } catch (err) {
+    throw new Error(`Could not read CronJob ${namespace}/${name}: ${k8sErrorMessage(err)}`);
+  }
+
+  const job = buildManualJob(cronJob);
+  try {
+    const created = await batchApi().createNamespacedJob({ namespace, body: job });
+    return { name: created.metadata?.name ?? job.metadata!.generateName!, namespace };
+  } catch (err) {
+    throw new Error(`Could not create Job from CronJob ${name}: ${k8sErrorMessage(err)}`);
+  }
+}
+
+/**
+ * set_cronjob_suspend: patch spec.suspend (true pauses scheduling, false
+ * resumes it) via a merge patch.
+ */
+async function setCronJobSuspend(args: Record<string, unknown>): Promise<null> {
+  const name = reqStr(args, 'name');
+  const namespace = reqStr(args, 'namespace');
+  const suspend = args.suspend;
+  if (typeof suspend !== 'boolean') {
+    throw new Error("Missing or invalid 'suspend' argument (expected true or false)");
+  }
+
+  const patchSpec = {
+    apiVersion: 'batch/v1',
+    kind: 'CronJob',
+    metadata: { name, namespace },
+    spec: { suspend },
+  } as unknown as KubernetesObject;
+
+  try {
+    await objectApi().patch(
+      patchSpec,
+      undefined, // pretty
+      undefined, // dryRun
+      undefined, // fieldManager
+      undefined, // force
+      PatchStrategy.MergePatch,
+    );
+    return null;
+  } catch (err) {
+    throw new Error(`Could not ${suspend ? 'suspend' : 'resume'} CronJob ${name}: ${k8sErrorMessage(err)}`);
+  }
+}
+
+/**
+ * rerun_job: create a new Job with the same spec as an existing one (see
+ * buildRerunJob for what is stripped). Returns the new Job's name.
+ */
+async function rerunJob(args: Record<string, unknown>): Promise<{ name: string; namespace: string }> {
+  const name = reqStr(args, 'name');
+  const namespace = reqStr(args, 'namespace');
+
+  let job: V1Job;
+  try {
+    job = await batchApi().readNamespacedJob({ name, namespace });
+  } catch (err) {
+    throw new Error(`Could not read Job ${namespace}/${name}: ${k8sErrorMessage(err)}`);
+  }
+
+  const fresh = buildRerunJob(job);
+  try {
+    const created = await batchApi().createNamespacedJob({ namespace, body: fresh });
+    return { name: created.metadata?.name ?? fresh.metadata!.generateName!, namespace };
+  } catch (err) {
+    throw new Error(`Could not re-run Job ${name}: ${k8sErrorMessage(err)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -553,4 +811,7 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
   handlers.set('update_container_resources', async (args) => updateContainerResources(args));
   handlers.set('rollback_deployment', async (args) => rollbackDeployment(args));
   handlers.set('list_deployment_revisions', async (args) => listDeploymentRevisions(args));
+  handlers.set('trigger_cronjob', async (args) => triggerCronJob(args));
+  handlers.set('set_cronjob_suspend', async (args) => setCronJobSuspend(args));
+  handlers.set('rerun_job', async (args) => rerunJob(args));
 }

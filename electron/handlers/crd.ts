@@ -1,26 +1,22 @@
-// CRD handler group — ports the Tauri "crd" commands to @kubernetes/client-node.
+// CRD handler group — custom resource discovery, listing, counts, conditions.
 //
-// Rust sources ported (faithful 1:1):
-//   - src-tauri/src/k8s/crd/discovery.rs   (discover_crds + sensitive-field deny list)
-//   - src-tauri/src/k8s/crd/listing.rs     (list_crd_resources + paging)
-//   - src-tauri/src/k8s/crd/counts.rs      (get_crd_counts, concurrency-limited)
-//   - src-tauri/src/k8s/crd/schema.rs      (additionalPrinterColumns + heuristics)
-//   - src-tauri/src/k8s/crd/types.rs       (extract_conditions)
-//   - src-tauri/src/commands/k8s_commands.rs (the #[tauri::command] wrappers)
-//
-// Commands implemented (EXACT Tauri command strings):
+// Commands implemented:
 //   - discover_crds          (args: {})
 //   - list_crd_resources     (args: { group, version, kind, plural, scope, namespace? })
 //   - get_crd_counts         (args: { crds: CrdInfo[], namespace?: string | null })
 //   - get_crd_conditions     (args: { resource: Resource })
+//
+// Also exported for the watch handler: parseCrdType / resolveCrdType turn the
+// renderer's `crd:<group>/<Kind>` pseudo-type into the discovered CrdInfo, so
+// a CRD table can be watched through start_resource_watch like a built-in.
 //
 // Wire-casing notes (frontend is source of truth):
 //   - list_crd_resources: src/lib/stores/k8s.svelte.ts sends
 //       { group, version, kind, plural, scope, namespace } — namespace is `null`
 //       for Cluster-scoped CRDs.
 //   - get_crd_counts: sends { crds, namespace }; result keyed `group/kind`.
-//   - get_crd_conditions: returns StatusCondition[] (serde renames `type`,
-//       optional reason/message/last_transition_time omitted when absent).
+//   - get_crd_conditions: returns StatusCondition[] (optional reason / message
+//       / last_transition_time are omitted when absent).
 //
 // Resource projection (meta_from + dynamicToResource) is shared with the
 // resources and watch paths — see electron/k8s/resource-mapping.ts.
@@ -32,17 +28,17 @@ import {
 } from '@kubernetes/client-node';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
-import { getActiveContextName, makeApiClient } from '../k8s/client';
+import { getActiveContextName, makeApiClient, onConfigChange } from '../k8s/client';
 import type { RawObject, Resource } from '../k8s/resource-types';
-import { dynamicToResource } from '../k8s/resource-mapping';
+import { listDynamicToResource } from '../k8s/resource-mapping';
 import { apiGet } from '../k8s/api';
+import { createTtlCache } from '../util/ttl-cache';
 
 // ===========================================================================
-// Result types — mirror the serde wire-casing of the Rust crd/types.rs structs.
+// Result types — snake_case wire casing, consumed by the renderer CRD stores.
 // ===========================================================================
 
-/** crd/types.rs CrdInfo. */
-interface CrdInfo {
+export interface CrdInfo {
   group: string;
   version: string;
   kind: string;
@@ -51,13 +47,23 @@ interface CrdInfo {
   short_names: string[];
 }
 
-/** crd/types.rs CrdGroup. */
+/** Pseudo resource_type the renderer uses for a custom resource: `crd:<group>/<Kind>`. */
+export const CRD_TYPE_PREFIX = 'crd:';
+
+/** `crd:<group>/<Kind>` -> { group, kind }, or undefined for anything else. */
+export function parseCrdType(resourceType: string): { group: string; kind: string } | undefined {
+  if (!resourceType.startsWith(CRD_TYPE_PREFIX)) return undefined;
+  const rest = resourceType.slice(CRD_TYPE_PREFIX.length);
+  const slash = rest.lastIndexOf('/');
+  if (slash <= 0 || slash === rest.length - 1) return undefined;
+  return { group: rest.slice(0, slash), kind: rest.slice(slash + 1) };
+}
+
 interface CrdGroup {
   group: string;
   resources: CrdInfo[];
 }
 
-/** crd/types.rs CrdColumn. */
 interface CrdColumn {
   name: string;
   json_path: string;
@@ -65,15 +71,16 @@ interface CrdColumn {
   description: string;
 }
 
-/** crd/types.rs CrdResourceList. */
 interface CrdResourceList {
   items: Resource[];
   columns: CrdColumn[];
+  /** resourceVersion of the listing, so a watch can resume from it (see resources.ts). */
+  resource_version?: string;
 }
 
 /**
- * crd/types.rs StatusCondition — `type_` renames to `type`; reason / message /
- * last_transition_time are `skip_serializing_if = Option::is_none` (omitted).
+ * A resource's status condition. reason / message / last_transition_time are
+ * omitted when absent.
  */
 interface StatusCondition {
   type: string;
@@ -84,7 +91,7 @@ interface StatusCondition {
 }
 
 // ===========================================================================
-// Sensitive-field deny list (mirror discovery.rs).
+// Sensitive-field deny list.
 // ===========================================================================
 
 const SENSITIVE_FIELD_PATTERNS = [
@@ -108,11 +115,11 @@ function isSensitiveField(name: string): boolean {
 // discover_crds — list CustomResourceDefinitions grouped by API group.
 // ===========================================================================
 //
-// The Rust used kube::discovery::Discovery (which enumerates ALL groups and
-// then filters out the built-in ones via a deny-list). Listing CRD objects via
-// apiextensions.k8s.io is the faithful @kubernetes/client-node analog: CRD
-// objects are by definition the user-defined groups, so no built-in deny-list
-// is needed. We emit one CrdInfo per CRD using its storage/served version.
+// Listing CRD objects via apiextensions.k8s.io is the primary path: CRD objects
+// are by definition the user-defined groups, so no built-in deny-list is needed
+// here. We emit one CrdInfo per CRD using its storage/served version. The
+// discovery-API fallback below does need a deny-list, since /apis enumerates
+// every group including the built-ins.
 
 interface CrdSpecVersion {
   name?: string;
@@ -131,9 +138,9 @@ function preferredVersion(crd: V1CustomResourceDefinition): string | undefined {
   return versions[0]?.name;
 }
 
-// Built-in API groups excluded from discovery-based CRD listing (mirror of the
-// Rust discovery.rs deny-list). Only used by the discovery fallback — the CRD
-// object path is by definition user-defined groups.
+// Built-in API groups excluded from discovery-based CRD listing. Only used by
+// the discovery fallback — the CRD object path is by definition user-defined
+// groups.
 const BUILTIN_GROUPS = new Set([
   '',
   'apps',
@@ -182,10 +189,9 @@ interface DiscoveryResourceList {
 }
 
 /**
- * Fallback: enumerate groups via the discovery API (`/apis`) like the Rust
- * kube::discovery::Discovery did. Needs no RBAC beyond API-server access, so
- * it works for users who cannot list CRD objects at cluster scope (e.g. GKE
- * without container.customResourceDefinitions.list).
+ * Fallback: enumerate groups via the discovery API (`/apis`). Needs no RBAC
+ * beyond API-server access, so it works for users who cannot list CRD objects
+ * at cluster scope (e.g. GKE without container.customResourceDefinitions.list).
  */
 async function discoverCrdsViaDiscovery(): Promise<CrdGroup[]> {
   const groupList = await apiGet<DiscoveryGroupList>('/apis');
@@ -265,9 +271,8 @@ async function discoverCrds(): Promise<CrdGroup[]> {
     const apiext = makeApiClient(ApiextensionsV1Api);
     return groupCrdObjects((await apiext.listCustomResourceDefinition()).items);
   } catch {
-    // Listing CRD objects needs cluster-scope RBAC many users lack. The Tauri
-    // build used the discovery API and therefore worked for them — keep that
-    // behavior as the fallback path.
+    // Listing CRD objects needs cluster-scope RBAC many users lack; the
+    // discovery API does not. Fall back to it so those users still get CRDs.
     return discoverCrdsViaDiscovery();
   }
 }
@@ -283,37 +288,31 @@ async function discoverCrds(): Promise<CrdGroup[]> {
 
 const CRD_CACHE_TTL_MS = 30_000;
 
-interface CacheEntry<T> {
-  at: number;
-  promise: Promise<T>;
-}
-
 function contextKey(): string {
   return getActiveContextName() ?? '';
 }
 
-function cacheGet<T>(
-  cache: Map<string, CacheEntry<T>>,
-  key: string,
-  fetch: () => Promise<T>,
-): Promise<T> {
-  const now = Date.now();
-  const hit = cache.get(key);
-  if (hit && now - hit.at < CRD_CACHE_TTL_MS) return hit.promise;
-  const promise = fetch();
-  cache.set(key, { at: now, promise });
-  // Never cache failures — the next call retries.
-  promise.catch(() => {
-    if (cache.get(key)?.promise === promise) cache.delete(key);
-  });
-  return promise;
-}
-
-const discoveryCache = new Map<string, CacheEntry<CrdGroup[]>>();
-const columnsCache = new Map<string, CacheEntry<CrdColumn[]>>();
+const discoveryCache = createTtlCache<CrdGroup[]>(CRD_CACHE_TTL_MS);
+const columnsCache = createTtlCache<CrdColumn[]>(CRD_CACHE_TTL_MS);
+// Keys embed the context, so a switch cannot serve the wrong cluster — but
+// without this the previous cluster's discovery stayed resident for the TTL.
+onConfigChange(() => {
+  discoveryCache.clear();
+  columnsCache.clear();
+});
 
 function discoverCrdsCached(): Promise<CrdGroup[]> {
-  return cacheGet(discoveryCache, contextKey(), discoverCrds);
+  return discoveryCache.get(contextKey(), discoverCrds);
+}
+
+/**
+ * The discovered CRD for a group/kind pair, through the same cached discovery
+ * the sidebar uses — so it costs nothing while the sidebar is populated.
+ * Undefined when the cluster serves no such kind.
+ */
+export async function resolveCrdType(group: string, kind: string): Promise<CrdInfo | undefined> {
+  const groups = await discoverCrdsCached();
+  return groups.find((g) => g.group === group)?.resources.find((r) => r.kind === kind);
 }
 
 function getCrdColumnsCached(
@@ -322,7 +321,7 @@ function getCrdColumnsCached(
   plural: string,
 ): Promise<CrdColumn[]> {
   const key = `${contextKey()}|${group}|${version}|${plural}`;
-  return cacheGet(columnsCache, key, () => getCrdColumns(group, version, plural));
+  return columnsCache.get(key, () => getCrdColumns(group, version, plural));
 }
 
 // ===========================================================================
@@ -451,7 +450,7 @@ function extractHeuristicColumns(items: Resource[], maxColumns: number): CrdColu
 
 interface RawCustomObjectList {
   items?: RawObject[];
-  metadata?: { continue?: string; remainingItemCount?: number };
+  metadata?: { continue?: string; remainingItemCount?: number; resourceVersion?: string };
 }
 
 async function listCrdResources(
@@ -467,9 +466,10 @@ async function listCrdResources(
 
   const useNamespaced = scope !== 'Cluster' && namespace !== undefined && namespace.length > 0;
 
-  const listItems = async (): Promise<Resource[]> => {
+  const listItems = async (): Promise<{ items: Resource[]; resourceVersion?: string }> => {
     const items: Resource[] = [];
     let continueToken: string | undefined;
+    let resourceVersion: string | undefined;
 
     for (;;) {
       let list: RawCustomObjectList;
@@ -493,8 +493,10 @@ async function listCrdResources(
       }
 
       for (const obj of list.items ?? []) {
-        items.push(dynamicToResource(obj, apiVersion, kind));
+        items.push(listDynamicToResource(obj, apiVersion, kind));
       }
+      // Every page carries the list's resourceVersion (fixed at the first page).
+      if (list.metadata?.resourceVersion) resourceVersion = list.metadata.resourceVersion;
 
       const token = list.metadata?.continue;
       if (token && token.length > 0) {
@@ -504,11 +506,11 @@ async function listCrdResources(
       }
     }
 
-    return items;
+    return { items, resourceVersion };
   };
 
   // Listing and column resolution are independent — run them concurrently.
-  const [items, printerCols] = await Promise.all([
+  const [{ items, resourceVersion }, printerCols] = await Promise.all([
     listItems(),
     getCrdColumnsCached(group, version, plural).catch(() => [] as CrdColumn[]),
   ]);
@@ -516,7 +518,9 @@ async function listCrdResources(
   // additionalPrinterColumns first; fall back to heuristics.
   const columns = printerCols.length > 0 ? printerCols : extractHeuristicColumns(items, 8);
 
-  return { items, columns };
+  const out: CrdResourceList = { items, columns };
+  if (resourceVersion) out.resource_version = resourceVersion;
+  return out;
 }
 
 // ===========================================================================
@@ -559,7 +563,7 @@ async function countCrd(
     count = 0;
   }
 
-  // Key: group/kind for uniqueness (mirror Rust).
+  // Key: group/kind for uniqueness.
   return [`${crd.group}/${crd.kind}`, count];
 }
 
@@ -570,7 +574,7 @@ async function getCrdCounts(
   const custom = makeApiClient(CustomObjectsApi);
   const result: Record<string, number> = {};
 
-  // Bounded-concurrency worker pool (semaphore of 20 in Rust).
+  // Bounded-concurrency worker pool (20 in flight).
   let cursor = 0;
   async function worker(): Promise<void> {
     for (;;) {

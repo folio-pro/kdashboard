@@ -6,3 +6,8 @@ export * from './metrics';
 export * from './helm';
 export * from './security';
 export * from './ui';
+export * from './overview';
+export * from './rightsizing';
+export * from './rbac';
+export * from './netpol';
+export * from './kubeconfig';

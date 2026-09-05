@@ -63,3 +63,49 @@ export async function apiGet<T>(
   }
   return (await resp.json()) as T;
 }
+
+/**
+ * Issue an authenticated GET and return the Response with its body UNCONSUMED,
+ * so the caller can read it incrementally and abort it.
+ *
+ * Separate from apiGet, which buffers the whole body and JSON-parses it — the
+ * opposite of what a `follow=true` log stream needs. Resolving as soon as the
+ * response headers arrive also gives callers a truthful "connected" signal.
+ *
+ * The caller owns the returned body: it MUST read or cancel it, otherwise the
+ * socket stays held open.
+ */
+export async function apiStream(
+  path: string,
+  query: URLSearchParams,
+  signal: AbortSignal,
+): Promise<Response> {
+  const cfg = kc();
+  const cluster = cfg.getCurrentCluster();
+  if (!cluster) {
+    throw new Error('No active cluster in kubeconfig');
+  }
+  const url = new URL(cluster.server.replace(/\/$/, '') + path);
+  url.search = query.toString();
+
+  const doFetch = async (): Promise<Response> => {
+    const headers: Record<string, string> = { ...(await clusterAuthHeaders()) };
+    return fetch(url.toString(), { method: 'GET', headers, signal });
+  };
+
+  // Same one-shot refresh as apiGet: exec-credential plugins and short-lived
+  // OIDC tokens rotate inside the auth cache's TTL, and a log stream that dies
+  // on a recoverable 401 surfaces to the user as a stream error.
+  let resp = await doFetch();
+  if (resp.status === 401) {
+    // Release the discarded body — unread, it pins the pooled connection.
+    await resp.body?.cancel().catch(() => {});
+    expireClusterAuth();
+    resp = await doFetch();
+  }
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`${resp.status} ${resp.statusText}${body ? `: ${body}` : ''}`);
+  }
+  return resp;
+}

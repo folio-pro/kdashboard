@@ -1,40 +1,37 @@
 // App / settings / metadata / benchmark / kubectl command handlers.
 //
-// Ports src-tauri/src/commands/app_commands.rs (+ settings.rs, state.rs, and
-// the metadata cache helpers in lib.rs) to the Electron Node backend.
-//
 // Commands implemented here:
 //   - get_settings
-//   - save_settings        (mirrors Rust: updates kubeconfig override on change)
+//   - save_settings        (updates the kubeconfig override on change)
 //   - get_app_metadata     (cached hostname / os version / k8s server version)
 //   - run_kubectl          (spawns the kubectl binary; same flag blocklist)
-//   - bench_config         (env-driven; matches BenchConfig serde shape)
+//   - bench_config         (env-driven)
 //   - write_bench_results  (path must match KDASH_BENCH_OUT)
+//   - save_text_file       (native save dialog + write; log downloads)
 //
-// NOTE: `close_splashscreen` is a genuine Tauri command but is already owned by
-// the internal module in electron/main.ts (it needs the window-reveal logic
-// that lives there). We deliberately do NOT re-register it here.
+// NOTE: `close_splashscreen` is owned by the internal module in
+// electron/main.ts (it needs the window-reveal logic that lives there). We
+// deliberately do NOT re-register it here.
 
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { app } from 'electron';
+import { app, dialog } from 'electron';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 import { getKubeconfigPath, setKubeconfigPath, getVersionApi } from '../k8s/client.js';
 import { setPrometheusUrl } from '../k8s/runtime-config.js';
 
 // ===========================================================================
-// Settings — shape mirrors src-tauri/src/settings.rs AppSettings (serde
-// keeps snake_case; all fields optional via #[serde(default)]).
+// Settings — snake_case keys, every field optional.
 //
-// The renderer's TS type (src/lib/types/settings.ts -> AppSettings) also carries
-// `pinned_resources`, which the Rust struct does not model. Because we persist
-// exactly the object the renderer sends and echo it back on read, any extra
-// keys (like pinned_resources) round-trip transparently — matching the
-// renderer's expectations without us hard-coding them.
+// The renderer's TS type (src/lib/types/settings.ts -> AppSettings) carries
+// keys this interface does not model, `pinned_resources` among them. Because we
+// persist exactly the object the renderer sends and echo it back on read, any
+// extra key round-trips transparently — matching the renderer's expectations
+// without us hard-coding them.
 // ===========================================================================
 
 interface ContextCustomization {
@@ -54,16 +51,15 @@ interface AppSettings {
   [key: string]: unknown;
 }
 
-/** Path to the settings file under Electron's userData dir (replaces the Rust
- *  ~/.config/kdashboard/settings.json location). */
+/** Path to the settings file under Electron's userData dir. */
 function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
-/** In-memory mirror of persisted settings (parallels the Rust AppState mutex). */
+/** In-memory mirror of persisted settings. */
 let settingsState: AppSettings | null = null;
 
-/** Load settings from disk; returns {} (the serde Default) if absent/unreadable. */
+/** Load settings from disk; returns {} if absent/unreadable. */
 function loadSettings(): AppSettings {
   const file = settingsPath();
   if (!fs.existsSync(file)) {
@@ -77,7 +73,7 @@ function loadSettings(): AppSettings {
     }
     return {};
   } catch {
-    // Tolerate a corrupt file the same way Rust's load() falls back to default.
+    // Tolerate a corrupt file: fall back to defaults rather than failing boot.
     return {};
   }
 }
@@ -89,8 +85,7 @@ function persistSettings(settings: AppSettings): void {
 }
 
 /** Lazily get the current in-memory settings, hydrating from disk once.
- *  Also applies the kubeconfig override at first load (Rust does this at
- *  startup in AppState::new + the bootstrap path). */
+ *  Also applies the kubeconfig override at first load. */
 function currentSettings(): AppSettings {
   if (settingsState === null) {
     settingsState = loadSettings();
@@ -122,9 +117,8 @@ export function getSettingsSync(): AppSettings {
 }
 
 // ===========================================================================
-// App metadata — replicates the cached values from src-tauri/src/lib.rs
-// (hostname + os version never change; k8s version cached, cleared elsewhere
-// on context switch). AppMetadata serde shape = snake_case below.
+// App metadata — hostname and os version never change; the k8s version is
+// cached and cleared elsewhere on context switch. Wire shape is snake_case.
 // ===========================================================================
 
 interface AppMetadata {
@@ -158,7 +152,7 @@ function getOsVersion(): string {
     return cachedOsVersion;
   }
   // os.release() is the kernel/OS release across platforms — a faithful,
-  // dependency-free stand-in for the Rust sw_vers / /etc/os-release lookups.
+  // dependency-free stand-in for the sw_vers / /etc/os-release lookups.
   try {
     const release = os.release();
     cachedOsVersion = release && release.trim().length > 0 ? release.trim() : 'unknown';
@@ -168,7 +162,7 @@ function getOsVersion(): string {
   return cachedOsVersion;
 }
 
-/** Map Node's process.platform to the Rust std::env::consts::OS string. */
+/** Map Node's process.platform to the OS name reported in app metadata. */
 function getOsName(): string {
   switch (process.platform) {
     case 'darwin':
@@ -176,11 +170,11 @@ function getOsName(): string {
     case 'win32':
       return 'windows';
     default:
-      return process.platform; // 'linux', 'freebsd', etc. — matches Rust naming.
+      return process.platform; // 'linux', 'freebsd', etc.
   }
 }
 
-/** Map Node's process.arch to the Rust std::env::consts::ARCH string. */
+/** Map Node's process.arch to the arch name reported in app metadata. */
 function getArch(): string {
   switch (process.arch) {
     case 'x64':
@@ -215,12 +209,12 @@ async function getK8sVersionCached(): Promise<string | null> {
 }
 
 function appVersion(): string {
-  // app.getVersion() reads package.json "version" (= Rust CARGO_PKG_VERSION).
+  // app.getVersion() reads package.json "version".
   return app.getVersion();
 }
 
 // ===========================================================================
-// Benchmark mode — env-driven, matching BenchConfig serde shape exactly.
+// Benchmark mode — env-driven.
 // ===========================================================================
 
 interface BenchConfig {
@@ -231,6 +225,26 @@ interface BenchConfig {
   namespace: string | null;
   out_path: string | null;
   resource_types: string | null;
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+// Cumulative CPU time of a pid from /proc (Linux); null elsewhere. Electron's
+// percentCPUUsage reads 0 for every process on some setups, and a delta of
+// this over a window is unambiguous.
+function procCpuMs(pid: number): number | null {
+  if (process.platform !== 'linux') return null;
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    // Fields after the ")" of the comm: state is index 0, utime 11, stime 12.
+    const rest = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    const ticks = Number(rest[11]) + Number(rest[12]);
+    return Math.round((ticks * 1000) / 100); // CLK_TCK is 100 on Linux
+  } catch {
+    return null;
+  }
 }
 
 function parseEnvU32(key: string, fallback: number): number {
@@ -246,7 +260,7 @@ function optEnv(key: string): string | null {
 }
 
 // ===========================================================================
-// kubectl — same security blocklist + timeout semantics as the Rust command.
+// kubectl — security blocklist + timeout semantics.
 // ===========================================================================
 
 interface KubectlResult {
@@ -256,7 +270,7 @@ interface KubectlResult {
 }
 
 /** Flags that could redirect kubectl to a different cluster or read arbitrary
- *  files. Mirrors BLOCKED_KUBECTL_FLAGS in app_commands.rs (9 entries). */
+ *  files. */
 const BLOCKED_KUBECTL_FLAGS = [
   '--kubeconfig',
   '--server',
@@ -330,7 +344,7 @@ function runKubectl(args: string[]): Promise<KubectlResult> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      // ENOENT etc. — same message prefix as the Rust spawn-failure branch.
+      // ENOENT etc.
       reject(new Error(`Failed to run kubectl: ${e.message}`));
     });
 
@@ -341,8 +355,7 @@ function runKubectl(args: string[]): Promise<KubectlResult> {
       resolve({
         stdout,
         stderr,
-        // Rust uses output.status.code().unwrap_or(-1) — null (killed by signal)
-        // maps to -1 here.
+        // null (killed by signal) maps to -1.
         exit_code: code ?? -1,
       });
     });
@@ -368,8 +381,8 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
     }
     const next = incoming as AppSettings;
 
-    // Mirror the Rust behaviour: when kubeconfig_path changes, push the override
-    // into the shared k8s client so subsequent Api calls use the new file.
+    // When kubeconfig_path changes, push the override into the shared k8s
+    // client so subsequent Api calls use the new file.
     const old = currentSettings();
     const oldPath = (old.kubeconfig_path ?? null) as string | null;
     const newPath = (next.kubeconfig_path ?? null) as string | null;
@@ -425,6 +438,28 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
     return config;
   });
 
+  // --- bench_process_metrics ---
+  // Benchmark-only: per-process CPU (percent since the previous call, so two
+  // samples bracket a window) and memory, for scripts/bench/run.sh. Refused
+  // outside benchmark mode.
+  handlers.set('bench_process_metrics', () => {
+    if (process.env.KDASH_BENCH !== '1') throw new Error('bench_process_metrics: not in benchmark mode');
+    const mem = process.memoryUsage();
+    return {
+      uptime_ms: Math.round(process.uptime() * 1000),
+      main_heap_used_mb: round1(mem.heapUsed / 1048576),
+      main_rss_mb: round1(mem.rss / 1048576),
+      processes: app.getAppMetrics().map((m) => ({
+        type: m.type,
+        pid: m.pid,
+        cpu_percent: round1(m.cpu.percentCPUUsage),
+        cpu_ms: procCpuMs(m.pid),
+        working_set_mb: round1(m.memory.workingSetSize / 1024),
+        private_mb: round1((m.memory.privateBytes ?? 0) / 1024),
+      })),
+    };
+  });
+
   // --- write_bench_results ---
   // Renderer call: invoke('write_bench_results', { path: cfg.out_path, contents: json }).
   handlers.set('write_bench_results', (args) => {
@@ -442,5 +477,41 @@ export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
       throw new Error(`write ${targetPath}: ${(e as Error).message}`);
     }
     return null;
+  });
+
+  // --- save_text_file ---
+  // Renderer call: invoke('save_text_file', { defaultName, content }).
+  // Opens the native save dialog (suggesting ~/Downloads/<defaultName>) and
+  // writes `content` there. Resolves { path } once written, or null when the
+  // user cancelled — a cancel is not an error the renderer should toast.
+  handlers.set('save_text_file', async (args, ctx) => {
+    const content = typeof args.content === 'string' ? args.content : null;
+    if (content === null) {
+      throw new Error('save_text_file: missing content');
+    }
+    // basename(): the renderer names the file, never the directory.
+    const defaultName =
+      typeof args.defaultName === 'string' && args.defaultName.length > 0
+        ? path.basename(args.defaultName)
+        : 'export.txt';
+
+    let defaultPath = defaultName;
+    try {
+      defaultPath = path.join(app.getPath('downloads'), defaultName);
+    } catch {
+      // No downloads directory on this platform/profile — let the dialog pick.
+    }
+
+    const win = ctx.mainWindow();
+    const options = { title: 'Save as', defaultPath };
+    const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return null;
+
+    try {
+      await fs.promises.writeFile(result.filePath, content, 'utf8');
+    } catch (e) {
+      throw new Error(`write ${result.filePath}: ${(e as Error).message}`);
+    }
+    return { path: result.filePath };
   });
 }

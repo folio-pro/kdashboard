@@ -1,6 +1,7 @@
-import type { SortDirection, Resource } from "../types/index.js";
+import type { SortDirection, Resource, Facet } from "../types/index.js";
+import { dedupeFacets, facetKey } from "../utils/facets.js";
 
-export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "helm" | "crd-table";
+export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "helm" | "crd-table" | "overview" | "problems";
 
 /**
  *                    ┌───────────────────────────────────────┐
@@ -59,8 +60,10 @@ export interface Tab {
   cachedResource?: Resource;
 
   // Per-tab UI state. All optional — absent means "default" via getter fallback.
-  /** Search filter text. */
+  /** Search filter text (free text; typed `key:value` terms live in `facets`). */
   filter?: string;
+  /** Typed filter terms, each shown as a chip ahead of the search text. */
+  facets?: Facet[];
   /** Debounced filter value (committed 150ms after last keystroke). */
   _debouncedFilter?: string;
   /** Active sort column. */
@@ -73,9 +76,15 @@ export interface Tab {
   selectedRows?: Set<string>;
   /** Keyboard-focused row index; -1 = no focus. */
   selectedRowIndex?: number;
+  /** Table views: the detail aside is open for the selected resource (ephemeral). */
+  previewOpen?: boolean;
+  /** Detail views (and a table's aside): the DetailPanel sub-tab in use. Per
+   *  tab, so a YAML editor left open in one detail never leaks into the next. */
+  detailSubtab?: DetailSubtab;
 }
 
 const EMPTY_SELECTED_ROWS: Set<string> = new Set();
+const EMPTY_FACETS: Facet[] = [];
 
 /**
  * Sort column a tab starts on before the user picks one. Events lead with the
@@ -106,7 +115,7 @@ export function ensureTabCounterAbove(n: number): void {
 }
 
 /** View types that should only have one tab open at a time */
-const SINGLETON_VIEWS = new Set<ActiveView>(["settings", "topology", "cost", "security", "portforwards", "helm"]);
+const SINGLETON_VIEWS = new Set<ActiveView>(["settings", "topology", "cost", "security", "portforwards", "helm", "overview", "problems"]);
 
 /** View types tied to a specific resource (cache selectedResource on tab switch) */
 export const RESOURCE_TAB_TYPES = new Set<ActiveView>(["details", "logs", "yaml", "terminal"]);
@@ -118,6 +127,7 @@ export const VIEW_LABELS: Record<ActiveView, string> = {
   yaml: "YAML", settings: "Settings",
   topology: "Topology", cost: "Cost", security: "Security",
   helm: "Helm Releases", "crd-table": "CRDs",
+  overview: "Overview", problems: "Problems",
 };
 
 /** Fixed id (not "tab-N") so restored sessions and the tab counter never
@@ -137,11 +147,6 @@ export class UiStoreLogic {
   commandPaletteOpen = false;
   previousView: ActiveView | null = null;
 
-  // Active sub-tab inside the resource DetailPanel (Overview/Logs/Shell/YAML/
-  // Events). Lifted to the store so header buttons, keyboard shortcuts and the
-  // command palette can switch it in-place instead of opening a new top tab.
-  detailSubtab: DetailSubtab = "overview";
-
   // Tab system
   tabs: Tab[] = [mkPodsTab()];
   activeTabId = "tab-pods";
@@ -152,8 +157,22 @@ export class UiStoreLogic {
   protected _debounceTimer: ReturnType<typeof setTimeout> | null = null;
   protected _debounceTarget: Tab | null = null;
 
+  // Memoized on (tabs array, index, id): every per-tab getter below goes
+  // through here, and the table reads several of them per visible row per
+  // render, so a linear scan over proxied tabs each time added up. Any
+  // mutation that moves or replaces the tab fails the index check and falls
+  // back to the scan; the reads still register the same reactive deps.
+  #cachedTab: Tab | undefined;
+  #cachedTabIdx = -1;
   get activeTab(): Tab | undefined {
-    return this.tabs.find((t) => t.id === this.activeTabId);
+    const id = this.activeTabId;
+    const tabs = this.tabs;
+    const cached = this.#cachedTab;
+    if (cached && cached.id === id && tabs[this.#cachedTabIdx] === cached) return cached;
+    const idx = tabs.findIndex((t) => t.id === id);
+    this.#cachedTabIdx = idx;
+    this.#cachedTab = idx >= 0 ? tabs[idx] : undefined;
+    return this.#cachedTab;
   }
 
   /**
@@ -204,6 +223,68 @@ export class UiStoreLogic {
     return this.#debouncedLowerVal;
   }
 
+  get facets(): Facet[] {
+    return this.activeTab?.facets ?? EMPTY_FACETS;
+  }
+  set facets(v: Facet[]) {
+    const t = this.activeTab;
+    if (t) t.facets = dedupeFacets(v);
+  }
+
+  /**
+   * Append the facets not already on the tab. A facet's identity is key+op+
+   * value; one batch can repeat itself (`ns:kube ns:kube`), so `seen` grows as
+   * the batch is walked — the chip list is keyed by that identity.
+   */
+  addFacets(facets: Facet[]): void {
+    const t = this.activeTab;
+    if (!t || facets.length === 0) return;
+    const seen = new Set((t.facets ?? []).map(facetKey));
+    const fresh: Facet[] = [];
+    for (const f of facets) {
+      const k = facetKey(f);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      fresh.push(f);
+    }
+    if (fresh.length === 0) return;
+    t.facets = [...(t.facets ?? []), ...fresh];
+  }
+
+  removeFacet(index: number): void {
+    const t = this.activeTab;
+    if (!t?.facets) return;
+    t.facets = t.facets.filter((_, i) => i !== index);
+  }
+
+  /** Drop the last chip — what Backspace on an empty search box does. */
+  popFacet(): Facet | undefined {
+    const t = this.activeTab;
+    if (!t?.facets?.length) return undefined;
+    const last = t.facets[t.facets.length - 1];
+    t.facets = t.facets.slice(0, -1);
+    return last;
+  }
+
+  /**
+   * Replace the tab's whole filter state at once — what applying a saved
+   * view does. The debounced text is committed synchronously so the table
+   * does not show the old text's results for a frame.
+   */
+  applyFilterState(state: { facets: Facet[]; text: string; statFilter: string | null }): void {
+    const t = this.activeTab;
+    if (!t) return;
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+      this._debounceTarget = null;
+    }
+    t.facets = dedupeFacets(state.facets).map((f) => ({ ...f }));
+    t.filter = state.text;
+    t._debouncedFilter = state.text;
+    t.statFilter = state.statFilter;
+  }
+
   get sortColumn(): string {
     return this.activeTab?.sortColumn ?? defaultSortColumn(this.activeTab);
   }
@@ -234,6 +315,27 @@ export class UiStoreLogic {
   set selectedRows(v: Set<string>) {
     const t = this.activeTab;
     if (t) t.selectedRows = v;
+  }
+
+  get previewOpen(): boolean {
+    return this.activeTab?.previewOpen ?? false;
+  }
+  set previewOpen(v: boolean) {
+    const t = this.activeTab;
+    if (t) t.previewOpen = v;
+  }
+
+  // Active sub-tab inside the resource DetailPanel (Overview/Logs/Shell/YAML/
+  // Events). On the store so header buttons, keyboard shortcuts and the
+  // command palette can switch it in place instead of opening a new top tab;
+  // stored PER TAB so every freshly opened detail starts on Overview and a
+  // tab keeps its sub-tab across switches.
+  get detailSubtab(): DetailSubtab {
+    return this.activeTab?.detailSubtab ?? "overview";
+  }
+  set detailSubtab(v: DetailSubtab) {
+    const t = this.activeTab;
+    if (t) t.detailSubtab = v;
   }
 
   get selectedRowIndex(): number {
@@ -571,7 +673,7 @@ export class UiStoreLogic {
 // ── Tab persistence (serialization) ──────────────────────────────────────
 // Saved to storage (survives restart):
 //   id, type, label, closable, resourceName, resourceType, namespace,
-//   filter, sortColumn, sortDirection, statFilter
+//   filter, facets, sortColumn, sortDirection, statFilter
 // NOT saved (ephemeral — reloaded fresh from cluster or recomputed):
 //   cachedItems, cachedResource, cacheReady, count, _debouncedFilter,
 //   selectedRows, selectedRowIndex
@@ -584,6 +686,7 @@ export const TABS_STORAGE_VERSION = 1;
 const VALID_VIEW_TYPES = new Set<ActiveView>([
   "table", "details", "logs", "terminal", "portforwards",
   "yaml", "settings", "topology", "cost", "security", "crd-table",
+  "helm", "overview", "problems",
 ]);
 
 interface SerializableTab {
@@ -595,6 +698,7 @@ interface SerializableTab {
   resourceType?: string;
   namespace?: string;
   filter?: string;
+  facets?: Facet[];
   sortColumn?: string;
   sortDirection?: SortDirection;
   statFilter?: string | null;
@@ -618,6 +722,7 @@ export function serializeTabs(tabs: Tab[], activeTabId: string): SerializedTabsS
     if (t.resourceType !== undefined) st.resourceType = t.resourceType;
     if (t.namespace !== undefined) st.namespace = t.namespace;
     if (t.filter !== undefined && t.filter !== "") st.filter = t.filter;
+    if (t.facets !== undefined && t.facets.length > 0) st.facets = t.facets.map((f) => ({ ...f }));
     if (t.sortColumn !== undefined && t.sortColumn !== "name") st.sortColumn = t.sortColumn;
     if (t.sortDirection !== undefined && t.sortDirection !== "asc") st.sortDirection = t.sortDirection;
     if (t.statFilter !== undefined && t.statFilter !== null) st.statFilter = t.statFilter;
@@ -661,6 +766,10 @@ export function deserializeTabs(raw: string | null): SerializedTabsState | null 
     if (typeof r.resourceType === "string") st.resourceType = r.resourceType;
     if (typeof r.namespace === "string") st.namespace = r.namespace;
     if (typeof r.filter === "string") st.filter = r.filter;
+    if (Array.isArray(r.facets)) {
+      const facets = dedupeFacets(r.facets.filter(isSerializedFacet).map((f) => ({ key: f.key, op: f.op, value: f.value })));
+      if (facets.length > 0) st.facets = facets;
+    }
     if (typeof r.sortColumn === "string") st.sortColumn = r.sortColumn;
     if (r.sortDirection === "asc" || r.sortDirection === "desc") st.sortDirection = r.sortDirection;
     if (typeof r.statFilter === "string" || r.statFilter === null) st.statFilter = r.statFilter as string | null;
@@ -677,6 +786,14 @@ export function deserializeTabs(raw: string | null): SerializedTabsState | null 
     : tabs[0].id;
 
   return { version: TABS_STORAGE_VERSION, tabs, activeTabId };
+}
+
+const FACET_OPS = new Set([":", "!:", ">", "<", ">=", "<="]);
+function isSerializedFacet(v: unknown): v is Facet {
+  if (!v || typeof v !== "object") return false;
+  const f = v as Record<string, unknown>;
+  return typeof f.key === "string" && typeof f.value === "string" &&
+    typeof f.op === "string" && FACET_OPS.has(f.op);
 }
 
 /**
@@ -698,6 +815,7 @@ export function restoreTab(st: SerializableTab): Tab {
     namespace: st.namespace || undefined,
     filter: st.filter,
     _debouncedFilter: st.filter,
+    facets: st.facets,
     sortColumn: st.sortColumn,
     sortDirection: st.sortDirection,
     statFilter: st.statFilter,

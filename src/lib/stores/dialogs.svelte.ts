@@ -20,6 +20,15 @@ class DialogStore extends DialogStoreLogic {
   compareOpen = $state(false);
   compareResource = $state<Resource | null>(null);
 
+  quickEditOpen = $state(false);
+  quickEditResource = $state<Resource | null>(null);
+
+  restartOpen = $state(false);
+  restartResources = $state<Resource[]>([]);
+
+  rollbackOpen = $state(false);
+  rollbackResource = $state<Resource | null>(null);
+
   constructor() {
     super();
     unshadowState(this);

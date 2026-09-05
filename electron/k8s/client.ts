@@ -4,7 +4,7 @@
 // own KubeConfig — this keeps a single source of truth for the active context
 // and the optional kubeconfig path override coming from settings.
 //
-// Mirrors the Rust src-tauri/src/k8s/client.rs behaviour:
+// Behaviour:
 //   - load from default kubeconfig (KUBECONFIG env / ~/.kube/config)
 //   - honor a kubeconfigPath override persisted in settings
 //   - allow switching the active context at runtime (switch_context)
@@ -55,8 +55,10 @@ export function onConfigChange(listener: () => void): void {
   configChangeListeners.add(listener);
 }
 
-function invalidateConfig(): void {
+/** Drop every cached config (path/context change, or the file changed on disk). */
+export function invalidateConfig(): void {
   cachedConfig = null;
+  peerConfigs.clear();
   for (const listener of configChangeListeners) {
     try {
       listener();
@@ -109,6 +111,35 @@ function buildConfig(): KubeConfig {
   if (activeContextOverride) {
     cfg.setCurrentContext(activeContextOverride);
   }
+  return cfg;
+}
+
+/**
+ * Configs for contexts that are NOT active, built on demand for one-off reads
+ * (compare a resource across contexts). Dropped with the active config on any
+ * path/context change. These deliberately do not touch the TLS dispatcher:
+ * callers use the typed client-node Api classes, which carry their own TLS
+ * agent, never the raw `apiGet` path that depends on the global dispatcher.
+ */
+const peerConfigs = new Map<string, KubeConfig>();
+
+/**
+ * KubeConfig for `contextName`: the shared active config when it is the active
+ * context, else a cached peer config. Throws when the context does not exist.
+ */
+export function kcFor(contextName: string): KubeConfig {
+  if (activeContextOverride === contextName || (cachedConfig && cachedConfig.getCurrentContext() === contextName)) return kc();
+  let cfg = peerConfigs.get(contextName);
+  if (cfg) return cfg;
+  // buildConfig (not kc()) so the peer path never installs the TLS dispatcher
+  // for a cluster that is not active.
+  cfg = buildConfig();
+  if (cfg.getCurrentContext() === contextName) return kc();
+  if (!cfg.getContexts().some((c) => c.name === contextName)) {
+    throw new Error(`Context not found: ${contextName}`);
+  }
+  cfg.setCurrentContext(contextName);
+  peerConfigs.set(contextName, cfg);
   return cfg;
 }
 

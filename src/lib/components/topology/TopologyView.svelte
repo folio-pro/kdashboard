@@ -5,13 +5,24 @@
   import TopologyCanvas from "./TopologyCanvas.svelte";
   import TopologyLegend from "./TopologyLegend.svelte";
   import { Skeleton } from "$lib/components/ui/skeleton";
-  import { GitFork, AlertTriangle, Maximize2, Minimize2 } from "lucide-svelte";
+  import { GitFork, AlertTriangle, Maximize2, Minimize2, ShieldCheck } from "lucide-svelte";
   import { topologyStore } from "$lib/stores/topology.svelte";
+  import { netpolStore } from "$lib/stores/netpol.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
-  import { uiStore } from "$lib/stores/ui.svelte";
+    import NetpolPanel from "./NetpolPanel.svelte";
+  import { buildOverlay } from "./netpol-layer.logic";
 
   let searchFilter = $state("");
   let showLegend = $state(true);
+  let showPolicies = $state(false);
+
+
+  function togglePolicies() {
+    showPolicies = !showPolicies;
+    if (showPolicies && !netpolStore.overview && !netpolStore.isLoading) {
+      void netpolStore.loadNetworkPolicies(k8sStore.currentNamespace);
+    }
+  }
 
   let filteredGraph = $derived.by(() => {
     const graph = topologyStore.graph;
@@ -38,10 +49,8 @@
     };
   });
 
-  function handleBack() {
-    topologyStore.reset();
-    uiStore.backToPrevious();
-  }
+  let overlay = $derived(showPolicies && filteredGraph && netpolStore.overview ? buildOverlay(filteredGraph, netpolStore.overview) : null);
+  let selectedStatus = $derived(overlay && topologyStore.selectedNodeId ? overlay.status.get(topologyStore.selectedNodeId) ?? null : null);
 
   function handleRefresh() {
     const ns = k8sStore.currentNamespace;
@@ -60,7 +69,6 @@
   isLoading={topologyStore.isLoading}
   error={topologyStore.error}
   hasData={!!topologyStore.graph}
-  onBack={handleBack}
   onRefresh={handleRefresh}
   loadingMessage="Loading topology..."
   errorMessage="Failed to load topology"
@@ -93,6 +101,9 @@
         bind:value={searchFilter}
       />
     </div>
+    <Button variant={showPolicies ? "accent" : "outline"} size="lg" onclick={togglePolicies} title="Overlay NetworkPolicies: isolation per workload and the flows they allow" data-testid="topology-policies">
+      <ShieldCheck class="h-3.5 w-3.5" /> Policies
+    </Button>
     <Button variant="outline" size="icon-lg" onclick={() => showLegend = !showLegend} title="Toggle legend" aria-label="Toggle legend">
       {#if showLegend}
         <Minimize2 class="h-3.5 w-3.5" />
@@ -108,11 +119,14 @@
 
   {#if filteredGraph && filteredGraph.nodes.length > 0}
     <div class="relative h-full">
-      <TopologyCanvas graph={filteredGraph} />
+      <TopologyCanvas graph={filteredGraph} {overlay} />
       {#if showLegend}
         <div class="absolute bottom-4 left-4">
           <TopologyLegend nodes={filteredGraph.nodes} />
         </div>
+      {/if}
+      {#if showPolicies}
+        <NetpolPanel selected={selectedStatus} namespace={k8sStore.currentNamespace} />
       {/if}
     </div>
   {:else if topologyStore.graph && filteredGraph?.nodes.length === 0}

@@ -2,9 +2,9 @@
   import { cn } from "$lib/utils";
   import { ArrowDown } from "lucide-svelte";
   import { Button } from "$lib/components/ui";
-  import { listen } from "$lib/ipc/event";
   import { invoke } from "$lib/ipc/core";
   import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { toastStore } from "$lib/stores/toast.svelte";
   import { scheduleFlush } from "$lib/utils/frame-scheduler";
   import type { Resource } from "$lib/types";
   import { onMount, untrack } from "svelte";
@@ -15,14 +15,23 @@
     shortPodName,
     parseLogLine,
     resetLogIdCounter,
-    nextLogId,
+    buildStreamRequest,
+    streamEmptyStateMessage,
+    filterLogs,
+    formatLogsForExport,
+    exportFileName,
+    readWrapPreference,
+    writeWrapPreference,
+    ALL_CONTAINERS,
   } from "./log-viewer";
+  import { createLogStream } from "./log-stream.svelte";
   import {
     SINCE_LABELS,
+    SINCE_WINDOW_LABELS,
     SINCE_SECONDS,
     LEVEL_BADGE_COLORS,
     LEVEL_LABELS,
-    MESSAGE_COLORS,
+    messageColor,
     type TailLines,
     type SinceDuration,
   } from "./log-constants";
@@ -38,21 +47,44 @@
   let logs = $state.raw<LogLine[]>([]);
   let filterText = $state("");
   let showTimestamps = $state(true);
+  /** A container name, or ALL_CONTAINERS. */
   let selectedContainer = $state("");
+
+  // Line wrap is a per-machine display preference, so it lives in
+  // localStorage like the sidebar state rather than in cluster settings.
+  const wrapStorage = typeof localStorage === "undefined" ? undefined : localStorage;
+  let wrapLines = $state(readWrapPreference(wrapStorage));
+  $effect(() => writeWrapPreference(wrapStorage, wrapLines));
   let containerSourcePod = $state<Resource | null>(null);
   let deploymentPodNames = $state<string[]>([]);
   let podsLoading = $state(false);
-  let isStreaming = $state(false);
   let logContainer: HTMLDivElement | undefined = $state();
-  let unlisten: (() => void) | null = null;
-  let destroyed = false;
+
+  // The whole connect/live/ended/error state machine lives in log-stream.logic.ts.
+  const stream = createLogStream({
+    onLines: (payload) => {
+      for (const line of payload) enqueueLogLine(parseLogLine(line));
+    },
+    onReset: () => clearLogs(),
+  });
+
+  // "Is there a stream at all" — what the control bar's Stream/Stop toggle
+  // needs. The finer phase distinction only matters for the badge and the empty
+  // state.
+  const isStreaming = $derived(stream.isActive);
 
   // --- Virtualizer ---
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: 0,
     getScrollElement: () => logContainer ?? null,
-    estimateSize: () => 22,
+    estimateSize: () => 26,
     overscan: 30,
+    // Inset the first and last rows from the frame. Rows used to start at the
+    // very top edge of the scroll box, so the first line sat flush under the
+    // border — and under the panel header it visually merges with — and read
+    // as clipped; the last line likewise touched the bottom edge.
+    paddingStart: 4,
+    paddingEnd: 4,
   });
 
   function measureElement(el: HTMLDivElement) {
@@ -151,34 +183,12 @@
   }
 
   // --- Derived state ---
-  let filteredLogs = $derived.by(() => {
-    const hasPodFilter = podFilter !== null;
-    const hasLevelFilter = levelFilter !== "all";
-    const hasTextFilter = filterText.length > 0;
-
-    if (!hasPodFilter && !hasLevelFilter && !hasTextFilter) return logs;
-
-    let textMatcher: ((msg: string) => boolean) | null = null;
-    if (hasTextFilter) {
-      if (useRegex) {
-        try {
-          const regex = new RegExp(filterText, "i");
-          textMatcher = (msg) => regex.test(msg);
-        } catch {
-          textMatcher = null;
-        }
-      } else {
-        const lower = filterText.toLowerCase();
-        textMatcher = (msg) => msg.toLowerCase().includes(lower);
-      }
-    }
-
-    return logs.filter((l) =>
-      (!hasPodFilter || l.podName === podFilter) &&
-      (!hasLevelFilter || l.level === levelFilter) &&
-      (!textMatcher || textMatcher(l.message))
-    );
-  });
+  // filterLogs returns `logs` itself when no filter is active, so the common
+  // case allocates nothing. Level semantics (what `info` does with unlevelled
+  // lines) are defined once, in levelMatches().
+  let filteredLogs = $derived(
+    filterLogs(logs, { podFilter, levelFilter, filterText, useRegex }),
+  );
 
   $effect.pre(() => {
     const count = filteredLogs.length;
@@ -187,33 +197,26 @@
     });
   });
 
-  let emptyStateMessage = $derived.by(() => {
-    const hasLevelFilter = levelFilter !== "all";
-    const hasSearchFilter = filterText.trim().length > 0;
-
-    if (logs.length > 0 && filteredLogs.length === 0) {
-      if (hasLevelFilter && hasSearchFilter) {
-        return `No ${levelFilter.toUpperCase()} logs match the current search.`;
-      }
-      if (hasLevelFilter) {
-        return `No logs found for level ${levelFilter.toUpperCase()}.`;
-      }
-      if (hasSearchFilter) {
-        return "No logs match the current search.";
-      }
-    }
-
-    if (isStreaming) return "Connecting to log stream...";
-    if (isDeployment && podsLoading) return "Loading pods...";
-    if (isDeployment && deploymentPodNames.length === 0) return "No pods found for this deployment";
-    return "Select a container and press Stream to start";
-  });
-
   const isDeployment = $derived(
     k8sStore.selectedResource?.kind?.toLowerCase() === "deployment"
   );
 
   const sinceLabel = $derived(SINCE_LABELS.get(sinceDuration) ?? "1 day ago");
+  const sinceWindowLabel = $derived(SINCE_WINDOW_LABELS.get(sinceDuration) ?? "1 day");
+
+  let emptyStateMessage = $derived(
+    streamEmptyStateMessage({
+      phase: stream.phase,
+      hasLogs: logs.length > 0,
+      levelFilter,
+      filterText,
+      isDeployment,
+      podsLoading,
+      deploymentPodCount: deploymentPodNames.length,
+      sinceWindowLabel,
+      errorMessage: stream.error ?? undefined,
+    }),
+  );
 
   // --- Deployment pod fetching ---
   let _fetchGeneration = 0;
@@ -259,103 +262,87 @@
     return [] as string[];
   });
 
+  // Keep the selection valid for the CURRENT pod: switching to a pod whose
+  // containers differ used to keep the old name and stream a container the new
+  // pod does not have. "All containers" only stands while there are several.
   $effect(() => {
     const names = containers;
-    if (names.length > 0 && !selectedContainer) {
-      selectedContainer = names[0];
-    } else if (names.length === 0) {
+    if (names.length === 0) {
       selectedContainer = "";
+      return;
     }
+    const valid =
+      selectedContainer === ALL_CONTAINERS ? names.length > 1 : names.includes(selectedContainer);
+    if (!valid) selectedContainer = names[0];
   });
 
   // --- Streaming lifecycle ---
+
+  /** uid of the resource the current stream belongs to. */
+  let _streamedUid: string | null = null;
   let autoStarted = false;
 
   onMount(() => {
-    return () => {
-      destroyed = true;
-      stopStreaming();
-    };
+    return () => stream.destroy();
   });
 
+  /**
+   * The viewer is mounted per-VIEW, not per-resource (App.svelte renders it when
+   * activeView === "logs"), so switching pods has to be handled here: tear the
+   * old stream down, drop its lines, and auto-start the new one as soon as a
+   * container is known. Without this the viewer kept streaming the previous pod.
+   */
   $effect(() => {
-    if (selectedContainer && !autoStarted) {
-      autoStarted = true;
-      startStreaming();
-    }
+    const uid = k8sStore.selectedResource?.metadata?.uid ?? null;
+    const container = selectedContainer;
+
+    untrack(() => {
+      if (uid !== _streamedUid) {
+        _streamedUid = uid;
+        autoStarted = false;
+        if (stream.phase !== "idle") stopStreaming();
+        clearLogs();
+      }
+      if (container && !autoStarted) {
+        autoStarted = true;
+        startStreaming();
+      }
+    });
   });
 
-  async function startStreaming() {
+  function startStreaming() {
     if (!selectedContainer) return;
-    if (isStreaming) stopStreaming();
-    isStreaming = true;
+    void stream.start(
+      buildStreamRequest({
+        resource: k8sStore.selectedResource,
+        isDeployment,
+        deploymentPodNames,
+        container: selectedContainer,
+        containers,
+        tailLines,
+        sinceSeconds: SINCE_SECONDS.get(sinceDuration) ?? null,
+        // Always ask the backend for timestamps; showTimestamps only decides
+        // whether the rendered row prints them. Wiring it to the request made one
+        // flag mean two things: toggling it mid-stream left the live stream on
+        // the old setting, and honouring it would have meant restarting the
+        // stream — clearing the whole buffer — for a display-only switch.
+        // parseLogLine strips the prefix either way, so the message is identical.
+        timestamps: true,
+        previous: showPrevious,
+      }),
+    );
+  }
+
+  function stopStreaming() {
+    stream.stop();
+  }
+
+  /** Empty the view: both the rendered lines and the not-yet-flushed buffer. */
+  function clearLogs() {
     logs = [];
     resetLogIdCounter();
     pendingLogs = [];
     flushScheduled = false;
-    userScrolledAway = false;
-    _seenPodNames = new Set();
-    logPodNames = [];
-
-    const streamOpts = {
-      container: selectedContainer,
-      tailLines,
-      sinceSeconds: SINCE_SECONDS.get(sinceDuration) ?? null,
-      // Always ask the backend for timestamps; showTimestamps only decides
-      // whether the rendered row prints them. Wiring it to the request made one
-      // flag mean two things: toggling it mid-stream left the live stream on
-      // the old setting, and honouring it would have meant restarting the
-      // stream — clearing the whole buffer — for a display-only switch.
-      // parseLogLine strips the prefix either way, so the message is identical.
-      timestamps: true,
-      previous: showPrevious || null,
-    };
-
-    try {
-      const unlistenFn = await listen<string[]>("log-lines", (event) => {
-        for (const line of event.payload) {
-          enqueueLogLine(parseLogLine(line));
-        }
-      });
-
-      if (destroyed) {
-        unlistenFn();
-        return;
-      }
-      unlisten = unlistenFn;
-
-      if (isDeployment && deploymentPodNames.length > 0) {
-        await invoke("stream_multi_pod_logs", {
-          pods: deploymentPodNames,
-          namespace: k8sStore.selectedResource?.metadata?.namespace ?? "",
-          ...streamOpts,
-        });
-      } else {
-        const resource = k8sStore.selectedResource;
-        if (!resource || resource.kind.toLowerCase() !== "pod") return;
-        await invoke("stream_pod_logs", {
-          name: resource.metadata.name,
-          namespace: resource.metadata.namespace ?? "",
-          ...streamOpts,
-        });
-      }
-    } catch (err) {
-      logs = [{ id: nextLogId(), message: `Error starting log stream: ${err}`, level: "error" as const, isJson: false }];
-      isStreaming = false;
-    }
-  }
-
-  function stopStreaming() {
-    if (unlisten) {
-      unlisten();
-      unlisten = null;
-    }
-    isStreaming = false;
-    invoke("stop_log_stream").catch(() => {});
-  }
-
-  function clearLogs() {
-    logs = [];
     _seenPodNames = new Set();
     logPodNames = [];
     userScrolledAway = false;
@@ -380,6 +367,29 @@
   function togglePrevious() {
     showPrevious = !showPrevious;
     if (isStreaming) startStreaming();
+  }
+
+  // --- Export (the displayed lines, i.e. after every filter) ---
+  function exportText(): string {
+    return formatLogsForExport(filteredLogs, { timestamps: showTimestamps });
+  }
+
+  async function copyLogs() {
+    await navigator.clipboard.writeText(exportText());
+  }
+
+  async function downloadLogs() {
+    const defaultName = exportFileName(k8sStore.selectedResource?.metadata?.name, selectedContainer);
+    try {
+      // null: the user cancelled the save dialog — nothing to report.
+      const saved = await invoke<{ path: string } | null>("save_text_file", {
+        defaultName,
+        content: exportText(),
+      });
+      if (saved) toastStore.success("Logs saved", saved.path);
+    } catch (err) {
+      toastStore.error("Could not save logs", err instanceof Error ? err.message : String(err));
+    }
   }
 
   // --- Log detail / navigation ---
@@ -430,7 +440,11 @@
     <div class="relative flex h-full flex-col">
       <!-- Log Entries (virtualized) -->
       <div
-        class="relative min-h-0 flex-1 overflow-y-auto rounded-sm border border-[var(--border-color)] bg-[var(--log-bg)] font-mono"
+        data-testid="log-scroll"
+        class={cn(
+          "relative min-h-0 flex-1 overflow-y-auto rounded-sm border border-[var(--border-color)] bg-[var(--log-bg)] font-mono",
+          wrapLines ? "overflow-x-hidden" : "overflow-x-auto",
+        )}
         bind:this={logContainer}
         onscroll={handleScroll}
       >
@@ -470,15 +484,20 @@
                   {#if showTimestamps && line.timestamp}
                     <span class="shrink-0 text-[11px] leading-[20px] text-[var(--log-timestamp)]">{line.timestamp}</span>
                   {/if}
-                  <span
-                    class={cn("shrink-0 text-[11px] leading-[20px] font-semibold", LEVEL_BADGE_COLORS[line.level])}
-                  >
-                    {LEVEL_LABELS[line.level]}
-                  </span>
+                  <!-- No badge for a line that declares no level: a guessed
+                       one is wrong on its face (nginx access lines are not
+                       DEBUG). -->
+                  {#if line.level}
+                    <span
+                      class={cn("shrink-0 text-[11px] leading-[20px] font-semibold", LEVEL_BADGE_COLORS[line.level])}
+                    >
+                      {LEVEL_LABELS[line.level]}
+                    </span>
+                  {/if}
                   {#if line.isJson && line.jsonFormatted}
-                    <pre class="min-w-0 whitespace-pre-wrap break-all text-[11px] leading-[20px] text-[var(--text-secondary)]">{@html getJsonHighlighted(line)}</pre>
+                    <pre class={cn("min-w-0 text-[11px] leading-[20px] text-[var(--text-secondary)]", wrapLines ? "whitespace-pre-wrap break-all" : "whitespace-pre")}>{@html getJsonHighlighted(line)}</pre>
                   {:else}
-                    <span class={cn("min-w-0 break-all text-[11px] leading-[20px]", MESSAGE_COLORS[line.level])}>
+                    <span class={cn("min-w-0 text-[11px] leading-[20px]", wrapLines ? "whitespace-pre-wrap break-all" : "whitespace-pre", messageColor(line.level))}>
                       {line.message}
                     </span>
                   {/if}
@@ -511,6 +530,7 @@
     {containers}
     bind:filterText
     {isStreaming}
+    streamPhase={stream.phase}
     {isDeployment}
     {deploymentPodNames}
     {podsLoading}
@@ -522,6 +542,8 @@
     bind:showTimestamps
     {showPrevious}
     bind:useRegex
+    bind:wrapLines
+    hasLines={filteredLogs.length > 0}
     {logPodNames}
     onStartStreaming={startStreaming}
     onStopStreaming={stopStreaming}
@@ -530,6 +552,8 @@
     onTailSelect={handleTailSelect}
     onTogglePrevious={togglePrevious}
     onClear={clearLogs}
+    onCopy={copyLogs}
+    onDownload={downloadLogs}
   />
 
   <!-- Log Detail Sheet -->

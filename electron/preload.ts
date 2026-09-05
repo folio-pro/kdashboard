@@ -1,7 +1,7 @@
 // Preload: the ONLY bridge between the sandboxed renderer and the Node main
-// process. Exposes a minimal, typed surface as window.electronAPI. The Tauri
-// shims (src/lib/shims/tauri-*.ts) call exclusively through this object so the
-// Svelte UI never touches Node/Electron APIs directly.
+// process. Exposes a minimal, typed surface as window.electronAPI. The
+// renderer's IPC layer (src/lib/ipc/*) calls exclusively through this object so
+// the Svelte UI never touches Node/Electron APIs directly.
 
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 
@@ -30,7 +30,7 @@ const api = {
 
   /**
    * Invoke a backend command. Returns a promise that resolves with the
-   * handler's result or rejects with its Error. `cmd` is the snake_case Tauri
+   * handler's result or rejects with its Error. `cmd` is the snake_case
    * command string; `args` is the renderer-supplied arg object.
    */
   invoke(cmd: string, args: Record<string, unknown>): Promise<unknown> {
@@ -40,14 +40,27 @@ const api = {
   /**
    * Subscribe to one of the backend event channels (terminal-output,
    * terminal-exit, log-lines, port-forward-closed, resource-watch-event, …).
-   * The tauri-event shim wraps the payload as { payload } before handing it to
+   * src/lib/ipc/event.ts wraps the payload as { payload } before handing it to
    * the UI callback.
+   *
+   * Returns the unsubscribe. A renderer function crossing the context bridge
+   * arrives here as a fresh proxy on EVERY call, so `off(channel, cb)` with
+   * the "same" cb removes nothing — every watch (re)start left its previous
+   * listener attached, and a dozen tabs later Node warned about 11
+   * resource-watch-event listeners. The closure below holds the one proxy
+   * that was actually registered, so removal cannot miss.
    */
-  on(channel: string, cb: Listener): void {
-    ipcRenderer.on(channel, cb);
+  on(channel: string, cb: Listener): () => void {
+    const listener: Listener = (event, payload) => cb(event, payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
   },
 
-  /** Remove a previously-registered channel listener (same fn reference). */
+  /**
+   * Remove a previously-registered channel listener. Only works for a `cb`
+   * whose identity survived the bridge (it generally does not — see on());
+   * prefer the unsubscribe on() returns.
+   */
   off(channel: string, cb: Listener): void {
     ipcRenderer.removeListener(channel, cb);
   },

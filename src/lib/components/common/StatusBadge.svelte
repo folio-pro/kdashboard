@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cn } from "$lib/utils";
+  import { statusCategory, statusColor } from "$lib/components/table/status-category";
 
   interface Props {
     status: string;
@@ -7,49 +7,8 @@
 
   let { status }: Props = $props();
 
-  type StatusCategory = "success" | "warning" | "error" | "info" | "orange" | "muted";
-
-  const statusCategoryMap: Record<string, StatusCategory> = {
-    running: "success",
-    active: "success",
-    ready: "success",
-    available: "success",
-    bound: "success",
-    "true": "success",
-    succeeded: "info",
-    completed: "info",
-    complete: "info",
-    pending: "warning",
-    containercreating: "warning",
-    waiting: "warning",
-    failed: "error",
-    error: "error",
-    crashloopbackoff: "error",
-    imagepullbackoff: "error",
-    evicted: "error",
-    oomkilled: "error",
-    "false": "error",
-    terminating: "orange",
-    unknown: "muted",
-    // core/v1 Event types (global Events view)
-    normal: "muted",
-    warning: "warning",
-  };
-
-  const categoryColors: Record<StatusCategory, string> = {
-    success: "var(--status-running)",
-    warning: "var(--status-pending)",
-    error: "var(--status-failed)",
-    info: "var(--status-succeeded)",
-    orange: "var(--status-terminating)",
-    muted: "var(--text-muted)",
-  };
-
-  let category = $derived<StatusCategory>(
-    statusCategoryMap[status.toLowerCase()] ?? "muted"
-  );
-
-  let color = $derived(categoryColors[category]);
+  let category = $derived(statusCategory(status));
+  let color = $derived(statusColor(category));
   let displayText = $derived(status.toLowerCase());
   // A soft glow on success/error dots makes live status read at a glance,
   // matching the reference console's pill treatment.

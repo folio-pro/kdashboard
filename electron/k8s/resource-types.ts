@@ -1,10 +1,9 @@
 // Shared wire + raw-body types for the k8s handlers.
 //
-// `Resource` / `ResourceMetadata` mirror the Rust serde output exactly
-// (src-tauri/src/k8s/resources/types.rs). None of the metadata fields carry
-// #[serde(skip_serializing_if)], so they serialize as `null` when absent;
-// spec/status/data/type DO skip when absent. The fields are typed `?: T | null`
-// so both the (faithful) null form and an omitted form satisfy the contract.
+// `Resource` / `ResourceMetadata` are the shapes the renderer consumes. Absent
+// metadata fields serialize as `null`, while spec/status/data/type are omitted
+// entirely. The fields are typed `?: T | null` so both the null form and an
+// omitted form satisfy the contract.
 //
 // `RawObjectMeta` / `RawObject` are the camelCase JSON bodies returned by the
 // @kubernetes/client-node REST/CustomObjects endpoints.
@@ -17,6 +16,8 @@ export interface ResourceMetadata {
   labels?: Record<string, string> | null;
   annotations?: Record<string, string> | null;
   creation_timestamp?: string | null;
+  /** Set once the object is being deleted; the renderer shows it as Terminating. */
+  deletion_timestamp?: string | null;
   owner_references?: unknown;
 }
 
@@ -47,6 +48,7 @@ export interface RawObjectMeta {
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   creationTimestamp?: string;
+  deletionTimestamp?: string;
   ownerReferences?: unknown[];
   managedFields?: unknown;
   [k: string]: unknown;

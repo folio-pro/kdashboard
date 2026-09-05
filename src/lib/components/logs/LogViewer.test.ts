@@ -1,8 +1,8 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import {
+  type EmptyStateOptions,
   type LogLevel,
   type LogLine,
-  detectLevel,
   tryParseJson,
   formatTimestamp,
   shortPodName,
@@ -11,83 +11,12 @@ import {
   filterLogs,
   navigateLog,
   resetLogIdCounter,
+  streamEmptyStateMessage,
 } from "./log-viewer";
 
 // --- Tests ---
 
-describe("detectLevel", () => {
-  test("detects error level (lowercase)", () => {
-    expect(detectLevel("something error occurred")).toBe("error");
-  });
-
-  test("detects error level (uppercase)", () => {
-    expect(detectLevel("FATAL: process crashed")).toBe("error");
-  });
-
-  test("detects error level (mixed case)", () => {
-    expect(detectLevel("Error: file not found")).toBe("error");
-  });
-
-  test("detects err keyword", () => {
-    expect(detectLevel("connection err timeout")).toBe("error");
-  });
-
-  test("detects panic keyword", () => {
-    expect(detectLevel("goroutine panic: nil pointer")).toBe("error");
-  });
-
-  test("detects crit keyword", () => {
-    expect(detectLevel("crit level alert")).toBe("error");
-  });
-
-  test("detects critical keyword", () => {
-    expect(detectLevel("critical failure in subsystem")).toBe("error");
-  });
-
-  test("detects warn level (lowercase)", () => {
-    expect(detectLevel("warn: disk space low")).toBe("warn");
-  });
-
-  test("detects warning level (uppercase)", () => {
-    expect(detectLevel("WARNING: deprecated API call")).toBe("warn");
-  });
-
-  test("detects info level", () => {
-    expect(detectLevel("info: server started")).toBe("info");
-  });
-
-  test("detects notice level as info", () => {
-    expect(detectLevel("notice: scheduled maintenance")).toBe("info");
-  });
-
-  test("defaults to debug when no keywords match", () => {
-    expect(detectLevel("GET /api/health 200 OK")).toBe("debug");
-  });
-
-  test("error takes priority over warn", () => {
-    expect(detectLevel("warn: error happened")).toBe("error");
-  });
-
-  test("error takes priority over info", () => {
-    expect(detectLevel("info: fatal exception")).toBe("error");
-  });
-
-  test("warn takes priority over info", () => {
-    expect(detectLevel("info: warning issued")).toBe("warn");
-  });
-
-  test("does not match partial words (word boundary)", () => {
-    // 'information' contains 'info' but as a substring — however the regex
-    // uses \b which matches word boundaries. 'info' IS a word boundary match
-    // inside 'information' because 'info' ends where 'r' begins — actually
-    // \binfo\b would NOT match 'information'. Let's verify.
-    expect(detectLevel("informational message")).toBe("debug");
-  });
-
-  test("empty string defaults to debug", () => {
-    expect(detectLevel("")).toBe("debug");
-  });
-});
+// detectLevel is covered in detect-level.test.ts.
 
 describe("tryParseJson", () => {
   test("detects simple JSON object", () => {
@@ -228,7 +157,8 @@ describe("parseLogLine", () => {
     const line = parseLogLine("GET /health 200");
     expect(line.id).toBe(0);
     expect(line.message).toBe("GET /health 200");
-    expect(line.level).toBe("debug");
+    // No level token anywhere in the line: none is invented.
+    expect(line.level).toBeNull();
     expect(line.timestamp).toBeUndefined();
     expect(line.podName).toBeUndefined();
     expect(line.isJson).toBe(false);
@@ -333,7 +263,7 @@ describe("filterLogs", () => {
     { id: 0, podName: "pod-a-b-c", message: "info: started", level: "info", isJson: false },
     { id: 1, podName: "pod-x-y-z", message: "error: crash", level: "error", isJson: false },
     { id: 2, podName: "pod-a-b-c", message: "warn: disk low", level: "warn", isJson: false },
-    { id: 3, podName: "pod-x-y-z", message: "GET /health 200", level: "debug", isJson: false },
+    { id: 3, podName: "pod-x-y-z", message: "GET /health 200", level: null, isJson: false },
     { id: 4, message: "info: no pod", level: "info", isJson: false },
   ];
 
@@ -532,5 +462,108 @@ describe("navigateLog", () => {
     const single = [{ id: 0, message: "only", level: "info" as const, isJson: false }];
     expect(navigateLog(single, single[0], 1)).toBe(single[0]);
     expect(navigateLog(single, single[0], -1)).toBe(single[0]);
+  });
+});
+
+describe("streamEmptyStateMessage", () => {
+  function opts(over: Partial<EmptyStateOptions> = {}): EmptyStateOptions {
+    return {
+      phase: "idle",
+      hasLogs: false,
+      levelFilter: "all",
+      filterText: "",
+      isDeployment: false,
+      podsLoading: false,
+      deploymentPodCount: 0,
+      sinceWindowLabel: "1 day",
+      ...over,
+    };
+  }
+
+  test("connecting phase announces the connection attempt", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "connecting" }))).toBe(
+      "Connecting to log stream...",
+    );
+  });
+
+  // The regression this whole change exists for: a connected stream from a pod
+  // that simply has not logged anything must NOT claim to still be connecting.
+  test("live phase with no output does not say 'Connecting'", () => {
+    const msg = streamEmptyStateMessage(opts({ phase: "live" }));
+    expect(msg).not.toContain("Connecting");
+    expect(msg).toContain("Connected");
+    expect(msg).toContain("1 day");
+  });
+
+  test("live phase reflects the selected since-window", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "live", sinceWindowLabel: "15 min" }))).toContain(
+      "15 min",
+    );
+  });
+
+  test("ended phase reports the stream finished", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "ended" }))).toBe("Log stream ended.");
+  });
+
+  test("error phase surfaces the backend message", () => {
+    expect(
+      streamEmptyStateMessage(opts({ phase: "error", errorMessage: "connection reset by peer" })),
+    ).toBe("connection reset by peer");
+  });
+
+  test("error phase falls back when no message is supplied", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "error" }))).toBe(
+      "The log stream stopped unexpectedly.",
+    );
+  });
+
+  test("idle phase prompts the user to start", () => {
+    expect(streamEmptyStateMessage(opts())).toBe("Select a container and press Stream to start");
+  });
+
+  test("idle deployment while pods load", () => {
+    expect(streamEmptyStateMessage(opts({ isDeployment: true, podsLoading: true }))).toBe(
+      "Loading pods...",
+    );
+  });
+
+  test("idle deployment with no pods", () => {
+    expect(streamEmptyStateMessage(opts({ isDeployment: true, deploymentPodCount: 0 }))).toBe(
+      "No pods found for this deployment",
+    );
+  });
+
+  // Filters take precedence over the phase: lines DID arrive, they are just hidden.
+  test("level filter hiding all lines wins over the live phase", () => {
+    expect(
+      streamEmptyStateMessage(opts({ phase: "live", hasLogs: true, levelFilter: "error" })),
+    ).toBe("No logs found for level ERROR.");
+  });
+
+  test("search filter hiding all lines wins over the live phase", () => {
+    expect(
+      streamEmptyStateMessage(opts({ phase: "live", hasLogs: true, filterText: "needle" })),
+    ).toBe("No logs match the current search.");
+  });
+
+  test("level and search filters combined", () => {
+    expect(
+      streamEmptyStateMessage(
+        opts({ phase: "live", hasLogs: true, levelFilter: "warn", filterText: "needle" }),
+      ),
+    ).toBe("No WARN logs match the current search.");
+  });
+
+  test("whitespace-only search is not treated as a filter", () => {
+    expect(streamEmptyStateMessage(opts({ phase: "live", hasLogs: true, filterText: "   " }))).toContain(
+      "Connected",
+    );
+  });
+
+  // With no lines at all the filters are irrelevant — the phase is the story.
+  test("filters are ignored when nothing arrived", () => {
+    expect(
+      streamEmptyStateMessage(opts({ phase: "connecting", hasLogs: false, levelFilter: "error" })),
+    ).toBe("Connecting to log stream...");
   });
 });

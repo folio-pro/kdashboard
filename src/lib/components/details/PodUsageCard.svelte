@@ -2,10 +2,11 @@
   // CPU + memory for one pod: the instantaneous value always (metrics-server),
   // plus an hour of history when a Prometheus is configured in Settings.
 
-  import type { Resource, PrometheusSample } from "$lib/types";
+  import type { Resource } from "$lib/types";
   import CollapsibleCard from "./CollapsibleCard.svelte";
   import UsageSparkline from "./UsageSparkline.svelte";
   import { metricsStore } from "$lib/stores/metrics.svelte";
+  import { prometheusHistory, PROMETHEUS_HINT } from "$lib/stores/prometheus-series.svelte";
   import { cpuCell, memoryCell, formatCpu, formatBytes } from "$lib/stores/metrics.logic";
 
   let { resource }: { resource: Resource } = $props();
@@ -19,46 +20,22 @@
   let cpu = $derived(cpuCell(resource, usage));
   let memory = $derived(memoryCell(resource, usage));
 
-  let cpuSamples = $state<PrometheusSample[]>([]);
-  let memorySamples = $state<PrometheusSample[]>([]);
-  let prometheusConfigured = $state(true);
-  let historyError = $state("");
+  // Pull the history once per pod. cadvisor's namespace/pod labels are the one
+  // pair every Prometheus scraping kubelets agrees on; container!="" drops the
+  // per-pod rollup so the sum is not counted twice.
+  const history = prometheusHistory(() => {
+    const selector = `namespace="${namespace}",pod="${name}",container!=""`;
+    return [
+      `sum(rate(container_cpu_usage_seconds_total{${selector}}[5m]))`,
+      `sum(container_memory_working_set_bytes{${selector}})`,
+    ];
+  }, WINDOW_MINUTES);
 
   // Keep the instant values fresh while the panel is open.
   $effect(() => {
     void namespace;
     void name;
     void metricsStore.loadPodMetrics(namespace || null);
-  });
-
-  // Pull the history once per pod. cadvisor's namespace/pod labels are the one
-  // pair every Prometheus scraping kubelets agrees on; container!="" drops the
-  // per-pod rollup so the sum is not counted twice.
-  $effect(() => {
-    const ns = namespace;
-    const pod = name;
-    let cancelled = false;
-
-    const selector = `namespace="${ns}",pod="${pod}",container!=""`;
-    Promise.all([
-      metricsStore.queryRange(`sum(rate(container_cpu_usage_seconds_total{${selector}}[5m]))`, WINDOW_MINUTES),
-      metricsStore.queryRange(`sum(container_memory_working_set_bytes{${selector}})`, WINDOW_MINUTES),
-    ])
-      .then(([cpuResult, memResult]) => {
-        if (cancelled) return;
-        prometheusConfigured = cpuResult.configured;
-        historyError = "";
-        cpuSamples = cpuResult.series[0]?.samples ?? [];
-        memorySamples = memResult.series[0]?.samples ?? [];
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        historyError = String(err);
-        cpuSamples = [];
-        memorySamples = [];
-      });
-
-    return () => { cancelled = true; };
   });
 </script>
 
@@ -81,8 +58,8 @@
       {:else}
         <span class="text-[12px] text-[var(--text-muted)]" title={metricsStore.unavailableReason}>No metrics-server</span>
       {/if}
-      {#if prometheusConfigured}
-        <UsageSparkline samples={cpuSamples} format={formatCpu} />
+      {#if history.configured}
+        <UsageSparkline samples={history.series[0] ?? []} format={formatCpu} />
       {/if}
     </div>
 
@@ -100,17 +77,15 @@
       {:else}
         <span class="text-[12px] text-[var(--text-muted)]" title={metricsStore.unavailableReason}>No metrics-server</span>
       {/if}
-      {#if prometheusConfigured}
-        <UsageSparkline samples={memorySamples} format={formatBytes} color="var(--status-running)" />
+      {#if history.configured}
+        <UsageSparkline samples={history.series[1] ?? []} format={formatBytes} color="var(--status-running)" />
       {/if}
     </div>
   </div>
 
-  {#if !prometheusConfigured}
-    <p class="px-5 pb-3 text-[10px] text-[var(--text-muted)]">
-      Set a Prometheus URL in Settings → Kubernetes to chart the last hour.
-    </p>
-  {:else if historyError}
-    <p class="px-5 pb-3 text-[10px] text-[var(--status-failed)]">{historyError}</p>
+  {#if !history.configured}
+    <p class="px-5 pb-3 text-[10px] text-[var(--text-muted)]">{PROMETHEUS_HINT}</p>
+  {:else if history.error}
+    <p class="px-5 pb-3 text-[10px] text-[var(--status-failed)]">{history.error}</p>
   {/if}
 </CollapsibleCard>

@@ -1,31 +1,29 @@
 // Handler module: resources group.
 //
-// Ports src-tauri/src/k8s/resources/* (listing.rs, types.rs, events.rs,
-// counting.rs, helpers.rs) to @kubernetes/client-node.
-//
 // Commands:
 //   - list_resources           list a kind, optionally namespaced (pods get a
 //                              lean field projection for the hot table path)
 //   - list_pods_by_selector    list pods filtered by a label selector
 //   - get_resource_counts      metadata-only counts for many kinds at once
 //   - get_resource_yaml        fetch one object, strip managedFields, -> YAML
+//                              (optional `context` reads from another context)
 //   - get_resource             fetch one object with FULL spec/status/data
 //   - get_events               list events, optional ns + field selector
 //   - get_resource_events      events for one named resource
 //
-// WIRE CASING — the Rust types drive the JSON the Svelte stores consume:
-//   * Resource / ResourceMetadata / ResourceList have NO serde(rename_all), so
-//     their top-level keys stay snake_case: api_version, resource_version,
-//     creation_timestamp, owner_references. (`type` is renamed from type_.)
-//   * The PROJECTED pod spec/status structs DO use rename_all="camelCase", and
-//     the raw k8s API already returns camelCase inside spec/status — so the
+// WIRE CASING — the Svelte stores consume this JSON verbatim:
+//   * Resource / ResourceMetadata / ResourceList keep snake_case top-level keys:
+//     api_version, resource_version, creation_timestamp, owner_references, type.
+//   * The raw k8s API already returns camelCase inside spec/status — so the
 //     nested bodies (nodeName, podIP, containerStatuses, ...) stay camelCase.
 //   * EventItem keeps snake_case keys (first_timestamp, involved_object, ...)
 //     with `type` renamed; the inner involvedObject object stays camelCase.
 
 import * as YAML from 'yaml';
 
-import { getCoreV1Api } from '../k8s/client';
+import { KubernetesObjectApi } from '@kubernetes/client-node';
+
+import { getActiveContextName, getCoreV1Api, kcFor } from '../k8s/client';
 import { apiGet, META_ACCEPT } from '../k8s/api';
 import type {
   RawList,
@@ -36,7 +34,7 @@ import type {
   ResourceMetadata,
 } from '../k8s/resource-types';
 import { metaFrom, listMetaFrom, listProjectionFor } from '../k8s/resource-mapping';
-import { apiVersionOf, resolveKindOrThrow, resolveResourceType } from '../k8s/kinds';
+import { RESOURCE_TYPES, apiVersionOf, resolveKindOrThrow, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerMap } from '../dispatch';
 
 // ---------------------------------------------------------------------------
@@ -79,8 +77,7 @@ interface RawEventList {
 }
 
 // ---------------------------------------------------------------------------
-// ApiResource resolution (port of helpers.rs api_resource_for_kind + the
-// per-resource_type group/version/plural the listing macros encode)
+// ApiResource resolution — group/version/plural per resource_type
 // ---------------------------------------------------------------------------
 
 interface ApiResource {
@@ -107,11 +104,11 @@ function apiResourceForType(resourceType: string): ApiResource | undefined {
 
 /**
  * Resolve the ApiResource for a SINGULAR kind string (used by get_resource /
- * get_resource_yaml). Port of helpers.rs api_resource_for_kind. Throws the same
- * "Unsupported kind for YAML fetch: <kind>" error on unknown kinds.
+ * get_resource_yaml). Throws "Unsupported kind for YAML fetch: <kind>" on
+ * unknown kinds.
  *
- * Returns the kind string verbatim (Rust keeps the caller's `kind` casing in
- * the returned Resource.kind / ApiResource.kind).
+ * Returns the kind string verbatim — the caller's casing is preserved in the
+ * returned Resource.kind.
  */
 function apiResourceForKind(kind: string): { ar: ApiResource; clusterScoped: boolean } {
   const k = resolveKindOrThrow(kind);
@@ -129,7 +126,7 @@ function apiResourceForKind(kind: string): { ar: ApiResource; clusterScoped: boo
 
 // metaFrom now lives in electron/k8s/resource-mapping.ts (shared).
 
-/** Drop a value if it is null/undefined (Rust's `.filter(|v| !v.is_null())`). */
+/** Drop a value if it is null/undefined. */
 function presentOrUndefined<T>(v: T | null | undefined): T | undefined {
   return v === null || v === undefined ? undefined : v;
 }
@@ -137,8 +134,8 @@ function presentOrUndefined<T>(v: T | null | undefined): T | undefined {
 // ---------------------------------------------------------------------------
 // Generic paginated list against the dynamic CustomObjects endpoint.
 //
-// Core resources are reachable with group="" / version="v1"; this mirrors the
-// Rust DynamicObject path and lets every kind share one projection pass.
+// Core resources are reachable with group="" / version="v1", so every kind can
+// share one projection pass.
 // ---------------------------------------------------------------------------
 
 interface ListOpts {
@@ -174,7 +171,7 @@ async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVe
   let cont: string | undefined;
   let resourceVersion: string | undefined;
 
-  // Loop while there is a continue token (matches the Rust continue-token loop).
+  // Loop while the apiserver keeps handing back a continue token.
   for (;;) {
     const query: Record<string, string> = {};
     if (labelSelector) query.labelSelector = labelSelector;
@@ -212,7 +209,17 @@ async function listResources(resourceType: string, namespace?: string): Promise<
   const ar = apiResourceForType(resourceType);
   const project = listProjectionFor(resourceType);
   if (!ar || !project) throw new Error(`Unknown resource type: ${resourceType}`);
-  const { items: raw, resourceVersion } = await listRaw({ ar, namespace });
+  // A kind whose projection keeps nothing but metadata (Role, ClusterRole)
+  // is listed metadata-only: the full bodies (rules…) were downloaded and
+  // parsed just to be thrown away. The registry is the authority on that.
+  const fields = RESOURCE_TYPES[resourceType]?.list;
+  const metaOnly =
+    !!fields && !fields.spec && !fields.status && !fields.data && !(fields.synth && fields.synth.length > 0);
+  const { items: raw, resourceVersion } = await listRaw({
+    ar,
+    namespace,
+    accept: metaOnly ? META_ACCEPT : undefined,
+  });
   const out: ResourceList = { items: raw.map(project), resource_type: resourceType };
   if (resourceVersion) out.resource_version = resourceVersion;
   return out;
@@ -224,7 +231,7 @@ async function listResources(resourceType: string, namespace?: string): Promise<
 
 async function listPodsBySelector(namespace: string, selector: string): Promise<ResourceList> {
   const ar = apiResourceForType('pods')!;
-  // Rust uses Api::namespaced/all with a label selector, single list (no paging).
+  // Single list with a label selector — no paging.
   const { items: raw } = await listRaw({
     ar,
     namespace: namespace.length === 0 ? undefined : namespace,
@@ -259,7 +266,7 @@ async function getResource(kind: string, name: string, namespace: string): Promi
 
   const res: Resource = {
     api_version: ar.apiVersion,
-    kind, // keep caller's kind string verbatim (Rust does kind.to_string())
+    kind, // keep the caller's kind string verbatim
     metadata: metaFrom(obj.metadata),
   };
   const spec = presentOrUndefined(obj.spec);
@@ -272,16 +279,44 @@ async function getResource(kind: string, name: string, namespace: string): Promi
   return res;
 }
 
-async function getResourceYaml(kind: string, name: string, namespace: string): Promise<string> {
+/**
+ * Read one object from a context other than the active one. Goes through the
+ * typed KubernetesObjectApi (which builds its own TLS agent from that
+ * context's kubeconfig entry) rather than the raw `apiGet` path, whose TLS is
+ * bound to the ACTIVE cluster via the global dispatcher.
+ */
+async function getRawFromContext(
+  context: string,
+  kind: string,
+  ar: ApiResource,
+  name: string,
+  namespace: string,
+): Promise<RawObject> {
+  const api = kcFor(context).makeApiClient(KubernetesObjectApi);
+  const obj = await api.read({
+    apiVersion: ar.apiVersion,
+    kind,
+    metadata: { name, namespace: ar.clusterScoped ? undefined : namespace },
+  });
+  return obj as unknown as RawObject;
+}
+
+async function getResourceYaml(
+  kind: string,
+  name: string,
+  namespace: string,
+  context?: string,
+): Promise<string> {
   const { ar } = apiResourceForKind(kind);
-  const obj = await getRaw(ar, name, namespace);
+  const peer = context && context !== getActiveContextName() ? context : undefined;
+  const obj = peer ? await getRawFromContext(peer, kind, ar, name, namespace) : await getRaw(ar, name, namespace);
   // Strip managedFields — verbose server-side-apply noise.
   if (obj.metadata) delete obj.metadata.managedFields;
   return YAML.stringify(obj);
 }
 
 // ---------------------------------------------------------------------------
-// Counts — port of counting.rs.
+// Counts.
 //
 // Same trick as countCrd (crd.ts): ask for a single item and read
 // `metadata.remainingItemCount`, so the apiserver does the counting and we
@@ -297,7 +332,7 @@ interface RawCountList {
 
 async function countResourceType(resourceType: string, namespace?: string): Promise<number> {
   const ar = apiResourceForType(resourceType);
-  if (!ar) return 0; // Rust returns 0 for unknown/unsupported types.
+  if (!ar) return 0; // unknown/unsupported types count as 0.
   try {
     const list = await apiGet<RawCountList>(
       resourcePath(ar, namespace),
@@ -308,8 +343,8 @@ async function countResourceType(resourceType: string, namespace?: string): Prom
     const remaining = list.metadata?.remainingItemCount;
     return remaining !== undefined && remaining !== null ? remaining + itemsLen : itemsLen;
   } catch {
-    // 404 (e.g. the VPA CRD is not installed) or any other failure -> 0,
-    // matching the Rust unwrap_or(0) path. No full-body retry.
+    // 404 (e.g. the VPA CRD is not installed) or any other failure -> 0.
+    // No full-body retry.
     return 0;
   }
 }
@@ -327,7 +362,7 @@ async function getResourceCounts(
 }
 
 // ---------------------------------------------------------------------------
-// Events — port of events.rs
+// Events
 // ---------------------------------------------------------------------------
 
 function eventFrom(e: RawEvent): EventItem {
@@ -368,7 +403,7 @@ async function getEvents(namespace?: string, fieldSelector?: string): Promise<Ev
   return (list.items ?? []).map(eventFrom);
 }
 
-// Plural resource_type -> involvedObject.kind (port of events.rs match).
+// Plural resource_type -> involvedObject.kind.
 const EVENT_KIND_MAP: Record<string, string> = {
   pods: 'Pod',
   deployments: 'Deployment',
@@ -402,7 +437,7 @@ async function getResourceEvents(
   name: string,
   namespace: string,
 ): Promise<EventItem[]> {
-  // Unknown types fall through to the verbatim resource_type (Rust `other => other`).
+  // Unknown types fall through to the verbatim resource_type.
   const kind = EVENT_KIND_MAP[resourceType] ?? resourceType;
   const fieldSelector = `involvedObject.name=${name},involvedObject.kind=${kind}`;
   const ns = namespace.length === 0 ? undefined : namespace;
@@ -424,7 +459,7 @@ function optStr(v: unknown): string | undefined {
 export function register(handlers: HandlerMap): void {
   const listResourcesHandler: Handler = async (args) => {
     const resourceType = str(args.resourceType);
-    // namespace is Option<String> in Rust; the frontend sends null for cluster-wide.
+    // The frontend sends null for cluster-wide.
     const ns = optStr(args.namespace);
     return listResources(resourceType, ns);
   };
@@ -441,7 +476,9 @@ export function register(handlers: HandlerMap): void {
   };
 
   const getResourceYamlHandler: Handler = async (args) => {
-    return getResourceYaml(str(args.kind), str(args.name), str(args.namespace));
+    // `context` is optional: set, it reads from that context instead of the
+    // active one (Compare Across Contexts) — never switches the active one.
+    return getResourceYaml(str(args.kind), str(args.name), str(args.namespace), optStr(args.context));
   };
 
   const getResourceHandler: Handler = async (args) => {

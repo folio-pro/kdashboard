@@ -145,7 +145,9 @@ export function getRelatedResources(
       break;
     }
 
-    case "hpa": {
+    // WPA is Datadog's CRD but borrows the HPA spelling for its subject.
+    case "hpa":
+    case "wpa": {
       // scaleTargetRef
       const target = spec.scaleTargetRef as { kind?: string; name?: string } | undefined;
       if (target?.kind && target?.name) add(rel(target.kind, target.name));

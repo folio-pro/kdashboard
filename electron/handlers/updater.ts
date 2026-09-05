@@ -1,15 +1,14 @@
-// Updater subsystem — Electron port of src-tauri/src/update.rs + the Tauri
-// updater plugin, backed by electron-updater's `autoUpdater`.
+// Updater subsystem — backed by electron-updater's `autoUpdater`.
 //
 // Renderer contract (DO NOT BREAK), from
 // src/lib/components/common/UpdateBanner.svelte + src/lib/types/settings.ts:
-//   - `check()` (tauri-updater shim) -> __updater_check returns either:
+//   - `check()` -> __updater_check returns either:
 //       * null                              when no update is available, OR
 //       * { version, body, date }           (UpdateInfo) when one is.
-//     The UI reads `.version`; the shim wraps the JSON in an Update handle
+//     The UI reads `.version`; the renderer wraps the JSON in an Update handle
 //     whose `downloadAndInstall(onEvent)` drives __updater_download below.
 //   - Background check emits the `update-available` event with the SAME
-//     UpdateInfo shape { version, body, date } (Rust emitted exactly this).
+//     UpdateInfo shape { version, body, date }.
 //   - `relaunch()` is handled separately by __process_relaunch in main.ts.
 //
 // This is the lowest-priority subsystem: in a dev run electron-updater is
@@ -48,8 +47,8 @@ const MANUAL_INSTALL = process.platform === 'darwin';
 
 /**
  * Download-lifecycle event pushed to the renderer over UPDATER_DOWNLOAD_CHANNEL.
- * Mirrors the Tauri updater's Started/Progress/Finished union that the
- * tauri-updater shim re-emits to UpdateBanner.svelte:
+ * The Started/Progress/Finished union the renderer re-emits to
+ * UpdateBanner.svelte:
  *   - Started:  { event: 'Started',  data: { contentLength } }
  *   - Progress: { event: 'Progress', data: { chunkLength } }
  *   - Finished: { event: 'Finished' }
@@ -171,8 +170,8 @@ async function runCheck(): Promise<UpdateInfo | null> {
   if (!au) return null;
   try {
     const result = await au.checkForUpdates();
-    // Unlike the Tauri updater, checkForUpdates() resolves with the latest
-    // release's updateInfo even when the app is already up to date — the real
+    // checkForUpdates() resolves with the latest release's updateInfo even
+    // when the app is already up to date — the real
     // signal is isUpdateAvailable (electron-updater's own semver comparison
     // against app.getVersion()). Without this check the banner offers the
     // running version as an "update".
@@ -188,8 +187,8 @@ async function runCheck(): Promise<UpdateInfo | null> {
 }
 
 /**
- * Background notifier — the port of Rust `check_and_notify`. Waits a few seconds
- * so it never blocks startup, runs one check, and emits `update-available` with
+ * Background notifier. Waits a few seconds so it never blocks startup, runs one
+ * check, and emits `update-available` with
  * { version, body, date } if an update exists. Idempotent across the process.
  */
 export function checkAndNotify(ctx: HandlerCtx): void {
@@ -203,7 +202,7 @@ export function checkAndNotify(ctx: HandlerCtx): void {
       .catch((err) => {
         console.warn('[updater] background notify failed:', errMsg(err));
       });
-  }, 3000); // mirrors the Rust 3s settle delay
+  }, 3000); // settle delay, so the check never competes with startup
 }
 
 /**
@@ -302,11 +301,11 @@ async function runDownloadAndInstall(ctx: HandlerCtx): Promise<null> {
 }
 
 /**
- * Register the updater commands. The renderer reaches these via the
- * tauri-updater shim (check + the synthesized downloadAndInstall).
+ * Register the updater commands. The renderer reaches these through its
+ * updater helper (check + the synthesized downloadAndInstall).
  */
 export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
-  // __updater_check — tauri-updater shim entry. Returns UpdateInfo | null.
+  // __updater_check — returns UpdateInfo | null.
   handlers.set('__updater_check', async () => {
     return runCheck();
   });
@@ -318,6 +317,6 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
     return runDownloadAndInstall(ctx);
   });
 
-  // Kick off the background "update available" notice (Rust check_and_notify).
+  // Kick off the background "update available" notice.
   checkAndNotify(ctx);
 }

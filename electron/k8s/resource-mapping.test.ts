@@ -2,10 +2,10 @@ import { test, expect, describe } from 'bun:test';
 
 import { metaFrom, dynamicToResource, presentOrUndefined, listProjectionFor } from './resource-mapping';
 
-describe('metaFrom — Rust serde null contract', () => {
+describe('metaFrom — null contract', () => {
   test('absent fields serialize as null, NOT omitted', () => {
-    // The Rust ResourceMetadata struct has no skip_serializing_if, so None ->
-    // JSON null. This is the contract the renderer was built against.
+    // Absent metadata fields must be null, not omitted. This is the contract
+    // the renderer was built against.
     const m = metaFrom(undefined);
     expect(m.name).toBeNull();
     expect(m.namespace).toBeNull();
@@ -14,6 +14,7 @@ describe('metaFrom — Rust serde null contract', () => {
     expect(m.labels).toBeNull();
     expect(m.annotations).toBeNull();
     expect(m.creation_timestamp).toBeNull();
+    expect(m.deletion_timestamp).toBeNull();
     expect(m.owner_references).toBeNull();
     // Every field present in the serialized JSON (none dropped):
     const json = JSON.parse(JSON.stringify(m));
@@ -21,6 +22,7 @@ describe('metaFrom — Rust serde null contract', () => {
       [
         'annotations',
         'creation_timestamp',
+        'deletion_timestamp',
         'labels',
         'name',
         'namespace',
@@ -47,6 +49,7 @@ describe('metaFrom — Rust serde null contract', () => {
       uid: 'u1',
       resource_version: '42',
       creation_timestamp: '2024-01-01T00:00:00Z',
+      deletion_timestamp: null,
       labels: { app: 'web' },
       annotations: { a: 'b' },
       owner_references: null,
@@ -61,7 +64,7 @@ describe('metaFrom — Rust serde null contract', () => {
 });
 
 describe('dynamicToResource', () => {
-  test('omits spec/status/data/type when absent (serde skip_serializing_if)', () => {
+  test('omits spec/status/data/type when absent', () => {
     const r = dynamicToResource({ metadata: { name: 'x', uid: 'u' } }, 'v1', 'Pod');
     expect(r.api_version).toBe('v1');
     expect(r.kind).toBe('Pod');

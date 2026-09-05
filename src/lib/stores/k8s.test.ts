@@ -1,6 +1,15 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import type { Resource, ResourceList, ConnectionStatus, PortForwardInfo } from "../types/index.js";
-import { K8sStoreLogic, type WatchEvent } from "./k8s.logic.js";
+import {
+  K8sStoreLogic,
+  crdTypeFor,
+  parseCrdType,
+  isNetworkErrorMessage,
+  isWatchNotice,
+  formatClock,
+  type WatchEvent,
+  type WatchNotice,
+} from "./k8s.logic.js";
 
 interface ResourceOverrides {
   kind?: string;
@@ -123,6 +132,35 @@ describe("K8sStore", () => {
       store.clearNavHistory();
       expect(store.hasNavHistory).toBe(false);
       expect(store.navigateBack()).toBe(false);
+    });
+  });
+
+  describe("lastUpdatedAt", () => {
+    test("_replaceResources stamps the list it swaps in", () => {
+      const list: ResourceList = { items: [makeResource({ metadata: { name: "a", uid: "u1" } })], resource_type: "pods" };
+      store._replaceResources(list, 1234);
+      expect(store.resources).toBe(list);
+      expect(store.lastUpdatedAt).toBe(1234);
+    });
+
+    test("watch deltas stamp the list", () => {
+      store.resources = { items: [], resource_type: "pods" };
+      store.handleWatchEvent({
+        event_type: "Applied",
+        resource_type: "pods",
+        resource: makeResource({ metadata: { name: "a", uid: "u1" } }),
+      });
+      expect(store.lastUpdatedAt).toBeGreaterThan(0);
+    });
+
+    test("_resetVisibleState and a tab-cache restore forget the previous view's timestamp", () => {
+      store._replaceResources({ items: [], resource_type: "pods" }, 1234);
+      store._resetVisibleState();
+      expect(store.lastUpdatedAt).toBe(0);
+
+      store._replaceResources({ items: [], resource_type: "pods" }, 1234);
+      store.restoreResourcesSync("deployments", []);
+      expect(store.lastUpdatedAt).toBe(0);
     });
   });
 
@@ -480,5 +518,228 @@ describe("K8sStore", () => {
       expect(store.error).toBeNull();
       expect(store.resourceCounts).toEqual({});
     });
+  });
+});
+
+describe("reachability", () => {
+  let store: K8sStoreLogic;
+  beforeEach(() => {
+    store = new K8sStoreLogic();
+  });
+
+  test("starts reachable with no heartbeat", () => {
+    expect(store.reachable).toBe(true);
+    expect(store.unreachableSince).toBe(0);
+    expect(store.lastHeartbeatAt).toBe(0);
+    expect(store.unreachableTooltip).toBe("");
+  });
+
+  test("a transport failure starts an outage; the cluster answering ends it", () => {
+    expect(store.noteCallFailure("Cannot reach the cluster apiserver at https://127.0.0.1:6443: connection refused [ECONNREFUSED]", 1_000)).toBe(true);
+    expect(store.reachable).toBe(false);
+    expect(store.unreachableSince).toBe(1_000);
+    // A second failure keeps the ORIGINAL start of the outage.
+    store.noteCallFailure("fetch failed", 2_000);
+    expect(store.unreachableSince).toBe(1_000);
+
+    expect(store._markReachable(3_000)).toBe(true);
+    expect(store.reachable).toBe(true);
+    expect(store.unreachableSince).toBe(0);
+    expect(store.lastHeartbeatAt).toBe(3_000);
+    // Already reachable: a heartbeat, not a recovery.
+    expect(store._markReachable(4_000)).toBe(false);
+    expect(store.lastHeartbeatAt).toBe(4_000);
+  });
+
+  test("a failure the cluster itself answered is not an outage", () => {
+    expect(store.noteCallFailure('pods is forbidden: User "x" cannot list resource "pods"')).toBe(false);
+    expect(store.noteCallFailure("Unknown resource type: crd:demo.kdash.io/Widget")).toBe(false);
+    expect(store.noteCallFailure('secrets "foo" not found')).toBe(false);
+    expect(store.reachable).toBe(true);
+  });
+
+  test("tooltip names when the outage began and how old the data is", () => {
+    const since = new Date(2026, 0, 1, 9, 5).getTime();
+    const dataAt = new Date(2026, 0, 1, 8, 59).getTime();
+    store._replaceResources({ items: [], resource_type: "pods" }, dataAt);
+    store._markUnreachable(since);
+    expect(store.unreachableTooltip).toBe("Cluster unreachable since 09:05 · showing data from 08:59");
+
+    // No list ever landed: fall back to the last heartbeat, then to nothing.
+    const bare = new K8sStoreLogic();
+    bare._markReachable(dataAt);
+    bare._markUnreachable(since);
+    expect(bare.unreachableTooltip).toBe("Cluster unreachable since 09:05 · showing data from 08:59");
+    const never = new K8sStoreLogic();
+    never._markUnreachable(since);
+    expect(never.unreachableTooltip).toBe("Cluster unreachable since 09:05");
+  });
+});
+
+describe("isNetworkErrorMessage", () => {
+  test("matches the shapes the backend produces for transport failures", () => {
+    for (const msg of [
+      "Cannot reach the cluster apiserver at https://x: connection refused — nothing is listening there [ECONNREFUSED]",
+      "Request to https://x failed: connect ETIMEDOUT",
+      "getaddrinfo EAI_AGAIN api.example.com",
+      "fetch failed",
+      "socket hang up",
+      "HTTP-Code: 503\nMessage: the server is currently unable to handle the request",
+      "Service Unavailable",
+      "Bad Gateway",
+      "read ECONNRESET",
+    ]) {
+      expect(isNetworkErrorMessage(msg), msg).toBe(true);
+    }
+  });
+
+  test("leaves errors the cluster answered alone", () => {
+    for (const msg of [
+      'pods is forbidden: User "x" cannot list resource "pods" in API group ""',
+      'deployments.apps "web" not found',
+      "Unknown resource type for watch: crd:demo.kdash.io/Widget",
+      "watch cancelled before it finished opening",
+      "Invalid value: -1: must be greater than or equal to 0",
+    ]) {
+      expect(isNetworkErrorMessage(msg), msg).toBe(false);
+    }
+  });
+});
+
+describe("formatClock", () => {
+  test("renders local HH:MM, zero-padded", () => {
+    expect(formatClock(new Date(2026, 5, 3, 7, 4).getTime())).toBe("07:04");
+    expect(formatClock(new Date(2026, 5, 3, 23, 59).getTime())).toBe("23:59");
+  });
+});
+
+describe("watch notices", () => {
+  let store: K8sStoreLogic;
+  beforeEach(() => {
+    store = new K8sStoreLogic();
+    store.setResourceType("pods");
+    store.watching = true;
+  });
+
+  test("isWatchNotice tells notices from deltas", () => {
+    expect(isWatchNotice({ event_type: "watch_error", resource_type: "pods" })).toBe(true);
+    expect(isWatchNotice({ event_type: "watch_open", resource_type: "pods" })).toBe(true);
+    expect(isWatchNotice({ event_type: "Applied", resource_type: "pods", resource: makeResource({ metadata: {} }) })).toBe(false);
+  });
+
+  test("watch_error stops 'Watching' and, when transport-level, starts an outage", () => {
+    const notice: WatchNotice = { event_type: "watch_error", resource_type: "pods", message: "Cannot reach the cluster apiserver at https://x: connection refused [ECONNREFUSED]" };
+    store.handleWatchNotice(notice, 500);
+    expect(store.watching).toBe(false);
+    expect(store.reachable).toBe(false);
+    expect(store.unreachableSince).toBe(500);
+  });
+
+  test("a watch_error the apiserver answered is not an outage — just not watching", () => {
+    store.handleWatchNotice({ event_type: "watch_error", resource_type: "pods", message: "Premature close" });
+    expect(store.watching).toBe(false);
+    expect(store.reachable).toBe(true);
+  });
+
+  test("watch_open restores watching and counts as a heartbeat", () => {
+    store.handleWatchNotice({ event_type: "watch_error", resource_type: "pods", message: "fetch failed" }, 10);
+    store.handleWatchNotice({ event_type: "watch_open", resource_type: "pods" }, 20);
+    expect(store.watching).toBe(true);
+    expect(store.reachable).toBe(true);
+    expect(store.lastHeartbeatAt).toBe(20);
+  });
+
+  test("notices for another type are ignored, and handleWatchEvent routes them", () => {
+    store.handleWatchEvent({ event_type: "watch_error", resource_type: "deployments", message: "fetch failed" });
+    expect(store.watching).toBe(true);
+    expect(store.reachable).toBe(true);
+    store.handleWatchEvent({ event_type: "watch_error", resource_type: "pods", message: "fetch failed" });
+    expect(store.watching).toBe(false);
+    expect(store.reachable).toBe(false);
+  });
+});
+
+describe("CRD pseudo-types", () => {
+  const widget = { group: "demo.kdash.io", version: "v1", kind: "Widget", plural: "widgets", scope: "Namespaced" as const, short_names: [] };
+  const gadget = { ...widget, kind: "Gadget", plural: "gadgets", scope: "Cluster" as const };
+
+  test("crdTypeFor / parseCrdType round-trip, and reject non-CRD types", () => {
+    expect(crdTypeFor(widget)).toBe("crd:demo.kdash.io/Widget");
+    expect(parseCrdType("crd:demo.kdash.io/Widget")).toEqual({ group: "demo.kdash.io", kind: "Widget" });
+    expect(parseCrdType("pods")).toBeNull();
+    expect(parseCrdType("crd:broken")).toBeNull();
+  });
+
+  test("findCrd reads discovery groups, or the selected CRD before discovery", () => {
+    const store = new K8sStoreLogic();
+    expect(store.findCrd("demo.kdash.io", "Widget")).toBeNull();
+    store.selectedCrd = widget;
+    expect(store.findCrd("demo.kdash.io", "Widget")).toBe(widget);
+    store.selectedCrd = null;
+    store.crdGroups = [{ group: "demo.kdash.io", resources: [widget, gadget] }];
+    expect(store.findCrd("demo.kdash.io", "Gadget")).toBe(gadget);
+    expect(store.findCrd("other.io", "Gadget")).toBeNull();
+    expect(store.isClusterScopedCrd("crd:demo.kdash.io/Gadget")).toBe(true);
+    expect(store.isClusterScopedCrd("crd:demo.kdash.io/Widget")).toBe(false);
+    expect(store.isClusterScopedCrd("nodes")).toBe(false);
+  });
+
+  test("a CRD listing's rows follow every writer of `resources` — including watch deltas", () => {
+    const store = new K8sStoreLogic();
+    const type = crdTypeFor(widget);
+    store.crdGroups = [{ group: "demo.kdash.io", resources: [widget] }];
+    store.setResourceType(type);
+    const a = makeResource({ kind: "Widget", metadata: { name: "a", uid: "w-a" } });
+    const columns = [{ name: "Phase", json_path: ".status.phase", column_type: "string", description: "" }];
+    store._adoptCrdListing(type, [a], columns);
+    store._replaceResources({ items: [a], resource_type: type }, 1);
+    expect(store.crdResources.items).toEqual([a]);
+    expect(store.crdResources.columns).toBe(columns);
+
+    const b = makeResource({ kind: "Widget", metadata: { name: "b", uid: "w-b" } });
+    store.handleWatchEvent({ event_type: "Applied", resource_type: type, resource: b });
+    expect(store.crdResources.items.map((r) => r.metadata.name)).toEqual(["a", "b"]);
+    expect(store.crdResources.columns).toBe(columns);
+
+    store.handleWatchEvent({ event_type: "Deleted", resource_type: type, resource: a });
+    expect(store.crdResources.items.map((r) => r.metadata.name)).toEqual(["b"]);
+
+    // A built-in listing never touches the CRD view.
+    store.setResourceType("pods");
+    store._replaceResources({ items: [makeResource({ metadata: { uid: "p" } })], resource_type: "pods" }, 2);
+    expect(store.crdResources.items.map((r) => r.metadata.name)).toEqual(["b"]);
+  });
+
+  test("restoring a CRD tab from cache brings back its columns and selection", () => {
+    const store = new K8sStoreLogic();
+    const type = crdTypeFor(widget);
+    store.crdGroups = [{ group: "demo.kdash.io", resources: [widget, gadget] }];
+    const columns = [{ name: "Phase", json_path: ".status.phase", column_type: "string", description: "" }];
+    store._adoptCrdListing(type, [], columns);
+
+    store.selectedCrd = gadget;
+    const a = makeResource({ kind: "Widget", metadata: { name: "a", uid: "w-a" } });
+    store.restoreResourcesSync(type, [a]);
+    expect(store.selectedCrd).toBe(widget);
+    expect(store.crdResources).toEqual({ items: [a], columns });
+    expect(store.resources.items).toBe(store.crdResources.items);
+  });
+});
+
+describe("restoreNamespace and 'all namespaces'", () => {
+  test('a restored "" never becomes cluster scope on its own; a loaded list snaps it to a real namespace', () => {
+    const store = new K8sStoreLogic();
+    store.namespaces = ["kube-system", "team-a"];
+    store.currentNamespace = "";
+    store.restoreNamespace("");
+    expect(store.currentNamespace).toBe("kube-system");
+  });
+
+  test('an explicit "" (All namespaces) survives as the current namespace', () => {
+    const store = new K8sStoreLogic();
+    store.namespaces = ["default", "team-a"];
+    store.currentNamespace = "";
+    store._resetVisibleState({ keepNamespace: "" });
+    expect(store.currentNamespace).toBe("");
   });
 });

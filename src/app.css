@@ -106,9 +106,11 @@ html, body {
   --status-succeeded: #3C83F6;
   --status-warning: #F59F0A;
   --status-terminating: #F97316;
-  --sidebar-bg: #0D0E10;
-  --sidebar-hover: #17191C;
-  --sidebar-active: #1E2329;
+  /* Neutral greys on the neutral surface scale — the old values carried a
+     blue cast (#0D0E10 / #1E2329) that read as a different theme. */
+  --sidebar-bg: #0F0F0F;
+  --sidebar-hover: #1A1A1A;
+  --sidebar-active: #242424;
   --table-header-bg: #242424;
   --table-row-hover: #1A1A1A;
   --log-bg: #171717;
@@ -435,6 +437,9 @@ html, body {
 [data-theme] {
   --border-color: color-mix(in srgb, var(--text-primary) 14%, var(--bg-primary));
   --border-hover: color-mix(in srgb, var(--text-primary) 22%, var(--bg-primary));
+  /* Row separator inside dense tables: half the contrast of --border-color, so
+     a screen of 20 rows reads as one surface rather than 20 stripes. */
+  --hairline: color-mix(in srgb, var(--text-primary) 7%, var(--bg-primary));
   /* Derived rather than declared per theme: the overlay takes its polarity
      from the theme's own text colour, so light themes darken and dark themes
      lighten without eleven hand-maintained pairs. */
@@ -872,6 +877,30 @@ summary:focus-visible,
 
 .animate-fade-in {
   animation: fadeIn 150ms ease-out;
+}
+
+/* ========================================
+   Value Flash
+
+   A table cell whose number just changed. Watch deltas repaint one cell on an
+   otherwise still table, which is easy to miss when you are waiting to see an
+   autoscaler react; the wash fades back to nothing over the window. Direction
+   is carried by the arrow beside the value rather than by colour, so it still
+   reads under reduced motion and for a colour-blind reader.
+
+   The duration must match FLASH_MS in stores/live-values.logic.ts — the class
+   is removed when the store expires the flash, and a shorter animation would
+   leave a dead highlight behind.
+   ======================================== */
+
+@keyframes valueFlash {
+  from { background-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+  to { background-color: transparent; }
+}
+
+.animate-value-flash {
+  animation: valueFlash 1400ms ease-out;
+  border-radius: 3px;
 }
 
 /* ========================================
