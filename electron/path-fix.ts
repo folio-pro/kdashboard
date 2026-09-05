@@ -17,12 +17,19 @@
 // No-op on Windows and harmless on a terminal launch (the shell PATH is
 // simply re-adopted).
 
-import { execFile } from 'node:child_process';
+import { execFile, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 
 const START = '__PATH_START__';
 const END = '__PATH_END__';
 const PROBE_TIMEOUT_MS = 5000;
+/**
+ * Hard deadline past the execFile timeout. That timeout only sends SIGTERM and
+ * the callback still waits for the child to exit — a shell that traps SIGTERM
+ * (or a profile stuck on a prompt) would hold `pathReady`, and with it every
+ * cluster command, forever.
+ */
+const PROBE_DEADLINE_MS = PROBE_TIMEOUT_MS + 1000;
 
 export interface PathFixDeps {
   platform: NodeJS.Platform;
@@ -43,23 +50,57 @@ export function parseProbedPath(out: string): string | null {
   return path.length > 0 ? path : null;
 }
 
+/** The subset of execFile the probe needs; tests inject a fake. */
+export type ProbeExec = (
+  file: string,
+  args: string[],
+  options: { encoding: 'utf8'; timeout: number },
+  callback: (err: Error | null, stdout: string) => void,
+) => Pick<ChildProcess, 'kill'>;
+
+/**
+ * Run the login shell and resolve with its stdout — '' on any failure,
+ * including a child that outlives the deadline (it is SIGKILLed).
+ */
+export function probeLoginShell(
+  shell: string,
+  exec: ProbeExec = execFile as unknown as ProbeExec,
+  deadlineMs: number = PROBE_DEADLINE_MS,
+): Promise<string> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (out: string): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve(out);
+    };
+    // `-ilc` = interactive login shell running one command, so the user's
+    // profile (which exports PATH) is sourced. Markers bracket the value so
+    // it can be extracted from any banner/noise the shell prints.
+    const child = exec(
+      shell,
+      ['-ilc', `echo ${START}\${PATH}${END}`],
+      { encoding: 'utf8', timeout: PROBE_TIMEOUT_MS },
+      (err, stdout) => settle(err ? '' : stdout),
+    );
+    const deadline = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // already gone
+      }
+      settle('');
+    }, deadlineMs);
+  });
+}
+
 /** Real dependencies: the user's shell, and a plain-text cache file. */
 export function realPathFixDeps(cacheFile: string): PathFixDeps {
   return {
     platform: process.platform,
     env: process.env,
-    probe: (shell) =>
-      new Promise((resolve) => {
-        // `-ilc` = interactive login shell running one command, so the user's
-        // profile (which exports PATH) is sourced. Markers bracket the value
-        // so it can be extracted from any banner/noise the shell prints.
-        execFile(
-          shell,
-          ['-ilc', `echo ${START}\${PATH}${END}`],
-          { encoding: 'utf8', timeout: PROBE_TIMEOUT_MS },
-          (err, stdout) => resolve(err ? '' : stdout),
-        );
-      }),
+    probe: (shell) => probeLoginShell(shell),
     readCache: () => {
       try {
         const cached = fs.readFileSync(cacheFile, 'utf8').trim();

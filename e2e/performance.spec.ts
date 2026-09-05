@@ -15,8 +15,12 @@
 import type { Page } from "@playwright/test";
 import { test, expect } from "./helpers";
 
-/** Generated in-page: pods rich enough to exercise the real cell renderers. */
-const GEN = `(n) => {
+/**
+ * Generated in-page: pods rich enough to exercise the real cell renderers.
+ * Installed as window.__perfPods by bootWithStores (addInitScript, so it is a
+ * plain page-side function — no eval in the tests).
+ */
+const GEN = `window.__perfPods = (n) => {
   const phases = ["Running", "Running", "Pending", "Failed"];
   const items = new Array(n);
   for (let i = 0; i < n; i++) {
@@ -40,6 +44,7 @@ const GEN = `(n) => {
 }`;
 
 async function bootWithStores(page: Page): Promise<void> {
+  await page.addInitScript(GEN);
   await page.goto("/");
   await page.waitForFunction(() => !!(window as any).__kdash?.k8sStore, null, { timeout: 15_000 });
   await page.evaluate(() => {
@@ -54,16 +59,16 @@ async function bootWithStores(page: Page): Promise<void> {
 
 /** Assign `size` generated pods to the store and measure until rows are painted. */
 async function measureMount(page: Page, size: number): Promise<{ ms: number; rendered: number }> {
-  return page.evaluate(async ({ size, gen }) => {
+  return page.evaluate(async (size) => {
     const { k8sStore } = (window as any).__kdash;
-    const items = eval(gen)(size);
+    const items = (window as any).__perfPods(size);
     k8sStore.resources = { items: [], resource_type: "pods" };
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     const t0 = performance.now();
     k8sStore.resources = { items, resource_type: "pods" };
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     return { ms: performance.now() - t0, rendered: document.querySelectorAll("tbody tr").length };
-  }, { size, gen: GEN });
+  }, size);
 }
 
 /** Set the filter and measure until every painted row matches it. */
@@ -174,9 +179,9 @@ test.describe("Performance regression guards", () => {
     };
     await client.send("Performance.enable");
     const before = await heap();
-    await page.evaluate(async ({ gen }) => {
+    await page.evaluate(async () => {
       const { k8sStore } = (window as any).__kdash;
-      const base = eval(gen)(2000);
+      const base = (window as any).__perfPods(2000);
       for (let i = 0; i < 30; i++) {
         const next = base.slice();
         for (let j = 0; j < 100; j++) {
@@ -186,7 +191,7 @@ test.describe("Performance regression guards", () => {
         k8sStore.resources = { items: next, resource_type: "pods" };
         await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
       }
-    }, { gen: GEN });
+    });
     const after = await heap();
     await client.detach();
     // Measured growth ≈ 1 MB (retained flash state for changed rows).

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { fixPathEnv, parseProbedPath, type PathFixDeps } from './path-fix';
+import { fixPathEnv, parseProbedPath, probeLoginShell, type PathFixDeps, type ProbeExec } from './path-fix';
 
 const PROBE_OK = 'banner\n__PATH_START__/opt/homebrew/bin:/usr/bin__PATH_END__\n';
 
@@ -92,5 +92,32 @@ describe('fixPathEnv', () => {
     await fixPathEnv(d);
     expect(probed).toBe(false);
     expect(d.env.PATH).toBe('/usr/bin:/bin');
+  });
+});
+
+describe('probeLoginShell', () => {
+  test('resolves with the shell output when the child exits', async () => {
+    const exec: ProbeExec = (_file, _args, _opts, cb) => {
+      setTimeout(() => cb(null, PROBE_OK), 0);
+      return { kill: () => true };
+    };
+    expect(await probeLoginShell('/bin/zsh', exec, 1000)).toBe(PROBE_OK);
+  });
+
+  test('a child that never exits is killed at the deadline and yields an empty probe', async () => {
+    const signals: string[] = [];
+    // Never calls back: a shell that traps SIGTERM (execFile's timeout signal).
+    const exec: ProbeExec = () => ({ kill: (sig) => (signals.push(String(sig)), true) });
+    const t0 = Date.now();
+    expect(await probeLoginShell('/bin/zsh', exec, 20)).toBe('');
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(15);
+    expect(signals).toEqual(['SIGKILL']);
+  });
+
+  test('a late callback after the deadline is ignored', async () => {
+    let late: ((err: Error | null, out: string) => void) | undefined;
+    const exec: ProbeExec = (_f, _a, _o, cb) => ((late = cb), { kill: () => true });
+    expect(await probeLoginShell('/bin/zsh', exec, 10)).toBe('');
+    late?.(null, PROBE_OK); // must not throw or resolve twice
   });
 });
