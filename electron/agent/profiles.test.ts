@@ -32,6 +32,13 @@ describe('claude profile', () => {
     expect(env).toEqual({ KDASHBOARD_MCP_TOKEN: 'deadbeef' });
   });
 
+  test('resume continues the last conversation in front of the MCP flags', () => {
+    const { args } = getAgentProfile('claude').buildInvocation({ ...INPUT, resume: true });
+    expect(args[0]).toBe('--continue');
+    expect(args[1]).toBe('--strict-mcp-config');
+    expect(args.at(-1)).toBe(INPUT.prompt);
+  });
+
   test('omits the prompt argument when there is no prompt', () => {
     const { args } = getAgentProfile('claude').buildInvocation({ ...INPUT, prompt: undefined });
     expect(args.at(-1)).toBe('mcp__kdashboard');
@@ -51,6 +58,12 @@ describe('codex profile', () => {
       INPUT.prompt,
     ]);
     expect(env.KDASHBOARD_MCP_TOKEN).toBe('deadbeef');
+  });
+
+  test('resume becomes the `resume --last` subcommand with the same overrides', () => {
+    const { args } = getAgentProfile('codex').buildInvocation({ ...INPUT, resume: true });
+    expect(args.slice(0, 3)).toEqual(['resume', '--last', '-c']);
+    expect(args.at(-1)).toBe(INPUT.prompt);
   });
 
   test('warns on a pre-HTTP-MCP version and accepts a recent one', () => {

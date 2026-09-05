@@ -26,8 +26,12 @@ export type Dispatch = (cmd: string, args?: Record<string, unknown>) => Promise<
 export interface AgentToolDeps {
   dispatch: Dispatch;
   ctx: HandlerCtx;
-  /** Context name the Agent Session started on; tools refuse to run off it. */
-  pinnedContext: string | undefined;
+  /**
+   * Context name the Agent Session started on; tools refuse to run off it.
+   * `null` = not pinned: the endpoint follows whatever context the UI has
+   * active (the external, long-lived MCP endpoint).
+   */
+  pinnedContext: string | undefined | null;
   /** Whether Safe Mutations need Mutation Approval (settings toggle). */
   requireApproval: () => boolean;
 }
@@ -54,6 +58,25 @@ const json = (value: unknown): ToolResult => text(JSON.stringify(value, null, 2)
 /** Max items a list tool returns — protects the agent's context window. */
 const LIST_CAP = 200;
 
+/** Lines fetched before a get_pod_logs grep is applied. */
+const LOG_GREP_WINDOW = 5000;
+
+/** `/re/` or `/re/i` → RegExp; anything else → case-insensitive substring. */
+export function logMatcher(pattern: string): (line: string) => boolean {
+  const re = /^\/(.+)\/([a-z]*)$/.exec(pattern);
+  if (re) {
+    try {
+      const regex = new RegExp(re[1], re[2].includes('i') ? re[2] : `${re[2]}i`);
+      return (line) => regex.test(line);
+    } catch {
+      // Not a valid regex after all: treat the inner text as a substring.
+      pattern = re[1];
+    }
+  }
+  const needle = pattern.toLowerCase();
+  return (line) => line.toLowerCase().includes(needle);
+}
+
 /**
  * Pure guard: the message refusing tool use after a context switch, or null
  * when the pinned context is still active. Exported for unit tests.
@@ -69,9 +92,34 @@ export function contextGuardMessage(pinned: string | undefined, current: string 
 
 type ToolHandler<A> = (args: A) => Promise<ToolResult> | ToolResult;
 
+interface Sample {
+  t: number;
+  v: number;
+}
+
+function summarizeSamples(samples: Sample[]): Record<string, number | null> {
+  if (samples.length === 0) return { count: 0, first: null, last: null, min: null, max: null, avg: null };
+  const values = samples.map((s) => s.v);
+  return {
+    count: samples.length,
+    first: values[0],
+    last: values[values.length - 1],
+    min: Math.min(...values),
+    max: Math.max(...values),
+    avg: values.reduce((a, b) => a + b, 0) / values.length,
+  };
+}
+
+/** Every n-th sample so a series never exceeds `max` points. */
+export function thin<T>(items: T[], max: number): T[] {
+  if (items.length <= max) return items;
+  const step = Math.ceil(items.length / max);
+  return items.filter((_, i) => i % step === 0);
+}
+
 function guarded<A>(deps: AgentToolDeps, handler: ToolHandler<A>): ToolHandler<A> {
   return async (args: A): Promise<ToolResult> => {
-    const refusal = contextGuardMessage(deps.pinnedContext, getActiveContextName());
+    const refusal = deps.pinnedContext === null ? null : contextGuardMessage(deps.pinnedContext, getActiveContextName());
     if (refusal) return errorText(refusal);
     try {
       return await handler(args);
@@ -184,13 +232,17 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
       annotations: READ_ONLY,
       description:
         "Read a pod's logs. Set previous=true for the crashed previous container instance " +
-        '(essential for CrashLoopBackOff diagnosis). Defaults to the last 200 lines.',
+        '(essential for CrashLoopBackOff diagnosis). Defaults to the last 200 lines. ' +
+        'Use grep (case-insensitive substring or /regex/) to keep only matching lines — the filter runs ' +
+        'server-side in kdashboard over up to 5000 lines, so it is the cheap way to find errors in a chatty pod.',
       inputSchema: {
         namespace: z.string(),
         pod: z.string(),
         container: z.string().optional().describe('required only for multi-container pods'),
         tailLines: z.number().int().positive().max(2000).optional(),
         previous: z.boolean().optional(),
+        sinceSeconds: z.number().int().positive().optional().describe('only lines newer than this many seconds'),
+        grep: z.string().optional().describe('substring (case-insensitive) or /regex/ to filter lines'),
       },
     },
     guarded(
@@ -201,21 +253,34 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
         container,
         tailLines,
         previous,
+        sinceSeconds,
+        grep,
       }: {
         namespace: string;
         pod: string;
         container?: string;
         tailLines?: number;
         previous?: boolean;
+        sinceSeconds?: number;
+        grep?: string;
       }) => {
+        const wanted = tailLines ?? 200;
         const logs = await getCoreV1Api().readNamespacedPodLog({
           name: pod,
           namespace,
           container,
-          tailLines: tailLines ?? 200,
+          // With a filter, read a wider window so the wanted count survives it.
+          tailLines: grep ? Math.max(wanted, LOG_GREP_WINDOW) : wanted,
           previous,
+          sinceSeconds,
         });
-        return text(logs.length > 0 ? logs : '(no log output)');
+        if (!grep) return text(logs.length > 0 ? logs : '(no log output)');
+        const matcher = logMatcher(grep);
+        const lines = logs.split('\n').filter((line) => matcher(line));
+        const kept = lines.slice(-wanted);
+        if (kept.length === 0) return text(`(no lines matching ${JSON.stringify(grep)} in the last ${LOG_GREP_WINDOW} lines)`);
+        const note = lines.length > kept.length ? `… ${lines.length - kept.length} earlier matching lines omitted\n` : '';
+        return text(note + kept.join('\n'));
       },
     ),
   );
@@ -280,6 +345,108 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
         ...(pods.length > LIST_CAP
           ? { note: `truncated: showing ${LIST_CAP} of ${pods.length} pods — narrow by namespace` }
           : {}),
+      });
+    }),
+  );
+
+  server.registerTool(
+    'list_problems',
+    {
+      annotations: READ_ONLY,
+      description:
+        "kdashboard's own health scan — the same judgement as its Problems view: every workload, pod, node, " +
+        'PVC and Service currently in trouble (with reason, cause, owner, restarts, ready/desired), plus the ' +
+        'last hour of Warning events and the top pods by CPU/memory. Call this first for "is anything wrong?" ' +
+        'questions; then drill in with get_resource / get_pod_logs / list_events.',
+      inputSchema: {
+        namespace: z.string().optional().describe('omit for the whole cluster'),
+      },
+    },
+    guarded(deps, async ({ namespace }: { namespace?: string }) => {
+      const overview = (await deps.dispatch('get_cluster_overview', { namespace: namespace ?? null })) as {
+        problems: unknown[];
+        warnings: unknown[];
+        warnings_total: number;
+        nodes: unknown[];
+        pods: unknown;
+        top_pods_cpu: unknown[];
+        top_pods_memory: unknown[];
+        metrics_available: boolean;
+        partial: string[];
+      };
+      return json({
+        scope: namespace ?? 'cluster',
+        problems: overview.problems.slice(0, LIST_CAP),
+        problems_total: overview.problems.length,
+        warning_events: overview.warnings.slice(0, 50),
+        warning_events_total: overview.warnings_total,
+        pods: overview.pods,
+        nodes: overview.nodes,
+        top_pods_cpu: overview.top_pods_cpu,
+        top_pods_memory: overview.top_pods_memory,
+        metrics_available: overview.metrics_available,
+        ...(overview.partial.length > 0 ? { could_not_list: overview.partial } : {}),
+      });
+    }),
+  );
+
+  server.registerTool(
+    'get_rightsizing',
+    {
+      annotations: READ_ONLY,
+      description:
+        'Requests vs observed usage per workload and container, with a recommended request and a verdict ' +
+        '(over/under-provisioned) and the estimated monthly saving. Usage is P95 over 7 days from Prometheus ' +
+        'when configured, otherwise a metrics-server snapshot. Pair with update_container_resources to apply.',
+      inputSchema: {
+        namespace: z.string().optional().describe('omit for the whole cluster'),
+      },
+    },
+    guarded(deps, async ({ namespace }: { namespace?: string }) => {
+      const result = (await deps.dispatch('get_rightsizing', { namespace: namespace ?? null })) as {
+        workloads: unknown[];
+      };
+      const workloads = result.workloads ?? [];
+      return json({
+        ...result,
+        workloads: workloads.slice(0, LIST_CAP),
+        ...(workloads.length > LIST_CAP
+          ? { note: `truncated: showing ${LIST_CAP} of ${workloads.length} workloads — narrow by namespace` }
+          : {}),
+      });
+    }),
+  );
+
+  server.registerTool(
+    'query_prometheus',
+    {
+      annotations: READ_ONLY,
+      description:
+        'Run a PromQL range query against the Prometheus the user configured in kdashboard (Settings → ' +
+        'Kubernetes). Returns series with (unix seconds, value) samples over the last `minutes` (default 60). ' +
+        'Fails with a clear message when no Prometheus is configured — do not retry then.',
+      inputSchema: {
+        query: z.string().describe('PromQL, e.g. rate(container_cpu_usage_seconds_total{namespace="x"}[5m])'),
+        minutes: z.number().int().positive().max(7 * 24 * 60).optional(),
+      },
+    },
+    guarded(deps, async ({ query, minutes }: { query: string; minutes?: number }) => {
+      const result = (await deps.dispatch('query_prometheus_range', { query, minutes })) as {
+        configured: boolean;
+        series: Array<{ labels: Record<string, string>; samples: Array<{ t: number; v: number }> }>;
+      };
+      if (!result.configured) {
+        return errorText('No Prometheus is configured in kdashboard (Settings → Kubernetes → Prometheus URL).');
+      }
+      const series = result.series.slice(0, 50).map((s) => ({
+        labels: s.labels,
+        // Keep the payload small: first/last/min/max/avg plus a thinned sample list.
+        summary: summarizeSamples(s.samples),
+        samples: thin(s.samples, 30),
+      }));
+      return json({
+        series,
+        ...(result.series.length > 50 ? { note: `truncated: showing 50 of ${result.series.length} series` } : {}),
       });
     }),
   );

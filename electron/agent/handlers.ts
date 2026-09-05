@@ -2,7 +2,8 @@
 //
 // Commands (snake_case, via the k8s:invoke dispatcher):
 //   - get_agent_profiles      {}                                    -> AgentProfileStatus[]
-//   - start_agent_session     { profileId, prompt?, cols?, rows? }  -> { sessionId }
+//   - start_agent_session     { profileId, prompt?, resume?, cols?, rows? } -> { sessionId }
+//   - get_external_mcp_status {}                                    -> { enabled, running, url?, error? }
 //   - send_agent_input        { data }                              -> null
 //   - resize_agent_terminal   { cols, rows }                        -> null
 //   - stop_agent_session      {}                                    -> null
@@ -16,6 +17,7 @@
 
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 import { respondApproval } from './approval.js';
+import { externalMcpStatus } from './external.js';
 import { getAgentProfileStatuses } from './profiles.js';
 import {
   resizeAgentTerminal,
@@ -57,6 +59,7 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
       {
         profileId: reqStr(args, 'profileId'),
         prompt: typeof args.prompt === 'string' ? args.prompt : undefined,
+        resume: args.resume === true,
         cols: optNum(args, 'cols'),
         rows: optNum(args, 'rows'),
       },
@@ -85,4 +88,6 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
     respondApproval(reqStr(args, 'id'), args.approved === true);
     return null;
   });
+
+  handlers.set('get_external_mcp_status', () => externalMcpStatus());
 }

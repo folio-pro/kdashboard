@@ -24,6 +24,8 @@ export interface AgentInvocationInput {
   prompt?: string;
   mcpUrl: string;
   mcpToken: string;
+  /** Continue the CLI's most recent conversation (in the agent workspace) instead of a fresh one. */
+  resume?: boolean;
 }
 
 export interface AgentInvocation {
@@ -64,7 +66,7 @@ const claudeProfile: AgentProfile = {
   displayName: 'Claude Code',
   binary: 'claude',
   installUrl: 'https://code.claude.com/docs/en/overview',
-  buildInvocation({ prompt, mcpUrl, mcpToken }): AgentInvocation {
+  buildInvocation({ prompt, mcpUrl, mcpToken, resume }): AgentInvocation {
     const mcpConfig = {
       mcpServers: {
         [MCP_SERVER_NAME]: {
@@ -77,6 +79,10 @@ const claudeProfile: AgentProfile = {
     };
     return {
       args: [
+        // Most recent conversation in the workspace cwd — sessions are keyed
+        // by cwd, and the workspace is stable, so this is "the last kdashboard
+        // conversation".
+        ...(resume ? ['--continue'] : []),
         '--strict-mcp-config',
         '--mcp-config',
         JSON.stringify(mcpConfig),
@@ -97,9 +103,11 @@ const codexProfile: AgentProfile = {
   displayName: 'Codex CLI',
   binary: 'codex',
   installUrl: 'https://developers.openai.com/codex/cli',
-  buildInvocation({ prompt, mcpUrl, mcpToken }): AgentInvocation {
+  buildInvocation({ prompt, mcpUrl, mcpToken, resume }): AgentInvocation {
     return {
       args: [
+        // `codex resume --last` takes the same -c overrides and prompt.
+        ...(resume ? ['resume', '--last'] : []),
         '-c',
         `mcp_servers.${MCP_SERVER_NAME}.url="${mcpUrl}"`,
         '-c',
@@ -143,9 +151,9 @@ function fakeProfile(): AgentProfile | null {
     displayName: 'Fake agent (test)',
     binary: bin,
     installUrl: '',
-    buildInvocation({ prompt, mcpUrl, mcpToken }): AgentInvocation {
+    buildInvocation({ prompt, mcpUrl, mcpToken, resume }): AgentInvocation {
       return {
-        args: prompt ? [prompt] : [],
+        args: [...(resume ? ['--resume'] : []), ...(prompt ? [prompt] : [])],
         env: { KDASH_MCP_URL: mcpUrl, KDASH_MCP_TOKEN: mcpToken },
       };
     },

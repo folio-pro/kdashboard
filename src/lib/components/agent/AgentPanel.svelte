@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bot, Square, Play, X, ExternalLink, ShieldAlert } from "lucide-svelte";
+  import { Bot, Square, Play, X, ExternalLink, ShieldAlert, History, Sparkles } from "lucide-svelte";
   import { onMount } from "svelte";
   import { WTerm } from "@wterm/dom";
   // Explicit .css subpath — see TerminalView.svelte for why not the alias.
@@ -7,7 +7,9 @@
   import { Badge, Button } from "$lib/components/ui";
   import { SelectMenu } from "$lib/components/ui/select-menu";
   import { agentStore } from "$lib/stores/agent.svelte";
+  import { k8sStore } from "$lib/stores/k8s.svelte";
   import { open as shellOpen } from "$lib/ipc/shell";
+  import { PRESETS, buildPresetPrompt } from "./prompts";
 
   const CLEAR_SEQUENCE = "\x1b[H\x1b[2J\x1b[3J";
   const MIN_HEIGHT = 160;
@@ -112,11 +114,27 @@
     return initPromise;
   }
 
-  async function handleStart(): Promise<void> {
+  async function handleStart(resume = false): Promise<void> {
     // The store clears the screen and spawns at this terminal's size.
-    await agentStore.start();
+    await agentStore.start(undefined, { resume });
     if (terminal && agentStore.status === "running") terminal.focus();
   }
+
+  // Presets: cluster-wide questions. Scoped to the namespace the UI shows
+  // ("" / "all" = whole cluster), so "namespace health" only appears then.
+  const scopedNamespace = $derived(
+    k8sStore.currentNamespace && k8sStore.currentNamespace !== "all" ? k8sStore.currentNamespace : undefined,
+  );
+  const presetItems = $derived(
+    PRESETS.filter((p) => !p.needsNamespace || scopedNamespace !== undefined).map((p) => ({
+      value: p.id,
+      label: p.label,
+      onSelect: () =>
+        void agentStore.quickAction(
+          buildPresetPrompt(p.id, { context: k8sStore.currentContext, namespace: scopedNamespace }),
+        ),
+    })),
+  );
 
   // --- Panel resize (drag the top edge) -------------------------------------
 
@@ -210,6 +228,12 @@
       />
     {/if}
 
+    {#if selectedProfile?.available}
+      <SelectMenu title="Prompts" label="Prompts" value="" items={presetItems} contentClass="min-w-[210px]">
+        {#snippet icon()}<Sparkles class="h-3 w-3" />{/snippet}
+      </SelectMenu>
+    {/if}
+
     {#if agentStore.approvals.length > 0}
       <Badge tone="warning" size="sm" class="gap-1 font-mono">
         <ShieldAlert class="h-3 w-3" />
@@ -231,11 +255,22 @@
         <span class="font-mono text-[11px] text-[var(--text-muted)]">starting…</span>
       {:else}
         <Button
+          variant="toolbar"
+          size="sm"
+          mono
+          title="Continue the last conversation of this agent"
+          onclick={() => handleStart(true)}
+          disabled={!selectedProfile?.available}
+        >
+          <History class="h-3 w-3" />
+          <span>Resume</span>
+        </Button>
+        <Button
           variant="solid-tone"
           tone="success"
           size="sm"
           mono
-          onclick={handleStart}
+          onclick={() => handleStart()}
           disabled={!selectedProfile?.available}
         >
           <Play class="h-3 w-3" />

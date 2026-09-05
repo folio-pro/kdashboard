@@ -59,6 +59,8 @@ export type SessionEndReason = 'exit' | 'stopped' | 'replaced' | 'context-switch
 export interface StartAgentSessionArgs {
   profileId: string;
   prompt?: string;
+  /** Continue the CLI's last conversation instead of starting fresh. */
+  resume?: boolean;
   cols?: number;
   rows?: number;
 }
@@ -139,6 +141,7 @@ export async function startAgentSession(
   try {
     const invocation = profile.buildInvocation({
       prompt: args.prompt,
+      resume: args.resume === true,
       mcpUrl: endpoint.url,
       mcpToken: endpoint.token,
     });

@@ -10,6 +10,14 @@
 // POST creates an McpServer + transport pair keyed by the SDK session id;
 // later requests (POST/GET/DELETE) route to that transport. An agent CLI that
 // reconnects mid-session simply initializes a fresh pair.
+//
+// Two instances can exist:
+//   - the SESSION endpoint (random port, per-session token, pinned to the
+//     context the session started on) — one per Agent Session;
+//   - the EXTERNAL endpoint (fixed port, persisted token, follows the active
+//     context) — opt-in from Settings, so Claude Desktop / Cursor / any MCP
+//     client can use kdashboard as their Kubernetes MCP server. Mutations
+//     still go through the in-app Mutation Approval.
 
 import * as http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -42,29 +50,86 @@ interface McpInstance {
   servers: Map<string, McpServer>;
 }
 
-let instance: McpInstance | null = null;
+interface CreateOptions extends AgentMcpOptions {
+  token: string;
+  /** 0 = any free port. */
+  port: number;
+  pinnedContext: string | undefined | null;
+}
 
-/** True while the endpoint is listening (i.e. an Agent Session is alive). */
+let instance: McpInstance | null = null;
+let external: McpInstance | null = null;
+
+/** True while the SESSION endpoint is listening (i.e. an Agent Session is alive). */
 export function agentMcpRunning(): boolean {
   return instance !== null;
 }
 
 /**
- * Start the endpoint (single slot — a running instance is stopped first).
- * `dispatch` is the same command dispatcher the renderer drives, so tools and
- * UI share one behavior; `ctx` reaches the renderer for approval requests.
+ * Start the session endpoint (single slot — a running instance is stopped
+ * first). `dispatch` is the same command dispatcher the renderer drives, so
+ * tools and UI share one behavior; `ctx` reaches the renderer for approval
+ * requests.
  */
 export async function startAgentMcpServer(options: AgentMcpOptions): Promise<McpEndpoint> {
   await stopAgentMcpServer();
+  instance = await createInstance({
+    ...options,
+    token: randomBytes(32).toString('hex'),
+    port: 0,
+    // Pinned at session start: tools fail closed if the UI switches context.
+    pinnedContext: getActiveContextName(),
+  });
+  return { url: instance.url, token: instance.token };
+}
 
-  const token = randomBytes(32).toString('hex');
+/** Stop the session endpoint and drop every live MCP session. Safe to call when idle. */
+export async function stopAgentMcpServer(): Promise<void> {
+  const current = instance;
+  if (!current) return;
+  instance = null;
+  // A dead endpoint can never deliver an approval answer — deny, don't hang.
+  denyAllPending();
+  await closeInstance(current);
+}
+
+export interface ExternalMcpOptions extends AgentMcpOptions {
+  port: number;
+  token: string;
+}
+
+/**
+ * Start (or restart with new settings) the external endpoint. Not pinned to
+ * a context: external clients see whatever the UI has active, exactly like a
+ * Quick Action would. Throws when the port is taken.
+ */
+export async function startExternalMcpServer(options: ExternalMcpOptions): Promise<McpEndpoint> {
+  await stopExternalMcpServer();
+  external = await createInstance({ ...options, pinnedContext: null });
+  return { url: external.url, token: external.token };
+}
+
+export async function stopExternalMcpServer(): Promise<void> {
+  const current = external;
+  if (!current) return;
+  external = null;
+  await closeInstance(current);
+}
+
+export function externalMcpEndpoint(): McpEndpoint | null {
+  return external ? { url: external.url, token: external.token } : null;
+}
+
+async function createInstance(options: CreateOptions): Promise<McpInstance> {
+  const { token, port } = options;
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const servers = new Map<string, McpServer>();
 
   const deps: AgentToolDeps = {
-    ...options,
-    // Pinned at session start: tools fail closed if the UI switches context.
-    pinnedContext: getActiveContextName(),
+    dispatch: options.dispatch,
+    ctx: options.ctx,
+    requireApproval: options.requireApproval,
+    pinnedContext: options.pinnedContext,
   };
 
   const httpServer = http.createServer((req, res) => {
@@ -129,7 +194,7 @@ export async function startAgentMcpServer(options: AgentMcpOptions): Promise<Mcp
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject);
-    httpServer.listen(0, '127.0.0.1', () => {
+    httpServer.listen(port, '127.0.0.1', () => {
       httpServer.removeListener('error', reject);
       resolve();
     });
@@ -141,25 +206,16 @@ export async function startAgentMcpServer(options: AgentMcpOptions): Promise<Mcp
     throw new Error('agent MCP server failed to bind a port');
   }
 
-  instance = {
+  return {
     httpServer,
     url: `http://127.0.0.1:${address.port}/mcp`,
     token,
     transports,
     servers,
   };
-  return { url: instance.url, token };
 }
 
-/** Stop the endpoint and drop every live MCP session. Safe to call when idle. */
-export async function stopAgentMcpServer(): Promise<void> {
-  const current = instance;
-  if (!current) return;
-  instance = null;
-
-  // A dead endpoint can never deliver an approval answer — deny, don't hang.
-  denyAllPending();
-
+async function closeInstance(current: McpInstance): Promise<void> {
   for (const transport of current.transports.values()) {
     try {
       await transport.close();

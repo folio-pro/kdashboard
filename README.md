@@ -59,15 +59,24 @@ inspect, debug, and act on workloads.
 - **Cost visibility** — per-namespace and per-workload cost estimates, with
   cloud pricing data refreshed by a scheduled job.
 - **Embedded AI agent** — run your own Claude Code or Codex CLI in a bottom
-  terminal panel, wired to the cluster through an MCP endpoint kdashboard
+  terminal panel (⌘J), wired to the cluster through an MCP endpoint kdashboard
   serves on localhost (same context, TLS and credentials as the UI). The agent
-  gets read tools (resources, logs, events, metrics) plus exactly four
-  mutations — scale, rolling restart, delete pod, update container
+  gets read tools (resources, logs with server-side grep, events, metrics,
+  Prometheus, kdashboard's own Problems scan and rightsizing) plus exactly
+  four mutations — scale, rolling restart, delete pod, update container
   resources — each gated behind an in-app Approve/Deny dialog (toggleable in
-  Settings). Quick Actions on Pods and Deployments ("why is it crashing?",
-  "optimize resources") start the agent already pointed at the resource.
-  Bring your own CLI and subscription; kdashboard never proxies your cluster
-  to a third party itself.
+  Settings). Quick Actions on every resource type ("why is it crashing?",
+  "diagnose rollout", "check connectivity", "explain this resource"), presets
+  ("cluster health check", "rightsizing review") and "investigate with agent"
+  buttons on the Problems view, alerts and the log viewer start the agent
+  already pointed at the right thing; "Resume" continues the last
+  conversation. Bring your own CLI and subscription; kdashboard never proxies
+  your cluster to a third party itself.
+- **MCP server for other AI tools** — optionally expose the same tool surface
+  on a fixed localhost port with a bearer token, so Claude Desktop, Claude
+  Code, Cursor or Codex can use kdashboard as their Kubernetes MCP server
+  (Settings → General → AI Agent, with copy-paste client configs). Mutations
+  still ask for approval in the app.
 - **Security overview** — RBAC, NetworkPolicy, PodSecurity, and image
   posture at a glance.
 - **Diagnostics** — surface events, warnings, and common failure modes for

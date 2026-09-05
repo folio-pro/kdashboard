@@ -59,6 +59,7 @@ import * as watch from './handlers/watch';
 import * as updater from './handlers/updater';
 import * as agent from './agent/handlers';
 import { stopAllAgentSessions } from './agent/session';
+import { stopExternalMcp, syncExternalMcp } from './agent/external';
 
 // ---------------------------------------------------------------------------
 // Theme chrome
@@ -420,6 +421,17 @@ function bootstrap(): void {
 
   const { dispatch } = buildDispatcher(buildHandlerModules(), ctx);
 
+  // External MCP endpoint (Settings → AI Agent): follows the settings file.
+  const externalMcpOptions = {
+    dispatch,
+    ctx,
+    requireApproval: () => appHandlers.getSettingsSync().agent_require_approval !== false,
+  };
+  void syncExternalMcp(appHandlers.getSettingsSync(), externalMcpOptions);
+  appHandlers.onSettingsSaved((settings) => {
+    void syncExternalMcp(settings, externalMcpOptions);
+  });
+
   // ONE channel for every renderer invoke(). Errors propagate as rejected
   // promises in the renderer (the shim leaves them unwrapped).
   ipcMain.handle('k8s:invoke', async (event, cmd: string, args: Record<string, unknown>) => {
@@ -528,6 +540,13 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   fixPathEnv();
 
   app.whenReady().then(bootstrap);
+
+  // The external MCP endpoint outlives windows (a reload or a closed window
+  // must not break a Claude Desktop session mid-investigation); only quit
+  // ends it. Pending approvals deny themselves by timeout meanwhile.
+  app.on('before-quit', () => {
+    void stopExternalMcp();
+  });
 
   app.on('window-all-closed', () => {
     // On macOS the app stays alive without windows; stop the streams so a

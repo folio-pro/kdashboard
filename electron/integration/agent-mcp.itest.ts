@@ -380,3 +380,97 @@ describe('integration: agent MCP endpoint', { skip: !enabled }, () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Diagnosis tools (list_problems, get_pod_logs grep) + the external endpoint
+// ---------------------------------------------------------------------------
+
+import { startExternalMcpServer, stopExternalMcpServer, externalMcpEndpoint } from '../agent/mcp-server.js';
+
+describe('integration: agent diagnosis tools and external endpoint', { skip: !enabled }, () => {
+  afterEach(async () => {
+    emitted.length = 0;
+    requireApproval = true;
+    if (client) {
+      await client.close().catch(() => {});
+      client = null;
+    }
+    await stopAgentMcpServer();
+    await stopExternalMcpServer();
+  });
+
+  test('list_problems returns the Problems-view judgement for the namespace', async () => {
+    const c = await freshClient();
+    const result = (await c.callTool({ name: 'list_problems', arguments: { namespace: TEST_NAMESPACE } })) as TextResult;
+    assert.notEqual(result.isError, true, resultText(result));
+    const parsed = JSON.parse(resultText(result)) as { scope: string; problems: unknown[]; pods: unknown; nodes: unknown[] };
+    assert.equal(parsed.scope, TEST_NAMESPACE);
+    assert.ok(Array.isArray(parsed.problems));
+    assert.ok(Array.isArray(parsed.nodes) && parsed.nodes.length > 0);
+  });
+
+  test('get_pod_logs grep keeps only matching lines and says so when nothing matches', async () => {
+    const c = await freshClient();
+    const pods = JSON.parse(
+      resultText(await c.callTool({ name: 'list_resources', arguments: { resourceType: 'pods', namespace: TEST_NAMESPACE } })),
+    ) as { items: Array<{ metadata: { name: string } }> };
+    const pod = pods.items.find((i) => i.metadata.name.startsWith('test-nginx'));
+    assert.ok(pod, 'fixture pod test-nginx-* not found');
+
+    const none = (await c.callTool({
+      name: 'get_pod_logs',
+      arguments: { namespace: TEST_NAMESPACE, pod: pod.metadata.name, grep: 'zzz-no-such-line-zzz' },
+    })) as TextResult;
+    assert.notEqual(none.isError, true, resultText(none));
+    assert.match(resultText(none), /no lines matching/);
+  });
+
+  test('get_rightsizing and query_prometheus answer with structured results', async () => {
+    const c = await freshClient();
+    const rs = (await c.callTool({ name: 'get_rightsizing', arguments: { namespace: TEST_NAMESPACE } })) as TextResult;
+    assert.equal(typeof resultText(rs), 'string');
+    const prom = (await c.callTool({ name: 'query_prometheus', arguments: { query: 'up' } })) as TextResult;
+    // No Prometheus in the test cluster: a clear isError text, never a protocol failure.
+    assert.equal(typeof resultText(prom), 'string');
+    assert.ok(resultText(prom).length > 0);
+  });
+
+  test('the external endpoint listens on the requested port, checks its token and follows the active context', async (t) => {
+    await dispatch('get_current_context');
+    const endpoint = await startExternalMcpServer({
+      dispatch: (cmd, args) => dispatch(cmd, args),
+      ctx,
+      requireApproval: () => false,
+      port: 0,
+      token: 'external-test-token',
+    });
+    assert.equal(endpoint.token, 'external-test-token');
+    assert.deepEqual(externalMcpEndpoint(), endpoint);
+    await assert.rejects(connectClient(endpoint.url, 'wrong'));
+
+    client = await connectClient(endpoint.url, endpoint.token);
+    const before = JSON.parse(resultText(await client.callTool({ name: 'get_current_context', arguments: {} }))) as { context: string };
+    assert.equal(before.context, TEST_CONTEXT);
+
+    const contexts = await dispatch<string[]>('get_contexts');
+    // Prefer another kind context: the tool call below really goes to that
+    // cluster, and a cloud context's exec credential plugin (gcloud, aws)
+    // would try to authenticate — and fail loudly — from a non-interactive
+    // test run.
+    const other =
+      contexts.find((c) => c !== TEST_CONTEXT && c.startsWith('kind-')) ??
+      contexts.find((c) => c !== TEST_CONTEXT && /^(orbstack|docker-desktop|minikube|k3d-)/.test(c));
+    if (!other) return t.skip('kubeconfig has no second local context to switch to');
+    try {
+      setActiveContext(other);
+      // Not pinned: the tool tries to answer for the NEW context instead of
+      // refusing. (That cluster is usually down, so the call may fail against
+      // it — what matters is that the guard did not fire.)
+      const after = (await client.callTool({ name: 'get_current_context', arguments: {} })) as TextResult;
+      const text = resultText(after);
+      assert.ok(!/context changed/i.test(text), text);
+    } finally {
+      setActiveContext(TEST_CONTEXT as string);
+    }
+  });
+});

@@ -184,7 +184,13 @@ class AgentStore {
   /** Quick Action prompt that arrived while a session was still starting. */
   private queuedPrompt: string | null = null;
 
-  async start(prompt?: string): Promise<void> {
+  /**
+   * Start a session. `resume` continues the CLI's most recent conversation
+   * (claude --continue / codex resume --last) instead of a fresh one — the
+   * CLIs key history by cwd and the agent workspace is stable, so "most
+   * recent" is the last kdashboard conversation.
+   */
+  async start(prompt?: string, options: { resume?: boolean } = {}): Promise<void> {
     await this.ensureSubscribed();
     if (!this.selectedProfileId) return;
     if (this.status === "starting") return;
@@ -202,6 +208,7 @@ class AgentStore {
       await invoke("start_agent_session", {
         profileId: this.selectedProfileId,
         ...(prompt !== undefined ? { prompt } : {}),
+        ...(options.resume ? { resume: true } : {}),
         ...(this.terminalSize ?? {}),
       });
       this.status = "running";

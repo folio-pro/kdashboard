@@ -45,4 +45,10 @@ export interface AppSettings {
   agent_require_approval?: boolean;
   /** Agent Profile last launched — preselected next time. */
   agent_last_profile?: string;
+  /** Serve kdashboard's MCP endpoint to external AI tools (Claude Desktop, Cursor…). */
+  agent_external_mcp_enabled?: boolean;
+  /** Loopback port of the external endpoint. Default 47831. */
+  agent_external_mcp_port?: number;
+  /** Bearer token external clients must send; generated in the renderer when enabled. */
+  agent_external_mcp_token?: string;
 }
