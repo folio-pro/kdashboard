@@ -5,13 +5,15 @@
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { uiStore } from "$lib/stores/ui.svelte";
   import { openResourceDetail } from "$lib/actions/navigation";
+  import { kindToResourceType } from "$lib/utils/related-resources";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import { invoke } from "$lib/ipc/core";
   import TableToolbar from "./TableToolbar.svelte";
-  import CreateResourceDialog from "./CreateResourceDialog.svelte";
+  import LazyDialog from "$lib/components/common/LazyDialog.svelte";
   import AppTableHeader from "./TableHeader.svelte";
   import AppTableRow from "./TableRow.svelte";
   import BulkActionBar from "./BulkActionBar.svelte";
+  import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import TableEmptyStates from "./TableEmptyStates.svelte";
   import TableStatusBar from "./TableStatusBar.svelte";
   import TableDetailAside from "./TableDetailAside.svelte";
@@ -21,6 +23,7 @@
   import { Checkbox } from "$lib/components/ui/checkbox";
   import { cn } from "$lib/utils";
   import { isInputElement } from "$lib/utils/keyboard";
+  import { overlayOpen } from "$lib/utils/dom";
   import { costStore } from "$lib/stores/cost.svelte";
   import { metricsStore, POD_METRICS_TTL_MS } from "$lib/stores/metrics.svelte";
   import { endpointsStore, ENDPOINTS_TTL_MS } from "$lib/stores/endpoints.svelte";
@@ -232,7 +235,17 @@
     uiStore.previewOpen = false;
   }
 
-  let previewResource = $derived(uiStore.previewOpen ? k8sStore.selectedResource : null);
+  // previewOpen is per-tab but selectedResource is global, so switching from a
+  // row preview to another table and back could dock a resource of ANOTHER
+  // type here (the aside's Delete/Scale/Open-in-tab then acted on it). Only
+  // preview a resource that belongs to this table's type.
+  let previewResource = $derived.by(() => {
+    if (!uiStore.previewOpen) return null;
+    const sel = k8sStore.selectedResource;
+    if (!sel) return null;
+    if (kindToResourceType(sel.kind) !== k8sStore.selectedResourceType) return null;
+    return sel;
+  });
 
   function handleRowContextMenu(resource: Resource, index: number, event: MouseEvent) {
     event.preventDefault();
@@ -370,6 +383,10 @@
   function handleTableKeydown(e: KeyboardEvent) {
     if (uiStore.activeView !== "table") return;
     if (isInputElement(e.target)) return;
+    // A dialog/menu/popover owns the keyboard — don't navigate rows or hijack
+    // Enter from a focused button behind it. `defaultPrevented` covers a
+    // control that already consumed the key in the same event.
+    if (e.defaultPrevented || overlayOpen()) return;
 
     const maxIndex = filteredResources.length - 1;
     if (maxIndex < 0) return;
@@ -451,8 +468,14 @@
     });
   }
 
+  // The context menu's bulk Delete dispatches this event. It must open the same
+  // confirmation the BulkActionBar shows — it used to call confirmBulkDelete()
+  // straight away, deleting the selection with no prompt while the button path
+  // asked first.
+  let bulkDeleteOpen = $state(false);
+
   function handleBulkDeleteEvt() {
-    if (uiStore.selectedCount > 0) confirmBulkDelete();
+    if (uiStore.selectedCount > 0) bulkDeleteOpen = true;
   }
 
   // Create opens an editor (see CreateResourceDialog) — it never reads the
@@ -657,5 +680,22 @@
 </div>
 
 {#if createOpen}
-  <CreateResourceDialog onclose={() => { createOpen = false; }} onapply={applyManifests} />
+  <LazyDialog
+    loader={() => import("./CreateResourceDialog.svelte")}
+    props={{ onclose: () => { createOpen = false; }, onapply: applyManifests }}
+    name="create resource dialog"
+  />
+{/if}
+
+{#if bulkDeleteOpen}
+  <ConfirmDialog
+    open={bulkDeleteOpen}
+    title="Delete {uiStore.selectedCount} {uiStore.selectedCount === 1 ? 'resource' : 'resources'}"
+    description="This action cannot be undone. The selected resources will be permanently deleted from the cluster."
+    confirmLabel="Delete {uiStore.selectedCount} {uiStore.selectedCount === 1 ? 'resource' : 'resources'}"
+    cancelLabel="Keep resources"
+    variant="destructive"
+    onconfirm={() => { bulkDeleteOpen = false; void confirmBulkDelete(); }}
+    oncancel={() => (bulkDeleteOpen = false)}
+  />
 {/if}

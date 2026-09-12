@@ -5,6 +5,7 @@
   import { uiStore } from "$lib/stores/ui.svelte";
 
   let isRetrying = $state(false);
+  let dialogEl = $state<HTMLDivElement | null>(null);
 
   // Shared with the views that must stay quiet behind this overlay, so the
   // two can't drift into showing (or hiding) the error independently.
@@ -15,6 +16,12 @@
   // banner over the content area instead — read-only work on what was
   // already loaded must stay possible.
   let showBanner = $derived(!showOverlay && !k8sStore.reachable);
+
+  // The overlay blocks the whole app: tell assistive tech it is a modal and
+  // move focus into it so the Retry button is reachable by keyboard.
+  $effect(() => {
+    if (showOverlay) dialogEl?.focus();
+  });
   // Anchored to the content area: below the window title bar and the tab
   // bar, right of the sidebar (see App.svelte's grid).
   let bannerLeft = $derived(
@@ -74,13 +81,23 @@
 
 {#if showOverlay}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-[2px]">
-    <div class="mx-4 flex max-w-md flex-col items-center gap-4 rounded-xl border border-[var(--status-failed)]/30 bg-[var(--bg-secondary)] px-8 py-6 shadow-xl">
+    <!-- data-state=open makes overlayOpen() treat this as keyboard-owning, so
+         scoped shortcuts don't fire behind it. -->
+    <div
+      bind:this={dialogEl}
+      tabindex="-1"
+      role="alertdialog"
+      aria-modal="true"
+      data-state="open"
+      aria-labelledby="connection-error-title"
+      class="mx-4 flex max-w-md flex-col items-center gap-4 rounded-xl border border-[var(--status-failed)]/30 bg-[var(--bg-secondary)] px-8 py-6 shadow-xl outline-none"
+    >
       <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--status-failed)]/10">
         <WifiOff class="h-6 w-6 text-[var(--status-failed)]" />
       </div>
 
       <div class="flex flex-col items-center gap-1 text-center">
-        <h2 class="text-[13px] font-semibold text-[var(--text-primary)]">
+        <h2 id="connection-error-title" class="text-[13px] font-semibold text-[var(--text-primary)]">
           Cluster connection lost
         </h2>
         <p class="max-w-xs text-[12px] leading-relaxed text-[var(--text-secondary)]">

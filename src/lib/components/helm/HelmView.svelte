@@ -35,6 +35,18 @@
     void helmStore.loadReleases(k8sStore.currentNamespace);
   }
 
+  // A namespace change (header picker) drops the release detail — it belongs
+  // to the old namespace — and reloads the list for the new scope.
+  let lastNamespace: string | undefined;
+  $effect(() => {
+    const ns = k8sStore.currentNamespace;
+    if (lastNamespace !== undefined && lastNamespace !== ns) {
+      helmStore.clearSelection();
+      void helmStore.loadReleases(ns);
+    }
+    lastNamespace = ns;
+  });
+
   function healthColor(status: string): string {
     switch (releaseHealth(status)) {
       case "ok":

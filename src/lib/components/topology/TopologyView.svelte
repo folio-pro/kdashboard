@@ -61,6 +61,22 @@
     }
   }
 
+  // Reload when the header's namespace picker changes scope, and refresh the
+  // policy overlay too when it is toggled on (openAppView issued the first load).
+  let lastNamespace: string | undefined;
+  $effect(() => {
+    const ns = k8sStore.currentNamespace;
+    if (lastNamespace !== undefined && lastNamespace !== ns) {
+      if (topologyStore.focusedResourceUid) {
+        topologyStore.loadResourceTopology(topologyStore.focusedResourceUid, ns);
+      } else {
+        topologyStore.loadNamespaceTopology(ns);
+      }
+      if (showPolicies) void netpolStore.loadNetworkPolicies(ns);
+    }
+    lastNamespace = ns;
+  });
+
 </script>
 
 <ViewPanel

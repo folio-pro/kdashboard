@@ -29,9 +29,15 @@ export function initKeyboardShortcuts(): () => void {
     const meta = e.metaKey || e.ctrlKey;
     const isInput = isInputElement(e.target);
     const view = uiStore.activeView;
+    // While a dialog/menu/popover owns the keyboard, scoped (table/details)
+    // shortcuts must not fire behind it: after a dialog traps focus on a
+    // button, `d`/`s`/`e` used to trigger Delete/Scale/Edit on the view
+    // underneath. Meta toggles stay live so ⌘K can still close the palette.
+    const overlay = overlayOpen();
 
     for (const s of SHORTCUTS) {
       if (s.handledElsewhere) continue;
+      if (overlay && s.scope !== "global") continue;
       if (isInput && !s.allowInInput) continue;
       if (s.scope === "table" && view !== "table") continue;
       if (s.scope === "details" && view !== "details") continue;

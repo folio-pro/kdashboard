@@ -9,11 +9,14 @@ export class AsyncLoadStoreLogic<T> {
   isLoading = false;
   error: string | null = null;
   protected _loadId = 0;
+  /** The normalized namespace `data` was loaded for (null = all namespaces). */
+  protected _dataScope: string | null = null;
 
   reset(): void {
     this._loadId++;
     this.data = null;
     this.isLoading = false;
     this.error = null;
+    this._dataScope = null;
   }
 }

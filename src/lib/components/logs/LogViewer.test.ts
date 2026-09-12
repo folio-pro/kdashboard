@@ -533,6 +533,15 @@ describe("streamEmptyStateMessage", () => {
     );
   });
 
+  // A failed list is not an empty deployment.
+  test("idle deployment whose pod list failed does not claim 'no pods'", () => {
+    const msg = streamEmptyStateMessage(
+      opts({ isDeployment: true, podsLoadFailed: true, deploymentPodCount: 0 }),
+    );
+    expect(msg).not.toBe("No pods found for this deployment");
+    expect(msg).toContain("Couldn't list pods");
+  });
+
   // Filters take precedence over the phase: lines DID arrive, they are just hidden.
   test("level filter hiding all lines wins over the live phase", () => {
     expect(

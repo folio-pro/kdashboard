@@ -105,7 +105,15 @@ export async function openRelatedResourceTab(
   name: string,
   namespace?: string,
 ): Promise<void> {
-  const resource = await k8sStore.fetchResource(resourceType, name, namespace);
+  let resource: Resource | null;
+  try {
+    resource = await k8sStore.fetchResource(resourceType, name, namespace);
+  } catch (err) {
+    // The list can reject (RBAC/transport). Callers void this, so without a
+    // catch the click just did nothing and the rejection went unhandled.
+    toastStore.error("Couldn't open resource", String(err));
+    return;
+  }
   if (!resource) {
     // Referenced-but-missing targets are common (e.g. a VPA whose Deployment
     // was deleted). Silence here reads as the app hanging — say why nothing

@@ -11,6 +11,7 @@ import {
   type ActiveView,
   type Tab,
 } from "./ui.logic.js";
+import type { Resource } from "$lib/types";
 
 describe("UiStore", () => {
   let store: UiStoreLogic;
@@ -103,6 +104,24 @@ describe("UiStore", () => {
       store.showLogs();
       expect(store.activeView).toBe("logs");
       expect(store.previousView).toBe("table");
+    });
+
+    test("showLogs with a resource carries identity and dedupes the tab", () => {
+      const pod = {
+        kind: "Pod",
+        metadata: { name: "web-1", namespace: "default", uid: "u1" },
+      } as unknown as Resource;
+      const before = store.tabs.length;
+      store.showLogs(pod);
+      const tab = store.activeTab!;
+      expect(tab.resourceName).toBe("web-1");
+      expect(tab.resourceType).toBe("pods");
+      expect(tab.namespace).toBe("default");
+      const id = store.activeTabId;
+      // Reopening the same resource focuses the existing tab, not a duplicate.
+      store.showLogs(pod);
+      expect(store.tabs.length).toBe(before + 1);
+      expect(store.activeTabId).toBe(id);
     });
 
     test("showTerminal switches to terminal", () => {

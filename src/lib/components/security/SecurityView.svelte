@@ -30,6 +30,22 @@
     }
   }
 
+  // Reload the active mode when the header's namespace picker changes scope;
+  // openAppView issued the first load, so only a change re-loads.
+  let lastNamespace: string | undefined;
+  $effect(() => {
+    const ns = k8sStore.currentNamespace;
+    if (lastNamespace !== undefined && lastNamespace !== ns) {
+      if (mode === "permissions") {
+        rbacStore.reset();
+        void rbacStore.loadSubjects(ns);
+      } else {
+        securityStore.loadSecurityOverview(ns);
+      }
+    }
+    lastNamespace = ns;
+  });
+
   function togglePod(key: string) {
     const next = new Set(expandedPods);
     if (next.has(key)) {

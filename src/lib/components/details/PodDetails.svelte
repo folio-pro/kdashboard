@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Link, Globe, CheckCircle2, Unplug } from "lucide-svelte";
-  import { onMount } from "svelte";
   import { invoke } from "$lib/ipc/core";
   import type { Resource, ResourceList } from "$lib/types";
   import { Button } from "$lib/components/ui";
@@ -119,13 +118,22 @@
   // --- Related resources (owner / replicaset / service / node) ---
   // Services are loaded for reverse selector matching, like RelatedResourcesCard.
   let allServices = $state<Resource[]>([]);
-  onMount(() => {
+  // This panel stays mounted while the user clicks through pods, so an
+  // onMount fetch would keep the FIRST pod's namespace forever and match
+  // relations against it. Reload whenever the pod's namespace changes (services
+  // are namespace-scoped, so a same-namespace pod switch needs nothing).
+  let loadedServiceNamespace: string | undefined;
+  $effect(() => {
+    const ns = resource.metadata.namespace ?? k8sStore.currentNamespace;
+    if (loadedServiceNamespace === ns) return;
+    loadedServiceNamespace = ns;
+    allServices = [];
     let cancelled = false;
     invoke<ResourceList>("list_resources", {
       // Match services in the pod's own namespace, not the currently selected
       // one (they can differ when opening a pod via cross-link / All Namespaces).
       resourceType: "services",
-      namespace: resource.metadata.namespace ?? k8sStore.currentNamespace,
+      namespace: ns,
     })
       .then((result) => {
         if (!cancelled) allServices = result.items;

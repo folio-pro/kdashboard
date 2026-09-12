@@ -16,6 +16,9 @@
   let fetchedConfigMaps = $state<Resource[]>([]);
   let fetchedSecrets = $state<Resource[]>([]);
   let configLoading = $state(true);
+  // A failed list is not the same as "nothing referenced" — don't assert a
+  // fact the app could not verify (RBAC/outage).
+  let fetchFailed = $state(false);
 
   $effect(() => {
     const refs = configResources;
@@ -24,6 +27,8 @@
 
     const cmNames = refs.filter(r => r.kind === "ConfigMap").map(r => r.name);
     const secNames = refs.filter(r => r.kind === "Secret").map(r => r.name);
+
+    fetchFailed = false;
 
     if (cmNames.length === 0 && secNames.length === 0) {
       fetchedConfigMaps = [];
@@ -46,7 +51,7 @@
             fetchedConfigMaps = result.items.filter(item => cmNames.includes(item.metadata.name));
           }
         }).catch(() => {
-          if (!cancelled) fetchedConfigMaps = [];
+          if (!cancelled) { fetchedConfigMaps = []; fetchFailed = true; }
         })
       );
     }
@@ -61,7 +66,7 @@
             fetchedSecrets = result.items.filter(item => secNames.includes(item.metadata.name));
           }
         }).catch(() => {
-          if (!cancelled) fetchedSecrets = [];
+          if (!cancelled) { fetchedSecrets = []; fetchFailed = true; }
         })
       );
     }
@@ -241,7 +246,11 @@
 
   {#if !configLoading && fetchedConfigMaps.length === 0 && fetchedSecrets.length === 0}
     <div class="px-6 pb-4">
-      <span class="text-[12px] text-[var(--text-muted)]">No configmaps or secrets referenced</span>
+      <span class="text-[12px] text-[var(--text-muted)]">
+        {fetchFailed
+          ? "Couldn't load referenced configmaps and secrets"
+          : "No configmaps or secrets referenced"}
+      </span>
     </div>
   {/if}
 

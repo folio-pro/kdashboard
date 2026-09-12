@@ -300,8 +300,16 @@ class AgentStore {
   }
 
   respondApproval(id: string, approved: boolean): void {
+    const approval = this.approvals.find((a) => a.id === id);
     this.approvals = this.approvals.filter((a) => a.id !== id);
-    invoke("respond_agent_approval", { id, approved }).catch(() => {});
+    invoke("respond_agent_approval", { id, approved }).catch((err) => {
+      // The verdict never reached the broker: put the request back so the user
+      // can retry instead of believing the mutation was approved/denied.
+      if (approval && !this.approvals.some((a) => a.id === id)) {
+        this.approvals = [approval, ...this.approvals];
+      }
+      toastStore.error("Approval not sent", String(err));
+    });
   }
 }
 
