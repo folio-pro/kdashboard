@@ -342,6 +342,7 @@
     bind:open={dialogStore.scaleOpen}
     props={{ resource: dialogStore.scaleResource }}
     name="scale dialog"
+    onerror={() => { dialogStore.scaleOpen = false; }}
   />
 {/if}
 
@@ -354,6 +355,7 @@
     }
     props={{ resource: dialogStore.quickEditResource }}
     name="quick edit dialog"
+    onerror={() => dialogStore.closeQuickEdit()}
   />
 {/if}
 
@@ -366,6 +368,7 @@
     bind:open={dialogStore.drainOpen}
     props={{ nodeName: dialogStore.drainNodeName }}
     name="drain dialog"
+    onerror={() => { dialogStore.drainOpen = false; }}
   />
 {/if}
 
@@ -380,6 +383,7 @@
     }
     props={{ resource: dialogStore.compareResource }}
     name="compare dialog"
+    onerror={() => dialogStore.closeCompare()}
   />
 {/if}
 

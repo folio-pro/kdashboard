@@ -17,9 +17,21 @@
 
   let menuRef: HTMLDivElement | undefined = $state();
   let focusedIndex = $state(-1);
-  // Element focused when the menu opened, so closing returns focus there
-  // instead of dropping it to <body> (keyboard users lose their place).
-  let restoreFocusTo: HTMLElement | null = null;
+
+  // Return focus to whatever opened the menu instead of dropping it to <body>
+  // (keyboard users lose their place). Keyed on the store's open flag rather
+  // than this component's close(): the store is also closed from shortcuts.ts
+  // and on a context switch, which never run close() — a capture cleared only
+  // by close() would then be restored to a stale, long-gone opener.
+  $effect(() => {
+    if (!contextMenuStore.open) return;
+    const opener = document.activeElement;
+    return () => {
+      if (opener instanceof HTMLElement && opener !== menuRef && opener.isConnected) {
+        opener.focus();
+      }
+    };
+  });
 
   // Guard all derivations behind open state to avoid work when menu is closed
   let singleActions = $derived.by(() => {
@@ -77,9 +89,6 @@
   function close() {
     contextMenuStore.close();
     focusedIndex = -1;
-    const target = restoreFocusTo;
-    restoreFocusTo = null;
-    if (target && target.isConnected) target.focus();
   }
 
   function executeAction(action: ActionDef | BulkActionDef | TableAction) {
@@ -162,11 +171,6 @@
   // Focus menu when opened
   $effect(() => {
     if (contextMenuStore.open && menuRef) {
-      // Capture the opener once (before the menu takes focus).
-      const active = document.activeElement;
-      if (!restoreFocusTo && active instanceof HTMLElement && active !== menuRef) {
-        restoreFocusTo = active;
-      }
       // Find first enabled item
       if (isBulk || isTable) {
         focusedIndex = flatItems.length > 0 ? 0 : -1;

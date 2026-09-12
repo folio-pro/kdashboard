@@ -13,7 +13,7 @@
   import AppTableHeader from "./TableHeader.svelte";
   import AppTableRow from "./TableRow.svelte";
   import BulkActionBar from "./BulkActionBar.svelte";
-  import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
+  import BulkDeleteConfirm from "./BulkDeleteConfirm.svelte";
   import TableEmptyStates from "./TableEmptyStates.svelte";
   import TableStatusBar from "./TableStatusBar.svelte";
   import TableDetailAside from "./TableDetailAside.svelte";
@@ -684,18 +684,13 @@
     loader={() => import("./CreateResourceDialog.svelte")}
     props={{ onclose: () => { createOpen = false; }, onapply: applyManifests }}
     name="create resource dialog"
+    onerror={() => { createOpen = false; }}
   />
 {/if}
 
-{#if bulkDeleteOpen}
-  <ConfirmDialog
-    open={bulkDeleteOpen}
-    title="Delete {uiStore.selectedCount} {uiStore.selectedCount === 1 ? 'resource' : 'resources'}"
-    description="This action cannot be undone. The selected resources will be permanently deleted from the cluster."
-    confirmLabel="Delete {uiStore.selectedCount} {uiStore.selectedCount === 1 ? 'resource' : 'resources'}"
-    cancelLabel="Keep resources"
-    variant="destructive"
-    onconfirm={() => { bulkDeleteOpen = false; void confirmBulkDelete(); }}
-    oncancel={() => (bulkDeleteOpen = false)}
-  />
-{/if}
+<BulkDeleteConfirm
+  open={bulkDeleteOpen}
+  selectedCount={uiStore.selectedCount}
+  onconfirm={() => { bulkDeleteOpen = false; void confirmBulkDelete(); }}
+  oncancel={() => (bulkDeleteOpen = false)}
+/>

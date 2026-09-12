@@ -123,12 +123,17 @@
   // relations against it. Reload whenever the pod's namespace changes (services
   // are namespace-scoped, so a same-namespace pod switch needs nothing).
   let loadedServiceNamespace: string | undefined;
+  // A generation counter, not an effect cleanup: the effect re-runs on every
+  // `resource` change (pod switch, watch delta) and returns early for a pod in
+  // the same namespace. A cleanup would cancel the in-flight list and that
+  // early return would never re-issue it, leaving the relations empty for good.
+  let servicesGeneration = 0;
   $effect(() => {
     const ns = resource.metadata.namespace ?? k8sStore.currentNamespace;
     if (loadedServiceNamespace === ns) return;
     loadedServiceNamespace = ns;
     allServices = [];
-    let cancelled = false;
+    const gen = ++servicesGeneration;
     invoke<ResourceList>("list_resources", {
       // Match services in the pod's own namespace, not the currently selected
       // one (they can differ when opening a pod via cross-link / All Namespaces).
@@ -136,14 +141,13 @@
       namespace: ns,
     })
       .then((result) => {
-        if (!cancelled) allServices = result.items;
+        if (gen === servicesGeneration) allServices = result.items;
       })
       .catch(() => {
-        // non-critical — service relations just won't show
+        // non-critical — service relations just won't show. Forget the loaded
+        // namespace so returning to it retries instead of staying empty.
+        if (gen === servicesGeneration) loadedServiceNamespace = undefined;
       });
-    return () => {
-      cancelled = true;
-    };
   });
 
   let related = $derived(getRelatedResources(resource, "pods", allServices));

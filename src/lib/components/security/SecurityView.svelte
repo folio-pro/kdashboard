@@ -31,15 +31,20 @@
   }
 
   // Reload the active mode when the header's namespace picker changes scope;
-  // openAppView issued the first load, so only a change re-loads.
+  // openAppView issued the first load, so only a change re-loads. The mode that
+  // is NOT on screen is dropped rather than reloaded: both loaders skip the
+  // fetch when data is already there (RbacPanel guards on `subjects.length`),
+  // so leaving it would show the old namespace's rows on the next mode switch.
   let lastNamespace: string | undefined;
   $effect(() => {
     const ns = k8sStore.currentNamespace;
     if (lastNamespace !== undefined && lastNamespace !== ns) {
       if (mode === "permissions") {
+        securityStore.reset();
         rbacStore.reset();
         void rbacStore.loadSubjects(ns);
       } else {
+        rbacStore.reset();
         securityStore.loadSecurityOverview(ns);
       }
     }
