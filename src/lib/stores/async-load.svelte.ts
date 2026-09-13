@@ -29,13 +29,8 @@ export class AsyncLoadStore<T> extends AsyncLoadStoreLogic<T> {
    */
   protected async _load(command: string, namespace: string | null): Promise<void> {
     const loadId = ++this._loadId;
-    const ns = namespace && namespace !== "All Namespaces" ? namespace : null;
-    // A scope change must not keep the previous namespace's payload on screen
-    // under the new label; a same-scope refresh keeps it (stale-while-revalidate).
-    if (this._dataScope !== ns) {
-      this.data = null;
-      this._dataScope = ns;
-    }
+    const ns = this._scopeOf(namespace);
+    this._enterScope(ns);
     this.isLoading = true;
     this.error = null;
 

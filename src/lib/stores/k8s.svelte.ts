@@ -941,6 +941,11 @@ class K8sStore extends K8sStoreLogic {
     const type = crdTypeFor(crd);
     this.selectedCrd = crd;
     this.crdResources = { items: [], columns: this._crdColumns.get(type) ?? [] };
+    // setResourceType only clears viewLoaded when the type CHANGES, so
+    // re-opening the same CRD left it true over the rows just emptied above —
+    // and the table said "No … found" until the delayed isLoading kicked in.
+    // _loadResources' finally sets it back to true either way.
+    this.viewLoaded = false;
     this.setResourceType(type);
     await this.loadResources(type);
   }

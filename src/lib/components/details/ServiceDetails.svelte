@@ -176,11 +176,22 @@
 
   {#if noBackends}
     <AttentionBlock tone="error" title="No endpoints — traffic to this service has nowhere to go">
-      <span>
-        Selector <code>{selectorTerms.join(", ")}</code> matches
-        <b>{podsLoading ? "…" : `${runningPods} running ${runningPods === 1 ? "pod" : "pods"}`}</b>
-        in <code>{namespace || "default"}</code>.
-      </span>
+      <!-- The alert itself comes from the endpoints summary, so it stands even
+           when the pod lookup failed — but the count does not: a rejected list
+           means "unknown", never "zero". -->
+      {#if podsFailed}
+        <span>
+          Couldn't list the pods matching <code>{selectorTerms.join(", ")}</code> in
+          <code>{namespace || "default"}</code>, so how many back this service is
+          unknown — check permissions and retry.
+        </span>
+      {:else}
+        <span>
+          Selector <code>{selectorTerms.join(", ")}</code> matches
+          <b>{podsLoading ? "…" : `${runningPods} running ${runningPods === 1 ? "pod" : "pods"}`}</b>
+          in <code>{namespace || "default"}</code>.
+        </span>
+      {/if}
       {#if !podsLoading && pods.length > 0 && readyPods === 0}
         <span>{pods.length} {pods.length === 1 ? "pod matches" : "pods match"} but none is ready.</span>
       {/if}

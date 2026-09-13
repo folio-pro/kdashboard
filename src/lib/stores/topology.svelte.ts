@@ -25,6 +25,11 @@ class TopologyStore extends AsyncLoadStore<TopologyGraph> {
 
   async loadResourceTopology(uid: string, namespace: string | null): Promise<void> {
     const loadId = ++this._loadId;
+    // Hand-rolled rather than going through _load, so it has to opt into the
+    // scope rule explicitly: without it a namespace change kept the previous
+    // namespace's graph on screen until the new one landed.
+    const ns = this._scopeOf(namespace);
+    this._enterScope(ns);
     this.isLoading = true;
     this.error = null;
     this.focusedResourceUid = uid;
@@ -34,7 +39,7 @@ class TopologyStore extends AsyncLoadStore<TopologyGraph> {
     try {
       const result = await invoke<TopologyGraph>("get_resource_topology", {
         uid,
-        namespace: namespace || null,
+        namespace: ns,
       });
       if (loadId !== this._loadId) return;
       this.data = result;

@@ -54,9 +54,12 @@ test("context-menu bulk delete confirms before deleting", async ({ page, mockInv
   await expect(confirm).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { __deleted?: string[] }).__deleted ?? [])).toEqual([]);
 
-  // Confirming deletes exactly the two selected.
+  // Confirming deletes exactly the two selected — by identity, not by count:
+  // deleting the wrong row, or one row twice, has to fail here too.
   await confirm.click();
   await expect
-    .poll(async () => (await page.evaluate(() => (window as unknown as { __deleted?: string[] }).__deleted ?? [])).length)
-    .toBe(2);
+    .poll(async () =>
+      page.evaluate(() => [...((window as unknown as { __deleted?: string[] }).__deleted ?? [])].sort()),
+    )
+    .toEqual(["pod-1", "pod-2"]);
 });

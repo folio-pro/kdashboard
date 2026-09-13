@@ -422,13 +422,16 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div onkeydown={handleKeydown}>
       <Command>
+        <!-- aria-activedescendant is guarded on the item, not the index:
+             selectedIndex stays 0 on an empty list, which would point the
+             screen reader at an id nothing renders. -->
         <CommandInput
           aria-label="Search commands and resources"
           role="combobox"
           aria-expanded="true"
           aria-controls="command-palette-list"
           aria-autocomplete="list"
-          aria-activedescendant={selectedIndex >= 0 ? `command-item-${selectedIndex}` : undefined}
+          aria-activedescendant={filteredItems[selectedIndex] ? `command-item-${selectedIndex}` : undefined}
           placeholder="Search by name across the cluster, or contexts and actions… (ns: kind:)"
           value={query}
           oninput={(e: Event) => { query = (e.target as HTMLInputElement).value; }}
