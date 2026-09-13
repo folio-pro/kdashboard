@@ -1,5 +1,6 @@
 import type { SortDirection, Resource, Facet } from "../types/index.js";
 import { dedupeFacets, facetKey } from "../utils/facets.js";
+import { kindToResourceType } from "../utils/related-resources.js";
 
 export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwards" | "yaml" | "settings" | "topology" | "cost" | "security" | "helm" | "crd-table" | "overview" | "problems";
 
@@ -532,30 +533,55 @@ export class UiStoreLogic {
     });
   }
 
-  showLogs(resourceName?: string): void {
+  /**
+   * Tab options for a resource-bound view (logs/terminal/yaml). Passing the
+   * Resource gives the tab a full identity (name + type + namespace) so a
+   * repeat open focuses the existing tab instead of stacking duplicates, and
+   * session restore can re-hydrate it. A bare string stays label-only for
+   * callers that only have a name.
+   */
+  private _resourceTabOpts(
+    resource: Resource | string | undefined,
+    fallbackLabel: string,
+  ): { label: string; resourceName?: string; resourceType?: string; namespace?: string; resource?: Resource } {
+    if (typeof resource === "string") return { label: resource, resourceName: resource };
+    if (resource) {
+      const name = resource.metadata.name;
+      return {
+        label: name,
+        resourceName: name,
+        resourceType: kindToResourceType(resource.kind),
+        namespace: resource.metadata.namespace,
+        resource,
+      };
+    }
+    return { label: fallbackLabel };
+  }
+
+  showLogs(resource?: Resource | string): void {
     // When a resource detail is open, switch its sub-tab in place rather than
     // spawning a new top-level tab.
     if (this.activeView === "details") {
       this.detailSubtab = "logs";
       return;
     }
-    this._switchView("logs", { label: resourceName ?? "Logs", resourceName });
+    this._switchView("logs", this._resourceTabOpts(resource, "Logs"));
   }
 
-  showTerminal(resourceName?: string): void {
+  showTerminal(resource?: Resource | string): void {
     if (this.activeView === "details") {
       this.detailSubtab = "shell";
       return;
     }
-    this._switchView("terminal", { label: resourceName ?? "Terminal", resourceName });
+    this._switchView("terminal", this._resourceTabOpts(resource, "Terminal"));
   }
 
-  showYamlEditor(resourceName?: string): void {
+  showYamlEditor(resource?: Resource | string): void {
     if (this.activeView === "details") {
       this.detailSubtab = "yaml";
       return;
     }
-    this._switchView("yaml", { label: resourceName ?? "YAML", resourceName });
+    this._switchView("yaml", this._resourceTabOpts(resource, "YAML"));
   }
 
   showView(view: ActiveView): void {

@@ -13,7 +13,7 @@ import { toastStore } from "$lib/stores/toast.svelte";
 import { topologyStore } from "$lib/stores/topology.svelte";
 import { settingsStore } from "$lib/stores/settings.svelte";
 import { alertStore } from "$lib/stores/alerts.svelte";
-import { QUICK_EDIT_TYPES } from "$lib/components/details/quick-edit.logic";
+import { QUICK_EDIT_TYPES } from "$lib/components/details/quick-edit-types";
 import { kindToResourceType } from "$lib/utils/related-resources";
 import { dialogStore } from "$lib/stores/dialogs.svelte";
 import { isCordoned, setNodeSchedulable } from "./node-ops";
@@ -102,6 +102,14 @@ export async function deleteResource(resource: Resource): Promise<void> {
     );
     if (k8sStore.selectedResource?.metadata.uid === resource.metadata.uid) {
       k8sStore.selectResource(null);
+    }
+    // A detail tab caches its resource. Clearing only the global selection let
+    // a switch away and back restore the deleted object from that cache and
+    // render it as if it still existed.
+    for (const tab of uiStore.tabs) {
+      if (tab.cachedResource?.metadata?.uid === resource.metadata.uid) {
+        tab.cachedResource = undefined;
+      }
     }
     await k8sStore.refreshResources();
   } catch (err) {
@@ -208,7 +216,7 @@ export const resourceActions: ActionDef[] = [
     group: "navigate",
     priority: 10,
     appliesTo: (rt) => LOG_TYPES.includes(rt),
-    execute: () => uiStore.showLogs(),
+    execute: (r) => uiStore.showLogs(r),
   },
   {
     id: "open-terminal",
@@ -219,7 +227,7 @@ export const resourceActions: ActionDef[] = [
     group: "navigate",
     priority: 20,
     appliesTo: (rt) => rt === "pods",
-    execute: () => uiStore.showTerminal(),
+    execute: (r) => uiStore.showTerminal(r),
   },
   {
     id: "show-topology",

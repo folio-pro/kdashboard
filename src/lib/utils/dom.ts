@@ -25,7 +25,11 @@ export function overlayOpen(root: ParentNode | null = typeof document === "undef
   if (!root) return false;
   return (
     root.querySelector(
-      '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [data-bits-floating-content], [data-menu-content], [role="menu"]',
+      // `data-bits-floating-content-wrapper` is the attribute bits-ui actually
+      // stamps on select/popover/dropdown content. The shorter
+      // `[data-bits-floating-content]` matched nothing at all, so those layers
+      // were invisible here and the shortcuts behind them still fired.
+      '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [data-bits-floating-content-wrapper], [data-menu-content], [role="menu"]',
     ) !== null
   );
 }

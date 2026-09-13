@@ -77,7 +77,11 @@
       {/if}
     </div>
 
-    {#if k8sStore.isLoading}
+    <!-- While the first list is in flight (isLoading is delayed 200ms to avoid
+         flicker), items is empty — show loading rather than a false "No X
+         found". Only applies to the empty case so injected/loaded data still
+         renders immediately. -->
+    {#if k8sStore.isLoading || (k8sStore.crdResources.items.length === 0 && !k8sStore.viewLoaded)}
       <div class="flex flex-1 items-center justify-center">
         <span class="text-[12px] text-[var(--text-muted)]">Loading...</span>
       </div>

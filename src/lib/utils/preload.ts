@@ -24,6 +24,14 @@ const PRELOADERS: Loader[] = [
   () => import("$lib/components/details/YamlEditor.svelte"),
   () => import("$lib/components/logs/LogViewer.svelte"),
   () => import("$lib/components/terminal/TerminalView.svelte"),
+  // Dialogs are lazily mounted (see LazyDialog); warm them so the first open
+  // does not pay the chunk fetch + parse. CommandPalette is NOT here — it stays
+  // eager because its perf guard requires an instant open.
+  () => import("$lib/components/details/QuickEditDialog.svelte"),
+  () => import("$lib/components/table/CreateResourceDialog.svelte"),
+  () => import("$lib/components/details/ScaleDialog.svelte"),
+  () => import("$lib/components/details/CompareDialog.svelte"),
+  () => import("$lib/components/details/DrainDialog.svelte"),
 ];
 
 function onIdle(cb: () => void, timeout = 2000): void {

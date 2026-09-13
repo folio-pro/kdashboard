@@ -16,6 +16,19 @@
   let fetchedConfigMaps = $state<Resource[]>([]);
   let fetchedSecrets = $state<Resource[]>([]);
   let configLoading = $state(true);
+  // A failed list is not the same as "nothing referenced" — don't assert a
+  // fact the app could not verify (RBAC/outage). Tracked per kind: the two
+  // lists are independent requests, and one failing while the other returns
+  // rows must still be said out loud instead of hiding behind those results.
+  let cmFailed = $state(false);
+  let secFailed = $state(false);
+  let failureLabel = $derived(
+    cmFailed && secFailed
+      ? "Couldn't load the referenced configmaps and secrets"
+      : cmFailed
+        ? "Couldn't load the referenced configmaps"
+        : "Couldn't load the referenced secrets",
+  );
 
   $effect(() => {
     const refs = configResources;
@@ -24,6 +37,9 @@
 
     const cmNames = refs.filter(r => r.kind === "ConfigMap").map(r => r.name);
     const secNames = refs.filter(r => r.kind === "Secret").map(r => r.name);
+
+    cmFailed = false;
+    secFailed = false;
 
     if (cmNames.length === 0 && secNames.length === 0) {
       fetchedConfigMaps = [];
@@ -46,7 +62,7 @@
             fetchedConfigMaps = result.items.filter(item => cmNames.includes(item.metadata.name));
           }
         }).catch(() => {
-          if (!cancelled) fetchedConfigMaps = [];
+          if (!cancelled) { fetchedConfigMaps = []; cmFailed = true; }
         })
       );
     }
@@ -61,7 +77,7 @@
             fetchedSecrets = result.items.filter(item => secNames.includes(item.metadata.name));
           }
         }).catch(() => {
-          if (!cancelled) fetchedSecrets = [];
+          if (!cancelled) { fetchedSecrets = []; secFailed = true; }
         })
       );
     }
@@ -232,6 +248,10 @@
       <span class="font-mono text-[11px] text-[var(--text-muted)]">
         {#if configLoading}
           …
+        {:else if cmFailed || secFailed}
+          <!-- One of the lists never arrived, so the total is unknown; the
+               line below names which kind is missing. -->
+          —
         {:else}
           {fetchedConfigMaps.length + fetchedSecrets.length}
         {/if}
@@ -239,7 +259,13 @@
     </div>
   </div>
 
-  {#if !configLoading && fetchedConfigMaps.length === 0 && fetchedSecrets.length === 0}
+  <!-- A failure is reported even when the other list DID return rows, which
+       the combined empty-state check used to swallow. -->
+  {#if !configLoading && (cmFailed || secFailed)}
+    <div class="px-6 pb-4">
+      <span class="text-[12px] text-[var(--status-failed)]">{failureLabel}</span>
+    </div>
+  {:else if !configLoading && fetchedConfigMaps.length === 0 && fetchedSecrets.length === 0}
     <div class="px-6 pb-4">
       <span class="text-[12px] text-[var(--text-muted)]">No configmaps or secrets referenced</span>
     </div>

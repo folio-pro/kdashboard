@@ -263,7 +263,12 @@
                       "text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]"
                     )}
                     onclick={async () => {
-                      const found = await k8sStore.fetchResource(pin.resourceType, pin.name);
+                      // Resolve by Kind + the PINNED namespace: fetchResource
+                      // lists only the current namespace, so a pin from another
+                      // namespace never resolved (and a failed list threw into
+                      // the void). resolveResourceByRef does a targeted GET and
+                      // catches its own failures.
+                      const found = await k8sStore.resolveResourceByRef(pin.kind, pin.name, pin.namespace);
                       if (found) {
                         openResourceDetail(found, pin.resourceType);
                       } else {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
+  import BulkDeleteConfirm from "./BulkDeleteConfirm.svelte";
   import { Button } from "$lib/components/ui";
   import {
     confirmDelete as commitDelete,
@@ -39,15 +39,9 @@
   </div>
 {/if}
 
-{#if showDeleteConfirm}
-  <ConfirmDialog
-    open={showDeleteConfirm}
-    title="Delete {selectedCount} {selectedCount === 1 ? 'resource' : 'resources'}"
-    description="This action cannot be undone. The selected resources will be permanently deleted from the cluster."
-    confirmLabel="Delete {selectedCount} {selectedCount === 1 ? 'resource' : 'resources'}"
-    cancelLabel="Keep resources"
-    variant="destructive"
-    onconfirm={confirmDelete}
-    oncancel={() => (showDeleteConfirm = false)}
-  />
-{/if}
+<BulkDeleteConfirm
+  open={showDeleteConfirm}
+  {selectedCount}
+  onconfirm={confirmDelete}
+  oncancel={() => (showDeleteConfirm = false)}
+/>

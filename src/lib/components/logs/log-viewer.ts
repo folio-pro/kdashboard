@@ -472,6 +472,8 @@ export interface EmptyStateOptions {
   filterText: string;
   isDeployment: boolean;
   podsLoading: boolean;
+  /** True when listing the deployment's pods failed (RBAC/transport). */
+  podsLoadFailed?: boolean;
   deploymentPodCount: number;
   /** Duration window phrased for "nothing in the last {…}" — e.g. "1 day". */
   sinceWindowLabel: string;
@@ -516,6 +518,9 @@ export function streamEmptyStateMessage(opts: EmptyStateOptions): string {
   }
 
   if (opts.isDeployment && opts.podsLoading) return "Loading pods...";
+  if (opts.isDeployment && opts.podsLoadFailed) {
+    return "Couldn't list pods for this deployment — check permissions and retry";
+  }
   if (opts.isDeployment && opts.deploymentPodCount === 0) {
     return "No pods found for this deployment";
   }

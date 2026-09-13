@@ -32,6 +32,27 @@
     }
   }
 
+  // The header's namespace picker scopes THIS view: openAppView issued the
+  // first load, so only a change re-loads (otherwise picking a namespace here
+  // left the previous namespace's numbers on screen under the new label).
+  // Both stores are namespace-scoped, so the mode that is NOT on screen has to
+  // be dropped too: setMode() skips the fetch when its store already holds
+  // data, which would otherwise be the previous namespace's numbers.
+  let lastNamespace: string | undefined;
+  $effect(() => {
+    const ns = k8sStore.currentNamespace;
+    if (lastNamespace !== undefined && lastNamespace !== ns) {
+      if (mode === "rightsizing") {
+        costStore.reset();
+        rightsizingStore.loadRightsizing(ns);
+      } else {
+        rightsizingStore.reset();
+        costStore.loadCostOverview(ns);
+      }
+    }
+    lastNamespace = ns;
+  });
+
   function toggleNamespace(ns: string) {
     const next = new Set(expandedNamespaces);
     if (next.has(ns)) {

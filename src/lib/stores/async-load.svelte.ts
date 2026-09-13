@@ -29,11 +29,12 @@ export class AsyncLoadStore<T> extends AsyncLoadStoreLogic<T> {
    */
   protected async _load(command: string, namespace: string | null): Promise<void> {
     const loadId = ++this._loadId;
+    const ns = this._scopeOf(namespace);
+    this._enterScope(ns);
     this.isLoading = true;
     this.error = null;
 
     try {
-      const ns = namespace && namespace !== "All Namespaces" ? namespace : null;
       const result = await invoke<T>(command, { namespace: ns });
       if (loadId !== this._loadId) return;
       this.data = result;
