@@ -1,6 +1,6 @@
 import { test, expect, describe } from 'bun:test';
 
-import { apiVersionOf, resolveKind, resolveKindOrThrow, resolveResourceType, KINDS, RESOURCE_TYPES } from './kinds';
+import { apiVersionOf, resolveKind, resolveKindOrThrow, resolveObjectRef, resolveResourceType, KINDS, RESOURCE_TYPES } from './kinds';
 import { KIND_TO_RESOURCE_TYPE, LISTABLE_RESOURCE_TYPES } from '../../src/lib/resource-catalog';
 
 describe('apiVersionOf', () => {
@@ -139,5 +139,25 @@ describe('catalog <-> registry', () => {
     for (const type of LISTABLE_RESOURCE_TYPES) {
       expect(withKind.has(type)).toBe(true);
     }
+  });
+});
+
+describe('resolveObjectRef', () => {
+  test('a registered kind resolves through the registry, whatever apiVersion says', () => {
+    expect(resolveObjectRef('deployment')).toEqual({ apiVersion: 'apps/v1', kind: 'Deployment' });
+    expect(resolveObjectRef('Deployment', 'bogus/v9')).toEqual({ apiVersion: 'apps/v1', kind: 'Deployment' });
+  });
+
+  test("an unregistered kind (a custom resource) uses the object's own apiVersion", () => {
+    expect(resolveObjectRef('Certificate', 'cert-manager.io/v1')).toEqual({
+      apiVersion: 'cert-manager.io/v1',
+      kind: 'Certificate',
+    });
+  });
+
+  test('an unregistered kind without a grouped apiVersion is rejected', () => {
+    expect(() => resolveObjectRef('Certificate')).toThrow(/Unsupported kind/);
+    expect(() => resolveObjectRef('Certificate', 'v1')).toThrow(/Unsupported kind/);
+    expect(() => resolveObjectRef('Certificate', '')).toThrow(/Unsupported kind/);
   });
 });
