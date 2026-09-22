@@ -101,6 +101,12 @@ function themeChrome(): { bg: string; symbol: string } {
 }
 
 const isDev = !app.isPackaged;
+
+// Last resort for promise chains nobody awaits (fire-and-forget teardown,
+// event callbacks): log them instead of losing them silently.
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] unhandled rejection', reason);
+});
 // electron-vite sets this to the dev-server URL during `electron-vite dev`. It
 // is undefined for `electron-vite preview` and packaged builds, which load the
 // built renderer from out/renderer. Presence of the URL — not isDev — decides
@@ -149,7 +155,7 @@ function stopStreamingSubsystems(): void {
   terminal.stopAllTerminalSessions();
   portforward.stopAllPortForwards();
   watch.stopAllWatches();
-  void stopAllAgentSessions();
+  stopAllAgentSessions().catch((err: unknown) => console.error('[agent] stop on renderer reset failed', err));
   // An external-endpoint mutation waiting on the dialog can never be answered
   // by a renderer that just went away — deny now instead of after the timeout.
   denyAllPending();
