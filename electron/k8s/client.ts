@@ -10,6 +10,7 @@
 //   - allow switching the active context at runtime (switch_context)
 
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as https from 'node:https';
 import * as tls from 'node:tls';
 
@@ -276,6 +277,10 @@ function installTlsDispatcher(cfg: KubeConfig): void {
 // runs that work once, swaps the agent for a shared keepAlive one, and replays
 // the recorded headers/agent onto each request. A short TTL keeps rotating
 // tokens working; a config change tears everything down.
+//
+// A TTL refresh must never abort requests already in flight: when the TLS
+// material is unchanged the warm agent is kept (only headers rotate), and an
+// agent that does get replaced is retired gracefully, not destroyed.
 // ---------------------------------------------------------------------------
 
 const AUTH_CACHE_TTL_MS = 30_000;
@@ -284,9 +289,41 @@ interface RecordedAuth {
   at: number;
   headers: Record<string, string>;
   agent: unknown;
+  /** Identity of the agent's TLS material; null when the agent can't be reused. */
+  tlsKey: string | null;
 }
 
-class CachedClusterAuth {
+/** The https.Agent options that decide which TLS connection it makes. */
+const TLS_KEY_FIELDS = ['ca', 'cert', 'key', 'pfx', 'passphrase', 'rejectUnauthorized', 'servername'] as const;
+
+function tlsKeyOf(opts: https.AgentOptions): string {
+  // Buffers stringify as { type, data } — stable enough for equality.
+  return JSON.stringify(TLS_KEY_FIELDS.map((f) => opts[f] ?? null));
+}
+
+/**
+ * Stop handing out an agent without aborting its in-flight requests: idle
+ * pooled sockets close now, busy ones close when their response ends (Node's
+ * agent destroys a released socket once `keepAlive` is off). Non-http agents
+ * have no such hook and are destroyed.
+ */
+function retireAgent(agent: unknown): void {
+  try {
+    if (agent instanceof http.Agent) {
+      // Undocumented but long-standing: the agent's 'free' handler reads it.
+      (agent as unknown as { keepAlive: boolean }).keepAlive = false;
+      for (const sockets of Object.values(agent.freeSockets)) {
+        for (const socket of sockets ?? []) socket.destroy();
+      }
+      return;
+    }
+    (agent as { destroy?: () => void } | undefined)?.destroy?.();
+  } catch {
+    // ignore
+  }
+}
+
+export class CachedClusterAuth {
   #cfg: KubeConfig;
   #cached: RecordedAuth | null = null;
   #pending: Promise<RecordedAuth> | null = null;
@@ -314,8 +351,17 @@ class CachedClusterAuth {
         if (this.#pending === p) this.#pending = null;
       });
     }
-    const fresh = await this.#pending;
-    if (this.#cached && this.#cached !== fresh) this.#destroyAgent(this.#cached);
+    let fresh = await this.#pending;
+    const prev = this.#cached;
+    if (prev && prev !== fresh && prev.agent !== fresh.agent) {
+      if (prev.tlsKey !== null && prev.tlsKey === fresh.tlsKey) {
+        // Same TLS material: keep the warm pool, drop the unused new agent.
+        retireAgent(fresh.agent);
+        fresh = { ...fresh, agent: prev.agent };
+      } else {
+        retireAgent(prev.agent);
+      }
+    }
     this.#cached = fresh;
     return fresh;
   }
@@ -329,6 +375,7 @@ class CachedClusterAuth {
   async #build(): Promise<RecordedAuth> {
     const headers: Record<string, string> = {};
     let agent: unknown;
+    let tlsKey: string | null = null;
     // Record what the real implementation would have applied to the request.
     const recorder = {
       setHeaderParam: (key: string, value: string): void => {
@@ -345,12 +392,13 @@ class CachedClusterAuth {
       const opts = (agent as https.Agent).options ?? {};
       (agent as https.Agent).destroy();
       agent = new https.Agent({ ...opts, keepAlive: true, maxSockets: 16 });
+      tlsKey = tlsKeyOf(opts);
     }
-    return { at: Date.now(), headers, agent };
+    return { at: Date.now(), headers, agent, tlsKey };
   }
 
   /** Force the next getAuth() to rebuild (e.g. after a 401), without leaking
-   *  the current agent — the rebuild swap destroys it. Also drops an in-flight
+   *  the current agent — the rebuild swap reuses or retires it. Also drops an in-flight
    *  rebuild: it started BEFORE the 401, so its material may be the very token
    *  that just got rejected; the next getAuth() starts a fresh build. */
   expire(): void {
@@ -358,17 +406,14 @@ class CachedClusterAuth {
     if (this.#cached) this.#cached = { ...this.#cached, at: 0 };
   }
 
-  #destroyAgent(entry: RecordedAuth): void {
-    const agent = entry.agent as { destroy?: () => void } | undefined;
+  /** Hard teardown (context switch): aborting in-flight requests is intended. */
+  destroy(): void {
+    const agent = this.#cached?.agent as { destroy?: () => void } | undefined;
     try {
       agent?.destroy?.();
     } catch {
       // ignore
     }
-  }
-
-  destroy(): void {
-    if (this.#cached) this.#destroyAgent(this.#cached);
     this.#cached = null;
   }
 }
