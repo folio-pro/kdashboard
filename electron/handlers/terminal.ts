@@ -16,6 +16,11 @@
 // Starting a new one stops the previous. stop_terminal_exec
 // closes the WebSocket and emits terminal-exit. The session Map is cleaned on
 // stop AND on stream death (status callback / ws close / error).
+//
+// Every start/stop bumps `generation`. A start captures its generation before
+// awaiting the WebSocket handshake and re-checks it afterwards: if a stop or a
+// newer start ran meanwhile, the late socket is closed and nothing is emitted.
+// Status/close callbacks only act while their own socket is the active one.
 
 import { PassThrough, Writable } from 'node:stream';
 
@@ -84,6 +89,12 @@ interface Session {
 /** Single active session. */
 let session: Session | null = null;
 
+/** Bumped by every start and stop; a pending start whose generation is stale is cancelled. */
+let generation = 0;
+
+/** Something that can open an exec WebSocket — `Exec` in production, a fake in tests. */
+export type ExecClient = Pick<Exec, 'exec'>;
+
 /** Tear down the active session if any. `notify` emits terminal-exit when true. */
 function endSession(notify: boolean, ctx: HandlerCtx | null): void {
   const current = session;
@@ -115,10 +126,15 @@ function endSession(notify: boolean, ctx: HandlerCtx | null): void {
 
 /** End the active session without notifying (renderer reload/crash — main.ts hooks). */
 export function stopAllTerminalSessions(): void {
+  generation++;
   endSession(false, null);
 }
 
-export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
+export function register(
+  handlers: HandlerMap,
+  ctx: HandlerCtx,
+  makeExec: () => ExecClient = () => new Exec(kc()),
+): void {
   handlers.set('start_terminal_exec', async (args) => {
     const name = String(args.name ?? '');
     const namespace = String(args.namespace ?? '');
@@ -134,19 +150,25 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
     if (!namespace) throw new Error('start_terminal_exec: missing namespace');
 
     // Stop any previous session first (single active slot). Do not notify the
-    // renderer — it is intentionally replacing the session.
+    // renderer — it is intentionally replacing the session. Claiming a new
+    // generation also cancels any start still in its handshake.
+    const gen = ++generation;
     endSession(false, ctx);
 
     const stdin = new PassThrough();
-    const output = makeOutputCoalescer((text) => ctx.emit(TERMINAL_OUTPUT, text));
+    // Drop output once this start has been superseded, so a cancelled connect
+    // (or a replaced session's final flush) never writes into the new terminal.
+    const output = makeOutputCoalescer((text) => {
+      if (gen === generation) ctx.emit(TERMINAL_OUTPUT, text);
+    });
     const stdout = new OutputStream((text) => output.push(text), 80, 24);
     // stderr shares the same channel — interactive shells multiplex onto stdout
     // anyway, but a TTY-less write to stderr must still reach the user.
     const stderr = new OutputStream((text) => output.push(text), 80, 24);
 
-    const exec = new Exec(kc());
+    const exec = makeExec();
 
-    let ws: WebSocket;
+    let ws: WebSocket | undefined;
     try {
       ws = (await exec.exec(
         namespace,
@@ -158,23 +180,44 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
         stderr,
         stdin,
         true, // tty
-        // status callback fires when the remote process exits
+        // status callback fires when the remote process exits — only end the
+        // session if it is still this socket's (a replaced one must not kill
+        // its successor).
         () => {
-          endSession(true, ctx);
+          if (ws && session && session.ws === ws) {
+            endSession(true, ctx);
+          }
         },
       )) as unknown as WebSocket;
     } catch (err) {
       // Clean up the streams we created before rejecting.
+      output.close();
       stdin.end();
+      // Superseded while connecting: the caller already moved on.
+      if (gen !== generation) return null;
       throw new Error(`Failed to start terminal exec: ${(err as Error).message}`);
+    }
+
+    // A stop or a newer start ran during the handshake: close the late socket
+    // instead of opening a shell nobody is attached to.
+    if (gen !== generation) {
+      output.close();
+      stdin.end();
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+      return null;
     }
 
     session = { ws, stdin, stdout, output };
 
     // If the socket dies for any reason (server close, network error), make sure
     // we clean up and tell the renderer the session ended.
+    const opened = ws;
     const onClose = (): void => {
-      if (session && session.ws === ws) {
+      if (session && session.ws === opened) {
         endSession(true, ctx);
       }
     };
@@ -203,6 +246,8 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
   });
 
   handlers.set('stop_terminal_exec', () => {
+    // Also cancels a start still in its handshake.
+    generation++;
     endSession(true, ctx);
     return null;
   });
