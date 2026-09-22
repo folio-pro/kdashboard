@@ -20,7 +20,7 @@ import { randomBytes } from 'node:crypto';
 import type { V1Pod } from '@kubernetes/client-node';
 
 import { getCoreV1Api } from '../k8s/client.js';
-import { k8sErrorMessage } from '../k8s/errors.js';
+import { k8sErrorMessage, k8sStatusCode } from '../k8s/errors.js';
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 
 const NODE_SHELL_IMAGE = 'busybox:1.36';
@@ -113,8 +113,7 @@ async function deleteNodeShellPod(name: string, namespace: string): Promise<void
     }
     await getCoreV1Api().deleteNamespacedPod({ name, namespace, gracePeriodSeconds: 0 });
   } catch (err) {
-    const msg = k8sErrorMessage(err);
-    if (!/not found/i.test(msg)) throw new Error(msg);
+    if (k8sStatusCode(err) !== 404) throw new Error(k8sErrorMessage(err));
   }
 }
 
