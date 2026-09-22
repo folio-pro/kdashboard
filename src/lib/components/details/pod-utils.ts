@@ -2,6 +2,8 @@
  * Utility functions for PodDetails and its sub-components.
  */
 
+import type { Resource } from "$lib/types";
+
 export function decodeBase64(val: string): string {
   try { return atob(val); } catch { return val; }
 }
@@ -53,6 +55,27 @@ export interface ConfigRef {
   kind: string;
   name: string;
   keys?: number;
+}
+
+type Invoke = <T>(cmd: string, args: Record<string, unknown>) => Promise<T>;
+
+/**
+ * Fetch the ConfigMaps/Secrets a pod references, one get_resource per name.
+ * The list projection ships key names only (no values), so the pod's config
+ * card cannot read them from list_resources. Objects that fail to load
+ * (deleted, forbidden) are dropped, as the card only shows what exists.
+ */
+export async function fetchConfigObjects(
+  invoke: Invoke,
+  kind: "ConfigMap" | "Secret",
+  names: string[],
+  namespace: string,
+): Promise<Resource[]> {
+  const unique = [...new Set(names)];
+  const settled = await Promise.allSettled(
+    unique.map((name) => invoke<Resource>("get_resource", { kind, name, namespace })),
+  );
+  return settled.flatMap((s) => (s.status === "fulfilled" && s.value ? [s.value] : []));
 }
 
 /**

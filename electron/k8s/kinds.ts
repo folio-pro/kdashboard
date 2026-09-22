@@ -27,7 +27,13 @@ export interface KindEntry {
 export interface ListFields {
   spec: boolean;
   status: boolean;
-  data: boolean;
+  /**
+   * 'keys' keeps the `data` map's KEY NAMES with every value blanked to ''.
+   * ConfigMap/Secret tables only show a key count, and values (Secrets,
+   * multi-MB Helm release payloads) must not ride every list and watch event;
+   * the detail panel fetches the full object with get_resource.
+   */
+  data: false | 'keys';
   /**
    * Top-level fields that are neither spec nor status but that the table needs
    * (RoleBinding.roleRef, ServiceAccount.secrets, EndpointSlice.endpoints, …).
@@ -52,7 +58,7 @@ export function apiVersionOf(group: string, version: string): string {
 const NONE: ListFields = { spec: false, status: false, data: false };
 const SPEC: ListFields = { spec: true, status: false, data: false };
 const SPEC_STATUS: ListFields = { spec: true, status: true, data: false };
-const DATA: ListFields = { spec: false, status: false, data: true };
+const DATA_KEYS: ListFields = { spec: false, status: false, data: 'keys' };
 const synth = (...fields: string[]): ListFields => ({ ...NONE, synth: fields });
 
 const r = (
@@ -87,9 +93,9 @@ export const RESOURCE_TYPES: Record<string, ResourceTypeEntry> = {
   endpointslices: r('endpointslices', 'discovery.k8s.io', 'v1', 'endpointslices', 'EndpointSlice', false, synth('addressType', 'endpoints', 'ports')),
 
   // --- Configuration -----------------------------------------------------
-  configmaps: r('configmaps', '', 'v1', 'configmaps', 'ConfigMap', false, DATA, ['cm']),
-  // Secrets have a hand-written projection (base64 data + the `type` field).
-  secrets: r('secrets', '', 'v1', 'secrets', 'Secret', false, DATA),
+  configmaps: r('configmaps', '', 'v1', 'configmaps', 'ConfigMap', false, DATA_KEYS, ['cm']),
+  // Secrets have a hand-written projection (data keys + the `type` field).
+  secrets: r('secrets', '', 'v1', 'secrets', 'Secret', false, DATA_KEYS),
 
   // --- Scaling -----------------------------------------------------------
   hpa: r('hpa', 'autoscaling', 'v2', 'horizontalpodautoscalers', 'HorizontalPodAutoscaler', false, SPEC_STATUS, ['hpa']),

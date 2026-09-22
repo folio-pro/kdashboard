@@ -2,9 +2,9 @@
   import { ChevronRight, FileText, Lock, Copy, Check } from "lucide-svelte";
   import { Button, SearchField } from "$lib/components/ui";
   import { invoke } from "$lib/ipc/core";
-  import type { Resource, ResourceList } from "$lib/types";
+  import type { Resource } from "$lib/types";
   import { toggleSetItem } from "$lib/utils/k8s-helpers";
-  import { decodeBase64, truncateValue, type ConfigRef } from "./pod-utils";
+  import { decodeBase64, fetchConfigObjects, truncateValue, type ConfigRef } from "./pod-utils";
 
   interface Props {
     configResources: ConfigRef[];
@@ -34,37 +34,16 @@
 
     configLoading = true;
 
-    const promises: Promise<void>[] = [];
-
-    if (cmNames.length > 0) {
-      promises.push(
-        invoke<ResourceList>("list_resources", {
-          resourceType: "configmaps",
-          namespace: ns,
-        }).then((result) => {
-          if (!cancelled) {
-            fetchedConfigMaps = result.items.filter(item => cmNames.includes(item.metadata.name));
-          }
-        }).catch(() => {
-          if (!cancelled) fetchedConfigMaps = [];
-        })
-      );
-    }
-
-    if (secNames.length > 0) {
-      promises.push(
-        invoke<ResourceList>("list_resources", {
-          resourceType: "secrets",
-          namespace: ns,
-        }).then((result) => {
-          if (!cancelled) {
-            fetchedSecrets = result.items.filter(item => secNames.includes(item.metadata.name));
-          }
-        }).catch(() => {
-          if (!cancelled) fetchedSecrets = [];
-        })
-      );
-    }
+    // One get_resource per referenced object: list rows carry key names only
+    // (no values), and a GET per name is cheaper than listing the namespace.
+    const promises: Promise<void>[] = [
+      fetchConfigObjects(invoke, "ConfigMap", cmNames, ns).then((items) => {
+        if (!cancelled) fetchedConfigMaps = items;
+      }),
+      fetchConfigObjects(invoke, "Secret", secNames, ns).then((items) => {
+        if (!cancelled) fetchedSecrets = items;
+      }),
+    ];
 
     Promise.all(promises).finally(() => {
       if (!cancelled) configLoading = false;
