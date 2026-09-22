@@ -118,6 +118,42 @@ test.describe("TerminalView (wterm)", () => {
     await expect.poll(() => sent.join(""), { timeout: 5000 }).toContain("ls");
   });
 
+  test("keeps Ctrl+Tab instead of switching tabs (#85)", async ({ page }) => {
+    const sent: string[] = [];
+    await page.exposeFunction("__recordInput", (data: string) => {
+      sent.push(data);
+    });
+    // A second tab, so a stolen Ctrl+Tab would visibly switch away.
+    const twoTabs = {
+      ...SEED_TABS,
+      tabs: [{ id: "tab-deploys", type: "table", label: "Deployments", closable: true, resourceType: "deployments" }, ...SEED_TABS.tabs],
+    };
+    await page.addInitScript(`
+      window.localStorage.setItem("kdashboard-tabs-v1", '${JSON.stringify(twoTabs)}');
+      window.addEventListener("DOMContentLoaded", () => {
+        const api = window.electronAPI;
+        const original = api.invoke;
+        api.invoke = async (cmd, args) => {
+          if (cmd === "send_terminal_input") window.__recordInput(args.data);
+          return original(cmd, args);
+        };
+      });
+    `);
+
+    await page.goto("/");
+
+    const panel = page.locator('[data-testid="terminal-panel"]');
+    await expect(panel.getByText("CONNECTED")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator("[role=tab][data-tab-id]")).toHaveCount(2);
+
+    await panel.locator(".wterm").click();
+    await page.keyboard.press("Control+Tab");
+
+    await expect.poll(() => sent.join(""), { timeout: 5000 }).toContain("\t");
+    await expect(page.locator('[role=tab][data-tab-id="tab-terminal-1"]')).toHaveAttribute("aria-selected", "true");
+    await expect(panel).toBeVisible();
+  });
+
   /**
    * Regression: output scrolled out of view. wterm's _scrollToBottom() rounds
    * scrollTop down to a whole row, and its _isScrolledToBottom() probe uses a
