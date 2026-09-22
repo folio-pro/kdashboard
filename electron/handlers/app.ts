@@ -23,6 +23,7 @@ import { app, dialog } from 'electron';
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 import { getKubeconfigPath, setKubeconfigPath, getVersionApi } from '../k8s/client.js';
 import { setPrometheusUrl } from '../k8s/runtime-config.js';
+import { readSettingsFile, writeSettingsFile } from '../util/settings-file.js';
 
 // ===========================================================================
 // Settings — snake_case keys, every field optional.
@@ -63,29 +64,34 @@ function settingsPath(): string {
 /** In-memory mirror of persisted settings. */
 let settingsState: AppSettings | null = null;
 
-/** Load settings from disk; returns {} if absent/unreadable. */
+/** Set when the settings file was found corrupt at load; consumed once by
+ *  takeSettingsLoadWarning(). */
+let settingsLoadWarning: string | null = null;
+
+/** Load settings from disk; returns {} if absent. A corrupt file is moved
+ *  aside (see readSettingsFile) and a one-time warning is recorded. */
 function loadSettings(): AppSettings {
   const file = settingsPath();
-  if (!fs.existsSync(file)) {
-    return {};
+  const { settings, corrupt } = readSettingsFile(file);
+  if (corrupt) {
+    settingsLoadWarning = corrupt.backupPath
+      ? `Your settings file was corrupt and has been reset to defaults. A copy was saved to ${corrupt.backupPath}.`
+      : `Your settings file (${file}) was corrupt and has been reset to defaults.`;
+    console.warn(`[settings] ${settingsLoadWarning}`);
   }
-  try {
-    const contents = fs.readFileSync(file, 'utf8');
-    const parsed = JSON.parse(contents) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as AppSettings;
-    }
-    return {};
-  } catch {
-    // Tolerate a corrupt file: fall back to defaults rather than failing boot.
-    return {};
-  }
+  return settings as AppSettings;
 }
 
 function persistSettings(settings: AppSettings): void {
-  const file = settingsPath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+  writeSettingsFile(settingsPath(), settings);
+}
+
+/** Returns the corrupt-settings warning from the load, at most once. */
+export function takeSettingsLoadWarning(): string | null {
+  currentSettings();
+  const warning = settingsLoadWarning;
+  settingsLoadWarning = null;
+  return warning;
 }
 
 /** Lazily get the current in-memory settings, hydrating from disk once.
