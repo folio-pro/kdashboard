@@ -23,7 +23,7 @@ import * as YAML from 'yaml';
 
 import { KubernetesObjectApi } from '@kubernetes/client-node';
 
-import { getActiveContextName, getCoreV1Api, kcFor } from '../k8s/client';
+import { getActiveContextName, getCoreV1Api, kc, kcFor } from '../k8s/client';
 import { apiGet, META_ACCEPT } from '../k8s/api';
 import type {
   RawList,
@@ -34,7 +34,7 @@ import type {
   ResourceMetadata,
 } from '../k8s/resource-types';
 import { metaFrom, listMetaFrom, listProjectionFor } from '../k8s/resource-mapping';
-import { RESOURCE_TYPES, apiVersionOf, resolveKindOrThrow, resolveResourceType } from '../k8s/kinds';
+import { RESOURCE_TYPES, apiVersionOf, resolveKind, resolveKindOrThrow, resolveObjectRef, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerMap } from '../dispatch';
 
 // ---------------------------------------------------------------------------
@@ -306,11 +306,36 @@ async function getResourceYaml(
   name: string,
   namespace: string,
   context?: string,
+  apiVersion?: string,
 ): Promise<string> {
+  if (!resolveKind(kind)) return getCustomResourceYaml(kind, name, namespace, context, apiVersion);
   const { ar } = apiResourceForKind(kind);
   const peer = context && context !== getActiveContextName() ? context : undefined;
   const obj = peer ? await getRawFromContext(peer, kind, ar, name, namespace) : await getRaw(ar, name, namespace);
   // Strip managedFields — verbose server-side-apply noise.
+  if (obj.metadata) delete obj.metadata.managedFields;
+  return YAML.stringify(obj);
+}
+
+/**
+ * YAML of a custom resource, which the kind registry does not know: addressed
+ * by the object's own apiVersion + Kind, and read through KubernetesObjectApi,
+ * which discovers the plural and the scope itself.
+ */
+async function getCustomResourceYaml(
+  kind: string,
+  name: string,
+  namespace: string,
+  context: string | undefined,
+  apiVersion: string | undefined,
+): Promise<string> {
+  const ref = resolveObjectRef(kind, apiVersion);
+  const api = KubernetesObjectApi.makeApiClient(context ? kcFor(context) : kc());
+  const obj = (await api.read({
+    apiVersion: ref.apiVersion,
+    kind: ref.kind,
+    metadata: { name, namespace: namespace || undefined },
+  })) as unknown as RawObject;
   if (obj.metadata) delete obj.metadata.managedFields;
   return YAML.stringify(obj);
 }
@@ -478,7 +503,7 @@ export function register(handlers: HandlerMap): void {
   const getResourceYamlHandler: Handler = async (args) => {
     // `context` is optional: set, it reads from that context instead of the
     // active one (Compare Across Contexts) — never switches the active one.
-    return getResourceYaml(str(args.kind), str(args.name), str(args.namespace), optStr(args.context));
+    return getResourceYaml(str(args.kind), str(args.name), str(args.namespace), optStr(args.context), optStr(args.apiVersion));
   };
 
   const getResourceHandler: Handler = async (args) => {

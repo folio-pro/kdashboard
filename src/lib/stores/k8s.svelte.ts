@@ -306,9 +306,6 @@ class K8sStore extends K8sStoreLogic {
       if (scopeGeneration !== this._scopeGeneration) return;
       this.error = `Failed to load resources: ${errMsg(err)}`;
       this._replaceResources({ items: [], resource_type: resourceType }, 0);
-      // The CRD table has no error state of its own — it shows "No X found"
-      // for an empty list — so the failure is said out loud there.
-      if (parseCrdType(resourceType)) toastStore.error("Failed to load CRD resources", errMsg(err));
     } finally {
       clearTimeout(timer);
       if (scopeGeneration === this._scopeGeneration) {

@@ -172,3 +172,19 @@ export function resolveKindOrThrow(kind: string): KindEntry {
   }
   return entry;
 }
+
+/**
+ * apiVersion + Kind for a single-object call (delete, YAML fetch) that goes
+ * through KubernetesObjectApi, which resolves the plural itself. A registered
+ * kind always resolves through the registry. A custom resource is not in the
+ * registry, so it falls back to the object's own apiVersion — only a grouped
+ * one (`group/version`): core kinds are all registered, so an ungrouped
+ * apiVersion on an unknown kind is a typo, not a CRD.
+ */
+export function resolveObjectRef(kind: string, apiVersion?: string): { apiVersion: string; kind: string } {
+  const entry = resolveKind(kind);
+  if (entry) return { apiVersion: apiVersionOf(entry.group, entry.version), kind: entry.kind };
+  if (apiVersion && /^[^/\s]+\/[^/\s]+$/.test(apiVersion)) return { apiVersion, kind };
+  resolveKindOrThrow(kind); // throws the canonical unsupported-kind error
+  throw new Error(`Unsupported kind: ${kind}`); // unreachable; satisfies the return type
+}

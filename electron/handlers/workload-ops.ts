@@ -27,7 +27,7 @@ import {
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import { kc } from '../k8s/client.js';
-import { apiVersionOf, resolveKindOrThrow } from '../k8s/kinds.js';
+import { apiVersionOf, resolveKindOrThrow, resolveObjectRef } from '../k8s/kinds.js';
 import { k8sErrorMessage } from '../k8s/errors.js';
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 
@@ -410,7 +410,9 @@ async function applyYaml(args: Record<string, unknown>): Promise<string> {
 
 /**
  * delete_resource: delete a single resource by kind/name/namespace, with
- * optional uid / resourceVersion preconditions.
+ * optional uid / resourceVersion preconditions. `apiVersion` (the object's
+ * own) lets a custom resource, which the kind registry does not know, be
+ * deleted too.
  */
 async function deleteResource(args: Record<string, unknown>): Promise<null> {
   const kind = reqStr(args, 'kind');
@@ -420,7 +422,7 @@ async function deleteResource(args: Record<string, unknown>): Promise<null> {
   // Frontend sends snake_case 'resource_version' (see ResourceTable.svelte / registry.ts).
   const resourceVersion = optStr(args, 'resource_version');
 
-  const { apiVersion, kind: pascalKind } = apiResourceForKind(kind);
+  const { apiVersion, kind: pascalKind } = resolveObjectRef(kind, optStr(args, 'apiVersion'));
 
   const spec: KubernetesObject = {
     apiVersion,

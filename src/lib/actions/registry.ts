@@ -91,6 +91,9 @@ export async function deleteResource(resource: Resource): Promise<void> {
   try {
     await invoke("delete_resource", {
       kind: resource.kind,
+      // Lets the backend address a custom resource, which its kind registry
+      // does not know; built-in kinds still resolve through the registry.
+      apiVersion: resource.api_version,
       name: resource.metadata.name,
       namespace: resource.metadata.namespace ?? "",
       uid: resource.metadata.uid,
