@@ -376,6 +376,65 @@ describe("UiStore", () => {
       expect(store.tabs[1].id).toBe(firstId);
     });
 
+    describe("keyboard tab switching", () => {
+      // Pods (default) + Services + Settings + Logs → four tabs, Logs active.
+      beforeEach(() => {
+        store.openTab("table", { label: "Services", resourceType: "services" });
+        store.openTab("settings");
+        store.openTab("logs", { label: "Logs" });
+      });
+
+      test("activateTabAt activates the tab at a zero-based index", () => {
+        store.activateTabAt(1);
+        expect(store.activeTabId).toBe(store.tabs[1].id);
+        store.activateTabAt(0);
+        expect(store.activeTabId).toBe(store.tabs[0].id);
+      });
+
+      test("activateTabAt ignores an index past the end", () => {
+        const before = store.activeTabId;
+        store.activateTabAt(7);
+        expect(store.activeTabId).toBe(before);
+      });
+
+      test("activateTabAt(-1) activates the last tab", () => {
+        store.activateTabAt(0);
+        store.activateTabAt(-1);
+        expect(store.activeTabId).toBe(store.tabs[store.tabs.length - 1].id);
+      });
+
+      test("nextTab advances and wraps from last to first", () => {
+        store.activateTabAt(2);
+        store.nextTab();
+        expect(store.activeTabId).toBe(store.tabs[3].id);
+        store.nextTab();
+        expect(store.activeTabId).toBe(store.tabs[0].id);
+      });
+
+      test("previousTab goes back and wraps from first to last", () => {
+        store.activateTabAt(1);
+        store.previousTab();
+        expect(store.activeTabId).toBe(store.tabs[0].id);
+        store.previousTab();
+        expect(store.activeTabId).toBe(store.tabs[3].id);
+      });
+
+      test("nextTab/previousTab are no-ops with a single tab", () => {
+        store.closeAllTabs();
+        store.nextTab();
+        expect(store.activeTabId).toBe("tab-pods");
+        store.previousTab();
+        expect(store.activeTabId).toBe("tab-pods");
+      });
+
+      test("switching runs the tab-switch hook so cached data is restored", () => {
+        const seen: string[] = [];
+        store.onBeforeTabSwitch = (_from, to) => seen.push(to.id);
+        store.nextTab();
+        expect(seen).toEqual([store.tabs[0].id]);
+      });
+    });
+
     test("openTab seeds cachedResource on the new tab (regression: opening a related resource must not poison the outgoing tab's cache)", () => {
       const vpa = { kind: "VerticalPodAutoscaler", metadata: { name: "vpa-a", uid: "u1" } } as never;
       const deploy = { kind: "Deployment", metadata: { name: "dep-a", uid: "u2" } } as never;
