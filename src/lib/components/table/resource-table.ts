@@ -1,6 +1,6 @@
 import type { FilterState, Resource } from "$lib/types";
 import { isPodNeedingAttention, matchesStatFilter } from "$lib/utils/workload-stats";
-import { eventLastTimestamp, type CellContext } from "./cell-values";
+import { eventLastTimestamp, getCellValue, type CellContext } from "./cell-values";
 import { matchesFacet } from "./table-filter";
 
 // ---------------------------------------------------------------------------
@@ -18,13 +18,7 @@ export type SortDirection = "asc" | "desc";
 // Cached collator: the sort re-runs over the full list on every watch flush,
 // and in V8 (Electron) a cached Intl.Collator.compare is several times faster
 // than per-call localeCompare (which re-resolves the locale each time).
-// Timestamps (RFC 3339, uniform format) sort with plain string comparison —
-// no locale semantics needed.
 const collator = new Intl.Collator();
-
-function compareStrings(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
 
 /** Clamp a column width to the minimum allowed value. */
 export function clampColumnWidth(width: number): number {
@@ -153,66 +147,131 @@ export function countActiveFilters(state: FilterState): number {
   return state.facets.length + (state.statFilter ? 1 : 0) + (state.text ? 1 : 0);
 }
 
-/** Sort resources by a given column and direction. */
+// ---------------------------------------------------------------------------
+// Sorting
+// ---------------------------------------------------------------------------
+
+/**
+ * How a column's sort key is derived. Every key except name/namespace/time
+ * starts from what the cell displays (getCellValue), so a column cannot
+ * quietly sort by something else; the kind only says how to read that text.
+ *
+ * - `text`: the cell text, collated; "-" (no value) sorts as empty.
+ * - `number`: the cell's number ("14", "-5"); no value sorts lowest.
+ * - `fraction`: a "ready/total" cell, by ratio — least ready first on asc.
+ * - `time`: a timestamp, newest first on asc (age, last seen).
+ */
+type SortKind = "text" | "number" | "fraction" | "time";
+
+const SORT_KINDS = new Map<string, SortKind>([
+  ["name", "text"],
+  ["namespace", "text"],
+  ["age", "time"],
+  ["status", "text"],
+  ["phase", "text"],
+  ["type", "text"],
+  ["data", "number"],
+  // Pods
+  ["podReady", "fraction"],
+  ["restarts", "number"],
+  ["controlledBy", "text"],
+  ["node", "text"],
+  // Deployments
+  ["deployReady", "fraction"],
+  ["deployStatus", "text"],
+  ["pods", "number"],
+  // Services / ingresses / scheduling
+  ["endpoints", "fraction"],
+  ["ingressClass", "text"],
+  ["pcValue", "number"],
+  // Events
+  ["eventLastSeen", "time"],
+  ["eventType", "text"],
+  ["eventReason", "text"],
+]);
+
+/** Columns whose cell reads the per-row CellContext (store data). */
+const CONTEXT_COLUMNS = new Set(["endpoints"]);
+
+/** Whether `column` has a sort key; a column without one leaves rows in name order. */
+export function hasSortKey(column: string): boolean {
+  return SORT_KINDS.has(column);
+}
+
+const NO_CONTEXT: CellContext = { ageTick: 0 };
+
+type SortKey = string | number;
+
+function timeKey(r: Resource, column: string): number {
+  // Parsed, not string-compared: an event's eventTime is a MicroTime, and
+  // RFC 3339 strings with and without fractional seconds do not sort lexically.
+  const ts = column === "eventLastSeen"
+    ? eventLastTimestamp(r) ?? r.metadata.creation_timestamp
+    : r.metadata.creation_timestamp;
+  const t = Date.parse(ts);
+  return Number.isNaN(t) ? -Infinity : t;
+}
+
+/** "2/3" → 0.667; "0/0" → 0 (nothing ready); "-" or "" (unknown) → lowest. */
+function fractionKey(value: string): number {
+  const slash = value.indexOf("/");
+  if (slash < 0) return -Infinity;
+  const ready = Number(value.slice(0, slash));
+  const total = Number(value.slice(slash + 1));
+  if (Number.isNaN(ready) || Number.isNaN(total)) return -Infinity;
+  return total > 0 ? ready / total : 0;
+}
+
+function numberKey(value: string): number {
+  const n = Number(value);
+  return value === "" || Number.isNaN(n) ? -Infinity : n;
+}
+
+/** The value `column` sorts `r` by. Unknown columns all tie, leaving the name tie-break. */
+function sortKeyFor(r: Resource, column: string, kind: SortKind | undefined, ctx: CellContext): SortKey {
+  if (kind === "time") return timeKey(r, column);
+  if (column === "name") return r.metadata.name;
+  if (column === "namespace") return r.metadata.namespace ?? "";
+  if (!kind) return "";
+  const value = getCellValue(r, column, ctx);
+  if (kind === "number") return numberKey(value);
+  if (kind === "fraction") return fractionKey(value);
+  return value === "-" ? "" : value;
+}
+
+function compareKeys(a: SortKey, b: SortKey): number {
+  if (typeof a === "number" && typeof b === "number") return a < b ? -1 : a > b ? 1 : 0;
+  return collator.compare(a as string, b as string);
+}
+
+/**
+ * Sort resources by a given column and direction. Decorate-sort-undecorate:
+ * the list is re-sorted on every watch flush, so each row's key is computed
+ * once rather than on every comparison. Equal keys break by name ascending in
+ * both directions, so flipping the direction does not shuffle ties.
+ * `ctxFor` supplies the cell context for columns that read store data
+ * (Endpoints); it is not called for any other column, so the sort does not
+ * subscribe to stores it does not need.
+ */
 export function sortResources(
   items: Resource[],
   sortColumn: string,
   sortDirection: SortDirection,
+  ctxFor?: (resource: Resource) => CellContext,
 ): Resource[] {
-  return [...items].sort((a, b) => {
-    let aVal: string;
-    let bVal: string;
+  const kind = SORT_KINDS.get(sortColumn);
+  const readCtx = ctxFor && CONTEXT_COLUMNS.has(sortColumn) ? ctxFor : null;
+  // Age and last-seen are inverted: newest (larger timestamp) first on "asc".
+  const sign = (sortDirection === "asc") !== (kind === "time") ? 1 : -1;
 
-    if (sortColumn === "name") {
-      aVal = a.metadata.name;
-      bVal = b.metadata.name;
-    } else if (sortColumn === "namespace") {
-      aVal = a.metadata.namespace ?? "";
-      bVal = b.metadata.namespace ?? "";
-    } else if (sortColumn === "age") {
-      aVal = a.metadata.creation_timestamp;
-      bVal = b.metadata.creation_timestamp;
-      // Note: age sort is inverted — newer (larger timestamp) first when "asc"
-      return sortDirection === "asc"
-        ? compareStrings(bVal, aVal)
-        : compareStrings(aVal, bVal);
-    } else if (sortColumn === "status") {
-      aVal = (a.status?.phase as string) ?? "";
-      bVal = (b.status?.phase as string) ?? "";
-    } else if (sortColumn === "restarts") {
-      const aCs = a.status?.containerStatuses as Array<{ restartCount: number }> | undefined;
-      const bCs = b.status?.containerStatuses as Array<{ restartCount: number }> | undefined;
-      const aR = aCs?.reduce((s, c) => s + (c.restartCount ?? 0), 0) ?? 0;
-      const bR = bCs?.reduce((s, c) => s + (c.restartCount ?? 0), 0) ?? 0;
-      return sortDirection === "asc" ? aR - bR : bR - aR;
-    } else if (sortColumn === "data") {
-      const aData = a.data ?? a.spec?.data ?? a.status?.data;
-      const bData = b.data ?? b.spec?.data ?? b.status?.data;
-      const aCount = aData && typeof aData === "object" ? Object.keys(aData).length : 0;
-      const bCount = bData && typeof bData === "object" ? Object.keys(bData).length : 0;
-      return sortDirection === "asc" ? aCount - bCount : bCount - aCount;
-    } else if (sortColumn === "type" || sortColumn === "eventType") {
-      aVal = (a.spec?.type as string) ?? a.type ?? "";
-      bVal = (b.spec?.type as string) ?? b.type ?? "";
-    } else if (sortColumn === "eventLastSeen") {
-      // Parsed, not string-compared: eventTime is a MicroTime, and RFC 3339
-      // strings with and without fractional seconds do not sort lexically.
-      const aTime = Date.parse(eventLastTimestamp(a) ?? a.metadata.creation_timestamp);
-      const bTime = Date.parse(eventLastTimestamp(b) ?? b.metadata.creation_timestamp);
-      // Like age: newest first when "asc", so the default view leads with
-      // what the cluster did most recently.
-      return sortDirection === "asc" ? bTime - aTime : aTime - bTime;
-    } else if (sortColumn === "eventReason") {
-      aVal = (a.spec?.reason as string) ?? "";
-      bVal = (b.spec?.reason as string) ?? "";
-    } else {
-      aVal = a.metadata.name;
-      bVal = b.metadata.name;
-    }
-
-    const cmp = collator.compare(aVal, bVal);
-    return sortDirection === "asc" ? cmp : -cmp;
-  });
+  const rows = items.map((r) => ({
+    r,
+    key: sortKeyFor(r, sortColumn, kind, readCtx ? readCtx(r) : NO_CONTEXT),
+  }));
+  rows.sort((a, b) =>
+    sign * compareKeys(a.key, b.key) || collator.compare(a.r.metadata.name, b.r.metadata.name),
+  );
+  return rows.map((row) => row.r);
 }
 
 /** Returns true when every filtered resource is in the selected set. */
