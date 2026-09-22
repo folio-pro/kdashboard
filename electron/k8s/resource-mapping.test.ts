@@ -142,6 +142,62 @@ describe('list projections — synthetic spec fields', () => {
   });
 });
 
+// Secret/ConfigMap values never ride the list or the watch (both use
+// listProjectionFor): the table only needs key names/counts, and the detail
+// panel fetches the full object with get_resource.
+describe('list projections — Secret/ConfigMap data is key names only', () => {
+  test('Secret keeps every key with an empty value, plus the type', () => {
+    const project = listProjectionFor('secrets')!;
+    const r = project({
+      metadata: { name: 'db', namespace: 'prod' },
+      type: 'Opaque',
+      data: { username: 'YWRtaW4=', password: 'aHVudGVyMg==' },
+    });
+    expect(r.kind).toBe('Secret');
+    expect(r.type).toBe('Opaque');
+    expect(r.data).toEqual({ username: '', password: '' });
+  });
+
+  test('Secret with only stringData still lists its keys, not the values', () => {
+    const r = listProjectionFor('secrets')!({ metadata: { name: 's' }, stringData: { token: 'plain' } });
+    expect(r.data).toEqual({ token: '' });
+  });
+
+  test('Secret without data omits the field', () => {
+    const r = listProjectionFor('secrets')!({ metadata: { name: 's' } });
+    expect('data' in r).toBe(false);
+  });
+
+  test('ConfigMap keeps every key with an empty value', () => {
+    const project = listProjectionFor('configmaps')!;
+    const r = project({
+      metadata: { name: 'cfg', namespace: 'prod' },
+      data: { 'app.yaml': 'a: 1\nb: 2\n', LOG_LEVEL: 'debug' },
+      binaryData: { blob: 'AAEC' },
+    });
+    expect(r.kind).toBe('ConfigMap');
+    expect(r.data).toEqual({ 'app.yaml': '', LOG_LEVEL: '' });
+    expect(JSON.stringify(r)).not.toContain('debug');
+    expect(JSON.stringify(r)).not.toContain('AAEC');
+  });
+
+  test('ConfigMap without data omits the field', () => {
+    const r = listProjectionFor('configmaps')!({ metadata: { name: 'cfg' } });
+    expect('data' in r).toBe(false);
+  });
+
+  test('the detail path (dynamicToResource) still keeps the values', () => {
+    const r = dynamicToResource({ metadata: {}, data: { k: 'v' } }, 'v1', 'ConfigMap');
+    expect(r.data).toEqual({ k: 'v' });
+  });
+});
+
+describe('list projections — misc', () => {
+  test('unknown types still have no projection', () => {
+    expect(listProjectionFor('widgets')).toBeNull();
+  });
+});
+
 describe('presentOrUndefined', () => {
   test('drops null and undefined, keeps falsy-but-present values', () => {
     expect(presentOrUndefined(null)).toBeUndefined();

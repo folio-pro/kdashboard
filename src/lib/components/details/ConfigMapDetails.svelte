@@ -11,18 +11,25 @@
   import SmartAnnotationsCard from "./SmartAnnotationsCard.svelte";
   import RelatedResourcesCard from "./RelatedResourcesCard.svelte";
   import { base64ByteLength, formatBytes, summarizeValue } from "./config-data.logic";
+  import type { HydrationStatus } from "./detail-panel";
 
   interface Props {
     resource: Resource;
+    /**
+     * The list row carries key names only; values arrive with the full object
+     * DetailPanel fetches. Until then keys render without values or actions.
+     */
+    valuesStatus?: HydrationStatus;
   }
 
-  let { resource }: Props = $props();
+  let { resource, valuesStatus = "ready" }: Props = $props();
+  let ready = $derived(valuesStatus === "ready");
 
   let labels = $derived(resource.metadata.labels ?? {});
   let annotations = $derived(resource.metadata.annotations ?? {});
   let data = $derived((resource.data ?? {}) as Record<string, unknown>);
-  // The list projection ships `data` only; `binaryData` is present when the
-  // object came through a full get (or a future projection that keeps it).
+  // The list projection ships `data` key names only; `binaryData` is present
+  // only when the object came through a full get.
   let binaryData = $derived(
     ((resource as unknown as { binaryData?: Record<string, string> }).binaryData ?? {}) as Record<string, string>,
   );
@@ -88,7 +95,7 @@
     <div class="flex items-center justify-between px-6 py-4">
       <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Data</span>
       <div class="flex items-center gap-3">
-        {#if entries.length > 0}
+        {#if ready && entries.length > 0}
           <Button variant="link" size="inline-xs" onclick={copyAll}>
             {copiedKey === "__all__" ? "copied!" : "copy all"}
           </Button>
@@ -121,20 +128,29 @@
             {/if}
             <span class="min-w-0 truncate font-mono text-[12px] font-medium text-[var(--text-primary)]" title={entry.key}>{entry.key}</span>
           </div>
+          <!-- Size and copy wait for the values (DetailPanel's get_resource). -->
           <div class="flex h-5 shrink-0 items-center gap-2">
-            <span class="font-mono text-[10px] text-[var(--text-muted)]">
-              {#if entry.block}{entry.lines} {entry.lines === 1 ? "line" : "lines"} · {/if}{formatBytes(entry.chars)}
-            </span>
-            <Button variant="muted" size="icon-xs" onclick={() => copyValue(entry.key, entry.value)} title="Copy value">
-              {#if copiedKey === entry.key}
-                <Check class="h-3 w-3 text-[var(--status-running)]" />
-              {:else}
-                <Copy class="h-3 w-3" />
-              {/if}
-            </Button>
+            {#if !ready}
+              <span class="font-mono text-[10px] text-[var(--text-muted)]">…</span>
+            {:else}
+              <span class="font-mono text-[10px] text-[var(--text-muted)]">
+                {#if entry.block}{entry.lines} {entry.lines === 1 ? "line" : "lines"} · {/if}{formatBytes(entry.chars)}
+              </span>
+              <Button variant="muted" size="icon-xs" onclick={() => copyValue(entry.key, entry.value)} title="Copy value">
+                {#if copiedKey === entry.key}
+                  <Check class="h-3 w-3 text-[var(--status-running)]" />
+                {:else}
+                  <Copy class="h-3 w-3" />
+                {/if}
+              </Button>
+            {/if}
           </div>
         </div>
-        {#if !entry.block}
+        {#if valuesStatus === "loading"}
+          <span class="font-mono text-[12px] text-[var(--text-muted)]">Loading…</span>
+        {:else if valuesStatus === "error"}
+          <span class="text-[12px] text-[var(--status-failed)]">Could not load the value — see the YAML tab.</span>
+        {:else if !entry.block}
           <span class="break-all font-mono text-[12px] text-[var(--text-secondary)]">{entry.value.length === 0 ? "(empty)" : entry.value}</span>
         {:else if isOpen}
           <pre class="max-h-[480px] overflow-auto whitespace-pre rounded-sm border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]">{entry.value}</pre>
