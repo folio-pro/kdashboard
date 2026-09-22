@@ -1,6 +1,9 @@
 import { test, expect, describe } from 'bun:test';
 
-import { buildDebugPatch, classifyDebugState, type EphemeralContainerStatus } from './debug';
+import type { CoreV1Api } from '@kubernetes/client-node';
+
+import type { PinnedCluster } from '../k8s/client';
+import { buildDebugPatch, classifyDebugState, debugPod, type EphemeralContainerStatus } from './debug';
 
 describe('buildDebugPatch', () => {
   test('carries only the new container, merged by name', () => {
@@ -66,5 +69,54 @@ describe('classifyDebugState', () => {
       kind: 'failed',
       message: 'Debug container terminated (Error, exit code 127)',
     });
+  });
+});
+
+describe('debugPod', () => {
+  /** Fake cluster whose debug container reports `running` on the Nth read. */
+  function fakeCluster(runningOnRead: number) {
+    const calls = { patches: 0, reads: 0 };
+    let container = '';
+    const api = {
+      patchNamespacedPodEphemeralcontainers: async ({ body }: { body: { spec: { ephemeralContainers: Array<{ name: string }> } } }) => {
+        calls.patches++;
+        container = body.spec.ephemeralContainers[0]!.name;
+        return {};
+      },
+      readNamespacedPod: async () => {
+        calls.reads++;
+        const state = calls.reads >= runningOnRead ? { running: {} } : { waiting: { reason: 'ContainerCreating' } };
+        return { status: { ephemeralContainerStatuses: [{ name: container, state }] } };
+      },
+    };
+    return { api: api as unknown as CoreV1Api, calls };
+  }
+
+  test('polls the cluster it started on after the active context switches', async () => {
+    const a = fakeCluster(2);
+    const b = fakeCluster(1);
+    let active: 'a' | 'b' = 'a';
+    const released: string[] = [];
+    const pinned = (ctx: 'a' | 'b'): PinnedCluster => ({
+      context: ctx,
+      makeApiClient: () => ({ a, b })[ctx].api as never,
+      release: () => released.push(ctx),
+    });
+    // Switch contexts right after the patch lands, before the first poll.
+    const patch = a.api.patchNamespacedPodEphemeralcontainers.bind(a.api);
+    (a.api as unknown as { patchNamespacedPodEphemeralcontainers: unknown }).patchNamespacedPodEphemeralcontainers =
+      async (...args: Parameters<typeof patch>) => {
+        const out = await patch(...args);
+        active = 'b';
+        return out;
+      };
+
+    const { container } = await debugPod({ name: 'web', namespace: 'prod' }, () => pinned(active));
+
+    expect(container).toMatch(/^debug-/);
+    expect(active).toBe('b');
+    expect(a.calls).toEqual({ patches: 1, reads: 2 });
+    expect(b.calls).toEqual({ patches: 0, reads: 0 });
+    expect(released).toEqual(['a']);
   });
 });

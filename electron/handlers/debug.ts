@@ -17,9 +17,9 @@
 
 import { randomBytes } from 'node:crypto';
 
-import { PatchStrategy, setHeaderOptions } from '@kubernetes/client-node';
+import { CoreV1Api, PatchStrategy, setHeaderOptions } from '@kubernetes/client-node';
 
-import { getCoreV1Api } from '../k8s/client.js';
+import { pinActiveCluster, type PinnedCluster } from '../k8s/client.js';
 import { k8sErrorMessage } from '../k8s/errors.js';
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 
@@ -115,6 +115,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * the caller exec into a dead container and get an opaque failure.
  */
 async function waitForDebugContainer(
+  api: CoreV1Api,
   name: string,
   namespace: string,
   container: string,
@@ -123,7 +124,7 @@ async function waitForDebugContainer(
   let lastState = 'not yet reported';
 
   while (Date.now() < deadline) {
-    const pod = await getCoreV1Api().readNamespacedPod({ name, namespace });
+    const pod = await api.readNamespacedPod({ name, namespace });
     const statuses = (pod.status?.ephemeralContainerStatuses ?? []) as EphemeralContainerStatus[];
     const verdict = classifyDebugState(statuses.find((s) => s.name === container));
 
@@ -141,8 +142,15 @@ async function waitForDebugContainer(
  * debug_pod: { name, namespace, image?, target? } -> { container }
  * `target` shares the target container's process namespace (when the runtime
  * supports it), so its processes are visible from the debug shell.
+ *
+ * The patch and the readiness poll share one connection pinned at the start,
+ * so a context switch while the container starts cannot send the polls to a
+ * different cluster. `pin` is injectable for tests.
  */
-async function debugPod(args: Record<string, unknown>): Promise<{ container: string }> {
+export async function debugPod(
+  args: Record<string, unknown>,
+  pin: () => PinnedCluster = pinActiveCluster,
+): Promise<{ container: string }> {
   const name = reqStr(args, 'name');
   const namespace = reqStr(args, 'namespace');
   const image = optStr(args, 'image') ?? DEFAULT_DEBUG_IMAGE;
@@ -151,19 +159,25 @@ async function debugPod(args: Record<string, unknown>): Promise<{ container: str
   const container = `debug-${randomBytes(3).toString('hex')}`;
   const patch = buildDebugPatch(container, image, target);
 
+  const cluster = pin();
   try {
-    await getCoreV1Api().patchNamespacedPodEphemeralcontainers(
-      { name, namespace, body: patch },
-      setHeaderOptions('Content-Type', PatchStrategy.StrategicMergePatch),
-    );
-  } catch (err) {
-    throw new Error(k8sErrorMessage(err));
-  }
+    const api = cluster.makeApiClient(CoreV1Api);
+    try {
+      await api.patchNamespacedPodEphemeralcontainers(
+        { name, namespace, body: patch },
+        setHeaderOptions('Content-Type', PatchStrategy.StrategicMergePatch),
+      );
+    } catch (err) {
+      throw new Error(k8sErrorMessage(err));
+    }
 
-  try {
-    await waitForDebugContainer(name, namespace, container);
-  } catch (err) {
-    throw new Error(k8sErrorMessage(err));
+    try {
+      await waitForDebugContainer(api, name, namespace, container);
+    } catch (err) {
+      throw new Error(k8sErrorMessage(err));
+    }
+  } finally {
+    cluster.release();
   }
 
   return { container };

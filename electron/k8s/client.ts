@@ -423,6 +423,41 @@ export function makeApiClient<T extends ApiType>(apiClientType: ApiConstructor<T
   return new apiClientType(typedConfigFor(cfg));
 }
 
+/**
+ * A connection pinned to the context that is active right now. Long-running
+ * operations (drain, debug/node-shell startup polling) take one at the start so
+ * that a context switch mid-operation cannot redirect their remaining calls —
+ * addressed only by namespace/name — to a different cluster.
+ *
+ * It owns its auth material and keep-alive agent instead of sharing the active
+ * ones, because those are torn down on every context switch. Call release()
+ * when the operation ends.
+ */
+export interface PinnedCluster {
+  /** Context the connection is bound to. */
+  readonly context: string | undefined;
+  makeApiClient<T extends ApiType>(apiClientType: ApiConstructor<T>): T;
+  release(): void;
+}
+
+export function pinActiveCluster(): PinnedCluster {
+  const cfg = kc();
+  const cluster = cfg.getCurrentCluster();
+  if (!cluster) {
+    throw new Error('No active cluster!');
+  }
+  const auth = new CachedClusterAuth(cfg);
+  const configuration = createConfiguration({
+    baseServer: new ServerConfiguration(cluster.server, {}),
+    authMethods: { default: auth },
+  });
+  return {
+    context: cfg.getCurrentContext(),
+    makeApiClient: (apiClientType) => new apiClientType(configuration),
+    release: () => auth.destroy(),
+  };
+}
+
 export function getCoreV1Api(): CoreV1Api {
   return makeApiClient(CoreV1Api);
 }

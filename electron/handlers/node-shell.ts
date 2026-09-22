@@ -17,9 +17,9 @@
 
 import { randomBytes } from 'node:crypto';
 
-import type { V1Pod } from '@kubernetes/client-node';
+import { CoreV1Api, type V1Pod } from '@kubernetes/client-node';
 
-import { getCoreV1Api } from '../k8s/client.js';
+import { getCoreV1Api, pinActiveCluster, type PinnedCluster } from '../k8s/client.js';
 import { k8sErrorMessage } from '../k8s/errors.js';
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 
@@ -81,12 +81,12 @@ export function buildNodeShellPod(name: string, namespace: string, nodeName: str
   };
 }
 
-async function waitForPodRunning(name: string, namespace: string): Promise<void> {
+async function waitForPodRunning(api: CoreV1Api, name: string, namespace: string): Promise<void> {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   let lastPhase = 'Pending';
 
   while (Date.now() < deadline) {
-    const pod = await getCoreV1Api().readNamespacedPod({ name, namespace });
+    const pod = await api.readNamespacedPod({ name, namespace });
     const phase = pod.status?.phase ?? 'Pending';
     if (phase === 'Running') return;
     if (phase === 'Failed' || phase === 'Succeeded') {
@@ -105,20 +105,29 @@ async function waitForPodRunning(name: string, namespace: string): Promise<void>
  * renderer supplies name/namespace, and without the guard stop_node_shell
  * would be a force-delete primitive for arbitrary pods.
  */
-async function deleteNodeShellPod(name: string, namespace: string): Promise<void> {
+async function deleteNodeShellPod(api: CoreV1Api, name: string, namespace: string): Promise<void> {
   try {
-    const pod = await getCoreV1Api().readNamespacedPod({ name, namespace });
+    const pod = await api.readNamespacedPod({ name, namespace });
     if (pod.metadata?.labels?.[NODE_SHELL_LABEL] !== 'true') {
       throw new Error(`Pod ${namespace}/${name} is not a node shell pod`);
     }
-    await getCoreV1Api().deleteNamespacedPod({ name, namespace, gracePeriodSeconds: 0 });
+    await api.deleteNamespacedPod({ name, namespace, gracePeriodSeconds: 0 });
   } catch (err) {
     const msg = k8sErrorMessage(err);
     if (!/not found/i.test(msg)) throw new Error(msg);
   }
 }
 
-async function startNodeShell(args: Record<string, unknown>): Promise<{ name: string; namespace: string }> {
+/**
+ * Create, poll and (on failure) clean up through one connection pinned at the
+ * start: after a context switch mid-startup the polls and the cleanup delete
+ * must still reach the cluster the pod was created in. `pin` is injectable for
+ * tests.
+ */
+export async function startNodeShell(
+  args: Record<string, unknown>,
+  pin: () => PinnedCluster = pinActiveCluster,
+): Promise<{ name: string; namespace: string }> {
   const nodeName = reqStr(args, 'nodeName');
   const namespace =
     typeof args.namespace === 'string' && args.namespace.length > 0
@@ -126,21 +135,27 @@ async function startNodeShell(args: Record<string, unknown>): Promise<{ name: st
       : NODE_SHELL_NAMESPACE;
   const name = `kdashboard-node-shell-${randomBytes(3).toString('hex')}`;
 
+  const cluster = pin();
   try {
-    await getCoreV1Api().createNamespacedPod({
-      namespace,
-      body: buildNodeShellPod(name, namespace, nodeName),
-    });
-  } catch (err) {
-    throw new Error(k8sErrorMessage(err));
-  }
+    const api = cluster.makeApiClient(CoreV1Api);
+    try {
+      await api.createNamespacedPod({
+        namespace,
+        body: buildNodeShellPod(name, namespace, nodeName),
+      });
+    } catch (err) {
+      throw new Error(k8sErrorMessage(err));
+    }
 
-  try {
-    await waitForPodRunning(name, namespace);
-  } catch (err) {
-    // Don't leave a dead privileged pod behind when startup fails.
-    await deleteNodeShellPod(name, namespace).catch(() => {});
-    throw new Error(k8sErrorMessage(err));
+    try {
+      await waitForPodRunning(api, name, namespace);
+    } catch (err) {
+      // Don't leave a dead privileged pod behind when startup fails.
+      await deleteNodeShellPod(api, name, namespace).catch(() => {});
+      throw new Error(k8sErrorMessage(err));
+    }
+  } finally {
+    cluster.release();
   }
 
   return { name, namespace };
@@ -149,7 +164,7 @@ async function startNodeShell(args: Record<string, unknown>): Promise<{ name: st
 export function register(handlers: HandlerMap, _ctx: HandlerCtx): void {
   handlers.set('start_node_shell', async (args) => startNodeShell(args));
   handlers.set('stop_node_shell', async (args) => {
-    await deleteNodeShellPod(reqStr(args, 'name'), reqStr(args, 'namespace'));
+    await deleteNodeShellPod(getCoreV1Api(), reqStr(args, 'name'), reqStr(args, 'namespace'));
     return null;
   });
 }
