@@ -1,8 +1,9 @@
 // Handler module: resources group.
 //
 // Commands:
-//   - list_resources           list a kind, optionally namespaced (pods get a
-//                              lean field projection for the hot table path)
+//   - list_resources           list a kind, optionally namespaced and/or
+//                              field-selected (pods get a lean field
+//                              projection for the hot table path)
 //   - list_pods_by_selector    list pods filtered by a label selector
 //   - get_resource_counts      metadata-only counts for many kinds at once
 //   - get_resource_yaml        fetch one object, strip managedFields, -> YAML
@@ -142,6 +143,7 @@ interface ListOpts {
   ar: ApiResource;
   namespace?: string;
   labelSelector?: string;
+  fieldSelector?: string;
   paginate?: boolean; // pods/deployments/etc. paginate; bindings do a single list
   accept?: string; // optional content negotiation (e.g. metadata-only for counts)
 }
@@ -165,7 +167,7 @@ function resourcePath(ar: ApiResource, namespace?: string): string {
 }
 
 async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVersion?: string }> {
-  const { ar, namespace, labelSelector, paginate = true, accept } = opts;
+  const { ar, namespace, labelSelector, fieldSelector, paginate = true, accept } = opts;
   const path = resourcePath(ar, namespace);
   const items: RawObject[] = [];
   let cont: string | undefined;
@@ -175,6 +177,7 @@ async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVe
   for (;;) {
     const query: Record<string, string> = {};
     if (labelSelector) query.labelSelector = labelSelector;
+    if (fieldSelector) query.fieldSelector = fieldSelector;
     if (paginate) query.limit = String(LIST_PAGE_SIZE);
     if (cont) query.continue = cont;
 
@@ -205,7 +208,11 @@ async function getRaw(ar: ApiResource, name: string, namespace: string): Promise
 // watch path so a watch event replaces a list row with the SAME lean shape.
 // ---------------------------------------------------------------------------
 
-async function listResources(resourceType: string, namespace?: string): Promise<ResourceList> {
+async function listResources(
+  resourceType: string,
+  namespace?: string,
+  fieldSelector?: string,
+): Promise<ResourceList> {
   const ar = apiResourceForType(resourceType);
   const project = listProjectionFor(resourceType);
   if (!ar || !project) throw new Error(`Unknown resource type: ${resourceType}`);
@@ -218,6 +225,7 @@ async function listResources(resourceType: string, namespace?: string): Promise<
   const { items: raw, resourceVersion } = await listRaw({
     ar,
     namespace,
+    fieldSelector,
     accept: metaOnly ? META_ACCEPT : undefined,
   });
   const out: ResourceList = { items: raw.map(project), resource_type: resourceType };
@@ -461,7 +469,8 @@ export function register(handlers: HandlerMap): void {
     const resourceType = str(args.resourceType);
     // The frontend sends null for cluster-wide.
     const ns = optStr(args.namespace);
-    return listResources(resourceType, ns);
+    // Optional server-side filter (e.g. `spec.nodeName=<node>` for pods).
+    return listResources(resourceType, ns, optStr(args.fieldSelector));
   };
 
   const listPodsBySelectorHandler: Handler = async (args) => {
