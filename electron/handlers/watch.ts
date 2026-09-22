@@ -141,6 +141,16 @@ export function describeWatchEnd(err: unknown): string | null {
 }
 
 /**
+ * True for a 410 Gone reported for the watch request itself. client-node's
+ * Watch.watch() never rejects on a non-200 status: it passes the done callback
+ * an Error carrying `statusCode`, then resolves. `code` covers a Status body.
+ */
+function isGoneError(err: unknown): boolean {
+  const e = err as { statusCode?: unknown; code?: unknown } | null | undefined;
+  return e?.statusCode === 410 || e?.code === 410;
+}
+
+/**
  * REST list path for the watch (the Watch API appends ?watch=true itself).
  * Core-group resources live under /api/v1/...; grouped under /apis/{g}/{v}/...
  * Namespaced kinds scope to the namespace only when one is provided AND the
@@ -427,7 +437,8 @@ async function startResourceWatch(
       const query: Record<string, string | number | boolean | undefined> = {
         allowWatchBookmarks: true,
       };
-      if (state.lastRV) query.resourceVersion = state.lastRV;
+      const sentRV = state.lastRV;
+      if (sentRV) query.resourceVersion = sentRV;
 
       watch
         .watch(
@@ -476,6 +487,22 @@ async function startResourceWatch(
             );
             flush();
             state.controller = null;
+
+            // HTTP 410 at connect: the RV we resumed from (the renderer's list
+            // RV on the first open, or lastRV on a reconnect) left the watch
+            // history. Drop it — the retry seeds a fresh RV, or replays if that
+            // fails — and tell the renderer to relist NOW, since deletes past
+            // the expired RV can never be replayed. Not an error the user must
+            // see, and not a reason to reject the start: the retry settles it.
+            // A 410 with no RV sent is something else and falls through.
+            if (sentRV && isGoneError(err)) {
+              state.lastRV = undefined;
+              rvExpired = false;
+              state.openedAt = 0;
+              if (state.hadInitialSync) emitResync();
+              scheduleReconnect();
+              return;
+            }
 
             // The FIRST attempt never opened: reject the start invoke with the
             // real reason (a transport failure lets the renderer mark the
@@ -544,22 +571,14 @@ async function startResourceWatch(
           settleOk();
         })
         .catch((err: unknown) => {
+          // Only reached when Watch.watch() throws before issuing the request
+          // (no current cluster, auth setup failure) — HTTP errors, 410
+          // included, arrive through the done callback above.
           // eslint-disable-next-line no-console
           console.error(
             `[watch] failed to open watch for ${resourceType} (hadInitialSync=${state.hadInitialSync})`,
             err instanceof Error ? err.message : err,
           );
-          // A 410 at open means our resume RV already expired. Drop it (the
-          // retry seeds a fresh RV, or replays if that fails) and tell the
-          // renderer to relist NOW: deletes that happened past the expired RV
-          // can never be replayed, so without this Resync stale rows would
-          // linger until some later healthy-close resync.
-          const status = (err as { code?: number; statusCode?: number } | undefined);
-          if (status?.code === 410 || status?.statusCode === 410) {
-            state.lastRV = undefined;
-            rvExpired = false;
-            if (state.hadInitialSync && isCurrent()) emitResync();
-          }
           // Failed to OPEN the watch. If this is the first attempt, tear down
           // and reject the start invoke; otherwise keep the loop alive with
           // backoff so a transient open failure (e.g. a token refresh) doesn't

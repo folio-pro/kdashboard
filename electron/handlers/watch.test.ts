@@ -1,7 +1,35 @@
-import { test, expect, describe } from 'bun:test';
+import { test, expect, describe, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { Watch } from '@kubernetes/client-node';
 
-import { describeWatchEnd, resolveWatchTarget, watchPath } from './watch';
+import type { HandlerCtx, HandlerMap } from '../dispatch';
 import type { CrdInfo } from './crd';
+
+// The watch loop reads the active KubeConfig (kc() cannot be built under Bun —
+// it installs an undici dispatcher) and seeds fresh RVs through apiGet. Stub
+// both so the loop runs against a fake apiserver; Watch.prototype.watch is
+// spied per test below.
+const realClient = await import('../k8s/client');
+const realApi = await import('../k8s/api');
+const fakeKc = {
+  getCurrentContext: () => 'test',
+  getCurrentCluster: () => ({ name: 'test', server: 'https://fake.invalid:6443' }),
+};
+/** What the seedRV metadata list answers; null = the list fails. */
+let seedListRV: string | null = null;
+mock.module('../k8s/client', () => ({
+  ...realClient,
+  kc: () => fakeKc,
+  getActiveContextName: () => 'test',
+}));
+mock.module('../k8s/api', () => ({
+  ...realApi,
+  apiGet: async () => {
+    if (seedListRV === null) throw new Error('seed list unavailable');
+    return { metadata: { resourceVersion: seedListRV } };
+  },
+}));
+
+const { describeWatchEnd, register, resolveWatchTarget, stopAllWatches, watchPath } = await import('./watch');
 
 const widget: CrdInfo = {
   group: 'demo.kdash.io',
@@ -81,5 +109,121 @@ describe('describeWatchEnd — which stream ends the renderer hears about', () =
 
   test('an apiserver status error keeps its message', () => {
     expect(describeWatchEnd(new Error('Service Unavailable'))).toBe('Service Unavailable');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HTTP 410 Gone at connect. client-node's Watch.watch() never rejects on a
+// non-200 status: it calls done(err) with err.statusCode set, then RESOLVES
+// with the controller. The fake below mimics exactly that.
+// ---------------------------------------------------------------------------
+
+type DoneFn = (err: unknown) => void;
+interface WatchCall {
+  query: Record<string, unknown>;
+  done: DoneFn;
+}
+/** How the next connects answer, consumed in order; 'open' once exhausted. */
+type Outcome = 'open' | 'gone';
+
+describe('start_resource_watch — HTTP 410 Gone at connect', () => {
+  let emitted: unknown[];
+  let handlers: HandlerMap;
+  let ctx: HandlerCtx;
+  let calls: WatchCall[];
+  let outcomes: Outcome[];
+  let watchSpy: ReturnType<typeof spyOn>;
+
+  const gone = (): Error => Object.assign(new Error('Gone'), { statusCode: 410 });
+  const resyncs = (): number =>
+    emitted.filter((e) => (e as { event_type?: string }).event_type === 'Resync').length;
+  const errors = (): unknown[] =>
+    emitted.filter((e) => (e as { event_type?: string }).event_type === 'watch_error');
+
+  async function waitFor(pred: () => boolean, ms = 3000): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (!pred()) {
+      if (Date.now() > deadline) throw new Error('timed out waiting for the watch loop');
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  beforeEach(() => {
+    emitted = [];
+    calls = [];
+    outcomes = [];
+    seedListRV = null;
+    handlers = new Map();
+    ctx = {
+      emit: (_channel: string, payload: unknown) => emitted.push(...(payload as unknown[])),
+    } as HandlerCtx;
+    register(handlers, ctx);
+    watchSpy = spyOn(Watch.prototype, 'watch').mockImplementation((async (
+      _path: string,
+      query: Record<string, unknown>,
+      _cb: unknown,
+      done: DoneFn,
+    ) => {
+      calls.push({ query: { ...query }, done });
+      const controller = new AbortController();
+      if ((outcomes.shift() ?? 'open') === 'gone') {
+        controller.abort();
+        done(gone());
+      }
+      return controller;
+    }) as never);
+  });
+
+  afterEach(() => {
+    stopAllWatches();
+    watchSpy.mockRestore();
+  });
+
+  const start = (resourceVersion?: string): Promise<unknown> =>
+    Promise.resolve(handlers.get('start_resource_watch')!({ resourceType: 'pods', resourceVersion }, ctx));
+
+  test('a reconnect that 410s drops the expired RV, resyncs once, and reconnects without it', async () => {
+    await start('100');
+    expect(calls[0].query.resourceVersion).toBe('100');
+
+    // Routine server close: resumable, so the reconnect keeps the RV — and 410s.
+    outcomes.push('gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 3);
+
+    expect(calls[1].query.resourceVersion).toBe('100');
+    // Seed list failed: the retry replays from scratch instead of re-sending
+    // the expired RV forever.
+    expect(calls[2].query.resourceVersion).toBeUndefined();
+    expect(resyncs()).toBe(1);
+    expect(errors()).toEqual([]);
+  });
+
+  test('the retry after a 410 resumes from a freshly seeded RV when the list answers', async () => {
+    await start('100');
+    seedListRV = '500';
+    outcomes.push('gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 3);
+
+    expect(calls[2].query.resourceVersion).toBe('500');
+    expect(resyncs()).toBe(1);
+  });
+
+  test('a stale renderer RV that 410s on the first open still starts the watch', async () => {
+    outcomes.push('gone');
+    seedListRV = '900';
+    await start('1');
+
+    expect(calls.map((c) => c.query.resourceVersion)).toEqual(['1', '900']);
+    expect(resyncs()).toBe(1);
+    expect(errors()).toEqual([]);
+  });
+
+  test('a 410 without any RV sent is not an expired RV: the first open still rejects', async () => {
+    outcomes.push('gone');
+    await expect(start(undefined)).rejects.toThrow();
+    expect(calls).toHaveLength(1);
+    expect(resyncs()).toBe(0);
   });
 });
