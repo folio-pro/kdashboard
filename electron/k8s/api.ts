@@ -59,7 +59,11 @@ export async function apiGet<T>(
   }
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
-    throw new Error(`${resp.status} ${resp.statusText}${body ? `: ${body}` : ''}`);
+    // `status` lets callers branch on the HTTP code without parsing the message.
+    throw Object.assign(
+      new Error(`${resp.status} ${resp.statusText}${body ? `: ${body}` : ''}`),
+      { status: resp.status },
+    );
   }
   return (await resp.json()) as T;
 }
