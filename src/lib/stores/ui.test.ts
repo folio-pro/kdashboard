@@ -640,6 +640,67 @@ describe("UiStore", () => {
     });
   });
 
+  describe("CRD detail (per tab)", () => {
+    const res = (uid: string, name = uid) =>
+      ({ kind: "Certificate", api_version: "cert-manager.io/v1", metadata: { name, uid }, spec: {}, status: {} }) as unknown as import("../types/index.js").Resource;
+
+    function openCrdTab(kind: string): string {
+      store.openTab("crd-table", { label: kind, resourceType: `crd:example.com/${kind}` });
+      return store.activeTabId;
+    }
+
+    test("a fresh CRD tab has no detail open", () => {
+      openCrdTab("Certificate");
+      expect(store.crdDetailUid).toBeNull();
+      expect(store.crdDetailSnapshot).toBeNull();
+    });
+
+    test("openCrdDetail stores the uid and a snapshot on the active tab", () => {
+      openCrdTab("Certificate");
+      store.openCrdDetail(res("uid-a"));
+      expect(store.crdDetailUid).toBe("uid-a");
+      expect(store.crdDetailSnapshot?.metadata.uid).toBe("uid-a");
+    });
+
+    test("switching CRD tabs never shows the other tab's detail", () => {
+      const a = openCrdTab("Certificate");
+      store.openCrdDetail(res("uid-a"));
+      const b = openCrdTab("Issuer");
+      expect(store.crdDetailUid).toBeNull();
+
+      store.openCrdDetail(res("uid-b"));
+      store.activateTab(a);
+      expect(store.crdDetailUid).toBe("uid-a");
+      store.activateTab(b);
+      expect(store.crdDetailUid).toBe("uid-b");
+    });
+
+    test("closeCrdDetail only clears the active tab", () => {
+      const a = openCrdTab("Certificate");
+      store.openCrdDetail(res("uid-a"));
+      openCrdTab("Issuer");
+      store.openCrdDetail(res("uid-b"));
+      store.closeCrdDetail();
+      expect(store.crdDetailUid).toBeNull();
+      expect(store.crdDetailSnapshot).toBeNull();
+      store.activateTab(a);
+      expect(store.crdDetailUid).toBe("uid-a");
+    });
+
+    test("a resource without a uid does not open a detail", () => {
+      openCrdTab("Certificate");
+      store.openCrdDetail({ ...res("x"), metadata: { name: "x" } } as never);
+      expect(store.crdDetailUid).toBeNull();
+    });
+
+    test("CRD detail state is not persisted", () => {
+      openCrdTab("Certificate");
+      store.openCrdDetail(res("uid-a"));
+      const json = JSON.stringify(serializeTabs(store.tabs, store.activeTabId));
+      expect(json).not.toContain("uid-a");
+    });
+  });
+
   describe("tab persistence (serialization)", () => {
     test("serializeTabs strips ephemeral fields", () => {
       store.openTab("table", { label: "Deployments", resourceType: "deployments" });

@@ -8,10 +8,20 @@
   import { formatAge } from "$lib/utils/age";
   import { resolveJsonPath } from "$lib/utils/k8s-helpers";
   import CrdDetailPanel from "./CrdDetailPanel.svelte";
+  import { resolveCrdDetail } from "./crd-detail";
   import type { Resource } from "$lib/types/index.js";
 
-  let selectedResource = $state<Resource | null>(null);
-  let showDetail = $state(false);
+  // The open detail lives on the tab (uiStore.crdDetailUid): this component is
+  // shared by every CRD tab, so local state would leak between them. The
+  // object itself is looked up in the live listing so watch updates reach it.
+  let detail = $derived(
+    resolveCrdDetail(
+      k8sStore.crdResources.items,
+      uiStore.crdDetailUid,
+      uiStore.crdDetailSnapshot,
+      k8sStore.isLoading || !k8sStore.viewLoaded,
+    ),
+  );
 
   // Virtualized rows (same pattern as ResourceTable): CRD listings are
   // arbitrary user data and can hold thousands of items — rendering them all
@@ -46,19 +56,18 @@
   let colspan = $derived(k8sStore.crdResources.columns.length + 3);
 
   function handleRowClick(resource: Resource) {
-    selectedResource = resource;
-    showDetail = true;
+    uiStore.openCrdDetail(resource);
   }
 
   function handleBack() {
-    showDetail = false;
-    selectedResource = null;
+    uiStore.closeCrdDetail();
   }
 </script>
 
-{#if showDetail && selectedResource}
+{#if detail.resource}
   <CrdDetailPanel
-    resource={selectedResource}
+    resource={detail.resource}
+    deleted={detail.deleted}
     columns={k8sStore.crdResources.columns}
     onback={handleBack}
   />
@@ -113,7 +122,7 @@
                   class={cn(
                     "cursor-pointer border-b border-[var(--table-border)] transition-colors",
                     "hover:bg-[var(--table-row-hover)]",
-                    selectedResource?.metadata?.uid === resource.metadata?.uid && "bg-[var(--table-row-selected)]"
+                    uiStore.crdDetailUid === resource.metadata?.uid && "bg-[var(--table-row-selected)]"
                   )}
                   onclick={() => handleRowClick(resource)}
                 >
