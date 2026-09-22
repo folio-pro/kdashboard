@@ -12,7 +12,9 @@ import { settingsStore } from "./settings.svelte";
 import { toastStore } from "./toast.svelte";
 import {
   SavedForwardKeeper,
+  closedMessage,
   describeTarget,
+  parseClosedEvent,
   inferForwardTarget,
   resolveForward,
   sameForward,
@@ -39,14 +41,17 @@ class PortForwardStore {
   constructor() {
     // The backend says a session died: a saved forward reconnects, anything
     // else is reported — the one place that knows both.
-    void listen<string>("port-forward-closed", (event) => {
-      const pf = k8sStore.dropPortForward(event.payload);
+    void listen<unknown>("port-forward-closed", (event) => {
+      const closed = parseClosedEvent(event.payload);
+      if (!closed) return;
+      const pf = k8sStore.dropPortForward(closed.sessionId);
       if (!pf) return;
       const saved = savedForSession(settingsStore.savedPortForwards, pf);
       if (saved && this.keeper.sessionClosed(pf.session_id, saved)) {
-        toastStore.info("Reconnecting port forward", `${describeTarget(saved)} → localhost:${saved.local_port} dropped; retrying.`);
+        const why = closed.reason ? ` (${closed.reason})` : "";
+        toastStore.info("Reconnecting port forward", `${describeTarget(saved)} → localhost:${saved.local_port} dropped${why}; retrying.`);
       } else {
-        toastStore.warning("Port forward stopped", `Forward to ${pf.pod_name}:${pf.container_port} ended unexpectedly`);
+        toastStore.warning("Port forward stopped", closedMessage(pf, closed.reason));
       }
     });
   }

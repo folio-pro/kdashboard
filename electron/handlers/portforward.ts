@@ -6,7 +6,9 @@
 // PortForward. Session state lives in a module-level Map keyed by the sessionId
 // the renderer uses; stop_port_forward (or an unexpected listener death) closes
 // the server, destroys live sockets, and emits `port-forward-closed` EXACTLY
-// once with the sessionId STRING (the shape the renderer's listen<string> wants).
+// once. A connection that fails to open probes the target pod: when the pod is
+// gone or terminal the session is closed the same way, since every later
+// connection would fail too.
 //
 // Renderer contract (src/lib/stores/k8s.svelte.ts):
 //   - start_port_forward args (camelCase): { podName, namespace, containerPort,
@@ -15,17 +17,37 @@
 //   - stop_port_forward args (camelCase): { sessionId }.
 //   - start returns { session_id, local_port } (snake_case — matches the
 //     renderer's invoke<{ session_id; local_port }> ).
-//   - `port-forward-closed` payload === sessionId (string).
+//   - `port-forward-closed` payload: { session_id, reason } — `reason` is a
+//     short user-facing phrase ("pod web-abc was deleted"), or null.
 
 import * as net from 'node:net';
 import { PassThrough } from 'node:stream';
 
 import { PortForward } from '@kubernetes/client-node';
+import type { V1Pod } from '@kubernetes/client-node';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
 import { kc, getCoreV1Api } from '../k8s/client';
 
 const CLOSED_CHANNEL = 'port-forward-closed';
+
+/** What the port-forward handlers need from the cluster (injected by tests). */
+export interface PortForwardDeps {
+  readPod(name: string, namespace: string): Promise<Pick<V1Pod, 'status' | 'metadata'>>;
+  /** One forwarder per session, bound to the kubeconfig current at start. */
+  forwarder(): Pick<PortForward, 'portForward'>;
+}
+
+const defaultDeps: PortForwardDeps = {
+  readPod: (name, namespace) => getCoreV1Api().readNamespacedPod({ name, namespace }),
+  forwarder: () => new PortForward(kc()),
+};
+
+/** Payload of `port-forward-closed`. */
+export interface PortForwardClosed {
+  session_id: string;
+  reason: string | null;
+}
 
 interface Session {
   server: net.Server;
@@ -34,6 +56,8 @@ interface Session {
   closing: boolean;
   /** Guards against emitting `port-forward-closed` more than once. */
   emitted: boolean;
+  /** A pod probe after a failed connection is in flight — one at a time. */
+  probing: boolean;
 }
 
 /** Active port-forward sessions, keyed by the renderer's sessionId. */
@@ -52,9 +76,14 @@ function toPort(value: unknown, label: string): number {
  * Emit `port-forward-closed` for a session at most once and drop it from the
  * map. On an explicit stop we still tear down the server but suppress the emit
  * (the renderer initiated it); on unexpected death we emit so the UI can
- * removeBySessionId.
+ * removeBySessionId and tell the user why.
  */
-function finalizeSession(sessionId: string, ctx: HandlerCtx | null, emit: boolean): void {
+function finalizeSession(
+  sessionId: string,
+  ctx: HandlerCtx | null,
+  emit: boolean,
+  reason: string | null = null,
+): void {
   const session = sessions.get(sessionId);
   if (!session) return;
   sessions.delete(sessionId);
@@ -72,8 +101,34 @@ function finalizeSession(sessionId: string, ctx: HandlerCtx | null, emit: boolea
 
   if (emit && ctx && !session.emitted) {
     session.emitted = true;
-    ctx.emit(CLOSED_CHANNEL, sessionId);
+    const payload: PortForwardClosed = { session_id: sessionId, reason };
+    ctx.emit(CLOSED_CHANNEL, payload);
   }
+}
+
+function statusOf(err: unknown): number | undefined {
+  const code = (err as { code?: unknown })?.code;
+  if (typeof code === 'number') return code;
+  const status = (err as { statusCode?: unknown })?.statusCode;
+  return typeof status === 'number' ? status : undefined;
+}
+
+/**
+ * Why a forward to `podName` can no longer work, or null when the pod still
+ * looks usable — or when the apiserver could not say: a flaky apiserver must
+ * not kill a forward that may recover.
+ */
+async function deadTargetReason(deps: PortForwardDeps, podName: string, namespace: string): Promise<string | null> {
+  let pod: Pick<V1Pod, 'status' | 'metadata'>;
+  try {
+    pod = await deps.readPod(podName, namespace);
+  } catch (err) {
+    return statusOf(err) === 404 ? `pod ${podName} was deleted` : null;
+  }
+  const phase = pod.status?.phase;
+  if (phase === 'Succeeded' || phase === 'Failed') return `pod ${podName} ${phase.toLowerCase()}`;
+  if (pod.metadata?.deletionTimestamp) return `pod ${podName} is terminating`;
+  return null;
 }
 
 /** Tear down every session without emitting (renderer reload/crash — main.ts hooks). */
@@ -84,7 +139,7 @@ export function stopAllPortForwards(): void {
   }
 }
 
-export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
+export function register(handlers: HandlerMap, ctx: HandlerCtx, deps: PortForwardDeps = defaultDeps): void {
   handlers.set('start_port_forward', async (args) => {
     const podName = String(args.podName ?? args.pod_name ?? '');
     const namespace = String(args.namespace ?? '');
@@ -103,13 +158,53 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
       throw new Error(`Port-forward already active for session: ${sessionId}`);
     }
 
-    // Verify the pod exists before binding.
-    await getCoreV1Api().readNamespacedPod({ name: podName, namespace });
-
-    const forward = new PortForward(kc());
-
+    // Reserve the slot before the first await: a second start with the same id
+    // (double-click, saved-forward restore racing a manual start) must see it,
+    // or both would bind and the loser's listener would leak.
     const sockets = new Set<net.Socket>();
-    const server = net.createServer((socket) => {
+    const server = net.createServer();
+    const session: Session = { server, sockets, closing: false, emitted: false, probing: false };
+    sessions.set(sessionId, session);
+
+    /** A stop_port_forward during one of the awaits below drops the slot. */
+    const stillOwned = (): boolean => sessions.get(sessionId) === session;
+    const abandon = (): void => {
+      if (stillOwned()) sessions.delete(sessionId);
+      session.closing = true;
+      if (server.listening) server.close();
+    };
+    const stoppedEarly = (): Error => new Error(`Port-forward ${sessionId} was stopped before it started`);
+
+    try {
+      // Verify the pod exists before binding.
+      await deps.readPod(podName, namespace);
+    } catch (err) {
+      abandon();
+      throw err;
+    }
+    if (!stillOwned()) {
+      abandon();
+      throw stoppedEarly();
+    }
+
+    const forward = deps.forwarder();
+
+    // A connection failed to open. If the pod is gone, every later connection
+    // fails the same way — close the session so the UI stops listing a dead
+    // forward, and say why.
+    const probeTarget = (): void => {
+      if (session.probing || session.closing) return;
+      session.probing = true;
+      void deadTargetReason(deps, podName, namespace).then((reason) => {
+        session.probing = false;
+        if (reason && !session.closing && stillOwned()) {
+          session.closing = true;
+          finalizeSession(sessionId, ctx, true, reason);
+        }
+      });
+    };
+
+    server.on('connection', (socket) => {
       sockets.add(socket);
 
       // Streams bridging the local TCP socket <-> the pod port via the WS:
@@ -137,27 +232,25 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
       socket.on('error', cleanupConnection);
       socket.on('close', cleanupConnection);
 
-      // One WebSocket per TCP connection. Errors here only kill THIS
-      // connection, not the session — the listener stays up for the next
-      // client.
+      // One WebSocket per TCP connection. A failure here kills THIS connection;
+      // the session survives unless the probe finds the pod gone.
       forward
         .portForward(namespace, podName, [containerPort], output, errStream, input)
         .then((ws) => {
-          ws.on('close', () => socket.destroy());
-          ws.on('error', () => socket.destroy());
+          const w = ws as { on?: (event: string, fn: () => void) => void };
+          w.on?.('close', () => socket.destroy());
+          w.on?.('error', () => socket.destroy());
         })
         .catch(() => {
           socket.destroy();
+          probeTarget();
         });
     });
-
-    const session: Session = { server, sockets, closing: false, emitted: false };
-    sessions.set(sessionId, session);
 
     // Bind. localPort 0 => OS picks a free port; we echo back the actual port.
     const actualPort = await new Promise<number>((resolve, reject) => {
       const onError = (err: Error): void => {
-        sessions.delete(sessionId);
+        if (stillOwned()) sessions.delete(sessionId);
         reject(new Error(`Failed to bind local port ${requestedLocalPort}: ${err.message}`));
       };
       server.once('error', onError);
@@ -171,6 +264,10 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
         }
       });
     });
+    if (!stillOwned()) {
+      abandon();
+      throw stoppedEarly();
+    }
 
     // If the listener dies unexpectedly (and we are not the ones closing it),
     // treat the session as ended and notify the renderer. Registered only AFTER
@@ -179,12 +276,12 @@ export function register(handlers: HandlerMap, ctx: HandlerCtx): void {
     // never started.
     server.on('close', () => {
       if (!session.closing) {
-        finalizeSession(sessionId, ctx, true);
+        finalizeSession(sessionId, ctx, true, 'the local listener closed');
       }
     });
-    server.on('error', () => {
+    server.on('error', (err) => {
       if (!session.closing) {
-        finalizeSession(sessionId, ctx, true);
+        finalizeSession(sessionId, ctx, true, `local listener failed: ${err.message}`);
       }
     });
 
