@@ -167,6 +167,37 @@ export async function resolveForward(saved: SavedPortForward, deps: ResolveDeps)
 }
 
 // ---------------------------------------------------------------------------
+// Backend close events
+// ---------------------------------------------------------------------------
+
+export interface ClosedEvent {
+  sessionId: string;
+  /** Why the backend closed it ("pod web-abc was deleted"), when it knows. */
+  reason: string | null;
+}
+
+/**
+ * Read a `port-forward-closed` payload: `{ session_id, reason }`, or the bare
+ * session id older backends sent. Null when it names no session.
+ */
+export function parseClosedEvent(payload: unknown): ClosedEvent | null {
+  if (typeof payload === "string") return payload ? { sessionId: payload, reason: null } : null;
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as { session_id?: unknown; reason?: unknown };
+  if (typeof p.session_id !== "string" || !p.session_id) return null;
+  return { sessionId: p.session_id, reason: typeof p.reason === "string" && p.reason ? p.reason : null };
+}
+
+/** Toast body for a forward the backend closed. */
+export function closedMessage(
+  pf: Pick<PortForwardInfo, "pod_name" | "container_port" | "local_port">,
+  reason: string | null,
+): string {
+  const what = `localhost:${pf.local_port} → ${pf.pod_name}:${pf.container_port}`;
+  return reason ? `${what} stopped: ${reason}` : `${what} ended unexpectedly`;
+}
+
+// ---------------------------------------------------------------------------
 // Reconnection
 // ---------------------------------------------------------------------------
 

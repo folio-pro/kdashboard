@@ -13,6 +13,8 @@ import {
   savedFromActive,
   serviceTargetPort,
   MAX_RECONNECT_ATTEMPTS,
+  closedMessage,
+  parseClosedEvent,
   type SavedForwardState,
 } from "./port-forwards.logic";
 
@@ -151,6 +153,33 @@ describe("resolution", () => {
         getResource: async () => res("Deployment", "d", { spec: { selector: { matchLabels: { a: "b" } } } }),
       }),
     ).rejects.toThrow(/No running pod/);
+  });
+});
+
+describe("port-forward-closed", () => {
+  test("reads the { session_id, reason } payload", () => {
+    expect(parseClosedEvent({ session_id: "s1", reason: "pod web-abc was deleted" })).toEqual({
+      sessionId: "s1",
+      reason: "pod web-abc was deleted",
+    });
+    expect(parseClosedEvent({ session_id: "s1", reason: null })).toEqual({ sessionId: "s1", reason: null });
+  });
+
+  test("still accepts a bare session id", () => {
+    expect(parseClosedEvent("s1")).toEqual({ sessionId: "s1", reason: null });
+  });
+
+  test("rejects payloads without a session id", () => {
+    expect(parseClosedEvent(null)).toBeNull();
+    expect(parseClosedEvent({ reason: "x" })).toBeNull();
+  });
+
+  test("the stop message names the forward and the reason", () => {
+    const pf = { pod_name: "web-abc", container_port: 80, local_port: 8080 };
+    expect(closedMessage(pf, "pod web-abc was deleted")).toBe(
+      "localhost:8080 → web-abc:80 stopped: pod web-abc was deleted",
+    );
+    expect(closedMessage(pf, null)).toBe("localhost:8080 → web-abc:80 ended unexpectedly");
   });
 });
 
