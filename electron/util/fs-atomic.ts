@@ -28,7 +28,15 @@ export function atomicWriteSync(target: string, contents: string, mode?: number)
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const tmp = tempPath(target);
   try {
-    fs.writeFileSync(tmp, contents, mode !== undefined ? { encoding: 'utf8', mode } : 'utf8');
+    const fd = fs.openSync(tmp, 'w', mode);
+    try {
+      fs.writeFileSync(fd, contents, 'utf8');
+      // Flush before the rename, or a power loss can leave the renamed target
+      // empty on filesystems that reorder metadata ahead of data.
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, target);
   } catch (err) {
     fs.rmSync(tmp, { force: true });
