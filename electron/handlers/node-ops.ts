@@ -14,10 +14,14 @@
 // opted in. Eviction goes through the policy/v1 Eviction subresource, so
 // PodDisruptionBudgets are honoured — a 429 means "blocked by a PDB", which we
 // retry until the timeout instead of forcing a delete.
+//
+// A drain can run for minutes, so it pins the cluster connection it started
+// with: switching context in the sidebar must not send the remaining evictions
+// (addressed only by namespace/name) to the newly active cluster.
 
-import { CoreV1Api, KubernetesObjectApi, PatchStrategy, type KubernetesObject, type V1Pod } from '@kubernetes/client-node';
+import { CoreV1Api, PatchStrategy, setHeaderOptions, type V1Pod } from '@kubernetes/client-node';
 
-import { kc, getCoreV1Api } from '../k8s/client.js';
+import { getCoreV1Api, pinActiveCluster, type PinnedCluster } from '../k8s/client.js';
 import { k8sErrorMessage } from '../k8s/errors.js';
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 
@@ -95,39 +99,25 @@ function optInt(args: Record<string, unknown>, key: string): number | undefined 
   return v;
 }
 
-function core(): CoreV1Api {
-  return getCoreV1Api();
-}
-
 // ---------------------------------------------------------------------------
 // cordon / uncordon
 // ---------------------------------------------------------------------------
 
 /** Patch spec.unschedulable on a node. `unschedulable: false` uncordons it. */
-async function cordonNode(args: Record<string, unknown>): Promise<null> {
-  const name = reqStr(args, 'name');
-  const unschedulable = optBool(args, 'unschedulable', true);
-
-  const patch = {
-    apiVersion: 'v1',
-    kind: 'Node',
-    metadata: { name },
-    spec: { unschedulable },
-  } as unknown as KubernetesObject;
-
+async function setUnschedulable(api: CoreV1Api, name: string, unschedulable: boolean): Promise<void> {
   try {
-    await KubernetesObjectApi.makeApiClient(kc()).patch(
-      patch,
-      undefined, // pretty
-      undefined, // dryRun
-      undefined, // fieldManager
-      undefined, // force
-      PatchStrategy.MergePatch,
+    await api.patchNode(
+      { name, body: { spec: { unschedulable } } },
+      setHeaderOptions('Content-Type', PatchStrategy.MergePatch),
     );
-    return null;
   } catch (err) {
     throw new Error(k8sErrorMessage(err));
   }
+}
+
+async function cordonNode(args: Record<string, unknown>): Promise<null> {
+  await setUnschedulable(getCoreV1Api(), reqStr(args, 'name'), optBool(args, 'unschedulable', true));
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,11 +232,16 @@ class DrainTimeout extends Error {
   }
 }
 
-/** True once the pod object is gone from the apiserver. */
-async function isDeleted(namespace: string, name: string): Promise<boolean> {
+/**
+ * True once the pod we evicted is gone: the name 404s, or it now resolves to a
+ * DIFFERENT pod (a StatefulSet recreates `web-0` under the same name within
+ * seconds, so waiting for the name alone never ends). kubectl compares UIDs
+ * for the same reason.
+ */
+async function isDeleted(api: CoreV1Api, namespace: string, name: string, uid: string | undefined): Promise<boolean> {
   try {
-    await core().readNamespacedPod({ name, namespace });
-    return false;
+    const current = await api.readNamespacedPod({ name, namespace });
+    return uid !== undefined && current.metadata?.uid !== uid;
   } catch (err) {
     if (statusOf(err) === 404) return true;
     throw new Error(k8sErrorMessage(err));
@@ -260,15 +255,17 @@ async function isDeleted(namespace: string, name: string): Promise<boolean> {
  * still on it.
  */
 async function waitForDeletion(
+  api: CoreV1Api,
   pod: V1Pod,
   deadline: number,
   onWait: () => void,
 ): Promise<void> {
   const name = pod.metadata?.name ?? '';
   const namespace = pod.metadata?.namespace ?? '';
+  const uid = pod.metadata?.uid;
 
   for (;;) {
-    if (await isDeleted(namespace, name)) return;
+    if (await isDeleted(api, namespace, name, uid)) return;
     if (Date.now() >= deadline) {
       throw new DrainTimeout('still terminating when the drain timed out');
     }
@@ -281,13 +278,13 @@ async function waitForDeletion(
  * Evict one pod, retrying while a PodDisruptionBudget rejects it (429) until
  * `deadline`. A 404 means the pod is already gone — that counts as success.
  */
-async function evictPod(pod: V1Pod, opts: DrainOptions, deadline: number): Promise<void> {
+async function evictPod(api: CoreV1Api, pod: V1Pod, opts: DrainOptions, deadline: number): Promise<void> {
   const name = pod.metadata?.name ?? '';
   const namespace = pod.metadata?.namespace ?? '';
 
   for (;;) {
     try {
-      await core().createNamespacedPodEviction({
+      await api.createNamespacedPodEviction({
         name,
         namespace,
         body: {
@@ -313,7 +310,16 @@ async function evictPod(pod: V1Pod, opts: DrainOptions, deadline: number): Promi
   }
 }
 
-async function drainNode(args: Record<string, unknown>, ctx: HandlerCtx): Promise<DrainResult> {
+/**
+ * `pin` is injectable for tests; production always pins the active cluster.
+ * It is called exactly once — every request of the drain goes through the
+ * connection it returns.
+ */
+export async function drainNode(
+  args: Record<string, unknown>,
+  ctx: HandlerCtx,
+  pin: () => PinnedCluster = pinActiveCluster,
+): Promise<DrainResult> {
   const name = reqStr(args, 'name');
   const opts: DrainOptions = {
     ignoreDaemonSets: optBool(args, 'ignoreDaemonSets', true),
@@ -328,13 +334,28 @@ async function drainNode(args: Record<string, unknown>, ctx: HandlerCtx): Promis
     ctx.emit(DRAIN_CHANNEL, { node: name, ...p } satisfies DrainProgress);
   };
 
+  const cluster = pin();
+  try {
+    return await runDrain(cluster.makeApiClient(CoreV1Api), name, opts, deadline, progress);
+  } finally {
+    cluster.release();
+  }
+}
+
+async function runDrain(
+  api: CoreV1Api,
+  name: string,
+  opts: DrainOptions,
+  deadline: number,
+  progress: (p: Omit<DrainProgress, 'node'>) => void,
+): Promise<DrainResult> {
   progress({ phase: 'cordoning', evicted: 0, total: 0 });
-  await cordonNode({ name, unschedulable: true });
+  await setUnschedulable(api, name, true);
 
   progress({ phase: 'listing', evicted: 0, total: 0 });
   let pods: V1Pod[];
   try {
-    const resp = await core().listPodForAllNamespaces({
+    const resp = await api.listPodForAllNamespaces({
       fieldSelector: `spec.nodeName=${name}`,
     });
     pods = resp.items ?? [];
@@ -372,8 +393,8 @@ async function drainNode(args: Record<string, unknown>, ctx: HandlerCtx): Promis
       }
 
       try {
-        await evictPod(pod, opts, deadline);
-        await waitForDeletion(pod, deadline, () =>
+        await evictPod(api, pod, opts, deadline);
+        await waitForDeletion(api, pod, deadline, () =>
           progress({ phase: 'waiting', evicted: evicted.length, total: evictable.length, pod: podName }),
         );
         evicted.push(podName);
