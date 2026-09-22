@@ -9,6 +9,7 @@ import { securityStore } from "$lib/stores/security.svelte";
 import { helmStore } from "$lib/stores/helm.svelte";
 import { overviewStore } from "$lib/stores/overview.svelte";
 import { portForwardStore } from "$lib/stores/port-forwards.svelte";
+import { clusterScope } from "$lib/stores/cluster-scope.logic";
 import type { ActiveView } from "$lib/stores/ui.logic";
 
 /** The standalone views: catalog `type` === view name. */
@@ -65,9 +66,15 @@ export function openResourceDetail(resource: Resource, resourceType?: string): v
  * its post-connect load — otherwise it fetches whatever type was open in the
  * previous context. Single home for this flow (cluster rail + command
  * palette both trigger it).
+ *
+ * Every cluster-scoped store (Helm, Cost, Rightsizing, Security, RBAC,
+ * Topology, NetworkPolicies, Overview) is reset too: several only fetch into
+ * an empty store, so without this they kept showing — and Rightsizing kept
+ * offering to Apply — the previous cluster's data.
  */
 export async function switchContext(contextName: string): Promise<void> {
   uiStore.resetForContextChange();
+  clusterScope.resetAll();
   k8sStore.setResourceType(DEFAULT_RESOURCE_TYPE);
   await extensions.emit({ type: "context-changed", contextName });
   await k8sStore.switchContext(contextName);

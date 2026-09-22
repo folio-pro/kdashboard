@@ -1,5 +1,6 @@
 import { invoke } from "$lib/ipc/core";
 import type { EffectivePermissions, RbacSubject, SubjectKind } from "$lib/types";
+import { onContextChange } from "./cluster-scope.logic";
 
 /** The RBAC explorer: the subject picker list and one resolved permission set. */
 class RbacStore {
@@ -54,3 +55,6 @@ class RbacStore {
 }
 
 export const rbacStore = new RbacStore();
+
+// One cluster's data: a context switch must not leave it on screen.
+onContextChange("rbac", () => rbacStore.reset());

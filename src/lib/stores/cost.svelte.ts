@@ -3,6 +3,7 @@ import { AsyncLoadStore } from "./async-load.svelte";
 import { unshadowState } from "./_unshadow.js";
 import type { CostOverview, NodeCostInfo, NodeMetricsInfo } from "$lib/types";
 import { METRICS_TTL_MS } from "./cost.logic";
+import { onContextChange } from "./cluster-scope.logic";
 
 class CostStore extends AsyncLoadStore<CostOverview> {
   /** Alias for readability in templates */
@@ -83,3 +84,6 @@ class CostStore extends AsyncLoadStore<CostOverview> {
 }
 
 export const costStore = new CostStore();
+
+// One cluster's data: a context switch must not leave it on screen.
+onContextChange("cost", () => costStore.reset());
