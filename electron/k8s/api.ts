@@ -5,7 +5,7 @@
 // list used by every kind), and content negotiation for metadata-only lists.
 // Both live here so handlers share one implementation of auth + TLS + headers.
 
-import { kc, clusterAuthHeaders, expireClusterAuth } from './client';
+import { kc, clusterAuthHeaders, clusterStreamDispatcher, expireClusterAuth } from './client';
 
 /**
  * Metadata-only content negotiation: the apiserver returns a
@@ -90,7 +90,10 @@ export async function apiStream(
 
   const doFetch = async (): Promise<Response> => {
     const headers: Record<string, string> = { ...(await clusterAuthHeaders()) };
-    return fetch(url.toString(), { method: 'GET', headers, signal });
+    // The stream dispatcher has no body timeout: a quiet `follow=true` log sends
+    // nothing for minutes, and undici's default 300 s idle limit killed it.
+    const dispatcher = clusterStreamDispatcher() ?? undefined;
+    return fetch(url.toString(), { method: 'GET', headers, signal, dispatcher });
   };
 
   // Same one-shot refresh as apiGet: exec-credential plugins and short-lived

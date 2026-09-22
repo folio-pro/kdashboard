@@ -171,8 +171,48 @@ function pemFromDataOrFile(data?: string, file?: string): string | undefined {
   return undefined;
 }
 
+/**
+ * How long to wait for an apiserver's response headers. undici defaults to
+ * 300 s, so a hung apiserver (TCP/TLS accepted, never answers) blocked every
+ * call for 5 minutes. 60 s matches the apiserver's own default
+ * --request-timeout, so a slow-but-healthy uncached LIST still gets through.
+ */
+const APISERVER_HEADERS_TIMEOUT_MS = 60_000;
+
+/** Max idle time between body chunks of a plain (buffered) request. */
+const APISERVER_BODY_TIMEOUT_MS = 60_000;
+
+/**
+ * undici Agent options for the active apiserver. `stream` disables the body
+ * timeout: undici's is the idle time BETWEEN chunks, which for a `follow=true`
+ * log is just the container being quiet — the default 300 s killed followed
+ * logs of silent pods. A dead connection still ends the stream via TCP errors
+ * or the caller's abort.
+ */
+export function apiserverAgentOptions(
+  connect: tls.SecureContextOptions & { rejectUnauthorized?: boolean },
+  mode: 'request' | 'stream',
+): Agent.Options {
+  return {
+    connect,
+    headersTimeout: APISERVER_HEADERS_TIMEOUT_MS,
+    bodyTimeout: mode === 'stream' ? 0 : APISERVER_BODY_TIMEOUT_MS,
+  };
+}
+
 /** undici Agent carrying the active cluster's TLS options. Closed on rebuild. */
 let clusterAgent: Agent | null = null;
+
+/** Same TLS options as `clusterAgent`, no body timeout — for long-lived streams. */
+let clusterStreamAgent: Agent | null = null;
+
+/**
+ * Dispatcher for long-lived apiserver streams (followed logs). Pass it as the
+ * fetch `dispatcher` option; null before the first kc() or with no cluster.
+ */
+export function clusterStreamDispatcher(): Dispatcher | null {
+  return clusterStreamAgent;
+}
 
 /** Origin (`https://host:port`) of the active apiserver, or null when none. */
 let apiserverOrigin: string | null = null;
@@ -223,6 +263,10 @@ function installTlsDispatcher(cfg: KubeConfig): void {
     void clusterAgent.close();
     clusterAgent = null;
   }
+  if (clusterStreamAgent !== null) {
+    void clusterStreamAgent.close();
+    clusterStreamAgent = null;
+  }
   apiserverOrigin = null;
 
   const cluster = cfg.getCurrentCluster();
@@ -247,7 +291,8 @@ function installTlsDispatcher(cfg: KubeConfig): void {
   if (cluster.skipTLSVerify) connect.rejectUnauthorized = false;
 
   apiserverOrigin = originOf(cluster.server);
-  clusterAgent = new Agent({ connect });
+  clusterAgent = new Agent(apiserverAgentOptions(connect, 'request'));
+  clusterStreamAgent = new Agent(apiserverAgentOptions(connect, 'stream'));
 
   if (!dispatcherInstalled) {
     const routeToApiserver: Dispatcher.DispatcherComposeInterceptor =
