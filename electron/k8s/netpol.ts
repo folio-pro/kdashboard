@@ -170,11 +170,40 @@ function emptyPeer(): PeerSummary {
   return { any: false, workloads: [], namespaces: [], cidrs: [], ports: [] };
 }
 
-function addPeer(into: PeerSummary, peers: V1NetworkPolicyPeer[] | undefined, ports: V1NetworkPolicyPort[] | undefined, ctx: { workloads: Workload[]; namespace: string; namespaces: NetpolInput['namespaces'] }): void {
-  for (const p of ports ?? []) {
-    const l = portLabel(p);
-    if (!into.ports.includes(l)) into.ports.push(l);
-  }
+/** Per-evaluation state: peer resolutions are cached per peer object and each
+ *  PeerSummary gets Sets mirroring its arrays, so dedup is O(1) per insert while
+ *  the arrays keep insertion order. */
+interface EvalCtx {
+  workloads: Workload[];
+  namespace: string;
+  namespaces: NetpolInput['namespaces'];
+  peerWorkloads: WeakMap<V1NetworkPolicyPeer, string[]>;
+  peerNamespaces: WeakMap<V1NetworkPolicyPeer, string[]>;
+  seen: WeakMap<PeerSummary, { workloads: Set<string>; namespaces: Set<string>; cidrs: Set<string>; ports: Set<string> }>;
+}
+
+function cachedPeerWorkloads(peer: V1NetworkPolicyPeer, ctx: EvalCtx): string[] {
+  let r = ctx.peerWorkloads.get(peer);
+  if (!r) ctx.peerWorkloads.set(peer, (r = peerWorkloads(peer, ctx.workloads, ctx.namespace, ctx.namespaces)));
+  return r;
+}
+
+function cachedPeerNamespaces(peer: V1NetworkPolicyPeer, ctx: EvalCtx): string[] {
+  let r = ctx.peerNamespaces.get(peer);
+  if (!r) ctx.peerNamespaces.set(peer, (r = peerNamespaces(peer, ctx.namespaces)));
+  return r;
+}
+
+function pushUnique(arr: string[], seen: Set<string>, v: string): void {
+  if (seen.has(v)) return;
+  seen.add(v);
+  arr.push(v);
+}
+
+function addPeer(into: PeerSummary, peers: V1NetworkPolicyPeer[] | undefined, ports: V1NetworkPolicyPort[] | undefined, ctx: EvalCtx): void {
+  let seen = ctx.seen.get(into);
+  if (!seen) ctx.seen.set(into, (seen = { workloads: new Set(into.workloads), namespaces: new Set(into.namespaces), cidrs: new Set(into.cidrs), ports: new Set(into.ports) }));
+  for (const p of ports ?? []) pushUnique(into.ports, seen.ports, portLabel(p));
   if (!peers || peers.length === 0) {
     into.any = true;
     return;
@@ -182,18 +211,26 @@ function addPeer(into: PeerSummary, peers: V1NetworkPolicyPeer[] | undefined, po
   for (const peer of peers) {
     if (peer.ipBlock) {
       const c = peer.ipBlock.cidr + (peer.ipBlock.except?.length ? ` except ${peer.ipBlock.except.join(',')}` : '');
-      if (!into.cidrs.includes(c)) into.cidrs.push(c);
+      pushUnique(into.cidrs, seen.cidrs, c);
     }
-    for (const w of peerWorkloads(peer, ctx.workloads, ctx.namespace, ctx.namespaces)) if (!into.workloads.includes(w)) into.workloads.push(w);
-    for (const n of peerNamespaces(peer, ctx.namespaces)) if (!into.namespaces.includes(n)) into.namespaces.push(n);
+    for (const w of cachedPeerWorkloads(peer, ctx)) pushUnique(into.workloads, seen.workloads, w);
+    for (const n of cachedPeerNamespaces(peer, ctx)) pushUnique(into.namespaces, seen.namespaces, n);
     if (!peer.ipBlock && !peer.podSelector && !peer.namespaceSelector) into.any = true;
   }
+}
+
+/** Union of two flows' port lists; an empty list means all ports and absorbs the other. */
+function mergePorts(a: string[], b: string[]): string[] {
+  if (a.length === 0 || b.length === 0) return [];
+  const out = [...a];
+  for (const p of b) if (!out.includes(p)) out.push(p);
+  return out;
 }
 
 export function evaluateNetworkPolicies(input: NetpolInput, now: () => string = () => new Date().toISOString()): NetworkPolicyOverview {
   const workloadMap = groupWorkloads(input.pods);
   const workloads = [...workloadMap.values()].sort((a, b) => a.key.localeCompare(b.key));
-  const ctx = { workloads, namespace: input.namespace, namespaces: input.namespaces };
+  const ctx: EvalCtx = { workloads, namespace: input.namespace, namespaces: input.namespaces, peerWorkloads: new WeakMap(), peerNamespaces: new WeakMap(), seen: new WeakMap() };
 
   const status = new Map<string, WorkloadPolicyStatus>();
   for (const w of workloads) {
@@ -201,7 +238,8 @@ export function evaluateNetworkPolicies(input: NetpolInput, now: () => string = 
   }
 
   const policies: PolicySummary[] = [];
-  const flows: AllowedFlow[] = [];
+  // Keyed by from/to/policy; Map iteration order is first-insertion order.
+  const flows = new Map<string, AllowedFlow>();
   let defaultDenyIngress = false;
   let defaultDenyEgress = false;
 
@@ -225,19 +263,29 @@ export function evaluateNetworkPolicies(input: NetpolInput, now: () => string = 
       egress_rules: egress.length,
     });
 
+    // Everything a rule contributes to flows depends only on the rule, not on
+    // the selected workload, so resolve it once per policy.
+    const ingressRules = types.includes('Ingress')
+      ? ingress.map((rule) => {
+          const from = fromOf(rule as { _from?: V1NetworkPolicyPeer[]; from?: V1NetworkPolicyPeer[] });
+          const sources = !from || from.length === 0 ? workloads.map((x) => x.key) : from.flatMap((peer) => cachedPeerWorkloads(peer, ctx));
+          return { from, rawPorts: rule.ports, ports: (rule.ports ?? []).map(portLabel), sources: new Set(sources) };
+        })
+      : [];
+
     for (const w of selected) {
       const st = status.get(w.key)!;
       st.policies.push(name);
       if (types.includes('Ingress')) {
         st.isolated_ingress = true;
-        for (const rule of ingress) {
-          const from = fromOf(rule as { _from?: V1NetworkPolicyPeer[]; from?: V1NetworkPolicyPeer[] });
-          addPeer(st.allowed_from, from, rule.ports, ctx);
-          const ports = (rule.ports ?? []).map(portLabel);
-          const sources = !from || from.length === 0 ? workloads.map((x) => x.key) : from.flatMap((peer) => peerWorkloads(peer, workloads, input.namespace, input.namespaces));
-          for (const src of new Set(sources)) {
+        for (const rule of ingressRules) {
+          addPeer(st.allowed_from, rule.from, rule.rawPorts, ctx);
+          for (const src of rule.sources) {
             if (src === w.key) continue;
-            if (!flows.some((f) => f.from === src && f.to === w.key && f.policy === name)) flows.push({ from: src, to: w.key, ports, policy: name });
+            const key = `${src}\0${w.key}\0${name}`;
+            const prev = flows.get(key);
+            if (!prev) flows.set(key, { from: src, to: w.key, ports: rule.ports, policy: name });
+            else prev.ports = mergePorts(prev.ports, rule.ports);
           }
         }
       }
@@ -255,7 +303,7 @@ export function evaluateNetworkPolicies(input: NetpolInput, now: () => string = 
     default_deny_egress: defaultDenyEgress,
     policies,
     workloads: [...status.values()],
-    flows,
+    flows: [...flows.values()],
     fetched_at: now(),
   };
 }
