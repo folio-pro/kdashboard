@@ -6,10 +6,12 @@
 // streamable HTTP bound to 127.0.0.1 on a random free port, protected by a
 // per-session bearer token, and only alive while an Agent Session exists.
 //
-// Session plumbing follows the SDK's stateful pattern: the first `initialize`
-// POST creates an McpServer + transport pair keyed by the SDK session id;
-// later requests (POST/GET/DELETE) route to that transport. An agent CLI that
-// reconnects mid-session simply initializes a fresh pair.
+// Session plumbing follows the SDK's stateful pattern: an `initialize` POST
+// (and nothing else) creates an McpServer + transport pair keyed by the SDK
+// session id; later requests (POST/GET/DELETE) route to that transport. An
+// unknown session id gets 404 so the client re-initializes. Clients that
+// vanish without a DELETE (killed, restarted) would leave their pair behind
+// forever, so sessions with no open request for SESSION_IDLE_MS are closed.
 //
 // Two instances can exist:
 //   - the SESSION endpoint (random port, per-session token, pinned to the
@@ -24,11 +26,17 @@ import { randomBytes, randomUUID } from 'node:crypto';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
 import { getActiveContextName } from '../k8s/client.js';
 import type { HandlerCtx } from '../dispatch.js';
 import { denyAllPending } from './approval.js';
 import { contextGuardMessage, registerAgentTools, type AgentToolDeps, type Dispatch } from './tools.js';
+
+/** Close a session after this long with no request in flight. */
+const SESSION_IDLE_MS = 30 * 60_000;
+/** Same cap the SDK applies when it reads the body itself. */
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 export interface McpEndpoint {
   url: string;
@@ -40,6 +48,8 @@ export interface AgentMcpOptions {
   ctx: HandlerCtx;
   /** Mutation Approval toggle (settings-backed in the app, injectable in tests). */
   requireApproval: () => boolean;
+  /** Idle session TTL; defaults to SESSION_IDLE_MS (injectable in tests). */
+  sessionIdleMs?: number;
 }
 
 interface ListenOptions extends AgentMcpOptions {
@@ -56,6 +66,7 @@ interface McpInstance {
   token: string;
   transports: Map<string, StreamableHTTPServerTransport>;
   servers: Map<string, McpServer>;
+  sweeper: ReturnType<typeof setInterval>;
 }
 
 /** One endpoint slot: at most one listener, restarted on start(). */
@@ -64,6 +75,10 @@ class EndpointSlot {
 
   get endpoint(): McpEndpoint | null {
     return this.instance ? { url: this.instance.url, token: this.instance.token } : null;
+  }
+
+  get sessionCount(): number {
+    return this.instance?.transports.size ?? 0;
   }
 
   async start(options: ListenOptions): Promise<McpEndpoint> {
@@ -133,10 +148,18 @@ export function externalMcpEndpoint(): McpEndpoint | null {
   return external.endpoint;
 }
 
+/** Live MCP sessions on the external endpoint (tests). */
+export function externalMcpSessionCount(): number {
+  return external.sessionCount;
+}
+
 async function listen(options: ListenOptions): Promise<McpInstance> {
   const { token, port } = options;
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const servers = new Map<string, McpServer>();
+  /** Per session: when its last request ended, and how many are still open (SSE streams). */
+  const activity = new Map<string, { lastSeen: number; open: number }>();
+  const idleMs = options.sessionIdleMs ?? SESSION_IDLE_MS;
 
   const deps: AgentToolDeps = {
     dispatch: options.dispatch,
@@ -172,13 +195,30 @@ async function listen(options: ListenOptions): Promise<McpInstance> {
 
     const sessionId = req.headers['mcp-session-id'];
     if (typeof sessionId === 'string' && transports.has(sessionId)) {
+      track(sessionId, res);
       await transports.get(sessionId)!.handleRequest(req, res);
       return;
     }
-
+    if (typeof sessionId === 'string') {
+      // Expired, closed, or from before an app restart: spec says 404 → re-initialize.
+      rpcError(res, 404, -32001, 'Session not found');
+      return;
+    }
     if (req.method !== 'POST') {
-      res.writeHead(400, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: 'unknown or missing mcp-session-id' }));
+      rpcError(res, 400, -32000, 'Bad Request: missing mcp-session-id');
+      return;
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch (err) {
+      if (err instanceof BodyTooLarge) rpcError(res, 413, -32000, 'Payload too large');
+      else rpcError(res, 400, -32700, 'Parse error');
+      return;
+    }
+    if (!isInitializeRequest(body)) {
+      rpcError(res, 400, -32000, 'Bad Request: no session; send initialize first');
       return;
     }
 
@@ -188,11 +228,13 @@ async function listen(options: ListenOptions): Promise<McpInstance> {
       onsessioninitialized: (id: string) => {
         transports.set(id, transport);
         servers.set(id, mcpServer);
+        track(id, res);
       },
     });
     transport.onclose = () => {
       const id = transport.sessionId;
       if (id) {
+        activity.delete(id);
         transports.delete(id);
         const server = servers.get(id);
         servers.delete(id);
@@ -202,7 +244,23 @@ async function listen(options: ListenOptions): Promise<McpInstance> {
     const mcpServer = new McpServer({ name: 'kdashboard', version: '1.0.0' });
     registerAgentTools(mcpServer, deps);
     await mcpServer.connect(transport);
-    await transport.handleRequest(req, res);
+    await transport.handleRequest(req, res, body);
+    if (!transport.sessionId) {
+      // The SDK rejected the initialize: the pair was never registered, drop it.
+      await transport.close().catch(() => undefined);
+      await mcpServer.close().catch(() => undefined);
+    }
+  }
+
+  /** Mark a request on `id` as open until its response closes. */
+  function track(id: string, res: http.ServerResponse): void {
+    const entry = activity.get(id) ?? { lastSeen: Date.now(), open: 0 };
+    activity.set(id, entry);
+    entry.open++;
+    res.once('close', () => {
+      entry.open--;
+      entry.lastSeen = Date.now();
+    });
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -219,16 +277,52 @@ async function listen(options: ListenOptions): Promise<McpInstance> {
     throw new Error('agent MCP server failed to bind a port');
   }
 
+  // Close sessions whose client went away without a DELETE. onclose removes
+  // them from the maps.
+  const sweeper = setInterval(
+    () => {
+      const now = Date.now();
+      for (const [id, entry] of activity) {
+        if (entry.open > 0 || now - entry.lastSeen < idleMs) continue;
+        activity.delete(id);
+        void transports.get(id)?.close().catch(() => undefined);
+      }
+    },
+    Math.min(60_000, idleMs),
+  );
+  sweeper.unref();
+
   return {
     httpServer,
     url: `http://127.0.0.1:${address.port}/mcp`,
     token,
     transports,
     servers,
+    sweeper,
   };
 }
 
+class BodyTooLarge extends Error {}
+
+async function readBody(req: http.IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY_BYTES) throw new BodyTooLarge();
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/** JSON-RPC error response, shaped like the SDK's own. */
+function rpcError(res: http.ServerResponse, status: number, code: number, message: string): void {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ jsonrpc: '2.0', error: { code, message }, id: null }));
+}
+
 async function closeInstance(current: McpInstance): Promise<void> {
+  clearInterval(current.sweeper);
   for (const transport of current.transports.values()) {
     try {
       await transport.close();
