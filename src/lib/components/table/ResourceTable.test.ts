@@ -11,8 +11,17 @@ import {
   countActiveFilters,
   countViews,
   compileFilterState,
+  hasSortKey,
 } from "./resource-table";
-import { minimumTableWidth, GUTTER_WIDTH, NAME_MIN_WIDTH, UNSIZED_MIN_WIDTH } from "./table-columns";
+import type { CellContext } from "./cell-values";
+import {
+  columnsByType,
+  defaultColumns,
+  minimumTableWidth,
+  GUTTER_WIDTH,
+  NAME_MIN_WIDTH,
+  UNSIZED_MIN_WIDTH,
+} from "./table-columns";
 
 // ---------------------------------------------------------------------------
 // Helpers: build minimal Resource objects for testing
@@ -374,6 +383,192 @@ describe("ResourceTable — unknown sort column falls back to name", () => {
     ];
     const result = sortResources(items, "unknownColumn", "asc");
     expect(result[0].metadata.name).toBe("apple");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Every sortable column sorts by what it displays (#102)
+// ---------------------------------------------------------------------------
+
+/** A resource with the given name and arbitrary extra top-level parts. */
+function raw(name: string, parts: Partial<Resource> & { owners?: Resource["metadata"]["owner_references"] } = {}): Resource {
+  const { owners, ...rest } = parts;
+  return {
+    kind: "Pod",
+    api_version: "v1",
+    ...rest,
+    metadata: {
+      name,
+      namespace: "default",
+      uid: name,
+      creation_timestamp: "2026-01-01T00:00:00Z",
+      labels: {},
+      annotations: {},
+      owner_references: owners ?? [],
+      resource_version: "1",
+      ...(rest.metadata ?? {}),
+    },
+  } as Resource;
+}
+
+const names = (rs: Resource[]) => rs.map((r) => r.metadata.name);
+
+describe("ResourceTable — sort key coverage", () => {
+  test("every sortable column in table-columns.ts has a sort key", () => {
+    const sortable = new Set<string>();
+    for (const cols of [...Object.values(columnsByType), defaultColumns]) {
+      for (const c of cols) if (c.sortable) sortable.add(c.key);
+    }
+    const missing = [...sortable].filter((key) => !hasSortKey(key));
+    expect(missing).toEqual([]);
+  });
+});
+
+describe("ResourceTable — sorting by displayed Status", () => {
+  const cs = (waiting?: string) => [
+    waiting
+      ? { name: "c", ready: false, restartCount: 3, state: { waiting: { reason: waiting } } }
+      : { name: "c", ready: true, restartCount: 0, state: { running: {} } },
+  ];
+
+  test("pods sort by the kubectl label, not the phase", () => {
+    const items = [
+      raw("a-running", { status: { phase: "Running", containerStatuses: cs() } }),
+      raw("b-crash", { status: { phase: "Running", containerStatuses: cs("CrashLoopBackOff") } }),
+      raw("c-pending", { status: { phase: "Pending" } }),
+    ];
+    expect(names(sortResources(items, "status", "asc"))).toEqual(["b-crash", "c-pending", "a-running"]);
+  });
+
+  test("nodes sort by Ready / NotReady", () => {
+    const node = (name: string, ready: string) =>
+      raw(name, { kind: "Node", status: { conditions: [{ type: "Ready", status: ready }] } });
+    const items = [node("a", "True"), node("b", "False"), node("c", "True")];
+    expect(names(sortResources(items, "status", "asc"))).toEqual(["b", "a", "c"]);
+    expect(names(sortResources(items, "status", "desc"))).toEqual(["a", "c", "b"]);
+  });
+});
+
+describe("ResourceTable — sorting pod columns", () => {
+  test("podReady sorts by ready fraction", () => {
+    const pod = (name: string, ready: boolean[]) =>
+      raw(name, { status: { containerStatuses: ready.map((r) => ({ ready: r, restartCount: 0 })) } });
+    const items = [pod("full", [true, true]), pod("none", [false, false]), pod("half", [true, false])];
+    expect(names(sortResources(items, "podReady", "asc"))).toEqual(["none", "half", "full"]);
+    expect(names(sortResources(items, "podReady", "desc"))).toEqual(["full", "half", "none"]);
+  });
+
+  test("controlledBy sorts by owner", () => {
+    const owned = (name: string, kind: string, owner: string) =>
+      raw(name, { owners: [{ kind, name: owner, uid: owner, api_version: "apps/v1", controller: true }] as never });
+    const items = [owned("a", "ReplicaSet", "web"), owned("b", "DaemonSet", "agent"), raw("c")];
+    // ds/agent < rs/web; the unowned pod ("-") sorts first.
+    expect(names(sortResources(items, "controlledBy", "asc"))).toEqual(["c", "b", "a"]);
+  });
+
+  test("node sorts by node name", () => {
+    const on = (name: string, node: string) => raw(name, { spec: { nodeName: node } });
+    const items = [on("a", "node-2"), on("b", "node-1"), on("c", "node-3")];
+    expect(names(sortResources(items, "node", "asc"))).toEqual(["b", "a", "c"]);
+  });
+});
+
+describe("ResourceTable — sorting deployment columns", () => {
+  const deploy = (name: string, replicas: number, readyReplicas: number, current = replicas) =>
+    raw(name, {
+      kind: "Deployment",
+      spec: { replicas },
+      status: { readyReplicas, replicas: current, updatedReplicas: replicas },
+    });
+
+  test("deployReady sorts by ready fraction", () => {
+    const items = [deploy("a", 3, 3), deploy("b", 3, 0), deploy("c", 4, 2)];
+    expect(names(sortResources(items, "deployReady", "asc"))).toEqual(["b", "c", "a"]);
+  });
+
+  test("deployStatus sorts by the status label", () => {
+    const items = [
+      deploy("a", 3, 3),
+      raw("b", { kind: "Deployment", spec: { replicas: 0 }, status: {} }),
+      deploy("c", 3, 1),
+    ];
+    // Available < Progressing < Scaled to 0
+    expect(names(sortResources(items, "deployStatus", "asc"))).toEqual(["a", "c", "b"]);
+  });
+
+  test("pods sorts numerically, not lexically", () => {
+    const items = [deploy("a", 10, 10), deploy("b", 2, 2), deploy("c", 9, 9)];
+    expect(names(sortResources(items, "pods", "asc"))).toEqual(["b", "c", "a"]);
+  });
+});
+
+describe("ResourceTable — sorting service / ingress / scheduling columns", () => {
+  test("endpoints sorts by ready fraction from the cell context", () => {
+    const summaries: Record<string, CellContext["endpoints"]> = {
+      a: { ready: 2, total: 2, terminating: 0 } as never,
+      b: null,
+      c: { ready: 1, total: 3, terminating: 0 } as never,
+    };
+    const items = [raw("a", { kind: "Service" }), raw("b", { kind: "Service" }), raw("c", { kind: "Service" })];
+    const ctxFor = (r: Resource): CellContext => ({ ageTick: 0, endpoints: summaries[r.metadata.name] });
+    expect(names(sortResources(items, "endpoints", "asc", ctxFor))).toEqual(["b", "c", "a"]);
+  });
+
+  test("the cell context is only built for columns that read it", () => {
+    let calls = 0;
+    const ctxFor = (): CellContext => {
+      calls++;
+      return { ageTick: 0 };
+    };
+    sortResources([raw("a"), raw("b")], "status", "asc", ctxFor);
+    expect(calls).toBe(0);
+  });
+
+  test("ingressClass sorts by class", () => {
+    const ing = (name: string, cls: string) => raw(name, { kind: "Ingress", spec: { ingressClassName: cls } });
+    const items = [ing("a", "nginx"), ing("b", "alb"), ing("c", "traefik")];
+    expect(names(sortResources(items, "ingressClass", "asc"))).toEqual(["b", "a", "c"]);
+  });
+
+  test("pcValue sorts numerically, negatives included", () => {
+    const pc = (name: string, value: number) => raw(name, { kind: "PriorityClass", spec: { value } });
+    const items = [pc("a", 1000), pc("b", -5), pc("c", 2000000000), pc("d", 200)];
+    expect(names(sortResources(items, "pcValue", "asc"))).toEqual(["b", "d", "a", "c"]);
+  });
+});
+
+describe("ResourceTable — sort ties and key computation", () => {
+  test("equal keys break by name ascending in both directions", () => {
+    const items = [
+      makeResource({ name: "c", namespace: "x" }),
+      makeResource({ name: "a", namespace: "x" }),
+      makeResource({ name: "b", namespace: "w" }),
+    ];
+    expect(names(sortResources(items, "namespace", "asc"))).toEqual(["b", "a", "c"]);
+    expect(names(sortResources(items, "namespace", "desc"))).toEqual(["a", "c", "b"]);
+  });
+
+  test("each row's key is computed once per sort", () => {
+    let reads = 0;
+    const items = Array.from({ length: 200 }, (_, i) => {
+      const r = makeResource({ name: `p-${i}` });
+      const status = { phase: "Running" } as Record<string, unknown>;
+      Object.defineProperty(status, "containerStatuses", {
+        get() {
+          reads++;
+          return [{ restartCount: (i * 7919) % 200 }];
+        },
+      });
+      return { ...r, status } as Resource;
+    });
+    sortResources(items, "restarts", "asc");
+    expect(reads).toBe(items.length);
+  });
+
+  test("does not mutate the input array", () => {
+    const items = [makeResource({ name: "b" }), makeResource({ name: "a" })];
+    sortResources(items, "name", "asc");
+    expect(names(items)).toEqual(["b", "a"]);
   });
 });
 
