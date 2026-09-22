@@ -2,6 +2,7 @@ import { invoke } from "$lib/ipc/core";
 import { unshadowState } from "./_unshadow.js";
 import type { HelmRelease, HelmReleaseDetail } from "$lib/types";
 import { HelmStoreLogic } from "./helm.logic";
+import { onContextChange } from "./cluster-scope.logic";
 
 class HelmStore extends HelmStoreLogic {
   override releases = $state<HelmRelease[]>([]);
@@ -62,3 +63,6 @@ class HelmStore extends HelmStoreLogic {
 }
 
 export const helmStore = new HelmStore();
+
+// One cluster's data: a context switch must not leave it on screen.
+onContextChange("helm", () => helmStore.reset());

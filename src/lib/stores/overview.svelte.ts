@@ -2,6 +2,7 @@ import { SvelteMap } from "svelte/reactivity";
 import { invoke } from "$lib/ipc/core";
 import type { ClusterOverview, DiagnosticResult, Problem } from "$lib/types";
 import { AsyncLoadStore } from "./async-load.svelte";
+import { onContextChange } from "./cluster-scope.logic";
 
 export type Diagnosis = DiagnosticResult | { error: string } | "loading";
 
@@ -40,3 +41,6 @@ class OverviewStore extends AsyncLoadStore<ClusterOverview> {
 }
 
 export const overviewStore = new OverviewStore();
+
+// One cluster's data: a context switch must not leave it on screen.
+onContextChange("overview", () => overviewStore.reset());
