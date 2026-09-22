@@ -18,7 +18,7 @@
 import { CoreV1Api, KubernetesObjectApi, PatchStrategy, type KubernetesObject, type V1Pod } from '@kubernetes/client-node';
 
 import { kc, getCoreV1Api } from '../k8s/client.js';
-import { k8sErrorMessage } from '../k8s/errors.js';
+import { k8sErrorMessage, k8sStatusCode } from '../k8s/errors.js';
 import type { HandlerCtx, HandlerMap } from '../dispatch.js';
 
 const DRAIN_CHANNEL = 'node-drain-progress';
@@ -222,14 +222,6 @@ export function classifyPods(pods: V1Pod[], opts: DrainOptions): Classified {
   return { evictable, skipped, blockers };
 }
 
-/** HTTP status of a client-node error, when it carries one. */
-function statusOf(err: unknown): number | undefined {
-  const code = (err as { code?: unknown })?.code;
-  if (typeof code === 'number') return code;
-  const status = (err as { statusCode?: unknown })?.statusCode;
-  return typeof status === 'number' ? status : undefined;
-}
-
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -248,7 +240,7 @@ async function isDeleted(namespace: string, name: string): Promise<boolean> {
     await core().readNamespacedPod({ name, namespace });
     return false;
   } catch (err) {
-    if (statusOf(err) === 404) return true;
+    if (k8sStatusCode(err) === 404) return true;
     throw new Error(k8sErrorMessage(err));
   }
 }
@@ -302,7 +294,7 @@ async function evictPod(pod: V1Pod, opts: DrainOptions, deadline: number): Promi
       });
       return;
     } catch (err) {
-      const status = statusOf(err);
+      const status = k8sStatusCode(err);
       if (status === 404) return; // already gone
       if (status !== 429) throw new Error(k8sErrorMessage(err));
       if (Date.now() >= deadline) {

@@ -1,5 +1,7 @@
 // Shared error helpers for the k8s handlers.
 
+import { STATUS_CODES } from 'node:http';
+
 import { getApiserverOrigin } from './client.js';
 
 /**
@@ -74,15 +76,51 @@ export function describeInvokeError(err: unknown): string {
 }
 
 /**
+ * HTTP status of a @kubernetes/client-node error, when it carries one.
+ * ApiException sets a numeric `code`; network errors carry a string `code`
+ * (ECONNREFUSED…), which is ignored. Match on this, not on message text.
+ */
+export function k8sStatusCode(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const e = err as { code?: unknown; statusCode?: unknown };
+  if (typeof e.code === 'number') return e.code;
+  return typeof e.statusCode === 'number' ? e.statusCode : undefined;
+}
+
+/**
+ * The apiserver Status.message carried in an error body. client-node 1.4's
+ * ApiException holds the raw response text, so a string body is parsed; an
+ * already-parsed object is accepted too.
+ */
+function statusMessage(body: unknown): string | null {
+  let parsed = body;
+  if (typeof body === 'string') {
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return null; // not JSON (e.g. an HTML page from a proxy)
+    }
+  }
+  const message = (parsed as { message?: unknown } | null)?.message;
+  return typeof message === 'string' && message.length > 0 ? message : null;
+}
+
+/**
  * Best-effort human message extracted from a @kubernetes/client-node error.
- * Prefers the apiserver-supplied body.message (a Status object), then the JS
- * Error message, then a stringified fallback.
+ * Prefers the apiserver-supplied Status.message, then "<code> <reason>" for an
+ * HTTP error without one — never ApiException's own message, which dumps the
+ * raw body and every response header — then the JS Error message, then a
+ * stringified fallback.
  */
 export function k8sErrorMessage(err: unknown): string {
   if (err && typeof err === 'object') {
-    const e = err as { body?: { message?: string }; message?: string };
-    if (e.body && typeof e.body.message === 'string' && e.body.message.length > 0) {
-      return e.body.message;
+    const e = err as { body?: unknown; message?: unknown };
+    const fromBody = statusMessage(e.body);
+    if (fromBody) return fromBody;
+    const code = k8sStatusCode(err);
+    if (code !== undefined) {
+      const reason = STATUS_CODES[code];
+      return reason ? `${code} ${reason}` : `HTTP ${code}`;
     }
     if (typeof e.message === 'string' && e.message.length > 0) {
       return e.message;
