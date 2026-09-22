@@ -3,8 +3,10 @@
   import { Skeleton } from "$lib/components/ui/skeleton";
   import { ArrowLeft, RefreshCw, AlertTriangle } from "lucide-svelte";
   import NamespacePicker from "./NamespacePicker.svelte";
-  import type { Snippet } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import type { IconComponent } from "$lib/actions/types";
+  import { k8sStore } from "$lib/stores/k8s.svelte";
+  import { namespaceChangeTracker } from "./view-panel.logic";
 
   interface Props {
     title: string;
@@ -18,6 +20,13 @@
      */
     onBack?: () => void;
     onRefresh: () => void;
+    /**
+     * Called when the header's namespace picker changes scope after mount.
+     * Every view that shows the picker must pass it, or the header states a
+     * namespace the data doesn't match. Not called on mount: openAppView
+     * already issued the entry load.
+     */
+    onNamespaceChange?: (namespace: string) => void;
     loadingMessage?: string;
     errorMessage?: string;
     emptyMessage?: string;
@@ -37,6 +46,7 @@
     hasData,
     onBack,
     onRefresh,
+    onNamespaceChange,
     loadingMessage = "Loading...",
     errorMessage = "Failed to load data",
     emptyMessage = "No data available",
@@ -47,6 +57,14 @@
     children,
     empty,
   }: Props = $props();
+
+  // Only the namespace is tracked: the callback runs untracked so the state
+  // a loader reads (a view's mode, a store's flags) can't re-trigger it.
+  const namespaceChanged = namespaceChangeTracker();
+  $effect(() => {
+    const ns = k8sStore.currentNamespace;
+    if (namespaceChanged(ns)) untrack(() => onNamespaceChange?.(ns));
+  });
 </script>
 
 <div class="flex h-full flex-col bg-[var(--bg-primary)]">

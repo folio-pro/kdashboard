@@ -21,6 +21,16 @@
       : { isLoading: false, error: null, hasData: true },
   );
 
+  // Reload the mode on screen and drop the other one: both skip their fetch
+  // when data is already there (RbacPanel guards on an empty subject list and
+  // reloads by itself after a reset), so keeping it would show the old
+  // namespace's rows on the next mode switch.
+  function handleNamespaceChange(ns: string) {
+    rbacStore.reset();
+    if (mode === "permissions") securityStore.reset();
+    else securityStore.loadSecurityOverview(ns);
+  }
+
   function handleRefresh() {
     if (mode === "permissions") {
       rbacStore.reset();
@@ -78,6 +88,7 @@
   error={panel.error}
   hasData={panel.hasData}
   onRefresh={handleRefresh}
+  onNamespaceChange={handleNamespaceChange}
   loadingMessage="Scanning images..."
   errorMessage="Failed to load security data"
   emptyMessage="No security data available"

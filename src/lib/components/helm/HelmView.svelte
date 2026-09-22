@@ -26,6 +26,12 @@
     helmStore.clearSelection();
   }
 
+  /** The open release belongs to the old namespace: drop it, list the new one. */
+  function handleNamespaceChange(ns: string) {
+    helmStore.clearSelection();
+    void helmStore.loadReleases(ns);
+  }
+
   function handleRefresh() {
     if (helmStore.selected) {
       const { namespace, name } = helmStore.selected;
@@ -62,6 +68,7 @@
   hasData={helmStore.loaded}
   onBack={helmStore.selected ? handleBack : undefined}
   onRefresh={handleRefresh}
+  onNamespaceChange={handleNamespaceChange}
   loadingMessage="Reading release secrets..."
   errorMessage="Failed to read Helm releases"
   emptyMessage="No Helm releases found"
