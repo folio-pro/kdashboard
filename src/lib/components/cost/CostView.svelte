@@ -39,10 +39,14 @@
     else costStore.loadCostOverview(k8sStore.currentNamespace);
   }
 
+  // Each mode loads on entry when its store is empty: on first use, and after
+  // a namespace change made in the other mode dropped it.
   function setMode(next: "costs" | "rightsizing") {
     mode = next;
     if (next === "rightsizing" && !rightsizingStore.overview && !rightsizingStore.isLoading) {
       rightsizingStore.loadRightsizing(k8sStore.currentNamespace);
+    } else if (next === "costs" && !costStore.overview && !costStore.isLoading) {
+      costStore.loadCostOverview(k8sStore.currentNamespace);
     }
   }
 

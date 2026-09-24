@@ -31,6 +31,15 @@
     else securityStore.loadSecurityOverview(ns);
   }
 
+  // Posture loads on entry when its store is empty: a namespace change made in
+  // Permissions dropped it. (RbacPanel loads its own list on mount.)
+  function setMode(next: "posture" | "permissions") {
+    mode = next;
+    if (next === "posture" && !securityStore.overview && !securityStore.isLoading) {
+      securityStore.loadSecurityOverview(k8sStore.currentNamespace);
+    }
+  }
+
   function handleRefresh() {
     if (mode === "permissions") {
       rbacStore.reset();
@@ -104,14 +113,18 @@
     <SegmentedControl
       ariaLabel="Security view mode"
       value={mode}
-      onchange={(v) => (mode = v)}
+      onchange={setMode}
       items={[{ value: "posture", label: "Posture" }, { value: "permissions", label: "Permissions", testid: "security-mode-permissions" }]}
       testid="security-mode"
     />
   {/snippet}
 
   {#if mode === "permissions"}
-    <RbacPanel />
+    <!-- Keyed by namespace: the picked subject and the quick-check fields
+         belong to the namespace being left. -->
+    {#key k8sStore.currentNamespace}
+      <RbacPanel />
+    {/key}
   {:else}
   <ScrollArea class="h-full">
     <div class="p-4 space-y-4">
