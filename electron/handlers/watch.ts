@@ -356,6 +356,14 @@ async function startResourceWatch(
   // no-RV reconnect's replay cannot cover deletes missed during the gap.
   let rvExpired = false;
 
+  // A Resync owed to the renderer, emitted once the NEXT connection opens —
+  // never at close. The renderer relists the moment it hears Resync; relisting
+  // before the retry has picked its start RV (seeded after the backoff) leaves
+  // a window whose deltas neither the relist nor the new stream carries. A
+  // retry that never opens (a persistent 410, an outage) owes no relist yet,
+  // so a failing watch cannot drive the renderer into a relist loop.
+  let resyncOnOpen = false;
+
   // Set when a stream ended with an error (watch_error sent); the next
   // successful open answers it with watch_open.
   let errored = false;
@@ -418,8 +426,9 @@ async function startResourceWatch(
 
     // Establish (or re-establish) the watch connection. On stream close the JS
     // Watch does NOT auto-relist, so we reconnect ourselves. A Resync (which
-    // makes the store do a full relist) is emitted only for a close that left a
-    // gap — see the close handler below for the exact rule.
+    // makes the store do a full relist) is owed only for a close that left a
+    // gap — see the close handler below for the exact rule — and emitted when
+    // the next connection opens (see resyncOnOpen).
     const connect = (): void => {
       if (!isCurrent()) return;
 
@@ -491,15 +500,14 @@ async function startResourceWatch(
             // HTTP 410 at connect: the RV we resumed from (the renderer's list
             // RV on the first open, or lastRV on a reconnect) left the watch
             // history. Drop it — the retry seeds a fresh RV, or replays if that
-            // fails — and tell the renderer to relist NOW, since deletes past
-            // the expired RV can never be replayed. Not an error the user must
+            // fails — and owe the renderer a relist once the retry opens, since
+            // deletes past the expired RV can never be replayed. Not an error the user must
             // see, and not a reason to reject the start: the retry settles it.
             // A 410 with no RV sent is something else and falls through.
             if (sentRV && isGoneError(err)) {
               state.lastRV = undefined;
               rvExpired = false;
-              state.openedAt = 0;
-              if (state.hadInitialSync) emitResync();
+              if (state.hadInitialSync) resyncOnOpen = true;
               scheduleReconnect();
               return;
             }
@@ -537,7 +545,7 @@ async function startResourceWatch(
               // relist in a loop.
               if (!state.lastRV && (healthy || rvExpired)) {
                 rvExpired = false;
-                emitResync();
+                resyncOnOpen = true;
               }
             } else {
               // First connection's natural close (e.g. the 30s server window)
@@ -567,6 +575,12 @@ async function startResourceWatch(
           if (errored) {
             errored = false;
             emitNotice('watch_open');
+          }
+          if (resyncOnOpen) {
+            resyncOnOpen = false;
+            // Anything the new stream already batched predates the relist.
+            flush();
+            emitResync();
           }
           settleOk();
         })

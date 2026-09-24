@@ -1,4 +1,4 @@
-import { test, expect, describe, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { test, expect, describe, beforeEach, afterEach, afterAll, jest, mock, spyOn } from 'bun:test';
 import { Watch } from '@kubernetes/client-node';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
@@ -8,8 +8,12 @@ import type { CrdInfo } from './crd';
 // it installs an undici dispatcher) and seeds fresh RVs through apiGet. Stub
 // both so the loop runs against a fake apiserver; Watch.prototype.watch is
 // spied per test below.
-const realClient = await import('../k8s/client');
-const realApi = await import('../k8s/api');
+//
+// mock.module patches the module registry for the whole `bun test` process, not
+// just this file, so the real exports are snapshotted (the namespace objects are
+// live and would show the mocks) and put back in afterAll.
+const realClient = { ...(await import('../k8s/client')) };
+const realApi = { ...(await import('../k8s/api')) };
 const fakeKc = {
   getCurrentContext: () => 'test',
   getCurrentCluster: () => ({ name: 'test', server: 'https://fake.invalid:6443' }),
@@ -30,6 +34,11 @@ mock.module('../k8s/api', () => ({
 }));
 
 const { describeWatchEnd, register, resolveWatchTarget, stopAllWatches, watchPath } = await import('./watch');
+
+afterAll(() => {
+  mock.module('../k8s/client', () => realClient);
+  mock.module('../k8s/api', () => realApi);
+});
 
 const widget: CrdInfo = {
   group: 'demo.kdash.io',
@@ -119,8 +128,10 @@ describe('describeWatchEnd — which stream ends the renderer hears about', () =
 // ---------------------------------------------------------------------------
 
 type DoneFn = (err: unknown) => void;
+type EventFn = (type: string, obj: unknown) => void;
 interface WatchCall {
   query: Record<string, unknown>;
+  cb: EventFn;
   done: DoneFn;
 }
 /** How the next connects answer, consumed in order; 'open' once exhausted. */
@@ -140,15 +151,23 @@ describe('start_resource_watch — HTTP 410 Gone at connect', () => {
   const errors = (): unknown[] =>
     emitted.filter((e) => (e as { event_type?: string }).event_type === 'watch_error');
 
-  async function waitFor(pred: () => boolean, ms = 3000): Promise<void> {
-    const deadline = Date.now() + ms;
-    while (!pred()) {
-      if (Date.now() > deadline) throw new Error('timed out waiting for the watch loop');
-      await new Promise((r) => setTimeout(r, 10));
+  /** Let pending promise chains (resolveWatchTarget, seedRV, .then) run. */
+  async function drain(): Promise<void> {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  }
+
+  /** Drive the fake clock through reconnect backoffs until `pred` holds. */
+  async function waitFor(pred: () => boolean): Promise<void> {
+    for (let i = 0; i < 100; i++) {
+      await drain();
+      if (pred()) return;
+      jest.advanceTimersByTime(500);
     }
+    throw new Error('the watch loop never reached the expected state');
   }
 
   beforeEach(() => {
+    jest.useFakeTimers();
     emitted = [];
     calls = [];
     outcomes = [];
@@ -161,10 +180,10 @@ describe('start_resource_watch — HTTP 410 Gone at connect', () => {
     watchSpy = spyOn(Watch.prototype, 'watch').mockImplementation((async (
       _path: string,
       query: Record<string, unknown>,
-      _cb: unknown,
+      cb: EventFn,
       done: DoneFn,
     ) => {
-      calls.push({ query: { ...query }, done });
+      calls.push({ query: { ...query }, cb, done });
       const controller = new AbortController();
       if ((outcomes.shift() ?? 'open') === 'gone') {
         controller.abort();
@@ -177,6 +196,7 @@ describe('start_resource_watch — HTTP 410 Gone at connect', () => {
   afterEach(() => {
     stopAllWatches();
     watchSpy.mockRestore();
+    jest.useRealTimers();
   });
 
   const start = (resourceVersion?: string): Promise<unknown> =>
@@ -210,10 +230,59 @@ describe('start_resource_watch — HTTP 410 Gone at connect', () => {
     expect(resyncs()).toBe(1);
   });
 
+  test('the Resync waits for the retry to open, so the relist cannot predate its start RV', async () => {
+    await start('100');
+    seedListRV = '500';
+    outcomes.push('gone');
+    calls[0].done(null);
+    // Stop the clock right after the 410, before the retry's backoff elapses.
+    await waitFor(() => calls.length >= 2);
+    await drain();
+
+    // 410 seen, retry not opened yet: relisting now would snapshot an RV older
+    // than the one the retry is about to seed.
+    expect(resyncs()).toBe(0);
+
+    await waitFor(() => calls.length >= 3);
+    expect(resyncs()).toBe(1);
+  });
+
+  test('a 410 that keeps coming back never opens, so it never makes the renderer relist', async () => {
+    await start('100');
+    seedListRV = '500';
+    outcomes.push('gone', 'gone', 'gone', 'gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 5);
+    await drain();
+
+    expect(calls.slice(1, 5).map((c) => c.query.resourceVersion)).toEqual(['100', '500', '500', '500']);
+    expect(resyncs()).toBe(0);
+    expect(errors()).toEqual([]);
+
+    // The loop is still alive: the next attempt opens and pays the relist once.
+    await waitFor(() => calls.length >= 6);
+    expect(resyncs()).toBe(1);
+  });
+
+  test('an in-stream 410 ERROR also defers its Resync to the next open', async () => {
+    await start('100');
+    seedListRV = '500';
+    calls[0].cb('ERROR', { code: 410 });
+    calls[0].done(null);
+    await drain();
+    expect(resyncs()).toBe(0);
+
+    await waitFor(() => calls.length >= 2);
+    expect(calls[1].query.resourceVersion).toBe('500');
+    expect(resyncs()).toBe(1);
+  });
+
   test('a stale renderer RV that 410s on the first open still starts the watch', async () => {
     outcomes.push('gone');
     seedListRV = '900';
-    await start('1');
+    const started = start('1');
+    await waitFor(() => calls.length >= 2);
+    await started;
 
     expect(calls.map((c) => c.query.resourceVersion)).toEqual(['1', '900']);
     expect(resyncs()).toBe(1);
