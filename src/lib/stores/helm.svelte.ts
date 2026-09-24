@@ -17,37 +17,34 @@ class HelmStore extends HelmStoreLogic {
   }
 
   async loadReleases(namespace: string | null): Promise<void> {
+    const token = this.beginListLoad();
     this.isLoading = true;
     try {
-      this.applyReleases(await invoke<HelmRelease[]>("list_helm_releases", { namespace }));
+      this.applyReleases(await invoke<HelmRelease[]>("list_helm_releases", { namespace }), token);
     } catch (err) {
-      this.applyError(String(err));
+      this.applyError(String(err), token);
     } finally {
-      this.isLoading = false;
+      if (this.isCurrentListLoad(token)) this.isLoading = false;
     }
   }
 
   /** Load one release's full payload plus its revision history. */
   async selectRelease(namespace: string, name: string, revision?: number): Promise<void> {
+    const token = this.beginDetailLoad();
     this.isLoading = true;
     try {
       const [detail, history] = await Promise.all([
         invoke<HelmReleaseDetail>("get_helm_release", { namespace, name, revision: revision ?? null }),
         invoke<HelmRelease[]>("list_helm_release_history", { namespace, name }),
       ]);
-      this.selected = detail;
-      this.history = history;
-      this.error = null;
+      this.applyDetail(detail, history, token);
     } catch (err) {
-      this.error = String(err);
+      this.applyDetailError(String(err), token);
     } finally {
+      // Unconditional: a detail load dropped by clearSelection (Back) has no
+      // successor to clear the flag.
       this.isLoading = false;
     }
-  }
-
-  clearSelection(): void {
-    this.selected = null;
-    this.history = [];
   }
 
   override reset(): void {

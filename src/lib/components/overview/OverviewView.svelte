@@ -20,19 +20,12 @@
   let topPods = $derived(overview ? (topMode === "cpu" ? overview.top_pods_cpu : overview.top_pods_memory) : []);
   let topMax = $derived(topPods.reduce((m, p) => Math.max(m, topMode === "cpu" ? p.cpu_usage : p.memory_usage), 0));
 
+  // Also the namespace-change reload: the header's picker scopes THIS view
+  // ("" is the whole cluster, anything else one namespace), and the backend
+  // keeps a short per-namespace cache.
   function handleRefresh() {
     overviewStore.loadOverview(k8sStore.currentNamespace);
   }
-
-  // The header's namespace picker scopes THIS view: "" is the whole cluster,
-  // anything else one namespace. openAppView issued the first load, so only
-  // a change re-loads (the backend keeps a short per-namespace cache).
-  let lastNamespace: string | undefined;
-  $effect(() => {
-    const ns = k8sStore.currentNamespace;
-    if (lastNamespace !== undefined && lastNamespace !== ns) overviewStore.loadOverview(ns);
-    lastNamespace = ns;
-  });
   function openProblem(p: Problem) {
     void openRelatedResourceTab(kindToResourceType(p.kind), p.name, p.namespace ?? undefined);
   }
@@ -64,6 +57,7 @@
   error={overviewStore.error}
   hasData={!!overview}
   onRefresh={handleRefresh}
+  onNamespaceChange={handleRefresh}
   loadingMessage="Reading the cluster…"
   errorMessage="Could not build the overview"
 >

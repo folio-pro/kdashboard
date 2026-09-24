@@ -20,15 +20,33 @@
       : { isLoading: rightsizingStore.isLoading && !rightsizingStore.overview, error: rightsizingStore.error, hasData: !!rightsizingStore.overview },
   );
 
+  // Reload the mode on screen and drop the other one: setMode() skips the
+  // rightsizing fetch when the store already holds data, which would be the
+  // previous namespace's recommendations (and Apply would act on them).
+  function handleNamespaceChange(ns: string) {
+    if (mode === "rightsizing") {
+      costStore.reset();
+      rightsizingStore.reset();
+      rightsizingStore.loadRightsizing(ns);
+    } else {
+      rightsizingStore.reset();
+      costStore.loadCostOverview(ns);
+    }
+  }
+
   function handleRefresh() {
     if (mode === "rightsizing") rightsizingStore.loadRightsizing(k8sStore.currentNamespace);
     else costStore.loadCostOverview(k8sStore.currentNamespace);
   }
 
+  // Each mode loads on entry when its store is empty: on first use, and after
+  // a namespace change made in the other mode dropped it.
   function setMode(next: "costs" | "rightsizing") {
     mode = next;
     if (next === "rightsizing" && !rightsizingStore.overview && !rightsizingStore.isLoading) {
       rightsizingStore.loadRightsizing(k8sStore.currentNamespace);
+    } else if (next === "costs" && !costStore.overview && !costStore.isLoading) {
+      costStore.loadCostOverview(k8sStore.currentNamespace);
     }
   }
 
@@ -58,6 +76,7 @@
   error={panel.error}
   hasData={panel.hasData}
   onRefresh={handleRefresh}
+  onNamespaceChange={handleNamespaceChange}
   loadingMessage="Loading cost data..."
   errorMessage="Failed to load cost data"
   emptyMessage="No cost data available"

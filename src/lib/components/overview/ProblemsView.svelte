@@ -32,19 +32,12 @@
     if (selected) overviewStore.diagnose(selected);
   });
 
+  // Also the namespace-change reload: the header's picker scopes THIS view
+  // ("" is the whole cluster, anything else one namespace), and the backend
+  // keeps a short per-namespace cache.
   function handleRefresh() {
     overviewStore.loadOverview(k8sStore.currentNamespace);
   }
-
-  // The header's namespace picker scopes THIS view: "" is the whole cluster,
-  // anything else one namespace. openAppView issued the first load, so only
-  // a change re-loads (the backend keeps a short per-namespace cache).
-  let lastNamespace: string | undefined;
-  $effect(() => {
-    const ns = k8sStore.currentNamespace;
-    if (lastNamespace !== undefined && lastNamespace !== ns) overviewStore.loadOverview(ns);
-    lastNamespace = ns;
-  });
   function toggleSeverity(s: ProblemSeverity) {
     filter = { ...filter, severity: filter.severity === s ? null : s };
   }
@@ -87,6 +80,7 @@
   error={overviewStore.error}
   hasData={!!overview}
   onRefresh={handleRefresh}
+  onNamespaceChange={handleRefresh}
   loadingMessage="Looking for trouble…"
   errorMessage="Could not scan the cluster"
 >
