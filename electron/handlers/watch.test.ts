@@ -1,7 +1,49 @@
-import { test, expect, describe } from 'bun:test';
+import { test, expect, describe, beforeEach, afterEach, afterAll, jest, mock, spyOn } from 'bun:test';
+import { Watch } from '@kubernetes/client-node';
 
-import { describeWatchEnd, resolveWatchTarget, watchPath } from './watch';
+import type { HandlerCtx, HandlerMap } from '../dispatch';
 import type { CrdInfo } from './crd';
+
+// The watch loop reads the active KubeConfig (kc() cannot be built under Bun —
+// it installs an undici dispatcher) and seeds fresh RVs through apiGet. Stub
+// both so the loop runs against a fake apiserver; Watch.prototype.watch is
+// spied per test below.
+//
+// mock.module patches the module registry for the whole `bun test` process, not
+// just this file, so the real exports are snapshotted (the namespace objects are
+// live and would show the mocks) and put back in afterAll.
+const realClient = { ...(await import('../k8s/client')) };
+const realApi = { ...(await import('../k8s/api')) };
+const fakeKc = {
+  getCurrentContext: () => 'test',
+  getCurrentCluster: () => ({ name: 'test', server: 'https://fake.invalid:6443' }),
+};
+/**
+ * What the seedRV metadata list answers: `seedListRVs` first, one per call,
+ * then `seedListRV` (null = the list fails).
+ */
+let seedListRV: string | null = null;
+let seedListRVs: string[] = [];
+mock.module('../k8s/client', () => ({
+  ...realClient,
+  kc: () => fakeKc,
+  getActiveContextName: () => 'test',
+}));
+mock.module('../k8s/api', () => ({
+  ...realApi,
+  apiGet: async () => {
+    const rv = seedListRVs.shift() ?? seedListRV;
+    if (rv === null) throw new Error('seed list unavailable');
+    return { metadata: { resourceVersion: rv } };
+  },
+}));
+
+const { describeWatchEnd, register, resolveWatchTarget, stopAllWatches, watchPath } = await import('./watch');
+
+afterAll(() => {
+  mock.module('../k8s/client', () => realClient);
+  mock.module('../k8s/api', () => realApi);
+});
 
 const widget: CrdInfo = {
   group: 'demo.kdash.io',
@@ -81,5 +123,220 @@ describe('describeWatchEnd — which stream ends the renderer hears about', () =
 
   test('an apiserver status error keeps its message', () => {
     expect(describeWatchEnd(new Error('Service Unavailable'))).toBe('Service Unavailable');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HTTP 410 Gone at connect. client-node's Watch.watch() never rejects on a
+// non-200 status: it calls done(err) with err.statusCode set, then RESOLVES
+// with the controller. The fake below mimics exactly that.
+// ---------------------------------------------------------------------------
+
+type DoneFn = (err: unknown) => void;
+type EventFn = (type: string, obj: unknown) => void;
+interface WatchCall {
+  query: Record<string, unknown>;
+  cb: EventFn;
+  done: DoneFn;
+}
+/** How the next connects answer, consumed in order; 'open' once exhausted. */
+type Outcome = 'open' | 'gone';
+
+describe('start_resource_watch — HTTP 410 Gone at connect', () => {
+  let emitted: unknown[];
+  let handlers: HandlerMap;
+  let ctx: HandlerCtx;
+  let calls: WatchCall[];
+  let outcomes: Outcome[];
+  let watchSpy: ReturnType<typeof spyOn>;
+
+  const gone = (): Error => Object.assign(new Error('Gone'), { statusCode: 410 });
+  const resyncs = (): number =>
+    emitted.filter((e) => (e as { event_type?: string }).event_type === 'Resync').length;
+  const errors = (): unknown[] =>
+    emitted.filter((e) => (e as { event_type?: string }).event_type === 'watch_error');
+
+  /** Let pending promise chains (resolveWatchTarget, seedRV, .then) run. */
+  async function drain(): Promise<void> {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  }
+
+  /** Drive the fake clock through reconnect backoffs until `pred` holds. */
+  async function waitFor(pred: () => boolean): Promise<void> {
+    for (let i = 0; i < 100; i++) {
+      await drain();
+      if (pred()) return;
+      jest.advanceTimersByTime(500);
+    }
+    throw new Error('the watch loop never reached the expected state');
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    emitted = [];
+    calls = [];
+    outcomes = [];
+    seedListRV = null;
+    seedListRVs = [];
+    handlers = new Map();
+    ctx = {
+      emit: (_channel: string, payload: unknown) => emitted.push(...(payload as unknown[])),
+    } as HandlerCtx;
+    register(handlers, ctx);
+    watchSpy = spyOn(Watch.prototype, 'watch').mockImplementation((async (
+      _path: string,
+      query: Record<string, unknown>,
+      cb: EventFn,
+      done: DoneFn,
+    ) => {
+      calls.push({ query: { ...query }, cb, done });
+      const controller = new AbortController();
+      if ((outcomes.shift() ?? 'open') === 'gone') {
+        controller.abort();
+        done(gone());
+      }
+      return controller;
+    }) as never);
+  });
+
+  afterEach(() => {
+    stopAllWatches();
+    watchSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
+  const start = (resourceVersion?: string): Promise<unknown> =>
+    Promise.resolve(handlers.get('start_resource_watch')!({ resourceType: 'pods', resourceVersion }, ctx));
+
+  test('a reconnect that 410s drops the expired RV, resyncs once, and reconnects without it', async () => {
+    await start('100');
+    expect(calls[0].query.resourceVersion).toBe('100');
+
+    // Routine server close: resumable, so the reconnect keeps the RV — and 410s.
+    outcomes.push('gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 3);
+
+    expect(calls[1].query.resourceVersion).toBe('100');
+    // Seed list failed: the retry replays from scratch instead of re-sending
+    // the expired RV forever.
+    expect(calls[2].query.resourceVersion).toBeUndefined();
+    expect(resyncs()).toBe(1);
+    expect(errors()).toEqual([]);
+  });
+
+  test('the retry after a 410 resumes from a freshly seeded RV when the list answers', async () => {
+    await start('100');
+    seedListRV = '500';
+    outcomes.push('gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 3);
+
+    expect(calls[2].query.resourceVersion).toBe('500');
+    expect(resyncs()).toBe(1);
+  });
+
+  test('the Resync waits for the retry to open, so the relist cannot predate its start RV', async () => {
+    await start('100');
+    seedListRV = '500';
+    outcomes.push('gone');
+    calls[0].done(null);
+    // Stop the clock right after the 410, before the retry's backoff elapses.
+    await waitFor(() => calls.length >= 2);
+    await drain();
+
+    // 410 seen, retry not opened yet: relisting now would snapshot an RV older
+    // than the one the retry is about to seed.
+    expect(resyncs()).toBe(0);
+
+    await waitFor(() => calls.length >= 3);
+    expect(resyncs()).toBe(1);
+  });
+
+  test('a 410 that keeps coming back never opens, so it never makes the renderer relist', async () => {
+    await start('100');
+    seedListRVs = ['500', '600', '700'];
+    outcomes.push('gone', 'gone', 'gone', 'gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 5);
+    await drain();
+
+    expect(calls.slice(1, 5).map((c) => c.query.resourceVersion)).toEqual(['100', '500', '600', '700']);
+    expect(resyncs()).toBe(0);
+    expect(errors()).toEqual([]);
+
+    // The loop is still alive: the next attempt opens and pays the relist once.
+    await waitFor(() => calls.length >= 6);
+    expect(resyncs()).toBe(1);
+  });
+
+  test('a seed list that hands back the RV just rejected is dropped: the retry replays', async () => {
+    await start('100');
+    // Quiet cluster: the list's current RV is the one the watch resumed from.
+    seedListRV = '100';
+    outcomes.push('gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 3);
+
+    expect(calls.map((c) => c.query.resourceVersion)).toEqual(['100', '100', undefined]);
+    expect(resyncs()).toBe(1);
+    expect(errors()).toEqual([]);
+  });
+
+  test('a seed list that repeats an RV rejected in-stream is dropped too', async () => {
+    await start('100');
+    seedListRV = '100';
+    calls[0].cb('ERROR', { code: 410 });
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 2);
+
+    expect(calls[1].query.resourceVersion).toBeUndefined();
+    expect(resyncs()).toBe(1);
+  });
+
+  test('the rejected RV only vetoes the seed right after the 410', async () => {
+    await start('100');
+    seedListRV = '100';
+    outcomes.push('gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 3);
+
+    // The replay stream closes before any event advanced the RV, so the next
+    // reconnect seeds again: with no fresh 410, the same RV is a valid start.
+    calls[2].done(null);
+    await waitFor(() => calls.length >= 4);
+    expect(calls[3].query.resourceVersion).toBe('100');
+  });
+
+  test('an in-stream 410 ERROR also defers its Resync to the next open', async () => {
+    await start('100');
+    seedListRV = '500';
+    calls[0].cb('ERROR', { code: 410 });
+    calls[0].done(null);
+    await drain();
+    expect(resyncs()).toBe(0);
+
+    await waitFor(() => calls.length >= 2);
+    expect(calls[1].query.resourceVersion).toBe('500');
+    expect(resyncs()).toBe(1);
+  });
+
+  test('a stale renderer RV that 410s on the first open still starts the watch', async () => {
+    outcomes.push('gone');
+    seedListRV = '900';
+    const started = start('1');
+    await waitFor(() => calls.length >= 2);
+    await started;
+
+    expect(calls.map((c) => c.query.resourceVersion)).toEqual(['1', '900']);
+    expect(resyncs()).toBe(1);
+    expect(errors()).toEqual([]);
+  });
+
+  test('a 410 without any RV sent is not an expired RV: the first open still rejects', async () => {
+    outcomes.push('gone');
+    await expect(start(undefined)).rejects.toThrow();
+    expect(calls).toHaveLength(1);
+    expect(resyncs()).toBe(0);
   });
 });
