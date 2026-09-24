@@ -364,6 +364,12 @@ async function startResourceWatch(
   // so a failing watch cannot drive the renderer into a relist loop.
   let resyncOnOpen = false;
 
+  // The RV the server last rejected with 410. A seed list that hands back the
+  // same RV (a quiet cluster, or a proxy that 410s that RV specifically) would
+  // resume from it and 410 again on every retry, so the seed is dropped and
+  // the reconnect replays instead.
+  let expiredRV: string | undefined;
+
   // Set when a stream ended with an error (watch_error sent); the next
   // successful open answers it with watch_open.
   let errored = false;
@@ -403,9 +409,11 @@ async function startResourceWatch(
           META_ACCEPT,
         );
         const rv = list?.metadata?.resourceVersion;
-        if (rv && isCurrent() && !state.lastRV) state.lastRV = rv;
+        if (rv && rv !== expiredRV && isCurrent() && !state.lastRV) state.lastRV = rv;
       } catch {
         // keep lastRV unset — the reconnect replays and the Resync path holds
+      } finally {
+        expiredRV = undefined;
       }
     };
 
@@ -475,6 +483,7 @@ async function startResourceWatch(
                 // (the relist covers any deletes we missed).
                 const code = (obj as { code?: number } | undefined)?.code;
                 if (code === 410) {
+                  expiredRV = state.lastRV;
                   state.lastRV = undefined;
                   rvExpired = true;
                 }
@@ -505,6 +514,7 @@ async function startResourceWatch(
             // see, and not a reason to reject the start: the retry settles it.
             // A 410 with no RV sent is something else and falls through.
             if (sentRV && isGoneError(err)) {
+              expiredRV = sentRV;
               state.lastRV = undefined;
               rvExpired = false;
               if (state.hadInitialSync) resyncOnOpen = true;

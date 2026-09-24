@@ -18,8 +18,12 @@ const fakeKc = {
   getCurrentContext: () => 'test',
   getCurrentCluster: () => ({ name: 'test', server: 'https://fake.invalid:6443' }),
 };
-/** What the seedRV metadata list answers; null = the list fails. */
+/**
+ * What the seedRV metadata list answers: `seedListRVs` first, one per call,
+ * then `seedListRV` (null = the list fails).
+ */
 let seedListRV: string | null = null;
+let seedListRVs: string[] = [];
 mock.module('../k8s/client', () => ({
   ...realClient,
   kc: () => fakeKc,
@@ -28,8 +32,9 @@ mock.module('../k8s/client', () => ({
 mock.module('../k8s/api', () => ({
   ...realApi,
   apiGet: async () => {
-    if (seedListRV === null) throw new Error('seed list unavailable');
-    return { metadata: { resourceVersion: seedListRV } };
+    const rv = seedListRVs.shift() ?? seedListRV;
+    if (rv === null) throw new Error('seed list unavailable');
+    return { metadata: { resourceVersion: rv } };
   },
 }));
 
@@ -172,6 +177,7 @@ describe('start_resource_watch — HTTP 410 Gone at connect', () => {
     calls = [];
     outcomes = [];
     seedListRV = null;
+    seedListRVs = [];
     handlers = new Map();
     ctx = {
       emit: (_channel: string, payload: unknown) => emitted.push(...(payload as unknown[])),
@@ -249,19 +255,57 @@ describe('start_resource_watch — HTTP 410 Gone at connect', () => {
 
   test('a 410 that keeps coming back never opens, so it never makes the renderer relist', async () => {
     await start('100');
-    seedListRV = '500';
+    seedListRVs = ['500', '600', '700'];
     outcomes.push('gone', 'gone', 'gone', 'gone');
     calls[0].done(null);
     await waitFor(() => calls.length >= 5);
     await drain();
 
-    expect(calls.slice(1, 5).map((c) => c.query.resourceVersion)).toEqual(['100', '500', '500', '500']);
+    expect(calls.slice(1, 5).map((c) => c.query.resourceVersion)).toEqual(['100', '500', '600', '700']);
     expect(resyncs()).toBe(0);
     expect(errors()).toEqual([]);
 
     // The loop is still alive: the next attempt opens and pays the relist once.
     await waitFor(() => calls.length >= 6);
     expect(resyncs()).toBe(1);
+  });
+
+  test('a seed list that hands back the RV just rejected is dropped: the retry replays', async () => {
+    await start('100');
+    // Quiet cluster: the list's current RV is the one the watch resumed from.
+    seedListRV = '100';
+    outcomes.push('gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 3);
+
+    expect(calls.map((c) => c.query.resourceVersion)).toEqual(['100', '100', undefined]);
+    expect(resyncs()).toBe(1);
+    expect(errors()).toEqual([]);
+  });
+
+  test('a seed list that repeats an RV rejected in-stream is dropped too', async () => {
+    await start('100');
+    seedListRV = '100';
+    calls[0].cb('ERROR', { code: 410 });
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 2);
+
+    expect(calls[1].query.resourceVersion).toBeUndefined();
+    expect(resyncs()).toBe(1);
+  });
+
+  test('the rejected RV only vetoes the seed right after the 410', async () => {
+    await start('100');
+    seedListRV = '100';
+    outcomes.push('gone');
+    calls[0].done(null);
+    await waitFor(() => calls.length >= 3);
+
+    // The replay stream closes before any event advanced the RV, so the next
+    // reconnect seeds again: with no fresh 410, the same RV is a valid start.
+    calls[2].done(null);
+    await waitFor(() => calls.length >= 4);
+    expect(calls[3].query.resourceVersion).toBe('100');
   });
 
   test('an in-stream 410 ERROR also defers its Resync to the next open', async () => {
