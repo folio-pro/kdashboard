@@ -2,6 +2,7 @@ import { invoke } from "$lib/ipc/core";
 import { AsyncLoadStore } from "./async-load.svelte";
 import { unshadowState } from "./_unshadow.js";
 import type { TopologyGraph } from "$lib/types";
+import { onContextChange } from "./cluster-scope.logic";
 
 class TopologyStore extends AsyncLoadStore<TopologyGraph> {
   /** Alias for readability in templates */
@@ -70,3 +71,6 @@ class TopologyStore extends AsyncLoadStore<TopologyGraph> {
 }
 
 export const topologyStore = new TopologyStore();
+
+// One cluster's data: a context switch must not leave it on screen.
+onContextChange("topology", () => topologyStore.reset());
