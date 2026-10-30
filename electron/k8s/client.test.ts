@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { kcFor, setKubeconfigPath } from './client';
+import { apiserverAgentOptions, kcFor, setKubeconfigPath } from './client';
 
 // kc() itself (the active config) installs an undici dispatcher that Bun's
 // undici shim cannot build, so these tests only exercise the PEER path — the
@@ -64,5 +64,28 @@ describe('kcFor', () => {
     const after = kcFor('beta');
     expect(after).not.toBe(before);
     expect(after.getCurrentContext()).toBe('beta');
+  });
+});
+
+describe('apiserverAgentOptions', () => {
+  const connect = { ca: ['x'] };
+
+  test('streams never time out between body chunks (a quiet followed log is not an error)', () => {
+    const opts = apiserverAgentOptions(connect, 'stream');
+    expect(opts.bodyTimeout).toBe(0);
+    expect(opts.connect).toBe(connect);
+  });
+
+  test('both modes bound the wait for response headers well under the 300 s undici default', () => {
+    for (const mode of ['request', 'stream'] as const) {
+      const { headersTimeout } = apiserverAgentOptions(connect, mode);
+      expect(headersTimeout).toBeGreaterThan(0);
+      expect(headersTimeout!).toBeLessThanOrEqual(60_000);
+    }
+  });
+
+  test('plain requests keep a finite body timeout', () => {
+    const { bodyTimeout } = apiserverAgentOptions(connect, 'request');
+    expect(bodyTimeout).toBeGreaterThan(0);
   });
 });
