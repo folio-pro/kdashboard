@@ -126,8 +126,8 @@
     _setColumnWidth(columnWidthOverrides, k8sStore.selectedResourceType, colKey, width);
   }
 
-  // Per-resource cell context for facets on usage columns (`cpu:>80`). Plain
-  // columns ignore it. ageTick is deliberately NOT read here: formatAge works
+  // Per-resource cell context for facets on usage columns (`cpu:>80`) and for
+  // sorting by Endpoints. Plain columns ignore it. ageTick is deliberately NOT read here: formatAge works
   // from the clock, and reading the tick would re-filter the list every 30s.
   function facetCtxFor(r: Resource): CellContext {
     const type = k8sStore.selectedResourceType;
@@ -166,8 +166,9 @@
     uiStore.applyFilterState({ facets: [], text: "", statFilter: null });
   }
 
-  // Step 2: Sort (depends on filteredItems, sortColumn, sortDirection — NOT ageTick)
-  let filteredResources = $derived(sortResources(filteredItems, uiStore.sortColumn, uiStore.sortDirection as "asc" | "desc"));
+  // Step 2: Sort (depends on filteredItems, sortColumn, sortDirection — NOT ageTick).
+  // The cell context is only read for columns that need store data (Endpoints).
+  let filteredResources = $derived(sortResources(filteredItems, uiStore.sortColumn, uiStore.sortDirection as "asc" | "desc", facetCtxFor));
   // Also skeleton while the view has never completed a list: isLoading is
   // deliberately delayed 200ms, which would flash the empty state on boot.
   let showLoadingSkeleton = $derived(
