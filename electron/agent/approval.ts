@@ -5,8 +5,9 @@
 // round-trip: requestApproval() emits `agent-approval-request` to the renderer
 // and parks the promise; the renderer answers through the
 // `respond_agent_approval` command (registered in handlers.ts) which settles
-// it. Deny is the safe default everywhere: on timeout, on session teardown,
-// on renderer death.
+// it. Deny is the safe default everywhere: on timeout, on teardown of the
+// endpoint that asked (other endpoints' requests stay pending), on renderer
+// death.
 
 import { randomUUID } from 'node:crypto';
 
@@ -22,9 +23,13 @@ export interface ApprovalSummary {
   changes: string[];
 }
 
+/** Which MCP endpoint asked: the Agent Session's own, or the opt-in external one. */
+export type ApprovalOrigin = 'session' | 'external';
+
 const APPROVAL_TIMEOUT_MS = 5 * 60_000;
 
 interface PendingApproval {
+  origin: ApprovalOrigin;
   resolve(approved: boolean): void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -32,14 +37,14 @@ interface PendingApproval {
 const pending = new Map<string, PendingApproval>();
 
 /** Ask the user to approve a Safe Mutation. Resolves false on deny/timeout. */
-export function requestApproval(summary: ApprovalSummary, ctx: HandlerCtx): Promise<boolean> {
+export function requestApproval(summary: ApprovalSummary, ctx: HandlerCtx, origin: ApprovalOrigin): Promise<boolean> {
   const id = randomUUID();
   return new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => {
       pending.delete(id);
       resolve(false);
     }, APPROVAL_TIMEOUT_MS);
-    pending.set(id, { resolve, timer });
+    pending.set(id, { origin, resolve, timer });
     ctx.emit('agent-approval-request', { id, ...summary });
   });
 }
@@ -53,7 +58,17 @@ export function respondApproval(id: string, approved: boolean): void {
   entry.resolve(approved);
 }
 
-/** Deny everything still pending — session ended or renderer went away. */
+/** Deny what `origin` still has pending — its endpoint stopped and can't deliver an answer. */
+export function denyPending(origin: ApprovalOrigin): void {
+  for (const [id, entry] of pending) {
+    if (entry.origin !== origin) continue;
+    pending.delete(id);
+    clearTimeout(entry.timer);
+    entry.resolve(false);
+  }
+}
+
+/** Deny everything still pending, from every origin — the renderer went away. */
 export function denyAllPending(): void {
   for (const [id, entry] of pending) {
     pending.delete(id);

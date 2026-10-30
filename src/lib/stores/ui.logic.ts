@@ -408,6 +408,32 @@ export class UiStoreLogic {
     // No reset of filter/sort/statFilter/selectedRows — each tab owns its state.
   }
 
+  /**
+   * Activate the tab at a zero-based position (⌘1…⌘8). A negative index
+   * counts from the end, so -1 is the last tab (⌘9). Out of range is a no-op.
+   */
+  activateTabAt(index: number): void {
+    const tab = this.tabs[index < 0 ? this.tabs.length + index : index];
+    if (tab) this.activateTab(tab.id);
+  }
+
+  /** Activate the tab to the right of the active one, wrapping to the first. */
+  nextTab(): void {
+    this._cycleTab(1);
+  }
+
+  /** Activate the tab to the left of the active one, wrapping to the last. */
+  previousTab(): void {
+    this._cycleTab(-1);
+  }
+
+  private _cycleTab(step: 1 | -1): void {
+    const n = this.tabs.length;
+    if (n < 2) return;
+    const idx = this.tabs.findIndex((t) => t.id === this.activeTabId);
+    this.activateTab(this.tabs[(idx + step + n) % n].id);
+  }
+
   closeTab(tabId: string): void {
     const tab = this.tabs.find((t) => t.id === tabId);
     if (!tab || !tab.closable) return;

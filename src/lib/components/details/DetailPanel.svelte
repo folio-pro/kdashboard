@@ -13,7 +13,7 @@
   import { extensions } from "$lib/extensions";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { cn } from "$lib/utils";
-  import { deriveKind, deriveShowLogsButton, deriveNodeName, deriveResourceType, deriveIsScalable, deriveIsRestartable, deriveIsRollbackable, deriveCurrentReplicas } from "./detail-panel";
+  import { deriveKind, deriveShowLogsButton, deriveNodeName, deriveResourceType, deriveIsScalable, deriveIsRestartable, deriveIsRollbackable, deriveCurrentReplicas, needsHydration, hydrationStatus } from "./detail-panel";
   import { autoscalerFlavor } from "$lib/utils/autoscaler";
   import LazyView from "$lib/components/common/LazyView.svelte";
   import EventsCard from "./EventsCard.svelte";
@@ -49,10 +49,14 @@
   // instantly while the full object hydrates.
   let listItem = $derived(k8sStore.selectedResource);
 
-  // Pods are listed with a projected (lean) spec/status, so the detail panel
-  // re-fetches the full object on demand. Other types carry full data in the
-  // list already and need no hydration.
+  // Pods (projected spec/status) and Secrets/ConfigMaps (key names only, no
+  // values) are listed lean, so the detail panel re-fetches the full object on
+  // demand. Other types carry full data in the list already and need no
+  // hydration.
   let hydrated = $state<Resource | null>(null);
+  // uid whose get_resource failed — lets Secret/ConfigMap panels show an error
+  // instead of a loading state that never resolves.
+  let hydrateFailedUid = $state("");
   // Keyed on uid+resourceVersion: selectedResource is reassigned on every
   // Applied watch event for this uid, and the initial watch replay re-applies
   // the same version — without the key each of those fired another get_resource
@@ -60,15 +64,17 @@
   let hydratedKey = "";
   $effect(() => {
     const li = listItem;
-    if (!li || (li.kind ?? "").toLowerCase() !== "pod") {
+    if (!li || !needsHydration(deriveKind(li))) {
       hydrated = null;
       hydratedKey = "";
+      hydrateFailedUid = "";
       return;
     }
     const key = `${li.metadata?.uid ?? ""}@${li.metadata?.resource_version ?? ""}`;
     if (key === hydratedKey) return;
     hydratedKey = key;
     const uid = li.metadata?.uid;
+    hydrateFailedUid = "";
     invoke<Resource>("get_resource", {
       kind: li.kind,
       name: li.metadata.name,
@@ -80,11 +86,16 @@
       })
       .catch(() => {
         // Fall back to the lean list item on error.
+        if (k8sStore.selectedResource?.metadata?.uid === uid) hydrateFailedUid = uid ?? "";
       });
   });
 
   let resource = $derived(
     hydrated && hydrated.metadata?.uid === listItem?.metadata?.uid ? hydrated : listItem,
+  );
+  // Secret/ConfigMap values exist only on the hydrated object.
+  let valuesStatus = $derived(
+    hydrationStatus(listItem?.metadata?.uid, hydrated?.metadata?.uid, hydrateFailedUid),
   );
 
   let kind = $derived(deriveKind(resource));
@@ -467,9 +478,9 @@
           {:else if kind === "node"}
             <NodeDetails {resource} />
           {:else if kind === "secret"}
-            <SecretDetails {resource} />
+            <SecretDetails {resource} {valuesStatus} />
           {:else if kind === "configmap"}
-            <ConfigMapDetails {resource} />
+            <ConfigMapDetails {resource} {valuesStatus} />
           {:else if kind === "namespace"}
             <NamespaceDetails {resource} />
           {:else}
