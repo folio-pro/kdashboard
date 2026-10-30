@@ -20,6 +20,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   shell,
   nativeImage,
@@ -476,6 +477,20 @@ function bootstrap(): void {
   cost.startPeriodicRefresh();
 
   createWindows();
+
+  // A corrupt settings.json was moved aside at load (handlers/app.ts). Say so
+  // once the window is visible instead of silently starting from defaults.
+  const settingsWarning = appHandlers.takeSettingsLoadWarning();
+  const win = mainWindow;
+  if (settingsWarning && win) {
+    win.once('show', () => {
+      void dialog.showMessageBox(win, {
+        type: 'warning',
+        message: 'Settings were reset',
+        detail: settingsWarning,
+      });
+    });
+  }
 }
 
 // App name drives the macOS menu-bar title + about panel. Must be set before
