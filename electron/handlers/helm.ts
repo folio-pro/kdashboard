@@ -221,7 +221,7 @@ async function readRelease(namespace: string, secretName: string): Promise<RawRe
     }
     return decodeRelease(payload);
   } catch (err) {
-    throw new Error(err instanceof Error ? err.message : k8sErrorMessage(err));
+    throw new Error(k8sErrorMessage(err));
   }
 }
 

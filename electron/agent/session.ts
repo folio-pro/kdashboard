@@ -205,8 +205,10 @@ export function resizeAgentTerminal(cols: number, rows: number): void {
 }
 
 export function stopAgentSession(ctx: HandlerCtx | null): Promise<void> {
-  lifecycle = lifecycle.then(() => endSession('stopped', ctx));
-  return lifecycle as Promise<void>;
+  const next = lifecycle.then(() => endSession('stopped', ctx));
+  // Same as startAgentSession: a failed stop must not poison every later start.
+  lifecycle = next.catch((err: unknown) => console.error('[agent] stop failed', err));
+  return next;
 }
 
 /** Cleanup for renderer reload/crash and app quit — no event, nobody listens. */
