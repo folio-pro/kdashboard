@@ -21,7 +21,7 @@ import type { ShapeOutput, ZodRawShapeCompat } from '@modelcontextprotocol/sdk/s
 
 import { getActiveContextName, getCoreV1Api, kc } from '../k8s/client.js';
 import type { HandlerCtx } from '../dispatch.js';
-import { requestApproval, type ApprovalSummary } from './approval.js';
+import { requestApproval, type ApprovalOrigin, type ApprovalSummary } from './approval.js';
 
 export type Dispatch = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
 
@@ -36,6 +36,8 @@ export interface AgentToolDeps {
   refusal: () => string | null;
   /** Whether Safe Mutations need Mutation Approval (settings toggle). */
   requireApproval: () => boolean;
+  /** Endpoint the approvals come from, so stopping one only denies its own. */
+  origin: ApprovalOrigin;
 }
 
 interface ToolResult {
@@ -198,7 +200,7 @@ function mutationTool<S extends Shape>(server: McpServer, deps: AgentToolDeps, n
       // the approval dialog is open.
       const context = getActiveContextName();
       if (deps.requireApproval()) {
-        const approved = await requestApproval({ ...summary(args), tool: name, context }, deps.ctx);
+        const approved = await requestApproval({ ...summary(args), tool: name, context }, deps.ctx, deps.origin);
         if (!approved) {
           return text(
             `The user DENIED this ${name} request (${change}). Do not retry the same change; ask the user or propose an alternative.`,
