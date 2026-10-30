@@ -10,10 +10,12 @@
   interface Props {
     resource: Resource;
     columns: CrdColumn[];
+    /** The object is no longer in the live listing; `resource` is its last known state. */
+    deleted?: boolean;
     onback: () => void;
   }
 
-  let { resource, columns, onback }: Props = $props();
+  let { resource, columns, deleted = false, onback }: Props = $props();
 
   let copiedField = $state<string | null>(null);
 
@@ -51,6 +53,15 @@
     <span class="text-[12px] text-[var(--text-muted)]">/</span>
     <span class="text-[13px] text-[var(--text-primary)]">{resource.metadata.name}</span>
   </div>
+
+  {#if deleted}
+    <div
+      role="status"
+      class="border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-1.5 text-[12px] text-[var(--status-failed)]"
+    >
+      This {resource.kind} no longer exists. Showing its last known state.
+    </div>
+  {/if}
 
   <ScrollArea class="flex-1">
     <div class="mx-auto max-w-3xl space-y-4 p-4">
