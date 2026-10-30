@@ -90,4 +90,57 @@ describe('evaluateNetworkPolicies', () => {
     expect(web.allowed_from.any).toBe(true);
     expect(o.flows.filter((f) => f.to === 'Deployment/web').map((f) => f.from).sort()).toEqual(['Deployment/api', 'Pod/batch-x', 'StatefulSet/db']);
   });
+
+  test('ports from several rules allowing the same flow are merged', () => {
+    const o = evaluateNetworkPolicies({
+      namespace: 'shop',
+      pods,
+      namespaces: NAMESPACES,
+      policies: [policy('api-ports', {
+        podSelector: { matchLabels: { app: 'api' } },
+        ingress: [
+          { from: [{ podSelector: { matchLabels: { tier: 'frontend' } } }], ports: [{ port: 80 }] },
+          { from: [{ podSelector: {} }], ports: [{ port: 443 }, { port: 80 }] },
+        ],
+      })],
+    }, () => 't');
+    expect(o.flows).toEqual([
+      { from: 'Deployment/web', to: 'Deployment/api', ports: ['80', '443'], policy: 'api-ports' },
+      { from: 'Pod/batch-x', to: 'Deployment/api', ports: ['443', '80'], policy: 'api-ports' },
+      { from: 'StatefulSet/db', to: 'Deployment/api', ports: ['443', '80'], policy: 'api-ports' },
+    ]);
+  });
+
+  test('a rule without ports widens a merged flow to all ports', () => {
+    const o = evaluateNetworkPolicies({
+      namespace: 'shop',
+      pods,
+      namespaces: NAMESPACES,
+      policies: [policy('api-ports', {
+        podSelector: { matchLabels: { app: 'api' } },
+        ingress: [
+          { from: [{ podSelector: { matchLabels: { app: 'web' } } }], ports: [{ port: 80 }] },
+          { from: [{ podSelector: { matchLabels: { app: 'web' } } }] },
+          { from: [{ podSelector: { matchLabels: { app: 'web' } } }], ports: [{ port: 443 }] },
+        ],
+      })],
+    }, () => 't');
+    expect(o.flows).toEqual([{ from: 'Deployment/web', to: 'Deployment/api', ports: [], policy: 'api-ports' }]);
+  });
+
+  test('an allow-same-namespace policy over 300 workloads stays fast', () => {
+    const many: V1Pod[] = [];
+    for (let i = 0; i < 300; i++) {
+      const name = `svc-${String(i).padStart(3, '0')}`;
+      for (let r = 0; r < 3; r++) many.push(pod(`${name}-rs-${r}`, { app: name }, { kind: 'ReplicaSet', name: `${name}-rs` }));
+    }
+    const policies = [policy('allow-same-namespace', { podSelector: {}, ingress: [{ from: [{ podSelector: {} }] }, { from: [{ podSelector: {} }], ports: [{ port: 8080 }] }] })];
+    const start = performance.now();
+    const o = evaluateNetworkPolicies({ namespace: 'shop', policies, pods: many, namespaces: NAMESPACES }, () => 't');
+    const elapsed = performance.now() - start;
+    expect(o.flows.length).toBe(300 * 299);
+    expect(o.flows.every((f) => f.ports.length === 0)).toBe(true);
+    expect(o.workloads[0].allowed_from.workloads.length).toBe(300);
+    expect(elapsed).toBeLessThan(100);
+  });
 });

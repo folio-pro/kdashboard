@@ -89,6 +89,8 @@ interface ApiResource {
 }
 
 const LIST_PAGE_SIZE = 500;
+/** Fresh relists allowed after a continue token expires mid-pagination. */
+const MAX_LIST_RESTARTS = 1;
 
 /**
  * Resolve the (group, version, plural, scope) for a PLURAL resource_type as used
@@ -164,12 +166,13 @@ function resourcePath(ar: ApiResource, namespace?: string): string {
   return scoped;
 }
 
-async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVersion?: string }> {
+export async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVersion?: string }> {
   const { ar, namespace, labelSelector, paginate = true, accept } = opts;
   const path = resourcePath(ar, namespace);
-  const items: RawObject[] = [];
+  let items: RawObject[] = [];
   let cont: string | undefined;
   let resourceVersion: string | undefined;
+  let restarts = 0;
 
   // Loop while the apiserver keeps handing back a continue token.
   for (;;) {
@@ -178,7 +181,27 @@ async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVe
     if (paginate) query.limit = String(LIST_PAGE_SIZE);
     if (cont) query.continue = cont;
 
-    const list = await apiGet<RawList>(path, query, accept);
+    let list: RawList;
+    try {
+      list = await apiGet<RawList>(path, query, accept);
+    } catch (err) {
+      // A continue token pins the snapshot of the first page, and the
+      // apiserver answers 410 once etcd compacts past it (~5 min). Like
+      // client-go's pager, start a fresh list rather than finish with the
+      // 410's "inconsistent continue" token: that would mix snapshots and
+      // leave no single resourceVersion for the watch to resume from.
+      if (!cont || (err as { status?: number }).status !== 410) throw err;
+      if (restarts >= MAX_LIST_RESTARTS) {
+        throw new Error(
+          `The ${ar.plural} list changed too fast to page through (continue token expired). Retry.`,
+        );
+      }
+      restarts++;
+      items = [];
+      cont = undefined;
+      resourceVersion = undefined;
+      continue;
+    }
     if (list.items) items.push(...list.items);
     // Every page carries the SAME list resourceVersion (set at the first page);
     // keep the last non-empty one and hand it to the watch as its resume point.

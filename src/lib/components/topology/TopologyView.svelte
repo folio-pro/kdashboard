@@ -52,6 +52,16 @@
   let overlay = $derived(showPolicies && filteredGraph && netpolStore.overview ? buildOverlay(filteredGraph, netpolStore.overview) : null);
   let selectedStatus = $derived(overlay && topologyStore.selectedNodeId ? overlay.status.get(topologyStore.selectedNodeId) ?? null : null);
 
+  // A focused resource lives in the namespace being left, so a scope change
+  // drops the focus (loadNamespaceTopology clears it). The policy overlay
+  // reloads when on; when off it is dropped, since togglePolicies() only
+  // fetches into an empty store.
+  function handleNamespaceChange(ns: string) {
+    topologyStore.loadNamespaceTopology(ns);
+    if (showPolicies) void netpolStore.loadNetworkPolicies(ns);
+    else netpolStore.reset();
+  }
+
   function handleRefresh() {
     const ns = k8sStore.currentNamespace;
     if (topologyStore.focusedResourceUid) {
@@ -70,6 +80,7 @@
   error={topologyStore.error}
   hasData={!!topologyStore.graph}
   onRefresh={handleRefresh}
+  onNamespaceChange={handleNamespaceChange}
   loadingMessage="Loading topology..."
   errorMessage="Failed to load topology"
   emptyMessage="No resources to display"
