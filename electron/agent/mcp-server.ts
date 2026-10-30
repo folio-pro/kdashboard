@@ -30,7 +30,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
 import { getActiveContextName } from '../k8s/client.js';
 import type { HandlerCtx } from '../dispatch.js';
-import { denyAllPending } from './approval.js';
+import { denyPending, type ApprovalOrigin } from './approval.js';
 import { contextGuardMessage, registerAgentTools, type AgentToolDeps, type Dispatch } from './tools.js';
 
 /** Close a session after this long with no request in flight. */
@@ -58,6 +58,8 @@ interface ListenOptions extends AgentMcpOptions {
   port: number;
   /** See AgentToolDeps.refusal. */
   refusal: () => string | null;
+  /** See AgentToolDeps.origin. */
+  origin: ApprovalOrigin;
 }
 
 interface McpInstance {
@@ -116,13 +118,15 @@ export function startAgentMcpServer(options: AgentMcpOptions): Promise<McpEndpoi
     token: randomBytes(32).toString('hex'),
     port: 0,
     refusal: () => contextGuardMessage(pinned, getActiveContextName()),
+    origin: 'session',
   });
 }
 
 /** Stop the session endpoint and drop every live MCP session. Safe to call when idle. */
 export async function stopAgentMcpServer(): Promise<void> {
   // A dead endpoint can never deliver an approval answer — deny, don't hang.
-  if (session.endpoint) denyAllPending();
+  // Only its own: the external endpoint is still up and its clients waiting.
+  if (session.endpoint) denyPending('session');
   await session.stop();
 }
 
@@ -137,7 +141,7 @@ export interface ExternalMcpOptions extends AgentMcpOptions {
  * Quick Action would. Throws when the port is taken.
  */
 export function startExternalMcpServer(options: ExternalMcpOptions): Promise<McpEndpoint> {
-  return external.start({ ...options, refusal: () => null });
+  return external.start({ ...options, refusal: () => null, origin: 'external' });
 }
 
 export function stopExternalMcpServer(): Promise<void> {
@@ -166,6 +170,7 @@ async function listen(options: ListenOptions): Promise<McpInstance> {
     ctx: options.ctx,
     requireApproval: options.requireApproval,
     refusal: options.refusal,
+    origin: options.origin,
   };
 
   const httpServer = http.createServer((req, res) => {

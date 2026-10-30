@@ -318,10 +318,13 @@ existing credentials and honours your RBAC.
 | <kbd>⌘L</kbd> · <kbd>⌘T</kbd> | Logs · Terminal for the open detail |
 | <kbd>⌘J</kbd> | AI agent panel |
 | <kbd>⌘B</kbd> · <kbd>⌘W</kbd> · <kbd>⌘,</kbd> | Toggle sidebar · Close tab · Settings |
+| <kbd>⌃Tab</kbd> / <kbd>⌃⇧Tab</kbd>, <kbd>⌘⇧]</kbd> / <kbd>⌘⇧[</kbd> | Next / previous tab (wraps around) |
+| <kbd>⌘1</kbd> … <kbd>⌘8</kbd> · <kbd>⌘9</kbd> | Go to tab 1–8 · Go to the last tab |
 | <kbd>Esc</kbd> | Back |
 
-On Linux and Windows read <kbd>⌘</kbd> as <kbd>Ctrl</kbd>. The status bar
-always shows the shortcuts that apply to the current view.
+On Linux and Windows read <kbd>⌘</kbd> as <kbd>Ctrl</kbd>; <kbd>⌃Tab</kbd> is
+<kbd>Ctrl+Tab</kbd> everywhere. The status bar always shows the shortcuts that
+apply to the current view, and **Settings → Shortcuts** lists them all.
 
 ## Extensions
 
