@@ -1,5 +1,6 @@
 import { uiStore } from "../stores/ui.svelte.js";
 import { SHORTCUTS, isActive } from "../shortcuts.js";
+import { scopeOfView } from "../shortcut-scope.js";
 
 export { isInputElement } from "./dom.js";
 import { isInputElement, overlayOpen } from "./dom.js";
@@ -28,13 +29,12 @@ export function initKeyboardShortcuts(): () => void {
     }
     const meta = e.metaKey || e.ctrlKey;
     const isInput = isInputElement(e.target);
-    const view = uiStore.activeView;
+    const scope = scopeOfView(uiStore.activeView);
 
     for (const s of SHORTCUTS) {
       if (s.handledElsewhere) continue;
       if (isInput && !s.allowInInput) continue;
-      if (s.scope === "table" && view !== "table") continue;
-      if (s.scope === "details" && view !== "details") continue;
+      if (s.scope !== "global" && s.scope !== scope) continue;
       if (!s.match(e, meta)) continue;
       // Matched but gated off (e.g. `t` on a non-pod): swallow it rather than
       // letting a later entry claim the same key.

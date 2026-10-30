@@ -7,6 +7,7 @@ import { SCALABLE_TYPES } from "./actions/registry.js";
 import { isInputElement, overlayOpen } from "./utils/dom.js";
 import { tabSwitchFor, type TabSwitch } from "./utils/tab-keys.js";
 import type { ActiveView } from "./stores/ui.svelte.js";
+import { scopeOfView, type ShortcutScope } from "./shortcut-scope.js";
 
 /**
  * Single source of truth for keyboard shortcuts.
@@ -21,7 +22,7 @@ import type { ActiveView } from "./stores/ui.svelte.js";
  * advertised nowhere, and the settings tab listed six of the fourteen.
  */
 
-export type ShortcutScope = "global" | "table" | "details";
+export type { ShortcutScope };
 
 export interface Shortcut {
   id: string;
@@ -41,7 +42,8 @@ export interface Shortcut {
   allowInInput?: boolean;
   /**
    * Owned by a component's own handler rather than the global dispatcher
-   * (j/k/Enter belong to ResourceTable, which knows the filtered row list).
+   * (j/k/Enter belong to ResourceTable and CrdTableView, which know the
+   * filtered row list).
    * Listed here purely so the hints stay in one place.
    */
   handledElsewhere?: boolean;
@@ -79,6 +81,13 @@ export function runEscape(target: EventTarget | null, isInput: boolean): void {
     if (k8sStore.navigateBack()) return;
     k8sStore.selectResource(null);
     if (uiStore.activeTab?.closable) uiStore.closeTab(uiStore.activeTabId);
+    return;
+  }
+  if (view === "crd-table") {
+    // A CRD tab unwinds in place: its detail, then the keyboard focus. Never
+    // backToTable(), which would leave for an unrelated resource table.
+    if (uiStore.crdDetailUid) uiStore.closeCrdDetail();
+    else if (uiStore.selectedRowIndex >= 0) uiStore.resetSelection();
     return;
   }
   if (view !== "table") {
@@ -330,8 +339,7 @@ export function isActive(s: Shortcut): boolean {
  * Gated entries whose condition currently fails are dropped.
  */
 export function shortcutsForView(view: ActiveView): Shortcut[] {
-  const scope: ShortcutScope | null =
-    view === "table" ? "table" : view === "details" ? "details" : null;
+  const scope = scopeOfView(view);
   return SHORTCUTS.filter(
     (s) => (s.scope === scope || s.scope === "global") && isActive(s),
   ).sort((a, b) => Number(a.scope === "global") - Number(b.scope === "global"));
