@@ -1,8 +1,9 @@
 // Handler module: resources group.
 //
 // Commands:
-//   - list_resources           list a kind, optionally namespaced (pods get a
-//                              lean field projection for the hot table path)
+//   - list_resources           list a kind, optionally namespaced and/or
+//                              field-selected (pods get a lean field
+//                              projection for the hot table path)
 //   - list_pods_by_selector    list pods filtered by a label selector
 //   - get_resource_counts      metadata-only counts for many kinds at once
 //   - get_resource_yaml        fetch one object, strip managedFields, -> YAML
@@ -23,7 +24,7 @@ import * as YAML from 'yaml';
 
 import { KubernetesObjectApi } from '@kubernetes/client-node';
 
-import { getActiveContextName, getCoreV1Api, kcFor } from '../k8s/client';
+import { getActiveContextName, getCoreV1Api, kc, kcFor } from '../k8s/client';
 import { apiGet, META_ACCEPT } from '../k8s/api';
 import type {
   RawList,
@@ -34,7 +35,7 @@ import type {
   ResourceMetadata,
 } from '../k8s/resource-types';
 import { metaFrom, listMetaFrom, listProjectionFor } from '../k8s/resource-mapping';
-import { RESOURCE_TYPES, apiVersionOf, resolveKindOrThrow, resolveResourceType } from '../k8s/kinds';
+import { RESOURCE_TYPES, apiVersionOf, resolveKind, resolveKindOrThrow, resolveObjectRef, resolveResourceType } from '../k8s/kinds';
 import type { Handler, HandlerMap } from '../dispatch';
 
 // ---------------------------------------------------------------------------
@@ -89,6 +90,8 @@ interface ApiResource {
 }
 
 const LIST_PAGE_SIZE = 500;
+/** Fresh relists allowed after a continue token expires mid-pagination. */
+const MAX_LIST_RESTARTS = 1;
 
 /**
  * Resolve the (group, version, plural, scope) for a PLURAL resource_type as used
@@ -142,6 +145,7 @@ interface ListOpts {
   ar: ApiResource;
   namespace?: string;
   labelSelector?: string;
+  fieldSelector?: string;
   paginate?: boolean; // pods/deployments/etc. paginate; bindings do a single list
   accept?: string; // optional content negotiation (e.g. metadata-only for counts)
 }
@@ -164,21 +168,43 @@ function resourcePath(ar: ApiResource, namespace?: string): string {
   return scoped;
 }
 
-async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVersion?: string }> {
-  const { ar, namespace, labelSelector, paginate = true, accept } = opts;
+export async function listRaw(opts: ListOpts): Promise<{ items: RawObject[]; resourceVersion?: string }> {
+  const { ar, namespace, labelSelector, fieldSelector, paginate = true, accept } = opts;
   const path = resourcePath(ar, namespace);
-  const items: RawObject[] = [];
+  let items: RawObject[] = [];
   let cont: string | undefined;
   let resourceVersion: string | undefined;
+  let restarts = 0;
 
   // Loop while the apiserver keeps handing back a continue token.
   for (;;) {
     const query: Record<string, string> = {};
     if (labelSelector) query.labelSelector = labelSelector;
+    if (fieldSelector) query.fieldSelector = fieldSelector;
     if (paginate) query.limit = String(LIST_PAGE_SIZE);
     if (cont) query.continue = cont;
 
-    const list = await apiGet<RawList>(path, query, accept);
+    let list: RawList;
+    try {
+      list = await apiGet<RawList>(path, query, accept);
+    } catch (err) {
+      // A continue token pins the snapshot of the first page, and the
+      // apiserver answers 410 once etcd compacts past it (~5 min). Like
+      // client-go's pager, start a fresh list rather than finish with the
+      // 410's "inconsistent continue" token: that would mix snapshots and
+      // leave no single resourceVersion for the watch to resume from.
+      if (!cont || (err as { status?: number }).status !== 410) throw err;
+      if (restarts >= MAX_LIST_RESTARTS) {
+        throw new Error(
+          `The ${ar.plural} list changed too fast to page through (continue token expired). Retry.`,
+        );
+      }
+      restarts++;
+      items = [];
+      cont = undefined;
+      resourceVersion = undefined;
+      continue;
+    }
     if (list.items) items.push(...list.items);
     // Every page carries the SAME list resourceVersion (set at the first page);
     // keep the last non-empty one and hand it to the watch as its resume point.
@@ -205,7 +231,11 @@ async function getRaw(ar: ApiResource, name: string, namespace: string): Promise
 // watch path so a watch event replaces a list row with the SAME lean shape.
 // ---------------------------------------------------------------------------
 
-async function listResources(resourceType: string, namespace?: string): Promise<ResourceList> {
+async function listResources(
+  resourceType: string,
+  namespace?: string,
+  fieldSelector?: string,
+): Promise<ResourceList> {
   const ar = apiResourceForType(resourceType);
   const project = listProjectionFor(resourceType);
   if (!ar || !project) throw new Error(`Unknown resource type: ${resourceType}`);
@@ -218,6 +248,7 @@ async function listResources(resourceType: string, namespace?: string): Promise<
   const { items: raw, resourceVersion } = await listRaw({
     ar,
     namespace,
+    fieldSelector,
     accept: metaOnly ? META_ACCEPT : undefined,
   });
   const out: ResourceList = { items: raw.map(project), resource_type: resourceType };
@@ -306,11 +337,36 @@ async function getResourceYaml(
   name: string,
   namespace: string,
   context?: string,
+  apiVersion?: string,
 ): Promise<string> {
+  if (!resolveKind(kind)) return getCustomResourceYaml(kind, name, namespace, context, apiVersion);
   const { ar } = apiResourceForKind(kind);
   const peer = context && context !== getActiveContextName() ? context : undefined;
   const obj = peer ? await getRawFromContext(peer, kind, ar, name, namespace) : await getRaw(ar, name, namespace);
   // Strip managedFields — verbose server-side-apply noise.
+  if (obj.metadata) delete obj.metadata.managedFields;
+  return YAML.stringify(obj);
+}
+
+/**
+ * YAML of a custom resource, which the kind registry does not know: addressed
+ * by the object's own apiVersion + Kind, and read through KubernetesObjectApi,
+ * which discovers the plural and the scope itself.
+ */
+async function getCustomResourceYaml(
+  kind: string,
+  name: string,
+  namespace: string,
+  context: string | undefined,
+  apiVersion: string | undefined,
+): Promise<string> {
+  const ref = resolveObjectRef(kind, apiVersion);
+  const api = KubernetesObjectApi.makeApiClient(context ? kcFor(context) : kc());
+  const obj = (await api.read({
+    apiVersion: ref.apiVersion,
+    kind: ref.kind,
+    metadata: { name, namespace: namespace || undefined },
+  })) as unknown as RawObject;
   if (obj.metadata) delete obj.metadata.managedFields;
   return YAML.stringify(obj);
 }
@@ -461,7 +517,8 @@ export function register(handlers: HandlerMap): void {
     const resourceType = str(args.resourceType);
     // The frontend sends null for cluster-wide.
     const ns = optStr(args.namespace);
-    return listResources(resourceType, ns);
+    // Optional server-side filter (e.g. `spec.nodeName=<node>` for pods).
+    return listResources(resourceType, ns, optStr(args.fieldSelector));
   };
 
   const listPodsBySelectorHandler: Handler = async (args) => {
@@ -478,7 +535,7 @@ export function register(handlers: HandlerMap): void {
   const getResourceYamlHandler: Handler = async (args) => {
     // `context` is optional: set, it reads from that context instead of the
     // active one (Compare Across Contexts) — never switches the active one.
-    return getResourceYaml(str(args.kind), str(args.name), str(args.namespace), optStr(args.context));
+    return getResourceYaml(str(args.kind), str(args.name), str(args.namespace), optStr(args.context), optStr(args.apiVersion));
   };
 
   const getResourceHandler: Handler = async (args) => {

@@ -82,3 +82,35 @@ export function deriveAll(resource: MinimalResource | null | undefined) {
     currentReplicas: deriveCurrentReplicas(resource),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Hydration (lean list row -> full object)
+// ---------------------------------------------------------------------------
+
+/**
+ * Kinds whose list row is a lean projection the detail panel cannot render
+ * from, so it re-fetches the full object with get_resource: pods (projected
+ * spec/status) and Secrets/ConfigMaps (key names only — values never ride the
+ * list or the watch).
+ */
+export function needsHydration(kind: string): boolean {
+  return kind === "pod" || kind === "secret" || kind === "configmap";
+}
+
+export type HydrationStatus = "loading" | "ready" | "error";
+
+/**
+ * Whether the full object for the selected row is available. `hydratedUid` is
+ * the uid of the last fetched object; `failedUid` the uid whose fetch failed.
+ * Once a fetch for this uid has landed it stays "ready" (a later refetch after
+ * a watch update keeps showing the previous values rather than erroring).
+ */
+export function hydrationStatus(
+  selectedUid: string | undefined,
+  hydratedUid: string | undefined,
+  failedUid: string,
+): HydrationStatus {
+  if (selectedUid && hydratedUid === selectedUid) return "ready";
+  if (selectedUid && failedUid === selectedUid) return "error";
+  return "loading";
+}

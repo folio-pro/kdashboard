@@ -18,7 +18,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
+import { load as yamlLoad } from 'js-yaml';
+import { isMap, isScalar, parseDocument, stringify as yamlStringify } from 'yaml';
 
 import type { HandlerCtx, HandlerMap } from '../dispatch';
 import type { KubeconfigDoc } from '../k8s/kubeconfig-merge';
@@ -31,6 +32,7 @@ import {
   setActiveContext,
 } from '../k8s/client';
 import { mapWithConcurrency } from '../util/concurrency';
+import { atomicWriteSync } from '../util/fs-atomic';
 
 // ---------------------------------------------------------------------------
 // Return-type aliases. The renderer consumes them via
@@ -161,23 +163,57 @@ function getCurrentContext(): ContextName {
 // the original current-context afterwards) AND call setActiveContext() so the
 // cached KubeConfig is invalidated and re-points immediately.
 //
-// Order matters: the file is written FIRST, the in-memory sync runs after.
-// setActiveContext() throws 'Context not found: <name>' for a context absent
-// from the file, and that error is NOT caught — switch_context rejects, but
-// only after the write has already landed. The file stays the source of truth
-// either way.
+// The file is usually the user's ~/.kube/config, shared with kubectl, helm and
+// IDEs, so the write is conservative: the context is validated first (an
+// unknown name rejects with the file untouched), only the `current-context`
+// value is spliced into the original text (comments, key order, quoting and
+// sequence indentation survive), and the write is atomic with the file's mode
+// preserved.
 // ---------------------------------------------------------------------------
+
+/**
+ * `text` with its top-level `current-context` set to `context`, changing
+ * nothing else: the value's source range is replaced in place, or the key is
+ * appended when absent. A full re-stringify would reformat the whole file.
+ */
+export function withCurrentContext(text: string, context: string): string {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0) {
+    throw new Error(`Cannot parse kubeconfig: ${doc.errors[0]!.message}`);
+  }
+  // stringify quotes names that would not survive as plain scalars;
+  // lineWidth 0 keeps long ARN-style names on one line.
+  const value = yamlStringify(context, { lineWidth: 0 }).trimEnd();
+  const node = isMap(doc.contents) ? doc.contents.get('current-context', true) : undefined;
+  let updated: string;
+  if (isScalar(node) && node.range) {
+    const [start, end] = node.range;
+    updated = text.slice(0, start) + (start === end ? ` ${value}` : value) + text.slice(end);
+  } else if (node === undefined && (isMap(doc.contents) || doc.contents === null)) {
+    const sep = text.length === 0 || text.endsWith('\n') ? '' : '\n';
+    updated = `${text}${sep}current-context: ${value}\n`;
+  } else {
+    throw new Error('Cannot update current-context: unexpected kubeconfig layout');
+  }
+  // Never write something that does not read back as the requested context.
+  const check = parseDocument(updated);
+  if (check.errors.length > 0 || check.get('current-context') !== context) {
+    throw new Error('Cannot update current-context: edit did not round-trip');
+  }
+  return updated;
+}
+
 function setContext(context: string): void {
   const file = resolveKubeconfigPath();
+  if (!listContexts().includes(context)) {
+    throw new Error(`Context not found: ${context}`);
+  }
   const contents = fs.readFileSync(file, 'utf8');
-  const parsed = yamlLoad(contents);
-  const yaml: KubeconfigYaml =
-    parsed && typeof parsed === 'object' ? (parsed as KubeconfigYaml) : {};
-
-  yaml['current-context'] = context;
-
-  const updated = yamlDump(yaml);
-  fs.writeFileSync(file, updated, 'utf8');
+  const mode = fs.statSync(file).mode & 0o777;
+  atomicWriteSync(file, withCurrentContext(contents, context), mode);
+  // A same-length name written within the stat's mtime resolution would
+  // otherwise leave the (path, mtime, size) cache serving the old context.
+  kubeconfigCache = null;
 
   // Re-point the shared KubeConfig (analogue of reset_client()).
   setActiveContext(context);

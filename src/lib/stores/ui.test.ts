@@ -395,6 +395,65 @@ describe("UiStore", () => {
       expect(store.tabs[1].id).toBe(firstId);
     });
 
+    describe("keyboard tab switching", () => {
+      // Pods (default) + Services + Settings + Logs → four tabs, Logs active.
+      beforeEach(() => {
+        store.openTab("table", { label: "Services", resourceType: "services" });
+        store.openTab("settings");
+        store.openTab("logs", { label: "Logs" });
+      });
+
+      test("activateTabAt activates the tab at a zero-based index", () => {
+        store.activateTabAt(1);
+        expect(store.activeTabId).toBe(store.tabs[1].id);
+        store.activateTabAt(0);
+        expect(store.activeTabId).toBe(store.tabs[0].id);
+      });
+
+      test("activateTabAt ignores an index past the end", () => {
+        const before = store.activeTabId;
+        store.activateTabAt(7);
+        expect(store.activeTabId).toBe(before);
+      });
+
+      test("activateTabAt(-1) activates the last tab", () => {
+        store.activateTabAt(0);
+        store.activateTabAt(-1);
+        expect(store.activeTabId).toBe(store.tabs[store.tabs.length - 1].id);
+      });
+
+      test("nextTab advances and wraps from last to first", () => {
+        store.activateTabAt(2);
+        store.nextTab();
+        expect(store.activeTabId).toBe(store.tabs[3].id);
+        store.nextTab();
+        expect(store.activeTabId).toBe(store.tabs[0].id);
+      });
+
+      test("previousTab goes back and wraps from first to last", () => {
+        store.activateTabAt(1);
+        store.previousTab();
+        expect(store.activeTabId).toBe(store.tabs[0].id);
+        store.previousTab();
+        expect(store.activeTabId).toBe(store.tabs[3].id);
+      });
+
+      test("nextTab/previousTab are no-ops with a single tab", () => {
+        store.closeAllTabs();
+        store.nextTab();
+        expect(store.activeTabId).toBe("tab-pods");
+        store.previousTab();
+        expect(store.activeTabId).toBe("tab-pods");
+      });
+
+      test("switching runs the tab-switch hook so cached data is restored", () => {
+        const seen: string[] = [];
+        store.onBeforeTabSwitch = (_from, to) => seen.push(to.id);
+        store.nextTab();
+        expect(seen).toEqual([store.tabs[0].id]);
+      });
+    });
+
     test("openTab seeds cachedResource on the new tab (regression: opening a related resource must not poison the outgoing tab's cache)", () => {
       const vpa = { kind: "VerticalPodAutoscaler", metadata: { name: "vpa-a", uid: "u1" } } as never;
       const deploy = { kind: "Deployment", metadata: { name: "dep-a", uid: "u2" } } as never;
@@ -656,6 +715,67 @@ describe("UiStore", () => {
       expect(store.statFilter).toBeNull();
       expect(store.selectedCount).toBe(0);
       expect(store.selectedRowIndex).toBe(-1);
+    });
+  });
+
+  describe("CRD detail (per tab)", () => {
+    const res = (uid: string, name = uid) =>
+      ({ kind: "Certificate", api_version: "cert-manager.io/v1", metadata: { name, uid }, spec: {}, status: {} }) as unknown as import("../types/index.js").Resource;
+
+    function openCrdTab(kind: string): string {
+      store.openTab("crd-table", { label: kind, resourceType: `crd:example.com/${kind}` });
+      return store.activeTabId;
+    }
+
+    test("a fresh CRD tab has no detail open", () => {
+      openCrdTab("Certificate");
+      expect(store.crdDetailUid).toBeNull();
+      expect(store.crdDetailSnapshot).toBeNull();
+    });
+
+    test("openCrdDetail stores the uid and a snapshot on the active tab", () => {
+      openCrdTab("Certificate");
+      store.openCrdDetail(res("uid-a"));
+      expect(store.crdDetailUid).toBe("uid-a");
+      expect(store.crdDetailSnapshot?.metadata.uid).toBe("uid-a");
+    });
+
+    test("switching CRD tabs never shows the other tab's detail", () => {
+      const a = openCrdTab("Certificate");
+      store.openCrdDetail(res("uid-a"));
+      const b = openCrdTab("Issuer");
+      expect(store.crdDetailUid).toBeNull();
+
+      store.openCrdDetail(res("uid-b"));
+      store.activateTab(a);
+      expect(store.crdDetailUid).toBe("uid-a");
+      store.activateTab(b);
+      expect(store.crdDetailUid).toBe("uid-b");
+    });
+
+    test("closeCrdDetail only clears the active tab", () => {
+      const a = openCrdTab("Certificate");
+      store.openCrdDetail(res("uid-a"));
+      openCrdTab("Issuer");
+      store.openCrdDetail(res("uid-b"));
+      store.closeCrdDetail();
+      expect(store.crdDetailUid).toBeNull();
+      expect(store.crdDetailSnapshot).toBeNull();
+      store.activateTab(a);
+      expect(store.crdDetailUid).toBe("uid-a");
+    });
+
+    test("a resource without a uid does not open a detail", () => {
+      openCrdTab("Certificate");
+      store.openCrdDetail({ ...res("x"), metadata: { name: "x" } } as never);
+      expect(store.crdDetailUid).toBeNull();
+    });
+
+    test("CRD detail state is not persisted", () => {
+      openCrdTab("Certificate");
+      store.openCrdDetail(res("uid-a"));
+      const json = JSON.stringify(serializeTabs(store.tabs, store.activeTabId));
+      expect(json).not.toContain("uid-a");
     });
   });
 

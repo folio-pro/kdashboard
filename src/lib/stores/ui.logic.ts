@@ -19,6 +19,7 @@ export type ActiveView = "table" | "details" | "logs" | "terminal" | "portforwar
  *  activeTabId               selectedRows        │
  *                            selectedRowIndex  ──┘
  *                            cachedItems / cachedResource / count / cacheReady
+ *                            crdDetailUid (open CRD detail)
  *                            namespace / resourceName / resourceType
  *
  *  Tab switch:
@@ -57,8 +58,14 @@ export interface Tab {
   /** True once a load has completed for this tab; distinguishes a legitimately
    *  empty result from an in-flight/uninitialized load. */
   cacheReady?: boolean;
-  /** Cached selected resource — restores detail/logs/yaml/terminal views on tab switch */
+  /** Cached selected resource — restores detail/logs/yaml/terminal views on tab switch.
+   *  On a CRD table tab: the click-time snapshot of the open detail, shown
+   *  only once the live row is gone (see `crdDetailUid`). */
   cachedResource?: Resource;
+  /** CRD table tabs: uid of the object whose detail is open (ephemeral). The
+   *  detail is looked up in the live listing by this uid, so watch updates
+   *  reach it; per tab, so it never leaks into another CRD tab. */
+  crdDetailUid?: string;
 
   // Per-tab UI state. All optional — absent means "default" via getter fallback.
   /** Search filter text (free text; typed `key:value` terms live in `facets`). */
@@ -339,6 +346,32 @@ export class UiStoreLogic {
     if (t) t.detailSubtab = v;
   }
 
+  // CRD table detail. Per tab because every `crd-table` tab shares one
+  // CrdTableView instance (App.svelte does not remount it on a tab switch).
+  get crdDetailUid(): string | null {
+    return this.activeTab?.crdDetailUid ?? null;
+  }
+
+  get crdDetailSnapshot(): Resource | null {
+    const t = this.activeTab;
+    return t?.crdDetailUid ? (t.cachedResource ?? null) : null;
+  }
+
+  openCrdDetail(resource: Resource): void {
+    const t = this.activeTab;
+    const uid = resource.metadata?.uid;
+    if (!t || !uid) return;
+    t.crdDetailUid = uid;
+    t.cachedResource = resource;
+  }
+
+  closeCrdDetail(): void {
+    const t = this.activeTab;
+    if (!t) return;
+    t.crdDetailUid = undefined;
+    t.cachedResource = undefined;
+  }
+
   get selectedRowIndex(): number {
     return this.activeTab?.selectedRowIndex ?? -1;
   }
@@ -407,6 +440,32 @@ export class UiStoreLogic {
     this.activeTabId = tabId;
     // activeView follows from tab.type — nothing to assign.
     // No reset of filter/sort/statFilter/selectedRows — each tab owns its state.
+  }
+
+  /**
+   * Activate the tab at a zero-based position (⌘1…⌘8). A negative index
+   * counts from the end, so -1 is the last tab (⌘9). Out of range is a no-op.
+   */
+  activateTabAt(index: number): void {
+    const tab = this.tabs[index < 0 ? this.tabs.length + index : index];
+    if (tab) this.activateTab(tab.id);
+  }
+
+  /** Activate the tab to the right of the active one, wrapping to the first. */
+  nextTab(): void {
+    this._cycleTab(1);
+  }
+
+  /** Activate the tab to the left of the active one, wrapping to the last. */
+  previousTab(): void {
+    this._cycleTab(-1);
+  }
+
+  private _cycleTab(step: 1 | -1): void {
+    const n = this.tabs.length;
+    if (n < 2) return;
+    const idx = this.tabs.findIndex((t) => t.id === this.activeTabId);
+    this.activateTab(this.tabs[(idx + step + n) % n].id);
   }
 
   closeTab(tabId: string): void {
@@ -702,7 +761,7 @@ export class UiStoreLogic {
 //   filter, facets, sortColumn, sortDirection, statFilter
 // NOT saved (ephemeral — reloaded fresh from cluster or recomputed):
 //   cachedItems, cachedResource, cacheReady, count, _debouncedFilter,
-//   selectedRows, selectedRowIndex
+//   selectedRows, selectedRowIndex, crdDetailUid
 // Rationale: cached resource lists become stale in seconds. Selected rows
 // and keyboard focus are session-local UX that shouldn't cross restarts.
 

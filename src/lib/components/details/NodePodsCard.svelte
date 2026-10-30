@@ -7,6 +7,7 @@
   import { openResourceDetail } from "$lib/actions/navigation";
   import { podStatus, podReadyCount, podRestarts } from "$lib/utils/pod-status";
   import { formatAge } from "$lib/utils/age";
+  import { nodePodsListArgs, podsOnNode } from "$lib/utils/node-pods";
 
   interface Props {
     nodeName: string;
@@ -18,23 +19,17 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
 
-  // list_resources has no field-selector option, so this is the cluster-wide
-  // lean pod list filtered here — the same list the Pods table loads, so it is
-  // cheap enough for a detail card and stays current on every re-open.
+  // The apiserver filters by spec.nodeName, so only this node's pods cross
+  // the wire; re-listed on every open so the card stays current.
   $effect(() => {
     const node = nodeName;
     let cancelled = false;
     loading = true;
     error = null;
-    invoke<ResourceList>("list_resources", { resourceType: "pods", namespace: null })
+    invoke<ResourceList>("list_resources", nodePodsListArgs(node))
       .then((result) => {
         if (cancelled) return;
-        pods = result.items
-          .filter((p) => (p.spec?.nodeName as string | undefined) === node)
-          .sort((a, b) =>
-            (a.metadata.namespace ?? "").localeCompare(b.metadata.namespace ?? "") ||
-            a.metadata.name.localeCompare(b.metadata.name),
-          );
+        pods = podsOnNode(result.items, node);
       })
       .catch((err) => {
         if (!cancelled) error = String(err);

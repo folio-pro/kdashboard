@@ -18,12 +18,19 @@
     secretTypeLabel,
     tlsSummary,
   } from "./config-data.logic";
+  import type { HydrationStatus } from "./detail-panel";
 
   interface Props {
     resource: Resource;
+    /**
+     * The list row carries key names only; values arrive with the full object
+     * DetailPanel fetches. Until then keys render without values or actions.
+     */
+    valuesStatus?: HydrationStatus;
   }
 
-  let { resource }: Props = $props();
+  let { resource, valuesStatus = "ready" }: Props = $props();
+  let ready = $derived(valuesStatus === "ready");
 
   let labels = $derived(resource.metadata.labels ?? {});
   let annotations = $derived(resource.metadata.annotations ?? {});
@@ -38,9 +45,9 @@
       .map(([key, value]) => ({ key, ...decodeSecretValue(String(value ?? "")) })),
   );
 
-  let tls = $derived(type === "kubernetes.io/tls" ? tlsSummary(data) : null);
+  let tls = $derived(ready && type === "kubernetes.io/tls" ? tlsSummary(data) : null);
   let registries = $derived(
-    type === "kubernetes.io/dockerconfigjson" || type === "kubernetes.io/dockercfg"
+    ready && (type === "kubernetes.io/dockerconfigjson" || type === "kubernetes.io/dockercfg")
       ? dockerRegistries(type, data)
       : [],
   );
@@ -57,7 +64,7 @@
     }
   });
 
-  let revealableKeys = $derived(entries.filter((e) => !e.binary).map((e) => e.key));
+  let revealableKeys = $derived(ready ? entries.filter((e) => !e.binary).map((e) => e.key) : []);
   let allRevealed = $derived(revealableKeys.length > 0 && revealableKeys.every((k) => revealed.has(k)));
 
   function toggleRevealAll() {
@@ -162,11 +169,15 @@
       <div class="border-t border-[var(--border-hover)] px-6 py-3">
         <div class="mb-1 flex items-center justify-between gap-3">
           <span class="min-w-0 truncate font-mono text-[12px] font-medium text-[var(--text-primary)]" title={entry.key}>{entry.key}</span>
+          <!-- Size, reveal and copy wait for the values (DetailPanel's get_resource). -->
           <div class="flex h-5 shrink-0 items-center gap-2">
-            <span class="font-mono text-[10px] text-[var(--text-muted)]">{formatBytes(entry.bytes)}</span>
-            {#if entry.binary}
+            {#if !ready}
+              <span class="font-mono text-[10px] text-[var(--text-muted)]">…</span>
+            {:else if entry.binary}
+              <span class="font-mono text-[10px] text-[var(--text-muted)]">{formatBytes(entry.bytes)}</span>
               <Badge tone="muted" appearance="surface" bordered>binary</Badge>
             {:else}
+              <span class="font-mono text-[10px] text-[var(--text-muted)]">{formatBytes(entry.bytes)}</span>
               <Button
                 variant="muted"
                 size="icon-xs"
@@ -187,7 +198,11 @@
             {/if}
           </div>
         </div>
-        {#if entry.binary}
+        {#if valuesStatus === "loading"}
+          <div class="rounded-sm border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">Loading…</div>
+        {:else if valuesStatus === "error"}
+          <div class="rounded-sm border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--status-failed)]">Could not load the value — see the YAML tab.</div>
+        {:else if entry.binary}
           <div class="rounded-sm border border-[var(--border-hover)] bg-[var(--bg-primary)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
             Binary value ({formatBytes(entry.bytes)}) — not valid UTF-8, shown only in the YAML tab.
           </div>

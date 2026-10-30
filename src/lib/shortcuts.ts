@@ -5,7 +5,9 @@ import { dialogStore } from "./stores/dialogs.svelte.js";
 import { agentStore } from "./stores/agent.svelte.js";
 import { SCALABLE_TYPES } from "./actions/registry.js";
 import { isInputElement, overlayOpen } from "./utils/dom.js";
+import { tabSwitchFor, type TabSwitch } from "./utils/tab-keys.js";
 import type { ActiveView } from "./stores/ui.svelte.js";
+import { scopeOfView, type ShortcutScope } from "./shortcut-scope.js";
 
 /**
  * Single source of truth for keyboard shortcuts.
@@ -20,7 +22,7 @@ import type { ActiveView } from "./stores/ui.svelte.js";
  * advertised nowhere, and the settings tab listed six of the fourteen.
  */
 
-export type ShortcutScope = "global" | "table" | "details";
+export type { ShortcutScope };
 
 export interface Shortcut {
   id: string;
@@ -40,7 +42,8 @@ export interface Shortcut {
   allowInInput?: boolean;
   /**
    * Owned by a component's own handler rather than the global dispatcher
-   * (j/k/Enter belong to ResourceTable, which knows the filtered row list).
+   * (j/k/Enter belong to ResourceTable and CrdTableView, which know the
+   * filtered row list).
    * Listed here purely so the hints stay in one place.
    */
   handledElsewhere?: boolean;
@@ -80,6 +83,13 @@ export function runEscape(target: EventTarget | null, isInput: boolean): void {
     if (uiStore.activeTab?.closable) uiStore.closeTab(uiStore.activeTabId);
     return;
   }
+  if (view === "crd-table") {
+    // A CRD tab unwinds in place: its detail, then the keyboard focus. Never
+    // backToTable(), which would leave for an unrelated resource table.
+    if (uiStore.crdDetailUid) uiStore.closeCrdDetail();
+    else if (uiStore.selectedRowIndex >= 0) uiStore.resetSelection();
+    return;
+  }
   if (view !== "table") {
     uiStore.backToTable();
     return;
@@ -89,6 +99,42 @@ export function runEscape(target: EventTarget | null, isInput: boolean): void {
     return;
   }
   if (uiStore.selectedRowIndex >= 0) uiStore.resetSelection();
+}
+
+/**
+ * A global tab-switch shortcut. `which` narrows the decoded chord to this
+ * entry. It yields when a focused editor or terminal already handled the
+ * chord: CodeMirror preventDefaults the keys it binds (Ctrl+Shift+[ folds on
+ * Linux/Windows) and wterm preventDefaults every non-⌘ key it sends to the
+ * shell, so Ctrl+Tab — and Ctrl+digit on Linux/Windows — stay with the
+ * terminal while ⌘ chords on macOS pass through, like ⌘W. It also yields
+ * while a dialog or menu is open, where switching would change the view
+ * underneath it.
+ */
+function tabShortcut(
+  id: string,
+  keys: string,
+  label: string,
+  which: (t: TabSwitch, e: KeyboardEvent) => boolean,
+  run: (t: TabSwitch) => void,
+): Shortcut {
+  return {
+    id,
+    keys,
+    label,
+    scope: "global",
+    allowInInput: true,
+    hideHint: true,
+    match: (e) => {
+      const t = tabSwitchFor(e);
+      return t !== null && !e.defaultPrevented && which(t, e) && !overlayOpen();
+    },
+    // Re-decoded rather than cached from match: the chord is pure in `e`.
+    run: (e) => {
+      const t = tabSwitchFor(e);
+      if (t !== null) run(t);
+    },
+  };
 }
 
 export const SHORTCUTS: Shortcut[] = [
@@ -114,6 +160,16 @@ export const SHORTCUTS: Shortcut[] = [
       if (uiStore.activeTab?.closable) uiStore.closeTab(uiStore.activeTabId);
     },
   },
+  // Tab switching. allowInInput like ⌘W: none of these chords edit text, and
+  // an editor or terminal that binds one claims it first (see tabShortcut).
+  tabShortcut("next-tab", "⌃Tab", "Next Tab", (t, e) => t === "next" && e.key === "Tab", () => uiStore.nextTab()),
+  tabShortcut("previous-tab", "⌃⇧Tab", "Previous Tab", (t, e) => t === "previous" && e.key === "Tab", () => uiStore.previousTab()),
+  tabShortcut("next-tab-bracket", "⌘⇧]", "Next Tab", (t, e) => t === "next" && e.key !== "Tab", () => uiStore.nextTab()),
+  tabShortcut("previous-tab-bracket", "⌘⇧[", "Previous Tab", (t, e) => t === "previous" && e.key !== "Tab", () => uiStore.previousTab()),
+  tabShortcut("go-to-tab", "⌘1–⌘8", "Go to Tab 1–8", (t) => typeof t === "object" && t.index >= 0, (t) => {
+    if (typeof t === "object") uiStore.activateTabAt(t.index);
+  }),
+  tabShortcut("last-tab", "⌘9", "Go to Last Tab", (t) => typeof t === "object" && t.index < 0, () => uiStore.activateTabAt(-1)),
   {
     id: "toggle-logs",
     keys: "⌘L",
@@ -283,8 +339,7 @@ export function isActive(s: Shortcut): boolean {
  * Gated entries whose condition currently fails are dropped.
  */
 export function shortcutsForView(view: ActiveView): Shortcut[] {
-  const scope: ShortcutScope | null =
-    view === "table" ? "table" : view === "details" ? "details" : null;
+  const scope = scopeOfView(view);
   return SHORTCUTS.filter(
     (s) => (s.scope === scope || s.scope === "global") && isActive(s),
   ).sort((a, b) => Number(a.scope === "global") - Number(b.scope === "global"));

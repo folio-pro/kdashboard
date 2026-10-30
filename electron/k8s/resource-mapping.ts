@@ -133,8 +133,8 @@ export function projectGeneric(
     const v = presentOrUndefined(obj.status);
     if (v !== undefined) res.status = v;
   }
-  if (fields.data) {
-    const v = presentOrUndefined(obj.data);
+  if (fields.data === 'keys') {
+    const v = dataKeysOnly(obj.data);
     if (v !== undefined) res.data = v;
   }
   // Top-level fields that live outside spec/status (RoleBinding.roleRef,
@@ -264,16 +264,19 @@ export function projectPod(obj: RawObject): Resource {
   return res;
 }
 
-/** base64-encode every Secret data value; fall back to stringData. */
+/**
+ * A `data` map with its key names kept and every value blanked to ''. List and
+ * watch rows carry only this: the tables need the key count (and key names for
+ * search), never the values, which the detail panel fetches with get_resource.
+ */
+export function dataKeysOnly(data: unknown): Record<string, string> | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  return Object.fromEntries(Object.keys(data).map((k) => [k, '']));
+}
+
+/** Secret key names (from data, falling back to stringData) + the `type` field. */
 export function projectSecret(obj: RawObject): Resource {
-  let data: Record<string, string> | undefined;
-  if (obj.data && typeof obj.data === 'object') {
-    // Secret.data values arrive already base64-encoded from the JSON API, so
-    // pass them through verbatim.
-    data = obj.data as Record<string, string>;
-  } else if (obj.stringData) {
-    data = obj.stringData;
-  }
+  const data = dataKeysOnly(obj.data) ?? dataKeysOnly(obj.stringData);
   const res: Resource = {
     api_version: 'v1',
     kind: 'Secret',
