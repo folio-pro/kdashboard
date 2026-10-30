@@ -9,6 +9,8 @@ import {
   deriveIsRollbackable,
   deriveCurrentReplicas,
   deriveAll,
+  needsHydration,
+  hydrationStatus,
 } from "./detail-panel";
 
 // =============================================================================
@@ -335,5 +337,36 @@ describe("DetailPanel derived logic", () => {
       expect(d.isRollbackable).toBe(false);
       expect(d.resourceType).toBe("virtualservices");
     });
+  });
+});
+
+describe("detail hydration", () => {
+  test("pods, secrets and configmaps are listed lean and re-fetched on open", () => {
+    expect(needsHydration("pod")).toBe(true);
+    expect(needsHydration("secret")).toBe(true);
+    expect(needsHydration("configmap")).toBe(true);
+  });
+
+  test("kinds whose list row is already complete are not re-fetched", () => {
+    expect(needsHydration("deployment")).toBe(false);
+    expect(needsHydration("service")).toBe(false);
+    expect(needsHydration("")).toBe(false);
+  });
+
+  test("loading until the full object for the selected uid arrives", () => {
+    expect(hydrationStatus("u1", undefined, "")).toBe("loading");
+    // A stale fetch for a previously selected object does not count.
+    expect(hydrationStatus("u1", "u0", "")).toBe("loading");
+  });
+
+  test("ready once the fetched object matches the selection", () => {
+    expect(hydrationStatus("u1", "u1", "")).toBe("ready");
+    // A later refetch failure keeps the values already shown.
+    expect(hydrationStatus("u1", "u1", "u1")).toBe("ready");
+  });
+
+  test("error when the fetch for the selected uid failed", () => {
+    expect(hydrationStatus("u1", undefined, "u1")).toBe("error");
+    expect(hydrationStatus("u1", undefined, "u0")).toBe("loading");
   });
 });

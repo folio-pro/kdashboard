@@ -254,6 +254,7 @@ export function registerAgentTools(server: McpServer, deps: AgentToolDeps): void
         'List Kubernetes resources of one type. resourceType is plural lowercase (pods, deployments, ' +
         'services, statefulsets, daemonsets, replicasets, configmaps, secrets, ingresses, nodes, ' +
         'namespaces, jobs, cronjobs, hpa, persistentvolumeclaims, ...). Omit namespace for all namespaces. ' +
+        'ConfigMap and Secret rows list data key names with empty values; use get_resource for the values. ' +
         `Returns at most ${LIST_CAP} items.`,
       inputSchema: {
         resourceType: z.string().describe('plural lowercase resource type, e.g. "pods"'),
