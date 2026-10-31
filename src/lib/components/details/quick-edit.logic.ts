@@ -141,4 +141,6 @@ export function describeChanges(before: QuickEdit, after: QuickEdit): string[] {
   return out;
 }
 
-export const QUICK_EDIT_TYPES = ["deployments", "statefulsets", "daemonsets", "cronjobs"];
+// Lives in quick-edit-types.ts (yaml-free) so eager importers don't pull the
+// parser; re-exported here for existing callers.
+export { QUICK_EDIT_TYPES } from "./quick-edit-types";

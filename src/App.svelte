@@ -6,9 +6,12 @@
   import WindowTitleBar from "$lib/components/titlebar/WindowTitleBar.svelte";
   import ResourceTable from "$lib/components/table/ResourceTable.svelte";
   import StatusBar from "$lib/components/common/StatusBar.svelte";
+  // CommandPalette stays eager: Cmd+K is a primary interaction and the perf
+  // guard requires it to open within a frame (a lazy chunk fetch cannot).
   import CommandPalette from "$lib/components/command-palette/CommandPalette.svelte";
   import TabBar from "$lib/components/tabs/TabBar.svelte";
   import LazyView from "$lib/components/common/LazyView.svelte";
+  import LazyDialog from "$lib/components/common/LazyDialog.svelte";
   // DetailPanel (pulls in the yaml parser ~97 kB), LogViewer, TerminalView and
   // YamlEditor pull in large vendor chunks (CodeMirror ~495 kB, wterm ~52 kB)
   // so they're loaded via LazyView to keep the initial bundle small.
@@ -16,10 +19,8 @@
   import ContextMenu from "$lib/components/context-menu/ContextMenu.svelte";
   import UpdateBanner from "$lib/components/common/UpdateBanner.svelte";
   import ConnectionErrorOverlay from "$lib/components/common/ConnectionErrorOverlay.svelte";
-  import ScaleDialog from "$lib/components/details/ScaleDialog.svelte";
-  import DrainDialog from "$lib/components/details/DrainDialog.svelte";
-  import CompareDialog from "$lib/components/details/CompareDialog.svelte";
-  import QuickEditDialog from "$lib/components/details/QuickEditDialog.svelte";
+  // Scale/Compare/QuickEdit/Drain dialogs are lazy: QuickEdit and Create pull the
+  // YAML parser (~100 kB) and none of them should sit in the initial chunk.
   import ConfirmDialog from "$lib/components/common/ConfirmDialog.svelte";
   import WorkloadConfirmDialogs from "$lib/components/details/WorkloadConfirmDialogs.svelte";
   import AgentApprovalDialog from "$lib/components/agent/AgentApprovalDialog.svelte";
@@ -336,16 +337,25 @@
 
 <!-- Global dialogs (triggered from context menu, command palette, or detail panel) -->
 {#if dialogStore.scaleOpen && dialogStore.scaleResource}
-  <ScaleDialog bind:open={dialogStore.scaleOpen} resource={dialogStore.scaleResource} />
+  <LazyDialog
+    loader={() => import("$lib/components/details/ScaleDialog.svelte")}
+    bind:open={dialogStore.scaleOpen}
+    props={{ resource: dialogStore.scaleResource }}
+    name="scale dialog"
+    onerror={() => { dialogStore.scaleOpen = false; }}
+  />
 {/if}
 
 {#if dialogStore.quickEditOpen && dialogStore.quickEditResource}
-  <QuickEditDialog
+  <LazyDialog
+    loader={() => import("$lib/components/details/QuickEditDialog.svelte")}
     bind:open={
       () => dialogStore.quickEditOpen,
       (v) => { if (!v) dialogStore.closeQuickEdit(); }
     }
-    resource={dialogStore.quickEditResource}
+    props={{ resource: dialogStore.quickEditResource }}
+    name="quick edit dialog"
+    onerror={() => dialogStore.closeQuickEdit()}
   />
 {/if}
 
@@ -353,18 +363,27 @@
 <AgentApprovalDialog />
 
 {#if dialogStore.drainOpen && dialogStore.drainNodeName}
-  <DrainDialog bind:open={dialogStore.drainOpen} nodeName={dialogStore.drainNodeName} />
+  <LazyDialog
+    loader={() => import("$lib/components/details/DrainDialog.svelte")}
+    bind:open={dialogStore.drainOpen}
+    props={{ nodeName: dialogStore.drainNodeName }}
+    name="drain dialog"
+    onerror={() => { dialogStore.drainOpen = false; }}
+  />
 {/if}
 
 {#if dialogStore.compareOpen && dialogStore.compareResource}
   <!-- Function binding: closing must go through closeCompare() so the stored
        resource is cleared along with the open flag. -->
-  <CompareDialog
+  <LazyDialog
+    loader={() => import("$lib/components/details/CompareDialog.svelte")}
     bind:open={
       () => dialogStore.compareOpen,
       (v) => { if (!v) dialogStore.closeCompare(); }
     }
-    resource={dialogStore.compareResource}
+    props={{ resource: dialogStore.compareResource }}
+    name="compare dialog"
+    onerror={() => dialogStore.closeCompare()}
   />
 {/if}
 

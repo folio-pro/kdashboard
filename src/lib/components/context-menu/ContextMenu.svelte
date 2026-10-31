@@ -18,6 +18,21 @@
   let menuRef: HTMLDivElement | undefined = $state();
   let focusedIndex = $state(-1);
 
+  // Return focus to whatever opened the menu instead of dropping it to <body>
+  // (keyboard users lose their place). Keyed on the store's open flag rather
+  // than this component's close(): the store is also closed from shortcuts.ts
+  // and on a context switch, which never run close() — a capture cleared only
+  // by close() would then be restored to a stale, long-gone opener.
+  $effect(() => {
+    if (!contextMenuStore.open) return;
+    const opener = document.activeElement;
+    return () => {
+      if (opener instanceof HTMLElement && opener !== menuRef && opener.isConnected) {
+        opener.focus();
+      }
+    };
+  });
+
   // Guard all derivations behind open state to avoid work when menu is closed
   let singleActions = $derived.by(() => {
     if (!contextMenuStore.open) return [];

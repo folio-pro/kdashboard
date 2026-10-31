@@ -60,6 +60,8 @@
   let containerSourcePod = $state<Resource | null>(null);
   let deploymentPodNames = $state<string[]>([]);
   let podsLoading = $state(false);
+  // A failed pod list must not read as "this deployment has no pods".
+  let podsLoadFailed = $state(false);
   let logContainer: HTMLDivElement | undefined = $state();
 
   // The whole connect/live/ended/error state machine lives in log-stream.logic.ts.
@@ -236,6 +238,7 @@
       filterText,
       isDeployment,
       podsLoading,
+      podsLoadFailed,
       deploymentPodCount: deploymentPodNames.length,
       sinceWindowLabel,
       errorMessage: stream.error ?? undefined,
@@ -258,6 +261,7 @@
     const gen = ++_fetchGeneration;
     containerSourcePod = null;
     podsLoading = true;
+    podsLoadFailed = false;
     invoke<{ items: Resource[] }>("list_pods_by_selector", {
       namespace: resource.metadata.namespace ?? "",
       selector: selectorString,
@@ -270,6 +274,7 @@
     }).catch(() => {
       if (gen !== _fetchGeneration) return;
       deploymentPodNames = [];
+      podsLoadFailed = true;
     }).finally(() => {
       if (gen === _fetchGeneration) podsLoading = false;
     });

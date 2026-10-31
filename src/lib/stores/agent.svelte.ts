@@ -57,6 +57,14 @@ class AgentStore {
   selectedProfileId = $state<string>("");
 
   approvals = $state<ApprovalRequest[]>([]);
+  /**
+   * Bumped wherever a session boundary wipes the approval queue. A verdict
+   * that never reached the broker is only put back while the epoch is
+   * unchanged: once the session ended (or a new one started) the request
+   * belongs to a process that is gone, and re-queueing it would invite the
+   * user to answer a stale approval.
+   */
+  private _approvalEpoch = 0;
 
   /** Output since session start, replayed into a terminal that mounts late. */
   outputBuffer = "";
@@ -76,6 +84,7 @@ class AgentStore {
       this.status = "ended";
       this.endedReason = END_REASON_TEXT[event.payload.reason] ?? event.payload.reason;
       this.exitCode = event.payload.code ?? null;
+      this._approvalEpoch++;
       this.approvals = [];
       if (event.payload.reason === "context-switch") {
         toastStore.info("Agent session ended", END_REASON_TEXT["context-switch"]);
@@ -201,6 +210,7 @@ class AgentStore {
     this.endedReason = null;
     this.exitCode = null;
     this.outputBuffer = "";
+    this._approvalEpoch++;
     this.approvals = [];
     for (const cb of this.clearListeners) cb();
     // Spawn at the terminal's real, settled size — see the geometry note above.
@@ -300,8 +310,20 @@ class AgentStore {
   }
 
   respondApproval(id: string, approved: boolean): void {
+    const approval = this.approvals.find((a) => a.id === id);
+    const epoch = this._approvalEpoch;
     this.approvals = this.approvals.filter((a) => a.id !== id);
-    invoke("respond_agent_approval", { id, approved }).catch(() => {});
+    invoke("respond_agent_approval", { id, approved }).catch((err) => {
+      // The verdict never reached the broker: put the request back so the user
+      // can retry instead of believing the mutation was approved/denied. Only
+      // while it still belongs to the current session, though — the session
+      // ending (or a new one starting) already cleared the queue and said so.
+      if (epoch !== this._approvalEpoch) return;
+      if (approval && !this.approvals.some((a) => a.id === id)) {
+        this.approvals = [approval, ...this.approvals];
+      }
+      toastStore.error("Approval not sent", String(err));
+    });
   }
 }
 

@@ -180,7 +180,7 @@ export const SHORTCUTS: Shortcut[] = [
     match: (e, meta) => meta && e.key === "l",
     run: () => {
       if (uiStore.activeView === "logs") uiStore.backToPrevious();
-      else uiStore.showLogs();
+      else uiStore.showLogs(k8sStore.selectedResource ?? undefined);
     },
   },
   {
@@ -193,7 +193,7 @@ export const SHORTCUTS: Shortcut[] = [
     match: (e, meta) => meta && e.key === "t",
     run: () => {
       if (uiStore.activeView === "terminal") uiStore.backToPrevious();
-      else uiStore.showTerminal();
+      else uiStore.showTerminal(k8sStore.selectedResource ?? undefined);
     },
   },
   {
@@ -284,7 +284,7 @@ export const SHORTCUTS: Shortcut[] = [
     scope: "details",
     enabled: () => selectedKind() === "pod" || selectedKind() === "deployment",
     match: (e) => e.key === "l",
-    run: () => uiStore.showLogs(),
+    run: () => uiStore.showLogs(k8sStore.selectedResource ?? undefined),
   },
   {
     id: "detail-shell",
@@ -293,7 +293,7 @@ export const SHORTCUTS: Shortcut[] = [
     scope: "details",
     enabled: () => selectedKind() === "pod",
     match: (e) => e.key === "t",
-    run: () => uiStore.showTerminal(),
+    run: () => uiStore.showTerminal(k8sStore.selectedResource ?? undefined),
   },
   {
     id: "detail-yaml",
@@ -301,7 +301,7 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Edit YAML",
     scope: "details",
     match: (e) => e.key === "e",
-    run: () => uiStore.showYamlEditor(),
+    run: () => uiStore.showYamlEditor(k8sStore.selectedResource ?? undefined),
   },
   {
     id: "detail-scale",

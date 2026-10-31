@@ -29,6 +29,7 @@
     "electron",
     "node-pty"
   ],
+  "//build.compression": "AppImage is squashfs+zstd: the default \"normal\" level leaves ~26 MB on the table (118.7 MB -> 92.8 MB measured on linux x64). electron-builder rejects unknown keys inside `build`, hence the comment lives here. Only affects distributable size, not runtime; costs build time.",
   "dependencies": {
     "electron-updater": "^6.8.9",
     "node-pty": "^1.1.0"
@@ -76,6 +77,7 @@
   "build": {
     "appId": "com.kdashboard.app",
     "productName": "Kdashboard",
+    "compression": "maximum",
     "files": [
       "out/**/*",
       "package.json"

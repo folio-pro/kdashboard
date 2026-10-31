@@ -21,9 +21,9 @@
   import { agentStore } from "$lib/stores/agent.svelte";
   import { dialogStore } from "$lib/stores/dialogs.svelte";
   import { extensions } from "$lib/extensions";
-  import { restartWorkload, rollbackDeployment, SCALABLE_TYPES, RESTARTABLE_TYPES } from "$lib/actions/registry";
+  import { SCALABLE_TYPES, RESTARTABLE_TYPES } from "$lib/actions/registry";
   import { navigateToResourceTable, navigateToCrdTable, switchContext, openResourceDetail, openAppView, isAppView } from "$lib/actions/navigation";
-  import { toastStore } from "$lib/stores/toast.svelte";
+
   import type { CommandPaletteItem } from "$lib/types";
   import { getCellValue } from "$lib/components/table/cell-values";
   import { resourceTypeLabel } from "$lib/resource-catalog";
@@ -89,7 +89,7 @@
           description: `Show logs for ${resName}`,
           category: "Resource Actions",
           action: () => {
-            uiStore.showLogs();
+            uiStore.showLogs(selected);
             close();
           },
         });
@@ -102,7 +102,7 @@
           description: `Exec into ${resName}`,
           category: "Resource Actions",
           action: () => {
-            uiStore.showTerminal();
+            uiStore.showTerminal(selected);
             close();
           },
         });
@@ -129,13 +129,11 @@
           label: "Restart",
           description: `Restart ${resName}`,
           category: "Resource Actions",
-          action: async () => {
+          // Same confirmation dialog as the context menu / detail panel — the
+          // palette used to restart immediately with no prompt.
+          action: () => {
+            dialogStore.openRestart(selected);
             close();
-            try {
-              await restartWorkload(selected);
-            } catch (err) {
-              toastStore.error("Restart failed", String(err));
-            }
           },
         });
       }
@@ -147,13 +145,11 @@
           label: "Rollback",
           description: `Rollback ${resName}`,
           category: "Resource Actions",
-          action: async () => {
+          // Rollback goes through its dialog so the resolved target revision is
+          // named and confirmed before the change.
+          action: () => {
+            dialogStore.openRollback(selected);
             close();
-            try {
-              await rollbackDeployment(selected);
-            } catch (err) {
-              toastStore.error("Rollback failed", String(err));
-            }
           },
         });
       }
@@ -286,7 +282,7 @@
         category: "Actions",
         hint: "\u2318L",
         action: () => {
-          uiStore.showLogs();
+          uiStore.showLogs(selected ?? undefined);
           close();
         },
       },
@@ -297,7 +293,7 @@
         category: "Actions",
         hint: "\u2318T",
         action: () => {
-          uiStore.showTerminal();
+          uiStore.showTerminal(selected ?? undefined);
           close();
         },
       },
@@ -422,16 +418,25 @@
 </script>
 
 <Dialog open={uiStore.commandPaletteOpen} onOpenChange={handleOpenChange}>
-  <DialogContent class="overflow-hidden p-0 shadow-2xl sm:max-w-[520px]">
+  <DialogContent aria-label="Command palette" class="overflow-hidden p-0 shadow-2xl sm:max-w-[520px]">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div onkeydown={handleKeydown}>
       <Command>
+        <!-- aria-activedescendant is guarded on the item, not the index:
+             selectedIndex stays 0 on an empty list, which would point the
+             screen reader at an id nothing renders. -->
         <CommandInput
+          aria-label="Search commands and resources"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="command-palette-list"
+          aria-autocomplete="list"
+          aria-activedescendant={filteredItems[selectedIndex] ? `command-item-${selectedIndex}` : undefined}
           placeholder="Search by name across the cluster, or contexts and actions… (ns: kind:)"
           value={query}
           oninput={(e: Event) => { query = (e.target as HTMLInputElement).value; }}
         />
-        <CommandList class="max-h-[50vh]">
+        <CommandList id="command-palette-list" role="listbox" class="max-h-[50vh]">
           {#if filteredItems.length === 0}
             {#if searchable && resourceSearch.loading}
               <CommandEmpty>Searching the cluster…</CommandEmpty>
@@ -448,6 +453,7 @@
                 {@const globalIndex = itemIndex.get(item) ?? -1}
                 {@const IconComp = getItemIcon(item)}
                 <CommandItem
+                  id={`command-item-${globalIndex}`}
                   class={cn(
                     "gap-2.5",
                     globalIndex === selectedIndex && "bg-[var(--bg-secondary)]"

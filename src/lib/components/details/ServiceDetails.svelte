@@ -73,10 +73,13 @@
   // --- Pods behind the selector --------------------------------------------
   let pods = $state<Resource[]>([]);
   let podsLoading = $state(false);
+  // A failed selector list must not read as "no pods match".
+  let podsFailed = $state(false);
   $effect(() => {
     const sel = selectorString;
     const ns = namespace;
     let cancelled = false;
+    podsFailed = false;
     if (!sel) {
       pods = [];
       podsLoading = false;
@@ -85,7 +88,7 @@
     podsLoading = true;
     invoke<ResourceList>("list_pods_by_selector", { namespace: ns, selector: sel })
       .then((r) => { if (!cancelled) pods = r.items; })
-      .catch(() => { if (!cancelled) pods = []; })
+      .catch(() => { if (!cancelled) { pods = []; podsFailed = true; } })
       .finally(() => { if (!cancelled) podsLoading = false; });
     return () => { cancelled = true; };
   });
@@ -173,11 +176,22 @@
 
   {#if noBackends}
     <AttentionBlock tone="error" title="No endpoints — traffic to this service has nowhere to go">
-      <span>
-        Selector <code>{selectorTerms.join(", ")}</code> matches
-        <b>{podsLoading ? "…" : `${runningPods} running ${runningPods === 1 ? "pod" : "pods"}`}</b>
-        in <code>{namespace || "default"}</code>.
-      </span>
+      <!-- The alert itself comes from the endpoints summary, so it stands even
+           when the pod lookup failed — but the count does not: a rejected list
+           means "unknown", never "zero". -->
+      {#if podsFailed}
+        <span>
+          Couldn't list the pods matching <code>{selectorTerms.join(", ")}</code> in
+          <code>{namespace || "default"}</code>, so how many back this service is
+          unknown — check permissions and retry.
+        </span>
+      {:else}
+        <span>
+          Selector <code>{selectorTerms.join(", ")}</code> matches
+          <b>{podsLoading ? "…" : `${runningPods} running ${runningPods === 1 ? "pod" : "pods"}`}</b>
+          in <code>{namespace || "default"}</code>.
+        </span>
+      {/if}
       {#if !podsLoading && pods.length > 0 && readyPods === 0}
         <span>{pods.length} {pods.length === 1 ? "pod matches" : "pods match"} but none is ready.</span>
       {/if}
@@ -362,7 +376,9 @@
               </table>
               </div>
             {:else if !podsLoading}
-              <p class="text-[12px] text-[var(--text-muted)]">No pods match this selector</p>
+              <p class="text-[12px] text-[var(--text-muted)]">
+                {podsFailed ? "Couldn't load pods for this selector" : "No pods match this selector"}
+              </p>
             {/if}
           </div>
         </DetailSection>

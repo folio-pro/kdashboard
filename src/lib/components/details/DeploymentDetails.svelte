@@ -76,11 +76,14 @@
   // --- Pods of the selector --------------------------------------------------
   let pods = $state<Resource[]>([]);
   let podsLoading = $state(false);
+  // A failed selector list must not read as "no pods match".
+  let podsFailed = $state(false);
 
   $effect(() => {
     const sel = selectorString;
     const ns = namespace;
     let cancelled = false;
+    podsFailed = false;
     if (!sel) {
       pods = [];
       podsLoading = false;
@@ -89,7 +92,7 @@
     podsLoading = true;
     invoke<{ items: Resource[] }>("list_pods_by_selector", { namespace: ns, selector: sel })
       .then((result) => { if (!cancelled) pods = result.items; })
-      .catch(() => { if (!cancelled) pods = []; })
+      .catch(() => { if (!cancelled) { pods = []; podsFailed = true; } })
       .finally(() => { if (!cancelled) podsLoading = false; });
     return () => { cancelled = true; };
   });
@@ -293,7 +296,9 @@
           </table>
           </div>
         {:else if !podsLoading}
-          <p class="text-[12px] text-[var(--text-muted)]">No pods match the selector</p>
+          <p class="text-[12px] text-[var(--text-muted)]">
+            {podsFailed ? "Couldn't load pods for this selector" : "No pods match the selector"}
+          </p>
         {/if}
       </DetailSection>
 
