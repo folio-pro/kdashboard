@@ -14,6 +14,7 @@
     type LogLevel,
     shortPodName,
     parseLogLine,
+    displayMessage,
     resetLogIdCounter,
     buildStreamRequest,
     streamEmptyStateMessage,
@@ -463,97 +464,8 @@
 <svelte:window onkeydown={handleGlobalKeydown} />
 
 <div data-testid="log-viewer" class="flex h-full flex-col bg-[var(--bg-primary)]">
-  <!-- Log Viewer: the tab bar already names the view and the resource, so this
-       panel carries no title of its own. -->
-  <div class="flex-1 overflow-hidden px-4 pt-3 pb-2">
-    <div class="relative flex h-full flex-col">
-      <!-- Log Entries (virtualized) -->
-      <div
-        data-testid="log-scroll"
-        class={cn(
-          "relative min-h-0 flex-1 overflow-y-auto rounded-sm border border-[var(--border-color)] bg-[var(--log-bg)] font-mono",
-          wrapLines ? "overflow-x-hidden" : "overflow-x-auto",
-        )}
-        bind:this={logContainer}
-        onscroll={handleScroll}
-      >
-        {#if filteredLogs.length === 0}
-          <div class="flex h-full items-center justify-center text-[12px] text-[var(--text-muted)]">
-            {emptyStateMessage}
-          </div>
-        {:else}
-          <div style="height: {$virtualizer.getTotalSize()}px; position: relative; width: 100%;">
-            {#each $virtualizer.getVirtualItems() as row (row.index)}
-              {@const line = filteredLogs[row.index]}
-              {#if line}
-                <!-- Rows open the detail sheet on click. They are not tab
-                     stops — there can be thousands — so the keyboard path is
-                     the arrow-key navigation in handleGlobalKeydown, not a
-                     per-row key handler. -->
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <div
-                  role="button"
-                  tabindex="-1"
-                  data-index={row.index}
-                  use:measureElement
-                  style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({row.start}px);"
-                  class={cn(
-                    "flex cursor-pointer items-start gap-3 px-3 py-[3px]",
-                    selectedLog === line
-                      ? "bg-[var(--log-row-selected)]"
-                      : "hover:bg-[var(--log-row-hover)]",
-                  )}
-                  onclick={() => selectLog(line)}
-                >
-                  {#if line.podName}
-                    <span class="shrink-0 max-w-[140px] truncate rounded-sm bg-[var(--accent)]/10 px-1.5 py-0 text-[10px] font-medium leading-[20px] text-[var(--accent)]" title={line.podName}>
-                      {shortPodName(line.podName)}
-                    </span>
-                  {/if}
-                  {#if showTimestamps && line.timestamp}
-                    <span class="shrink-0 text-[11px] leading-[20px] text-[var(--log-timestamp)]">{line.timestamp}</span>
-                  {/if}
-                  <!-- No badge for a line that declares no level: a guessed
-                       one is wrong on its face (nginx access lines are not
-                       DEBUG). -->
-                  {#if line.level}
-                    <span
-                      class={cn("shrink-0 text-[11px] leading-[20px] font-semibold", LEVEL_BADGE_COLORS[line.level])}
-                    >
-                      {LEVEL_LABELS[line.level]}
-                    </span>
-                  {/if}
-                  {#if line.isJson && line.jsonFormatted}
-                    <pre class={cn("min-w-0 text-[11px] leading-[20px] text-[var(--text-secondary)]", wrapLines ? "whitespace-pre-wrap break-all" : "whitespace-pre")}>{@html getJsonHighlighted(line)}</pre>
-                  {:else}
-                    <span class={cn("min-w-0 text-[11px] leading-[20px]", wrapLines ? "whitespace-pre-wrap break-all" : "whitespace-pre", messageColor(line.level))}>
-                      {line.message}
-                    </span>
-                  {/if}
-                </div>
-              {/if}
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <!-- Jump to Bottom -->
-      {#if userScrolledAway && filteredLogs.length > 0}
-        <Button
-          variant="toolbar"
-          size="sm"
-          mono
-          class="absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full px-3 shadow-lg"
-          onclick={jumpToBottom}
-        >
-          <ArrowDown class="h-3 w-3" />
-          Jump to bottom
-        </Button>
-      {/if}
-    </div>
-  </div>
-
-  <!-- Controls: single bar at the bottom of the panel -->
+  <!-- Controls sit above the lines and wrap: a single bottom bar lost its
+       right half in the 440px detail aside. -->
   <LogControlBar
     {selectedContainer}
     {containers}
@@ -585,6 +497,96 @@
     onDownload={downloadLogs}
     onAskAgent={askAgent}
   />
+
+  <!-- Log Viewer: the tab bar already names the view and the resource, so this
+       panel carries no title of its own. -->
+  <div class="flex-1 overflow-hidden py-2">
+    <div class="relative flex h-full flex-col">
+      <!-- Log Entries (virtualized) -->
+      <div
+        data-testid="log-scroll"
+        class={cn(
+          "relative min-h-0 flex-1 overflow-y-auto font-mono",
+          wrapLines ? "overflow-x-hidden" : "overflow-x-auto",
+        )}
+        bind:this={logContainer}
+        onscroll={handleScroll}
+      >
+        {#if filteredLogs.length === 0}
+          <div class="flex h-full items-center justify-center text-[12px] text-[var(--text-muted)]">
+            {emptyStateMessage}
+          </div>
+        {:else}
+          <div style="height: {$virtualizer.getTotalSize()}px; position: relative; width: 100%;">
+            {#each $virtualizer.getVirtualItems() as row (row.index)}
+              {@const line = filteredLogs[row.index]}
+              {#if line}
+                <!-- Rows open the detail sheet on click. They are not tab
+                     stops — there can be thousands — so the keyboard path is
+                     the arrow-key navigation in handleGlobalKeydown, not a
+                     per-row key handler. -->
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <div
+                  role="button"
+                  tabindex="-1"
+                  data-index={row.index}
+                  use:measureElement
+                  style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({row.start}px);"
+                  class={cn(
+                    "flex cursor-pointer items-start gap-2 px-4 py-0.5",
+                    selectedLog === line
+                      ? "bg-[var(--log-row-selected)]"
+                      : "hover:bg-[var(--log-row-hover)]",
+                  )}
+                  onclick={() => selectLog(line)}
+                >
+                  {#if line.podName}
+                    <span class="shrink-0 max-w-[140px] truncate rounded-sm bg-[var(--accent)]/10 px-1.5 py-0 text-[11px] font-medium leading-[20px] text-[var(--accent)]" title={line.podName}>
+                      {shortPodName(line.podName)}
+                    </span>
+                  {/if}
+                  {#if showTimestamps && line.timestamp}
+                    <span class="shrink-0 font-mono text-[12px] leading-[20px] text-[var(--log-timestamp)]" title={line.timestamp}>{line.timestamp.slice(-8)}</span>
+                  {/if}
+                  <!-- No badge for a line that declares no level: a guessed
+                       one is wrong on its face (nginx access lines are not
+                       DEBUG). -->
+                  {#if line.level}
+                    <span
+                      class={cn("w-11 shrink-0 font-mono text-[12px] leading-[20px]", LEVEL_BADGE_COLORS[line.level])}
+                    >
+                      {LEVEL_LABELS[line.level]}
+                    </span>
+                  {/if}
+                  {#if line.isJson && line.jsonFormatted}
+                    <pre class={cn("min-w-0 text-[11px] leading-[20px] text-[var(--text-secondary)]", wrapLines ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre")}>{@html getJsonHighlighted(line)}</pre>
+                  {:else}
+                    <span class={cn("min-w-0 font-mono text-[12px] leading-[20px]", wrapLines ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre", messageColor(line.level))}>
+                      {displayMessage(line)}
+                    </span>
+                  {/if}
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Jump to Bottom -->
+      {#if userScrolledAway && filteredLogs.length > 0}
+        <Button
+          variant="toolbar"
+          size="sm"
+          mono
+          class="absolute bottom-6 left-1/2 z-10 -translate-x-1/2 px-3"
+          onclick={jumpToBottom}
+        >
+          <ArrowDown class="h-3 w-3" />
+          Jump to bottom
+        </Button>
+      {/if}
+    </div>
+  </div>
 
   <!-- Log Detail Sheet -->
   <LogDetailSheet {selectedLog} onClose={closeDetail} />

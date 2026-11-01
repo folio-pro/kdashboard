@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link, Globe, CheckCircle2, Unplug } from "lucide-svelte";
+  
   import { invoke } from "$lib/ipc/core";
   import type { Resource, ResourceList } from "$lib/types";
   import { Button } from "$lib/components/ui";
@@ -174,16 +174,27 @@
 </script>
 
 <div class="select-text">
+  {#if problem && problemCopy}
+    <AttentionBlock tone={problemCopy.tone} title={problemCopy.title}>
+      {#each problemCopy.lines as line (line)}
+        <span>{line}</span>
+      {/each}
+      {#snippet actions()}
+        {#if problem.container}
+          <Button variant="toolbar" size="xs" onclick={() => { uiStore.detailSubtab = "logs"; }}>Logs</Button>
+        {/if}
+        <Button variant="toolbar" size="xs" onclick={() => { uiStore.detailSubtab = "events"; }}>Events</Button>
+      {/snippet}
+    </AttentionBlock>
+  {/if}
+
   <SummaryStrip>
     <SummaryCell label="Status" title={podState.reason ? `${podState.label} · ${podState.reason}` : podState.label}>
       {#if isQuietStatus(stateCategory)}
         <span class="truncate text-[12px] text-[var(--text-muted)]">{podState.label}</span>
       {:else}
-        <span
-          class="inline-flex max-w-full items-center gap-1.5 truncate rounded-sm px-1.5 text-[11px] font-medium leading-4"
-          style="color: {statusColor(stateCategory)}; background-color: color-mix(in srgb, {statusColor(stateCategory)} 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, {statusColor(stateCategory)} 25%, transparent);"
-        >
-          <span class="h-[5px] w-[5px] shrink-0 rounded-full" style="background-color: {statusColor(stateCategory)}"></span>
+        <span class="inline-flex min-w-0 items-center gap-2 text-[12px]" style="color: {statusColor(stateCategory)}">
+          <span class="h-1.5 w-1.5 shrink-0 rounded-full" style="background-color: {statusColor(stateCategory)}"></span>
           <span class="truncate">{podState.label}</span>
         </span>
       {/if}
@@ -198,7 +209,7 @@
       <span class="font-mono text-[13px] tabular-nums" style:color={restartColor(restarts.count)}>{restarts.count}</span>
       {#if restarts.count > 0 && restarts.lastAt}
         {@const _tick = ageTick}
-        <span class="ml-1.5 truncate font-mono text-[10px] text-[var(--text-muted)]">{formatAge(restarts.lastAt)} ago</span>
+        <span class="ml-1.5 truncate font-mono text-[11px] text-[var(--text-muted)]">{formatAge(restarts.lastAt)} ago</span>
       {/if}
     </SummaryCell>
     <SummaryCell label="Age">
@@ -225,20 +236,6 @@
     {/if}
   </SummaryStrip>
 
-  {#if problem && problemCopy}
-    <AttentionBlock tone={problemCopy.tone} title={problemCopy.title}>
-      {#each problemCopy.lines as line (line)}
-        <span>{line}</span>
-      {/each}
-      {#snippet actions()}
-        {#if problem.container}
-          <Button variant="toolbar" size="xs" onclick={() => { uiStore.detailSubtab = "logs"; }}>Logs</Button>
-        {/if}
-        <Button variant="toolbar" size="xs" onclick={() => { uiStore.detailSubtab = "events"; }}>Events</Button>
-      {/snippet}
-    </AttentionBlock>
-  {/if}
-
   <DetailColumns {layout}>
     {#snippet main()}
       <PodContainerCards {containerStatuses} {specContainerMap} />
@@ -246,7 +243,7 @@
       <PodUsageCard {resource} />
 
       {#if allPorts.length > 0}
-        <DetailSection title="Port Forwarding" icon={Unplug}>
+        <DetailSection title="Port forwarding">
           <PodPortForwarding
             {allPorts}
             pod={resource}
@@ -268,12 +265,12 @@
 
     {#snippet rail()}
       {#if conditions.length > 0}
-        <DetailSection title="Conditions" icon={CheckCircle2}>
+        <DetailSection title="Conditions">
           <ConditionsList {conditions} layout={layout === "aside" ? "wrap" : "list"} />
         </DetailSection>
       {/if}
 
-      <DetailSection title="Network" icon={Globe}>
+      <DetailSection title="Network">
         <KvGrid>
           <KvField label="Pod IP" value={podIP} />
           <KvField label="Host IP" value={hostIP} />
@@ -284,14 +281,14 @@
               <span class="font-mono text-[13px] text-[var(--text-muted)]">—</span>
             {/if}
           </KvField>
-          <KvField label="Service Account" value={(spec.serviceAccountName as string) ?? "default"} />
-          <KvField label="DNS Policy" value={(spec.dnsPolicy as string) ?? "—"} mono={false} />
-          <KvField label="Restart Policy" value={(spec.restartPolicy as string) ?? "Always"} mono={false} />
+          <KvField label="Service account" value={(spec.serviceAccountName as string) ?? "default"} />
+          <KvField label="DNS policy" value={(spec.dnsPolicy as string) ?? "—"} mono={false} />
+          <KvField label="Restart policy" value={(spec.restartPolicy as string) ?? "Always"} mono={false} />
         </KvGrid>
       </DetailSection>
 
       {#if related.length > 0}
-        <DetailSection title="Related" icon={Link}>
+        <DetailSection title="Related">
           {#snippet actions()}
             <span class="font-mono text-[11px] text-[var(--text-muted)]">{related.length}</span>
           {/snippet}
@@ -330,10 +327,10 @@
           <KvField label="UID" value={resource.metadata.uid} />
         {/if}
         {#if resource.metadata.resource_version}
-          <KvField label="Resource Version" value={resource.metadata.resource_version} />
+          <KvField label="Resource version" value={resource.metadata.resource_version} />
         {/if}
         {#if owner}
-          <KvField label="Controlled By" value={`${owner.kind}/${owner.name}`} />
+          <KvField label="Controlled by" value={`${owner.kind}/${owner.name}`} />
         {/if}
       </KvGrid>
     </div>

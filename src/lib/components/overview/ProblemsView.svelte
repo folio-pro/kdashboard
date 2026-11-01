@@ -87,8 +87,8 @@
   {#snippet headerActions()}
     {#if overview && overview.problems.length > 0}
       <Button
-        size="xs"
-        variant="outline"
+        size="sm"
+        variant="toolbar"
         title="Ask the AI agent to investigate every current problem"
         onclick={() =>
           void agentStore.quickAction(
@@ -106,12 +106,9 @@
 
   {#snippet badge()}
     {#if overview}
-      <Badge tone={overview.problems.length === 0 ? "success" : severityCounts.critical > 0 ? "error" : "warning"}>{overview.problems.length} active</Badge>
-      <!-- Same scope badge as Overview, always shown: a "whole cluster" that
-           was silent here read as "this namespace". -->
-      <Badge tone={overview.scope === "cluster" ? "success" : "warning"} data-testid="overview-scope">
-        {overview.scope === "cluster" ? "whole cluster" : `namespace ${overview.namespace}`}
-      </Badge>
+      <!-- Same scope line as Overview, always shown: a "whole cluster" that was
+           silent here read as "this namespace". -->
+      <span class="font-mono text-[11px] text-[var(--text-muted)]">{overview.problems.length} active · <span data-testid="overview-scope">{overview.scope === "cluster" ? "whole cluster" : `namespace ${overview.namespace}`}</span></span>
       {#if overview.partial.length > 0}
         <Badge tone="warning" title={`Could not list: ${overview.partial.join(", ")}`}>partial</Badge>
       {/if}
@@ -121,61 +118,64 @@
   {#if overview}
     <div class="flex h-full min-h-0 flex-col" data-testid="problems">
       <!-- Filter strip -->
-      <div class="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4">
-        <Button variant="soft-tone" tone="error" size="xs" active={filter.severity === "critical"} activeStyle="soft" onclick={() => toggleSeverity("critical")} data-testid="filter-critical">
-          Critical <span class="font-mono opacity-70">{severityCounts.critical}</span>
-        </Button>
-        <Button variant="soft-tone" tone="warning" size="xs" active={filter.severity === "warning"} activeStyle="soft" onclick={() => toggleSeverity("warning")} data-testid="filter-warning">
-          Warning <span class="font-mono opacity-70">{severityCounts.warning}</span>
-        </Button>
-        <span class="h-3 w-px bg-[var(--border-color)]"></span>
+      <div class="flex h-9 shrink-0 items-center gap-1 border-b border-t border-[var(--border-color)] px-4">
+        {#snippet severityButton(s: ProblemSeverity, label: string, n: number, color: string, testid: string)}
+          <Button variant="muted" size="sm" class={cn("gap-2 px-2 font-normal", filter.severity === s && "bg-[var(--bg-tertiary)] text-[var(--text-primary)]")} active={filter.severity === s} activeStyle="raised" onclick={() => toggleSeverity(s)} data-testid={testid}>
+            <span class="h-1.5 w-1.5 rounded-full" style:background-color={color}></span>
+            {label} <span class="font-mono text-[11px] text-[var(--text-muted)]">{n}</span>
+          </Button>
+        {/snippet}
+        {@render severityButton("critical", "Critical", severityCounts.critical, "var(--status-failed)", "filter-critical")}
+        {@render severityButton("warning", "Warning", severityCounts.warning, "var(--status-pending)", "filter-warning")}
+        <span class="mx-1 h-4 w-px bg-[var(--border-color)]"></span>
         {#each KINDS as k (k)}
           {#if kindCounts[k]}
-            <Button variant="outline" size="xs" active={filter.kind === k} activeStyle="underline" onclick={() => toggleKind(k)}>
-              {k} <span class="font-mono text-[var(--text-muted)]">{kindCounts[k]}</span>
+            <Button variant="muted" size="sm" class={cn("gap-2 px-2 font-normal", filter.kind === k && "bg-[var(--bg-tertiary)] text-[var(--text-primary)]")} active={filter.kind === k} activeStyle="raised" onclick={() => toggleKind(k)}>
+              {k} <span class="font-mono text-[11px] text-[var(--text-muted)]">{kindCounts[k]}</span>
             </Button>
           {/if}
         {/each}
         <div class="flex-1"></div>
-        <SearchField value={filter.text} ariaLabel="Filter problems" placeholder="Filter by name, reason or namespace" oninput={(e: Event) => { filter = { ...filter, text: (e.target as HTMLInputElement).value }; }} class="w-[260px]" />
+        <SearchField value={filter.text} ariaLabel="Filter problems" placeholder="Filter by name, reason or namespace" oninput={(e: Event) => { filter = { ...filter, text: (e.target as HTMLInputElement).value }; }} class="w-[280px]" />
       </div>
 
       <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_400px]">
         <ScrollArea class="min-h-0 border-r border-[var(--border-color)]">
           {#if problems.length === 0}
             <div class="flex flex-col items-center justify-center py-20 text-center">
-              <AlertTriangle class="h-6 w-6 text-[var(--text-muted)]" />
+              <AlertTriangle class="h-4 w-4 text-[var(--text-muted)]" />
               <p class="mt-3 text-[12px] text-[var(--text-muted)]">{overview.problems.length === 0 ? "Nothing needs attention." : "No problem matches this filter."}</p>
             </div>
           {:else}
-            <div class="grid grid-cols-[20px_72px_minmax(0,1.4fr)_minmax(0,1fr)_70px] items-center gap-3 bg-[var(--table-header-bg)] px-4 py-1.5 text-[11px] text-[var(--text-muted)]">
-              <span></span><span>Kind</span><span>Resource</span><span>Reason</span><span>Since</span>
+            <div class="grid h-8 grid-cols-[20px_88px_minmax(0,1.4fr)_minmax(0,1fr)_56px] items-center gap-2 border-b border-[var(--border-color)] pl-6 pr-4 text-[11px] font-medium text-[var(--text-muted)]">
+              <span></span><span>Kind</span><span>Resource</span><span>Reason</span><span class="text-right">Since</span>
             </div>
             {#each problems as p (p.id)}
+              {@const tone = p.severity === "critical" ? "var(--status-failed)" : "var(--status-pending)"}
               <button
                 type="button"
-                class={cn("grid w-full grid-cols-[20px_72px_minmax(0,1.4fr)_minmax(0,1fr)_70px] items-center gap-3 border-b border-[var(--border-color)] px-4 py-2 text-left hover:bg-[var(--table-row-hover)]", selected?.id === p.id && "bg-[var(--sidebar-active)]")}
+                class={cn("grid h-11 w-full grid-cols-[20px_88px_minmax(0,1.4fr)_minmax(0,1fr)_56px] items-center gap-2 border-b border-[var(--border-color)] pl-6 pr-4 text-left hover:bg-[var(--table-row-hover)]", selected?.id === p.id && "bg-[var(--bg-secondary)]")}
                 onclick={() => (selectedId = p.id)}
                 ondblclick={() => openDetail(p)}
                 data-testid="problem-row"
               >
-                <span class={cn("h-2 w-2 rounded-full", p.severity === "critical" ? "bg-[var(--status-failed)]" : "bg-[var(--status-pending)]")}></span>
-                <Badge appearance="surface" mono size="xs">{p.kind}</Badge>
-                <span class="flex min-w-0 flex-col">
+                <span class="h-1.5 w-1.5 rounded-full" style:background-color={tone}></span>
+                <span class="truncate font-mono text-[12px] text-[var(--text-muted)]">{p.kind}</span>
+                <span class="flex min-w-0 flex-col gap-0.5">
                   <span class="truncate font-mono text-[12px] text-[var(--text-primary)]">{p.name}</span>
                   <span class="truncate text-[11px] text-[var(--text-muted)]">{p.namespace ?? "cluster"}{p.owner ? ` · ${p.owner}` : ""}</span>
                 </span>
-                <span class="flex min-w-0 flex-col">
-                  <span class="truncate text-[12px] text-[var(--text-primary)]">{p.reason}{p.restarts ? ` ×${p.restarts}` : ""}</span>
+                <span class="flex min-w-0 flex-col gap-0.5">
+                  <span class="truncate text-[12px]" style:color={tone}>{p.reason}{p.restarts ? ` ×${p.restarts}` : ""}</span>
                   {#if p.detail}<span class="truncate text-[11px] text-[var(--text-muted)]" title={p.detail}>{p.detail}</span>{/if}
                 </span>
-                <span class="font-mono text-[11px] text-[var(--text-secondary)]" title={p.since ? formatTimestamp(p.since) : ""}>{p.since ? formatAge(p.since) : "—"}</span>
+                <span class="text-right font-mono text-[11px] text-[var(--text-secondary)]" title={p.since ? formatTimestamp(p.since) : ""}>{p.since ? formatAge(p.since) : "—"}</span>
               </button>
             {/each}
           {/if}
         </ScrollArea>
 
-        <ScrollArea class="min-h-0 bg-[var(--bg-secondary)]">
+        <ScrollArea class="min-h-0">
           {#if selected}
             <ProblemDetail
               problem={selected}

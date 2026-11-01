@@ -86,7 +86,7 @@ export function onOpen(state: ScaleDialogState): void {
 
 /** Label for the primary action button. */
 export function getButtonLabel(loading: boolean): string {
-  return loading ? "Scaling..." : "Scale";
+  return loading ? "Scaling…" : "Scale";
 }
 
 // ---------------------------------------------------------------------------

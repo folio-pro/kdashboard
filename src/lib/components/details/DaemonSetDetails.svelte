@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Copy } from "lucide-svelte";
+  
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
   import LabelsSection from "./LabelsSection.svelte";
@@ -43,7 +43,7 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title="DaemonSet Spec" icon={Copy}>
+  <DetailSection title="DaemonSet spec">
     <KvGrid>
       <KvField label="Desired" value={desiredNumberScheduled} />
       <KvField label="Current" value={currentNumberScheduled} />
@@ -57,9 +57,9 @@
           <span class="font-mono text-[13px] text-[var(--status-failed)]">{numberMisscheduled}</span>
         </KvField>
       {/if}
-      <KvField label="Update Strategy" value={updateStrategy.type ?? "RollingUpdate"} mono={false} />
+      <KvField label="Update strategy" value={updateStrategy.type ?? "RollingUpdate"} mono={false} />
       {#if updateStrategy.rollingUpdate?.maxUnavailable !== undefined}
-        <KvField label="Max Unavailable" value={String(updateStrategy.rollingUpdate.maxUnavailable)} />
+        <KvField label="Max unavailable" value={String(updateStrategy.rollingUpdate.maxUnavailable)} />
       {/if}
     </KvGrid>
   </DetailSection>

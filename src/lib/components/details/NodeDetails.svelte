@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Badge } from "$lib/components/ui";
-  import { Server, Cpu, Ban } from "lucide-svelte";
+  
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
   import LabelsSection from "./LabelsSection.svelte";
@@ -61,9 +61,9 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title="Node Info" icon={Server}>
+  <DetailSection title="Node info">
     <KvGrid>
-      <KvField label="OS Image" value={nodeInfo.osImage ?? "-"} mono={false} />
+      <KvField label="OS image" value={nodeInfo.osImage ?? "-"} mono={false} />
       <KvField label="Architecture" value={nodeInfo.architecture ?? "-"} />
       <KvField label="Kernel" value={nodeInfo.kernelVersion ?? "-"} />
       <KvField label="Runtime" value={nodeInfo.containerRuntimeVersion ?? "-"} />
@@ -86,7 +86,7 @@
     <CollapsibleConditions {conditions} healthFn={isConditionHealthy} />
   {/if}
 
-  <DetailSection title="Resources" icon={Cpu}>
+  <DetailSection title="Resources">
     <table class="w-full border-collapse text-[13px]">
       <thead>
         <tr class="border-b border-[var(--border-color)]">
@@ -110,7 +110,7 @@
   </DetailSection>
 
   {#if taints.length > 0}
-    <DetailSection title="Taints" icon={Ban}>
+    <DetailSection title="Taints">
       {#snippet actions()}
         <span class="font-mono text-[11px] text-[var(--text-muted)]">{taints.length}</span>
       {/snippet}

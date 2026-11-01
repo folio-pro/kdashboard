@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { statusCategory, isQuietStatus, rowSeverity } from "./status-category";
+import { statusCategory, isQuietStatus } from "./status-category";
 
 describe("status category", () => {
   test("maps known statuses case-insensitively", () => {
@@ -32,12 +32,5 @@ describe("status category", () => {
     expect(isQuietStatus("warning")).toBe(false);
     expect(isQuietStatus("error")).toBe(false);
     expect(isQuietStatus("orange")).toBe(false);
-  });
-  test("row severity only for problems", () => {
-    expect(rowSeverity("error")).toBe("error");
-    expect(rowSeverity("warning")).toBe("warning");
-    expect(rowSeverity("orange")).toBe("warning");
-    expect(rowSeverity("success")).toBeNull();
-    expect(rowSeverity("info")).toBeNull();
   });
 });

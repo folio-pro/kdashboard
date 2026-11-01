@@ -42,11 +42,11 @@ function buildSampleItems(): CommandPaletteItem[] {
     makeItem("context-prod", "prod-cluster", "Contexts", "Switch context"),
     makeItem("namespace-default", "default", "Namespaces", "Switch namespace"),
     makeItem("namespace-kube-system", "kube-system", "Namespaces", "Switch namespace"),
-    makeItem("action-settings", "Open Settings", "Actions", "Configure theme, density, and more", "⌘,"),
-    makeItem("action-logs", "Show Logs", "Actions", "Open the log viewer", "⌘L"),
-    makeItem("action-refresh", "Refresh Resources", "Actions", "Reload current resource list"),
-    makeItem("res-action-logs", "View Logs", "Resource Actions", "Show logs for nginx-pod"),
-    makeItem("res-action-delete", "Delete Resource", "Resource Actions", "Delete nginx-pod"),
+    makeItem("action-settings", "Open settings", "Actions", "Configure theme, density, and more", "⌘,"),
+    makeItem("action-logs", "Show logs", "Actions", "Open the log viewer", "⌘L"),
+    makeItem("action-refresh", "Refresh resources", "Actions", "Reload current resource list"),
+    makeItem("res-action-logs", "View logs", "Resource Actions", "Show logs for nginx-pod"),
+    makeItem("res-action-delete", "Delete resource", "Resource Actions", "Delete nginx-pod"),
   ];
 }
 
@@ -102,7 +102,7 @@ describe("CommandPalette logic", () => {
     });
 
     test("matches token in description", () => {
-      const item = makeItem("1", "Open Settings", "Actions", "Configure theme, density, and more");
+      const item = makeItem("1", "Open settings", "Actions", "Configure theme, density, and more");
       expect(matchItem(item, ["theme"])).toBe(true);
     });
 
@@ -130,7 +130,7 @@ describe("CommandPalette logic", () => {
     });
 
     test("matches across label and description combined", () => {
-      const item = makeItem("1", "Open Settings", "Actions", "Configure theme");
+      const item = makeItem("1", "Open settings", "Actions", "Configure theme");
       // "open" in label, "theme" in description
       expect(matchItem(item, ["open", "theme"])).toBe(true);
     });
@@ -173,7 +173,7 @@ describe("CommandPalette logic", () => {
 
     test("single token filters correctly", () => {
       const result = filterCommandItems(sampleItems, "pods");
-      // Matches: "Pods" (Resources), "View Logs" (has "nginx-pod" not "pods"),
+      // Matches: "Pods" (Resources), "View logs" (has "nginx-pod" not "pods"),
       // Wait let me check: "Pods" label + "View Pods" desc, also "res-action-logs" has "nginx-pod" not "pods"
       const labels = result.map((i) => i.label);
       expect(labels).toContain("Pods");
@@ -203,7 +203,7 @@ describe("CommandPalette logic", () => {
     test("query matching description but not label", () => {
       const result = filterCommandItems(sampleItems, "theme");
       expect(result.length).toBe(1);
-      expect(result[0].label).toBe("Open Settings");
+      expect(result[0].label).toBe("Open settings");
     });
 
     test("query matching category but not label or description", () => {

@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { Badge, Button } from "$lib/components/ui";
-  import { ScrollText, ExternalLink, RefreshCw, Stethoscope, FileCode, Box, Bot } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
+  import { ArrowRight, ScrollText, ExternalLink, RefreshCw, FileCode, Box, Bot } from "lucide-svelte";
   import { formatAge, formatTimestamp } from "$lib/utils/age";
-  import { cn } from "$lib/utils";
   import type { DiagnosisVerdict, PodRef, Problem } from "$lib/types";
   import type { WorkloadRef } from "$lib/utils/pod-status";
   import type { Diagnosis } from "$lib/stores/overview.svelte";
@@ -34,7 +33,7 @@
   }
 
   let { problem, diagnosis, restartTarget, onLogs, onRestart, onOpen, onPodOpen, onPodLogs, onYaml }: Props = $props();
-  let critical = $derived(problem.severity === "critical");
+  let tone = $derived(problem.severity === "critical" ? "var(--status-failed)" : "var(--status-pending)");
   // The diagnosis carries cause/pod on the wire (electron/handlers/topology/diagnostics.ts);
   // DiagnosticResult in types/cluster.ts predates them, hence the narrowing here.
   let verdict = $derived<Partial<DiagnosisVerdict> | null>(diagnosis && diagnosis !== "loading" && !("error" in diagnosis) ? (diagnosis as Partial<DiagnosisVerdict>) : null);
@@ -74,48 +73,50 @@
   }
 </script>
 
-<div class="flex flex-col gap-4 p-4 text-[12px]" data-testid="problem-detail">
+<div class="flex flex-col gap-5 p-4 text-[12px]" data-testid="problem-detail">
   <div class="flex flex-col gap-1">
     <div class="flex items-center gap-2">
-      <span class={cn("h-2 w-2 rounded-full", critical ? "bg-[var(--status-failed)]" : "bg-[var(--status-pending)]")}></span>
       <span class="truncate font-mono text-[13px] font-medium text-[var(--text-primary)]">{problem.name}</span>
     </div>
     <span class="text-[11px] text-[var(--text-muted)]">{problem.kind}{problem.namespace ? ` · ${problem.namespace}` : ""}{problem.owner ? ` · owned by ${problem.owner}` : ""}</span>
-    <div class="mt-2 flex flex-wrap gap-1.5" data-testid="problem-actions">
+    <div class="mt-3 flex flex-wrap gap-2" data-testid="problem-actions">
       {#if actions.pod}
         {@const pod = actions.pod}
-        <Button size="sm" variant="accent" onclick={() => podLogs(pod)} data-testid="action-pod-logs"><ScrollText class="h-3 w-3" /> {podIsOther ? "View pod logs" : "Logs"}</Button>
+        <Button size="sm" variant="accent" onclick={() => podLogs(pod)} data-testid="action-pod-logs"><ScrollText class="h-3.5 w-3.5" /> {podIsOther ? "View pod logs" : "Logs"}</Button>
         {#if podIsOther}
-          <Button size="sm" variant="outline" onclick={() => openPod(pod)} data-testid="action-pod-open"><Box class="h-3 w-3" /> Open pod</Button>
+          <Button size="sm" variant="toolbar" onclick={() => openPod(pod)} data-testid="action-pod-open"><Box class="h-3.5 w-3.5" /> Open pod</Button>
         {/if}
       {/if}
       {#if canRestart && restartTarget}
-        <Button size="sm" variant="outline" onclick={onRestart} data-testid="action-restart"><RefreshCw class="h-3 w-3" /> Restart {restartTarget.kind.toLowerCase()}</Button>
+        <Button size="sm" variant="toolbar" onclick={onRestart} data-testid="action-restart"><RefreshCw class="h-3.5 w-3.5" /> Restart {restartTarget.kind.toLowerCase()}</Button>
       {/if}
       {#if actions.yaml}
-        <Button size="sm" variant="outline" onclick={openYaml} data-testid="action-yaml"><FileCode class="h-3 w-3" /> Open {problem.kind} YAML</Button>
+        <Button size="sm" variant="toolbar" onclick={openYaml} data-testid="action-yaml"><FileCode class="h-3.5 w-3.5" /> Open {problem.kind} YAML</Button>
       {/if}
-      <Button size="sm" variant="outline" onclick={onOpen}><ExternalLink class="h-3 w-3" /> Open detail</Button>
-      <Button size="sm" variant="outline" onclick={investigate} data-testid="action-agent"><Bot class="h-3 w-3" /> Investigate with agent</Button>
+      <Button size="sm" variant="toolbar" onclick={onOpen}><ExternalLink class="h-3.5 w-3.5" /> Open detail</Button>
+      <Button size="sm" variant="toolbar" onclick={investigate} data-testid="action-agent"><Bot class="h-3.5 w-3.5" /> Investigate with agent</Button>
     </div>
   </div>
 
-  <div class="flex flex-col gap-1.5">
-    <span class="text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">What is wrong</span>
-    <div class={cn("rounded-md border px-3 py-2", critical ? "border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10" : "border-[var(--status-pending)]/30 bg-[var(--status-pending)]/10")}>
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="font-medium text-[var(--text-primary)]">{problem.reason}{problem.ready !== null && problem.desired !== null ? ` · ${problem.ready}/${problem.desired} ready` : ""}</span>
-        {#if causeLabel}<Badge appearance="surface" size="xs" data-testid="problem-cause">{causeLabel}</Badge>{/if}
+  <div class="flex flex-col gap-2">
+    <h3 class="text-[13px] font-medium text-[var(--text-primary)]">What is wrong</h3>
+    <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+      <div class="flex items-center gap-2" style:color={tone}>
+        <span class="h-1.5 w-1.5 shrink-0 rounded-full" style:background-color={tone}></span>
+        <span class="min-w-0 truncate">{problem.reason}{problem.ready !== null && problem.desired !== null ? ` · ${problem.ready}/${problem.desired} ready` : ""}</span>
+        {#if causeLabel}<span class="ml-auto shrink-0 text-[11px] text-[var(--text-muted)]" data-testid="problem-cause">{causeLabel}</span>{/if}
       </div>
-      {#if problem.detail}<div class="mt-1 leading-relaxed text-[var(--text-secondary)]">{problem.detail}</div>{/if}
-      {#if podIsOther && actions.pod}<div class="mt-1 font-mono text-[11px] text-[var(--text-muted)]">pod {actions.pod.name}{actions.pod.container ? ` · container ${actions.pod.container}` : ""}</div>{/if}
-      {#if problem.restarts}<div class="mt-1 text-[11px] text-[var(--text-muted)]">{problem.restarts} restarts</div>{/if}
-      {#if problem.since}<div class="mt-1 text-[11px] text-[var(--text-muted)]">since {formatTimestamp(problem.since)} ({formatAge(problem.since)})</div>{/if}
+      <div class="flex flex-col gap-1 pl-3.5 pt-1 text-[11px] text-[var(--text-muted)]">
+        {#if problem.detail}<div class="text-[12px] leading-relaxed text-[var(--text-secondary)]">{problem.detail}</div>{/if}
+        {#if podIsOther && actions.pod}<div class="font-mono">pod {actions.pod.name}{actions.pod.container ? ` · container ${actions.pod.container}` : ""}</div>{/if}
+        {#if problem.restarts}<div>{problem.restarts} restarts</div>{/if}
+        {#if problem.since}<div>since {formatTimestamp(problem.since)} ({formatAge(problem.since)})</div>{/if}
+      </div>
     </div>
   </div>
 
-  <div class="flex flex-col gap-1.5" data-testid="problem-diagnosis">
-    <span class="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]"><Stethoscope class="h-3 w-3" /> Diagnosis</span>
+  <div class="flex flex-col gap-2" data-testid="problem-diagnosis">
+    <h3 class="text-[13px] font-medium text-[var(--text-primary)]">Diagnosis</h3>
     {#if !diagnosis || diagnosis === "loading"}
       <span class="text-[var(--text-muted)]">Checking…</span>
     {:else if "error" in diagnosis}
@@ -125,13 +126,13 @@
     {:else}
       <ul class="flex flex-col gap-2">
         {#each diagnosis.issues as issue, i (i)}
-          <li class="rounded-md border border-[var(--border-color)] px-3 py-2">
+          <li class="flex flex-col gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
             <div class="flex items-center gap-2">
-              <Badge tone={issue.severity === "critical" ? "error" : issue.severity === "warning" ? "warning" : "info"}>{issue.severity}</Badge>
+              <span class="h-1.5 w-1.5 shrink-0 rounded-full" style:background-color={issue.severity === "critical" ? "var(--status-failed)" : issue.severity === "warning" ? "var(--status-pending)" : "var(--status-succeeded)"} title={issue.severity}></span>
               <span class="font-medium text-[var(--text-primary)]">{issue.title}</span>
             </div>
-            <div class="mt-1 leading-relaxed text-[var(--text-secondary)]">{issue.detail}</div>
-            {#if issue.suggestion}<div class="mt-1 text-[11px] text-[var(--accent)]">→ {issue.suggestion}</div>{/if}
+            <div class="leading-relaxed text-[var(--text-secondary)]">{issue.detail}</div>
+            {#if issue.suggestion}<div class="flex items-center gap-2 text-[var(--text-primary)]"><ArrowRight class="h-3 w-3 shrink-0 text-[var(--text-muted)]" />{issue.suggestion}</div>{/if}
           </li>
         {/each}
       </ul>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TopologyNode } from "$lib/types";
-  import { KIND_COLORS, KIND_SHORT, STATUS_COLORS, DEFAULT_KIND_COLOR } from "$lib/utils/k8s-colors";
+  import { KIND_SHORT } from "$lib/utils/k8s-colors";
+  import { nodeStateColor } from "./topology-state";
 
   interface Props {
     node: TopologyNode;
@@ -17,12 +18,10 @@
 
   let { node, x, y, width, height, selected, dimmed, onmouseenter, onmouseleave, onclick }: Props = $props();
 
-  let color = $derived(KIND_COLORS[node.kind] ?? DEFAULT_KIND_COLOR);
-  let statusColor = $derived(
-    node.status ? (STATUS_COLORS[node.status] ?? "var(--text-muted)") : null
-  );
+  let stateColor = $derived(nodeStateColor(node));
+  // The tail is what tells two replicas apart, so it survives the cut.
   let displayName = $derived(
-    node.name.length > 22 ? node.name.slice(0, 20) + "…" : node.name
+    node.name.length > 28 ? `${node.name.slice(0, 22)}…${node.name.slice(-5)}` : node.name
   );
   let kindLabel = $derived(KIND_SHORT[node.kind] ?? node.kind);
 </script>
@@ -37,55 +36,40 @@
   {onmouseleave}
   {onclick}
 >
-  <!-- Background rect -->
+  <!-- Colour means state, and healthy is the quiet case: a node only takes a
+       colour when it needs a look. The kind is in the label. -->
   <rect
     x="0" y="0"
     {width} {height}
     rx="8"
     fill="var(--bg-secondary)"
-    stroke={selected ? "var(--accent)" : node.is_ghost ? "var(--text-muted)" : color}
+    stroke={selected ? "var(--accent)" : node.is_ghost ? "var(--text-muted)" : stateColor ?? "var(--border-hover)"}
     stroke-width={selected ? 2 : 1}
     stroke-dasharray={node.is_ghost ? "4 2" : "none"}
-    class="transition-all duration-150"
+    class="transition-colors duration-150"
   />
 
-  <!-- Kind color bar (left accent) -->
-  <rect
-    x="0" y="0"
-    width="4" {height}
-    rx="2"
-    fill={node.is_ghost ? "var(--text-muted)" : color}
-    opacity={node.is_ghost ? 0.4 : 0.8}
-  />
+  {#if stateColor}
+    <circle cx="15" cy="15" r="3" fill={stateColor} />
+  {/if}
 
   <!-- Kind label -->
   <text
-    x="14" y="17"
-    font-size="9"
-    font-weight="600"
-    fill={node.is_ghost ? "var(--text-muted)" : color}
-    letter-spacing="0.5"
+    x={stateColor ? 24 : 12} y="19"
+    font-size="11"
+    fill="var(--text-muted)"
+    font-family="var(--font-mono)"
   >
     {node.is_ghost ? "? " : ""}{kindLabel}
   </text>
 
   <!-- Name -->
   <text
-    x="14" y="35"
-    font-size="11"
+    x="12" y="35"
+    font-size="12"
     fill="var(--text-primary)"
-    font-family="monospace"
+    font-family="var(--font-mono)"
   >
     {displayName}
   </text>
-
-  <!-- Status dot -->
-  {#if statusColor}
-    <circle
-      cx={width - 14}
-      cy={height / 2}
-      r="4"
-      fill={statusColor}
-    />
-  {/if}
 </g>

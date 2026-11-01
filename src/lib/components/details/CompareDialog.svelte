@@ -128,7 +128,7 @@
   >
     <div class="flex min-h-0 flex-1 flex-col gap-3 p-1">
       <div>
-        <h3 id="compare-dialog-title" class="text-[13px] font-semibold text-[var(--text-primary)]">
+        <h3 id="compare-dialog-title" class="text-[13px] font-medium text-[var(--text-primary)]">
           Compare {resource.kind}
         </h3>
         <p id="compare-dialog-desc" class="mt-1 text-[11px] text-[var(--text-muted)]">

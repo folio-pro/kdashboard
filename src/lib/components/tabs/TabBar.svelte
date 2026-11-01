@@ -200,7 +200,7 @@
 <!-- Hidden while only the default Pods tab is open — same clean-start rule the
      old default Overview tab had. -->
 {#if uiStore.tabs.length > 1 || (uiStore.tabs.length === 1 && uiStore.tabs[0].id !== DEFAULT_TAB_ID)}
-  <div class="flex h-[34px] shrink-0 items-stretch bg-[var(--bg-primary)] pt-1">
+  <div class="flex h-9 shrink-0 items-stretch bg-[var(--bg-primary)]">
     <div class="relative min-w-0 flex-1">
       <div
         bind:this={stripEl}
@@ -218,10 +218,10 @@
             aria-selected={isActive}
             data-tab-id={tab.id}
             class={cn(
-              "group relative flex max-w-[180px] min-w-[112px] items-center gap-1.5 px-3 text-[11px] transition-colors",
+              "group relative flex max-w-[180px] shrink-0 items-center gap-2 px-3 text-[12px] transition-colors",
               isActive
-                ? "rounded-t-md bg-[var(--bg-secondary)] text-[var(--text-primary)]"
-                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                ? "text-[var(--text-primary)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             )}
             onclick={() => uiStore.activateTab(tab.id)}
             onmousedown={(e) => handleMiddleClick(e, tab)}
@@ -231,21 +231,21 @@
             {#if isActive}
               <span class="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent)]"></span>
             {/if}
-            <Icon class={cn("h-3 w-3 shrink-0", isActive && "text-[var(--accent)]")} />
+            <Icon class={cn("h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]", isActive && "text-[var(--text-primary)]")} />
             {#if tab.resourceName && RESOURCE_TAB_TYPES.has(tab.type)}
-              <span class="shrink-0 font-semibold">{VIEW_LABELS[tab.type]}</span>
+              <span class="shrink-0 font-medium">{VIEW_LABELS[tab.type]}</span>
               <span class="min-w-0 flex-1 truncate">{tab.resourceName}</span>
             {:else}
               <span class="min-w-0 flex-1 truncate">{tab.label}</span>
             {/if}
             {#if tab.count !== undefined && tab.count > 0 && !crowded}
-              <span class="shrink-0 tabular-nums text-[10px] text-[var(--text-muted)]">{tab.count}</span>
+              <span class="shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">{tab.count}</span>
             {/if}
             {#if tab.closable}
               <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
               <span
                 class={cn(
-                  "ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-all",
+                  "ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-colors",
                   isActive
                     ? "opacity-50 hover:opacity-100 hover:bg-[var(--bg-tertiary)]"
                     : "opacity-0 group-hover:opacity-50 hover:opacity-100 hover:bg-[var(--bg-tertiary)]"
@@ -307,22 +307,22 @@
             >
               <Icon class="h-3 w-3 shrink-0" />
               {#if tab.resourceName && RESOURCE_TAB_TYPES.has(tab.type)}
-                <span class="shrink-0 font-semibold">{VIEW_LABELS[tab.type]}</span>
+                <span class="shrink-0 font-medium">{VIEW_LABELS[tab.type]}</span>
                 <span class="min-w-0 flex-1 truncate">{tab.resourceName}</span>
               {:else}
                 <span class="min-w-0 flex-1 truncate">{tab.label}</span>
               {/if}
               {#if tab.namespace}
-                <span class="shrink-0 truncate text-[10px] text-[var(--text-muted)]">{tab.namespace}</span>
+                <span class="shrink-0 truncate text-[11px] text-[var(--text-muted)]">{tab.namespace}</span>
               {/if}
               {#if tab.count !== undefined && tab.count > 0}
-                <span class="shrink-0 tabular-nums text-[10px] text-[var(--text-muted)]">{tab.count}</span>
+                <span class="shrink-0 tabular-nums text-[11px] text-[var(--text-muted)]">{tab.count}</span>
               {/if}
             </MenuItem>
           {/each}
           <MenuSeparator />
           <MenuItem role="menuitem" onclick={() => { uiStore.closeAllTabs(); overflowOpen = false; }}>
-            Close All
+            Close all
           </MenuItem>
         </Menu>
       {/if}
@@ -351,24 +351,24 @@
       </MenuItem>
     {/if}
     <MenuItem role="menuitem" onclick={() => ctxAction(() => uiStore.closeOtherTabs(ctxMenu!.tabId))}>
-      Close Others
+      Close others
     </MenuItem>
     <MenuItem
       role="menuitem"
       disabled={ctxIdx <= 0 || !uiStore.tabs.slice(0, ctxIdx).some(t => t.closable)}
       onclick={() => ctxAction(() => uiStore.closeTabsToTheLeft(ctxMenu!.tabId))}
     >
-      Close to the Left
+      Close to the left
     </MenuItem>
     <MenuItem
       role="menuitem"
       disabled={ctxIdx >= uiStore.tabs.length - 1 || !uiStore.tabs.slice(ctxIdx + 1).some(t => t.closable)}
       onclick={() => ctxAction(() => uiStore.closeTabsToTheRight(ctxMenu!.tabId))}
     >
-      Close to the Right
+      Close to the right
     </MenuItem>
     <MenuItem role="menuitem" onclick={() => ctxAction(() => uiStore.closeAllTabs())}>
-      Close All
+      Close all
     </MenuItem>
     <MenuSeparator />
     <MenuItem
@@ -376,14 +376,14 @@
       disabled={ctxIdx <= 0}
       onclick={() => ctxAction(() => uiStore.moveTab(ctxMenu!.tabId, "left"))}
     >
-      Move Left
+      Move left
     </MenuItem>
     <MenuItem
       role="menuitem"
       disabled={ctxIdx >= uiStore.tabs.length - 1}
       onclick={() => ctxAction(() => uiStore.moveTab(ctxMenu!.tabId, "right"))}
     >
-      Move Right
+      Move right
     </MenuItem>
   </Menu>
 {/if}

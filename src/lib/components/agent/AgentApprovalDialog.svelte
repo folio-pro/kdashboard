@@ -36,7 +36,7 @@
             <ShieldAlert class="h-4 w-4 text-[var(--status-warning)]" />
           </div>
           <div>
-            <h3 id="agent-approval-title" class="text-[13px] font-semibold text-[var(--text-primary)]">
+            <h3 id="agent-approval-title" class="text-[13px] font-medium text-[var(--text-primary)]">
               Agent requests a change
             </h3>
             <p id="agent-approval-desc" class="mt-1 text-[11px] text-[var(--text-muted)]">
@@ -65,7 +65,7 @@
           <Button variant="outline" size="md" onclick={() => agentStore.respondApproval(current.id, false)}>
             Deny
           </Button>
-          <Button variant="solid-tone" tone="success" size="md" onclick={() => agentStore.respondApproval(current.id, true)}>
+          <Button variant="accent" size="md" onclick={() => agentStore.respondApproval(current.id, true)}>
             Approve
           </Button>
         </div>

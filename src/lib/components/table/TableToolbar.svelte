@@ -11,7 +11,7 @@
   import { k8sStore } from "$lib/stores/k8s.svelte";
 
   /**
-   * One 44px bar: title, namespace, saved views, then the search box (which
+   * One 48px bar: title, namespace, saved views, then the search box (which
    * holds the typed filters as chips), density, columns, refresh, Create.
    */
   interface Props {
@@ -33,10 +33,10 @@
 </script>
 
 <header
-  class="flex h-[44px] shrink-0 items-center gap-2.5 border-b border-[var(--border-color)] bg-[var(--bg-primary)] pl-6 pr-4"
+  class="flex h-12 shrink-0 items-center gap-2 bg-[var(--bg-primary)] pl-6 pr-4"
   data-drag-region
 >
-  <h1 class="shrink-0 text-[15px] font-semibold tracking-tight text-[var(--text-primary)]" data-drag-region>
+  <h1 class="mr-2 shrink-0 text-[15px] font-medium text-[var(--text-primary)]" data-drag-region>
     {resourceTypeLabel}
   </h1>
 
@@ -46,7 +46,7 @@
     <NamespacePicker />
   {/if}
 
-  <span class="h-[18px] w-px shrink-0 bg-[var(--border-color)]" aria-hidden="true"></span>
+  <span class="mx-1 h-4 w-px shrink-0 bg-[var(--border-color)]" aria-hidden="true"></span>
 
   <SavedViewTabs {resourceType} {viewCounts} />
 
@@ -57,9 +57,8 @@
   <ColumnPicker {resourceType} {allColumns} {namespaceAutoHidden} />
 
   <Button
-    variant="ghost"
+    variant="muted"
     size="icon-sm"
-    class="text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
     onclick={onrefresh}
     title="Refresh (r)"
     aria-label="Refresh"
@@ -70,7 +69,6 @@
   <Button
     variant="accent"
     size="sm"
-    class="font-semibold"
     onclick={oncreate}
     title="Create resources from YAML — write, paste or start from a template"
   >

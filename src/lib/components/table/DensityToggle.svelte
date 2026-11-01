@@ -10,7 +10,7 @@
 </script>
 
 <div
-  class="flex h-7 shrink-0 items-center gap-0.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] p-0.5"
+  class="flex h-7 shrink-0 items-center gap-0.5 rounded-md p-0.5"
   role="radiogroup"
   aria-label="Row density"
 >
@@ -22,6 +22,7 @@
       size="icon-xs"
       {active}
       activeStyle="raised"
+      class={active ? "bg-[var(--bg-tertiary)] shadow-none" : ""}
       role="radio"
       aria-checked={active}
       title={DENSITY_LABEL[d]}

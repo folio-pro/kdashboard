@@ -76,7 +76,7 @@
   bind:ref={input}
   id="resource-filter"
   class="ml-auto w-[340px] min-w-[160px] shrink"
-  placeholder={uiStore.facets.length ? "…" : "Search or key:value…"}
+  placeholder={uiStore.facets.length ? "…" : "Search or key:value"}
   ariaLabel="Search {resourceTypeLabel.toLowerCase()}"
   bind:value={() => uiStore.filter, (v) => uiStore.setFilter(v)}
   onkeydown={handleKeydown}

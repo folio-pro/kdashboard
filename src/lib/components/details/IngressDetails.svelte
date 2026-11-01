@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Badge } from "$lib/components/ui";
-  import { ChevronRight, Network, Lock } from "lucide-svelte";
+  import { ChevronRight } from "lucide-svelte";
   import type { Resource, ResourceList } from "$lib/types";
   import { invoke } from "$lib/ipc/core";
   import MetadataSection from "./MetadataSection.svelte";
@@ -92,20 +92,20 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title="Ingress Spec" icon={Network}>
+  <DetailSection title="Ingress spec">
     <KvGrid>
-      <KvField label="Ingress Class" value={ingressClassName ?? "-"} />
+      <KvField label="Ingress class" value={ingressClassName ?? "-"} />
       {#if loadBalancerIngress.length > 0}
-        <KvField label="Load Balancer" value={loadBalancerIngress.map((i) => i.ip ?? i.hostname ?? "").join(", ")} />
+        <KvField label="Load balancer" value={loadBalancerIngress.map((i) => i.ip ?? i.hostname ?? "").join(", ")} />
       {/if}
       {#if defaultBackendStr}
-        <KvField label="Default Backend" value={defaultBackendMissing ? `${defaultBackendStr} (service not found)` : defaultBackendStr} />
+        <KvField label="Default backend" value={defaultBackendMissing ? `${defaultBackendStr} (service not found)` : defaultBackendStr} />
       {/if}
     </KvGrid>
   </DetailSection>
 
   {#if tls.length > 0}
-    <DetailSection title="TLS" icon={Lock}>
+    <DetailSection title="TLS">
       {#snippet actions()}
         <span class="font-mono text-[11px] text-[var(--text-muted)]">{tls.length}</span>
       {/snippet}
@@ -130,14 +130,14 @@
   {/if}
 
   {#if rules.length > 0}
-    <DetailSection title="Rules" icon={Network}>
+    <DetailSection title="Rules">
       {#snippet actions()}
         <span class="font-mono text-[11px] text-[var(--text-muted)]">{rules.length}</span>
       {/snippet}
       <div class="flex flex-col gap-4">
         {#each rules as rule}
           <div class="flex flex-col gap-2">
-            <span class="text-[13px] font-semibold text-[var(--text-primary)]">{rule.host ?? "*"}</span>
+            <span class="text-[13px] font-medium text-[var(--text-primary)]">{rule.host ?? "*"}</span>
             {#if rule.http?.paths}
               {#each rule.http.paths as path}
                 {@const missing = serviceMissing(path.backend?.service?.name)}

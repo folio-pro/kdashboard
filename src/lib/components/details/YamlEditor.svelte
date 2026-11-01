@@ -388,17 +388,17 @@
            shows the name, kind and namespace directly above this component. -->
       <div class="ml-auto flex items-center gap-0.5">
         {#if isModified}
-          <Badge tone="warning" class="mr-1 font-semibold">MODIFIED</Badge>
+          <Badge tone="warning" class="mr-1 font-medium">Modified</Badge>
         {/if}
         {#if saveSuccess}
-          <Badge tone="success" class="mr-1 font-semibold">SAVED</Badge>
+          <Badge tone="success" class="mr-1 font-medium">Saved</Badge>
         {/if}
         {#if activeTab === "editor" && errorCount > 0}
           <Button
             variant="soft-tone"
             tone="error"
             size="inline-xs"
-            class="mr-1 px-1.5 py-0.5 font-semibold"
+            class="mr-1 px-1.5 py-0.5 font-medium"
             onclick={handleShowProblems}
             title="Show problems (F8)"
             aria-label="Show problems: {errorCount} error{errorCount === 1 ? '' : 's'}"
@@ -412,7 +412,7 @@
             variant="soft-tone"
             tone="warning"
             size="inline-xs"
-            class="mr-1 px-1.5 py-0.5 font-semibold"
+            class="mr-1 px-1.5 py-0.5 font-medium"
             onclick={handleShowProblems}
             title="Show problems (F8)"
             aria-label="Show problems: {warningCount} warning{warningCount === 1 ? '' : 's'}"
@@ -470,7 +470,7 @@
         <Button
           variant={isModified && errorCount === 0 ? "accent" : "outline"}
           size="xs"
-          class="ml-1 px-2.5 font-semibold"
+          class="ml-1 px-2.5 font-medium"
           onclick={saveYaml}
           disabled={isSaving || !isModified || errorCount > 0}
           title={errorCount > 0 ? "Fix the YAML errors before applying" : "Apply to cluster"}

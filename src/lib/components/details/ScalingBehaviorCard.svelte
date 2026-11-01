@@ -45,7 +45,7 @@
 {#snippet directionSection(label: string, dir: ScalingDirection, color: string)}
   <div class="border-t border-[var(--border-hover)] px-5 py-3">
     <div class="mb-2 flex items-center gap-2">
-      <span class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
+      <span class="text-[11px] font-medium text-[var(--text-muted)]">{label}</span>
       {#if dir.selectPolicy}
         <Badge appearance="surface" tone="muted" mono>{dir.selectPolicy}</Badge>
       {/if}
@@ -70,7 +70,7 @@
 {/snippet}
 
 {#if hasContent}
-  <CollapsibleCard title="Scaling Behavior">
+  <CollapsibleCard title="Scaling behavior">
     {#if scaleUp}
       {@render directionSection("Scale Up", scaleUp, "var(--status-running)")}
     {/if}

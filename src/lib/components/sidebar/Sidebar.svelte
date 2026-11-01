@@ -1,6 +1,5 @@
 <script lang="ts">
   import { cn } from "$lib/utils";
-  import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "$lib/components/ui/tooltip";
   import { ChevronRight, Pin, X } from "lucide-svelte";
   import { Button, SearchField } from "$lib/components/ui";
@@ -55,7 +54,7 @@
     !k8sStore.reachable
       ? "var(--status-failed)"
       : k8sStore.connectionStatus === "connected"
-        ? "var(--accent)"
+        ? "var(--status-running)"
         : k8sStore.connectionStatus === "connecting"
           ? "var(--status-pending)"
           : "var(--status-failed)"
@@ -171,7 +170,9 @@
           <mount.component />
         {/each}
 
-        <ScrollArea class="flex-1 w-full">
+        <!-- No scrollbar on this 44px rail: a classic one takes its width from the
+             column and pushes every icon off centre. The wheel still scrolls. -->
+        <div class="rail-scroll min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden">
           <div class="flex flex-col items-center">
             {#each sections as section}
               <!--
@@ -199,7 +200,7 @@
               </div>
             {/each}
           </div>
-        </ScrollArea>
+        </div>
 
         {#each extensions.mountsFor("sidebar-footer") as mount (mount.id)}
           <mount.component />
@@ -213,17 +214,17 @@
         <!-- Active cluster header: connection dot + context + at-a-glance
              cluster facts, matching the flat-list reference design. -->
         {#if k8sStore.currentContext}
-          <div class="flex items-center gap-[9px] border-b border-[var(--border-color)] px-[13px] py-3">
+          <div class="flex h-[52px] shrink-0 items-center gap-2 px-4">
             <span
               class="h-2 w-2 shrink-0 rounded-full"
               role="img"
               aria-label={statusTitle}
               title={statusTitle}
-              style={`background: ${statusColor}; box-shadow: 0 0 0 3px color-mix(in srgb, ${statusColor} 16%, transparent);`}
+              style={`background: ${statusColor};`}
             ></span>
             <div class="flex min-w-0 flex-1 flex-col">
-              <span class="truncate text-[12px] font-semibold leading-tight text-[var(--text-primary)]" title={k8sStore.currentContext}>{k8sStore.currentContext}</span>
-              <span class="truncate font-mono text-[10px] text-[var(--text-muted)]">{clusterSubline}</span>
+              <span class="truncate text-[13px] font-medium leading-tight text-[var(--text-primary)]" title={k8sStore.currentContext}>{k8sStore.currentContext}</span>
+              <span class="truncate font-mono text-[11px] text-[var(--text-muted)]">{clusterSubline}</span>
             </div>
           </div>
         {/if}
@@ -234,11 +235,11 @@
 
         <!-- Nav filter: the only practical way through a cluster whose CRDs
              contribute dozens of sections. -->
-        <div class="shrink-0 px-[13px] py-2">
+        <div class="shrink-0 px-2 pb-1">
           <SearchField
             size="sm"
             clearable
-            placeholder="Filter resources..."
+            placeholder="Filter"
             ariaLabel="Filter sidebar resources"
             bind:value={sidebarStore.filter}
           />
@@ -246,9 +247,12 @@
 
         <!-- One scroll for the whole tree, section headers stick to the top
              (plain overflow container so position:sticky works). -->
-        <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-3.5">
+        <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <!-- Padding lives on this inner box: on the scroller itself it would
+               offset the sticky section headers and let rows show above them. -->
+          <div class="px-2 pt-3 pb-4">
           {#if noMatches}
-            <p class="px-[15px] py-3 text-[11px] leading-snug text-[var(--text-muted)]">
+            <p class="px-2 py-3 text-[11px] leading-snug text-[var(--text-muted)]">
               Nothing matches “{sidebarStore.filter}”.
             </p>
           {/if}
@@ -256,10 +260,10 @@
           {#if settingsStore.pinnedResources.length > 0 && !isFiltering}
             <SidebarSection title="Pinned">
               {#each settingsStore.pinnedResources as pin}
-                <div class="group flex w-full items-center border-l-2 border-transparent pr-[13px] transition-colors hover:bg-[var(--sidebar-hover)]">
+                <div class="group flex h-8 w-full items-center rounded-md pr-1 transition-colors hover:bg-[var(--sidebar-hover)]">
                   <button
                     class={cn(
-                      "flex min-w-0 flex-1 items-center gap-2.5 py-[6px] pl-[13px] text-left text-[12px] transition-colors",
+                      "flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left text-[12px] transition-colors",
                       "text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]"
                     )}
                     onclick={async () => {
@@ -276,9 +280,9 @@
                       }
                     }}
                   >
-                    <Pin class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
+                    <Pin class="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
                     <span class="min-w-0 flex-1 truncate">{pin.name}</span>
-                    <span class="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{pin.kind}</span>
+                    <span class="shrink-0 font-mono text-[11px] text-[var(--text-muted)]">{pin.kind}</span>
                   </button>
                   <Button
                     type="button"
@@ -313,8 +317,9 @@
 
           <!-- CRD Discovery: Custom Resources -->
           {#if k8sStore.crdError}
+            <!-- Title is the persisted collapse key (sidebar store): do not reword. -->
             <SidebarSection title="Custom Resources">
-              <div class="px-[15px] py-2 text-[11px] leading-snug text-[var(--text-muted)]">
+              <div class="px-2 py-2 text-[11px] leading-snug text-[var(--text-muted)]">
                 {#if k8sStore.crdError.includes("orbidden") || k8sStore.crdError.includes("403")}
                   No permission to list CRDs in this cluster.
                 {:else}
@@ -338,8 +343,18 @@
               </SidebarSection>
             {/each}
           {/if}
+          </div>
         </div>
       </div>
     {/if}
   </aside>
 </TooltipProvider>
+
+<style>
+  .rail-scroll {
+    scrollbar-width: none;
+  }
+  .rail-scroll::-webkit-scrollbar {
+    display: none;
+  }
+</style>

@@ -42,7 +42,7 @@
   </PopoverTrigger>
   <PopoverContent align="end" class="w-[220px] p-1">
     <div class="flex items-center justify-between px-2 py-1.5">
-      <span class="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">Columns</span>
+      <span class="text-[11px] font-medium text-[var(--text-muted)]">Columns</span>
       {#if hiddenCount > 0}
         <Button variant="muted" size="inline-xs" onclick={() => tablePrefs.resetColumns(resourceType)}>
           <RotateCcw class="h-2.5 w-2.5" />
@@ -69,7 +69,7 @@
           />
           <span class="flex-1 truncate">{column.label}</span>
           {#if autoHidden}
-            <span class="text-[10px] text-[var(--text-muted)]">auto</span>
+            <span class="text-[11px] text-[var(--text-muted)]">auto</span>
           {/if}
         </label>
       {/each}

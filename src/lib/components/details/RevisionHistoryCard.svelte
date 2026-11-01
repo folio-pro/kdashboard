@@ -162,7 +162,7 @@
   <div class="flex items-center justify-between px-6 py-4">
     <div class="flex items-center gap-2">
       <History class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Revision History</span>
+      <span class="text-[11px] font-medium text-[var(--text-muted)]">Revision History</span>
     </div>
     <span class="text-[11px] text-[var(--text-muted)]">
       {#if loading}
@@ -182,10 +182,10 @@
       <table class="w-full">
         <thead>
           <tr class="border-b border-[var(--border-hover)]">
-            <th class="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Rev</th>
-            <th class="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Images</th>
-            <th class="px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Age</th>
-            <th class="px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]"></th>
+            <th class="px-4 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Rev</th>
+            <th class="px-4 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Images</th>
+            <th class="px-4 py-2 text-left text-[11px] font-medium text-[var(--text-muted)]">Age</th>
+            <th class="px-4 py-2 text-right text-[11px] font-medium text-[var(--text-muted)]"></th>
           </tr>
         </thead>
         <tbody>
@@ -288,7 +288,7 @@
   description={pendingRevision
     ? `Rollback ${resource.metadata.name} to revision #${pendingRevision.revision}? Running pods will be replaced with the template from this revision.`
     : ""}
-  confirmLabel={rollbackInFlight ? "Rolling back..." : "Rollback"}
+  confirmLabel={rollbackInFlight ? "Rolling back…" : "Rollback"}
   variant="destructive"
   onconfirm={confirmRollback}
   oncancel={() => (pendingRevision = null)}

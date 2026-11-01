@@ -45,15 +45,15 @@
         {:else}
           <p class="text-[11px] text-[var(--text-muted)]">Click a workload to see what may reach it. Dashed arrows are flows the policies allow inside this namespace.</p>
         {/if}
-        <div class="text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">Policies · {o.policy_count}</div>
+        <div class="text-[11px] text-[var(--text-muted)]">Policies · {o.policy_count}</div>
         {#if o.policies.length === 0}
           <p class="text-[11px] text-[var(--text-muted)]">None in this namespace — every pod accepts traffic from anywhere.</p>
         {/if}
         {#each o.policies as pol (pol.name)}
           <Button variant="ghost" size="xs" class="w-full justify-start gap-2 px-2" onclick={() => void openRelatedResourceTab("networkpolicies", pol.name, namespace)} data-testid="netpol-policy">
             <span class="min-w-0 flex-1 truncate text-left font-mono text-[var(--text-primary)]">{pol.name}</span>
-            <span class="font-mono text-[10px] text-[var(--text-muted)]">{pol.policy_types.map((t) => t[0]).join("")}</span>
-            {#if unused.includes(pol.name)}<Badge tone="warning">selects nothing</Badge>{:else}<span class="font-mono text-[10px] text-[var(--text-muted)]">{pol.pod_count} pods</span>{/if}
+            <span class="font-mono text-[11px] text-[var(--text-muted)]">{pol.policy_types.map((t) => t[0]).join("")}</span>
+            {#if unused.includes(pol.name)}<Badge tone="warning">selects nothing</Badge>{:else}<span class="font-mono text-[11px] text-[var(--text-muted)]">{pol.pod_count} pods</span>{/if}
           </Button>
         {/each}
       </div>

@@ -219,7 +219,7 @@
 
 <div class="border-b border-[var(--border-color)]">
   <div class="flex items-center justify-between px-6 py-4">
-    <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Config &amp; Secrets</span>
+    <span class="text-[11px] font-medium text-[var(--text-muted)]">Config &amp; Secrets</span>
     <div class="flex items-center gap-3">
       {#if !configLoading && (fetchedConfigMaps.length > 0 || fetchedSecrets.length > 0)}
         <Button variant="link" size="inline-xs" onclick={copyAllConfigs}>
@@ -260,13 +260,13 @@
     <div class="px-6 pb-3">
       <SearchField
         clearable
-        placeholder="Filter keys…"
+        placeholder="Filter keys"
         ariaLabel="Filter configmap and secret keys"
         bind:value={keyFilter}
       >
         {#snippet trailing()}
           {#if keyFilter}
-            <span class="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{totalMatches}</span>
+            <span class="shrink-0 font-mono text-[11px] text-[var(--text-muted)]">{totalMatches}</span>
           {/if}
         {/snippet}
       </SearchField>

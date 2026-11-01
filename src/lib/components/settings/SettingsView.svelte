@@ -21,8 +21,8 @@
 
 <div class="flex h-full flex-col">
   <!-- Header -->
-  <div class="flex h-11 shrink-0 items-center gap-3 border-b border-[var(--border-color)] px-4">
-    <h1 class="text-[13px] font-medium text-[var(--text-primary)]">Settings</h1>
+  <div class="flex h-12 shrink-0 items-center gap-3 pl-6 pr-4">
+    <h1 class="text-[15px] font-medium text-[var(--text-primary)]">Settings</h1>
   </div>
 
   <!-- Tabs -->
@@ -47,7 +47,7 @@
 
   <!-- Content -->
   <ScrollArea class="flex-1">
-    <div class="mx-auto max-w-2xl space-y-10 px-6 py-6">
+    <div class="mx-auto flex max-w-[640px] flex-col gap-8 px-6 py-6">
       {#if activeTab === "general"}
         <GeneralTab />
       {:else if activeTab === "kubernetes"}

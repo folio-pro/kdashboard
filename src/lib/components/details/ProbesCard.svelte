@@ -86,11 +86,11 @@
 </script>
 
 {#if hasContent}
-  <CollapsibleCard title="Health Probes" count={allProbes.length}>
+  <CollapsibleCard title="Health probes" count={allProbes.length}>
     {#each allProbes as probe, i}
       <div class="border-t border-[var(--border-hover)] px-5 py-4">
         <div class="mb-3 flex items-center gap-2">
-          <span class="text-[12px] font-semibold text-[var(--text-primary)]">{probe.containerName}</span>
+          <span class="text-[12px] font-medium text-[var(--text-primary)]">{probe.containerName}</span>
           <Badge pill class="px-2" style="--tone: {probeTypeColors[probe.type] ?? 'var(--text-muted)'};">
             {probe.type}
           </Badge>
@@ -101,23 +101,23 @@
         {/if}
         <div class="grid grid-cols-5 gap-2">
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-muted)]">delay</span>
+            <span class="text-[11px] text-[var(--text-muted)]">delay</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.initialDelaySeconds}s</span>
           </div>
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-muted)]">period</span>
+            <span class="text-[11px] text-[var(--text-muted)]">period</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.periodSeconds}s</span>
           </div>
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-muted)]">timeout</span>
+            <span class="text-[11px] text-[var(--text-muted)]">timeout</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.timeoutSeconds}s</span>
           </div>
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-muted)]">success</span>
+            <span class="text-[11px] text-[var(--text-muted)]">success</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.successThreshold}</span>
           </div>
           <div class="flex flex-col gap-0.5">
-            <span class="text-[10px] text-[var(--text-muted)]">failure</span>
+            <span class="text-[11px] text-[var(--text-muted)]">failure</span>
             <span class="font-mono text-[11px] text-[var(--text-primary)]">{probe.failureThreshold}</span>
           </div>
         </div>

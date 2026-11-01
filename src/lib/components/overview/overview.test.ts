@@ -7,6 +7,7 @@ import {
   filterProblems,
   nodeNeedsAttention,
   nodePressure,
+  nodeUsage,
   overviewTiles,
   pct,
   problemActions,
@@ -124,5 +125,17 @@ describe("overview tiles", () => {
   });
   test("topReasons orders by count then name", () => {
     expect(topReasons(["b", "a", "b", "c", "a"], 2)).toBe("2 a · 2 b");
+  });
+});
+
+describe("nodeUsage", () => {
+  const n = { cpu_allocatable: 8, memory_allocatable: 100, cpu_usage: 2, memory_usage: null } as unknown as NodeSummary;
+
+  test("is measured against allocatable, like the requests beside it", () => {
+    expect(nodeUsage(n).cpu).toBe(25);
+  });
+
+  test("no metrics-server reading stays unknown, not zero", () => {
+    expect(nodeUsage(n).memory).toBeNull();
   });
 });

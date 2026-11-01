@@ -38,8 +38,8 @@ test.beforeEach(async ({ page, mockInvoke }) => {
 test("watching a broken pod reports its state at once and shows in the status bar", async ({ page }) => {
   await expect(page.locator('[data-testid="alerts-indicator"]')).toHaveCount(0);
 
-  await page.locator("tbody tr").first().click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Watch for Alerts" }).click();
+  await page.locator('[data-testid="resource-row"]').first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Watch for alerts" }).click();
 
   // Baseline verdict as a toast, and the bell counts one watched resource.
   await expect(page.getByText("Watching Pod default/crashy")).toBeVisible();
@@ -48,7 +48,7 @@ test("watching a broken pod reports its state at once and shows in the status ba
   await expect(bell).toContainText("1");
 
   // The menu now offers the inverse action.
-  await page.locator("tbody tr").first().click({ button: "right" });
+  await page.locator('[data-testid="resource-row"]').first().click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "Stop Watching" })).toBeVisible();
   await page.keyboard.press("Escape");
 

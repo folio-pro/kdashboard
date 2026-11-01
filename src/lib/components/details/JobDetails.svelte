@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Play } from "lucide-svelte";
+  
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
   import LabelsSection from "./LabelsSection.svelte";
@@ -58,7 +58,7 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title="Job Spec" icon={Play}>
+  <DetailSection title="Job spec">
     <KvGrid>
       <KvField label="Active">
         <span class="font-mono text-[13px] {active > 0 ? 'text-[var(--status-pending)]' : 'text-[var(--text-primary)]'}">{active}</span>
@@ -71,12 +71,12 @@
       </KvField>
       <KvField label="Completions" value={completions} />
       <KvField label="Parallelism" value={parallelism} />
-      <KvField label="Backoff Limit" value={backoffLimit} />
-      <KvField label="Start Time" value={startTime ? formatTimestamp(startTime) : "-"} mono={false} />
+      <KvField label="Backoff limit" value={backoffLimit} />
+      <KvField label="Start time" value={startTime ? formatTimestamp(startTime) : "-"} mono={false} />
       <KvField label="Completion" value={completionTime ? formatTimestamp(completionTime) : "-"} mono={false} />
       <KvField label="Duration" value={formatDuration(startTime, completionTime)} />
       {#if spec.ttlSecondsAfterFinished !== undefined}
-        <KvField label="TTL After Finished" value={`${spec.ttlSecondsAfterFinished}s`} />
+        <KvField label="TTL after finished" value={`${spec.ttlSecondsAfterFinished}s`} />
       {/if}
       {#if spec.suspend}
         <KvField label="Suspended">
@@ -84,7 +84,7 @@
         </KvField>
       {/if}
       {#if spec.completionMode}
-        <KvField label="Completion Mode" value={spec.completionMode as string} mono={false} />
+        <KvField label="Completion mode" value={spec.completionMode as string} mono={false} />
       {/if}
     </KvGrid>
   </DetailSection>

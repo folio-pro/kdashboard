@@ -73,7 +73,7 @@
       <path d={area} fill={color} opacity="0.12" />
       <path d={path} fill="none" stroke={color} stroke-width="1.5" vector-effect="non-scaling-stroke" />
     </svg>
-    <div class="flex justify-between font-mono text-[10px] text-[var(--text-muted)]">
+    <div class="flex justify-between font-mono text-[11px] text-[var(--text-muted)]">
       <span>now {format(latest)}</span>
       <span>peak {format(peak)}</span>
     </div>

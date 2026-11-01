@@ -18,10 +18,10 @@
 
 <div class="border-b border-[var(--border-color)]">
   <button
-    class="group flex w-full items-center justify-between px-6 py-4 text-left"
+    class="group flex w-full items-center justify-between p-4 text-left"
     onclick={() => expanded = !expanded}
   >
-    <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)] transition-colors group-hover:text-[var(--text-secondary)]">{title}</span>
+    <span class="text-[13px] font-medium text-[var(--text-primary)]">{title}</span>
     <div class="flex items-center gap-2">
       {#if count !== undefined}
         <span class="font-mono text-[11px] text-[var(--text-muted)]">{count}</span>

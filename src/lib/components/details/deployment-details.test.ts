@@ -69,8 +69,8 @@ describe("requestTotals", () => {
     expect(t.cpuPerPod).toBeCloseTo(0.35);
     expect(t.memoryPerPod).toBe(192 * 1024 * 1024);
     expect(t.replicas).toBe(3);
-    expect(t.perPodLabel).toBe("350m · 192 Mi");
-    expect(t.totalLabel).toBe("1.05 · 576 Mi");
+    expect(t.perPodLabel).toBe("350m · 192Mi");
+    expect(t.totalLabel).toBe("1.05 · 576Mi");
   });
 
   test("no requests and no replicas field", () => {

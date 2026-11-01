@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bot, Square, Play, X, ExternalLink, ShieldAlert, History, Sparkles } from "lucide-svelte";
+  import { Bot, Square, Play, X, ExternalLink, ShieldAlert, History, MessageSquareText } from "lucide-svelte";
   import { onMount } from "svelte";
   import { WTerm } from "@wterm/dom";
   // Explicit .css subpath — see TerminalView.svelte for why not the alias.
@@ -214,9 +214,9 @@
   ></div>
 
   <!-- Header -->
-  <div class="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-3">
-    <Bot class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-    <span class="text-[12px] font-medium text-[var(--text-primary)]">AI Agent</span>
+  <div class="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--border-color)] px-4">
+    <Bot class="h-4 w-4 text-[var(--text-muted)]" />
+    <span class="mr-2 text-[13px] font-medium text-[var(--text-primary)]">AI agent</span>
 
     {#if agentStore.profiles.length > 0}
       <SelectMenu
@@ -236,24 +236,24 @@
 
     {#if selectedProfile?.available}
       <SelectMenu title="Prompts" label="Prompts" value="" items={presetItems} contentClass="min-w-[210px]">
-        {#snippet icon()}<Sparkles class="h-3 w-3" />{/snippet}
+        {#snippet icon()}<MessageSquareText class="h-3 w-3" />{/snippet}
       </SelectMenu>
     {/if}
 
     {#if agentStore.approvals.length > 0}
       <Badge tone="warning" size="sm" class="gap-1 font-mono">
         <ShieldAlert class="h-3 w-3" />
-        APPROVAL PENDING
+        Approval pending
       </Badge>
     {/if}
 
     <div class="ml-auto flex items-center gap-2">
       {#if agentStore.status === "running"}
         <div class="flex items-center gap-1.5">
-          <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-running)]"></div>
-          <span class="font-mono text-[11px] font-semibold text-[var(--status-running)]">RUNNING</span>
+          <div class="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--status-running)]"></div>
+          <span class="text-[11px] text-[var(--text-secondary)]">Running</span>
         </div>
-        <Button variant="solid-tone" tone="error" size="sm" mono onclick={() => agentStore.stop()}>
+        <Button variant="solid-tone" tone="error" size="sm" onclick={() => agentStore.stop()}>
           <Square class="h-3 w-3" />
           <span>Stop</span>
         </Button>
@@ -263,7 +263,6 @@
         <Button
           variant="toolbar"
           size="sm"
-          mono
           title="Continue the last conversation of this agent"
           onclick={() => handleStart(true)}
           disabled={!selectedProfile?.available}
@@ -272,10 +271,8 @@
           <span>Resume</span>
         </Button>
         <Button
-          variant="solid-tone"
-          tone="success"
+          variant="accent"
           size="sm"
-          mono
           onclick={() => handleStart()}
           disabled={!selectedProfile?.available}
         >
@@ -284,7 +281,7 @@
         </Button>
       {/if}
       <Button
-        variant="toolbar"
+        variant="muted"
         size="icon-sm"
         title={running ? "Hide panel (session keeps running)" : "Hide panel"}
         aria-label="Hide agent panel"
@@ -299,7 +296,7 @@
   <div class="min-h-0 flex-1 overflow-hidden px-3 py-2">
     <div
       bind:this={hostEl}
-      class="wterm-host relative h-full overflow-hidden rounded-sm border border-[var(--border-color)] bg-[var(--log-bg)] px-2"
+      class="wterm-host relative h-full overflow-hidden px-2"
     >
       {#if initError}
         <div class="absolute inset-0 z-10 flex items-center justify-center px-4 text-center font-mono text-[12px] text-[var(--status-failed)]">
@@ -323,7 +320,7 @@
             </p>
           {:else}
             <p class="text-[12px] text-[var(--text-muted)]">
-              Start a session, or use a Quick Action on any resource.
+              Start a session, or use a quick action on any resource.
             </p>
           {/if}
           {#if selectedProfile?.warning}
@@ -347,7 +344,7 @@
   /* Same --term-* mapping as TerminalView.svelte (single design contract). */
   .wterm-host,
   .wterm-host :global(.wterm) {
-    --term-bg: var(--log-bg, #111111);
+    --term-bg: var(--bg-primary, #111111);
     --term-fg: var(--text-secondary, #a0a0a0);
     --term-cursor: var(--accent, #ffffff);
 
@@ -357,7 +354,7 @@
     --term-color-3: var(--log-warn, #eab308);
     --term-color-4: var(--log-info, #3b82f6);
     --term-color-5: var(--log-json, #a78bfa);
-    --term-color-6: var(--accent, #06b6d4);
+    --term-color-6: color-mix(in srgb, var(--status-succeeded) 60%, var(--status-running));
     --term-color-7: var(--text-primary, #e0e0e0);
     --term-color-8: var(--text-muted, #525252);
     --term-color-9: var(--log-error, #ef4444);
@@ -365,7 +362,7 @@
     --term-color-11: var(--log-warn, #eab308);
     --term-color-12: var(--log-info, #3b82f6);
     --term-color-13: var(--log-json, #a78bfa);
-    --term-color-14: var(--accent, #06b6d4);
+    --term-color-14: color-mix(in srgb, var(--status-succeeded) 60%, var(--status-running));
     --term-color-15: var(--text-primary, #ffffff);
 
     --term-font-family: "Geist Mono", ui-monospace, SFMono-Regular, monospace;

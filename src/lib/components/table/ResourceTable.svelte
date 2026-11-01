@@ -353,10 +353,6 @@
 
   let workloadStats = $derived(computeWorkloadStats(k8sStore.selectedResourceType, k8sStore.resources.items));
 
-  // Folded into computePodStats' single pass over the items (walking every
-  // containerStatus twice per flush was measurable on big namespaces).
-  let needsAttentionCount = $derived(workloadStats.needsAttention ?? 0);
-
   // Auto-clear stat filter on resource type change.
   // prevResourceType is a plain `let` so the effect only tracks selectedResourceType.
   let prevResourceType = "";
@@ -450,7 +446,7 @@
         },
         {
           id: "focus-filter",
-          label: "Filter...",
+          label: "Filter…",
           icon: Filter,
           execute: () => {
             const filterInput = document.getElementById("resource-filter");
@@ -459,7 +455,7 @@
         },
         {
           id: "create-yaml",
-          label: "Create from YAML...",
+          label: "Create from YAML…",
           icon: FilePlus2,
           // Same dialog as the Create button — this used to apply the
           // clipboard straight to the cluster with no confirmation.
@@ -481,7 +477,7 @@
 
   // Create opens an editor (see CreateResourceDialog) — it never reads the
   // clipboard on its own; the dialog has a button for that. Both entry points
-  // (the Create button and the context menu's "Create from YAML...") land here.
+  // (the Create button and the context menu's "Create from YAML…") land here.
   let createOpen = $state(false);
 
   function handleCreate() {
@@ -544,7 +540,6 @@
     healthSegments={workloadStats.healthSegments}
     isLoading={k8sStore.isLoading}
     hasError={!!k8sStore.error}
-    needsAttention={needsAttentionCount}
   />
 
   <!-- Bulk Action Bar -->

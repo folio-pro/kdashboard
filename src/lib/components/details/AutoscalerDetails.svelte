@@ -6,7 +6,7 @@
   // this file only decides how to paint the answer.
 
   import { Badge } from "$lib/components/ui";
-  import { Boxes, Gauge, Sliders } from "lucide-svelte";
+  
   import type { Resource } from "$lib/types";
   import { autoscalerSummary, type AutoscalerFlavor, type AutoscalerTarget } from "$lib/utils/autoscaler";
   import { usageBarColor } from "$lib/stores/metrics.logic";
@@ -115,7 +115,7 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title={showReplicas ? "Scaling" : "Target"} icon={Boxes}>
+  <DetailSection title={showReplicas ? "Scaling" : "Target"}>
     {#snippet actions()}
       {#if summary.dryRun}
         <Badge appearance="surface" bordered mono title="The autoscaler evaluates its metrics but never scales">Dry run</Badge>
@@ -130,8 +130,8 @@
         <span class="font-mono text-[13px] text-[var(--text-primary)]">{summary.reference}</span>
       </KvField>
       {#if showReplicas}
-        <KvField label="Min Replicas" value={summary.min} />
-        <KvField label="Max Replicas" value={summary.max} />
+        <KvField label="Min replicas" value={summary.min} />
+        <KvField label="Max replicas" value={summary.max} />
         <KvField label="Current">
           <span class="font-mono text-[13px] text-[var(--text-primary)] {flash.replicas ? 'animate-value-flash' : ''}">{summary.current ?? "—"}</span>
         </KvField>
@@ -142,10 +142,10 @@
         </KvField>
       {/if}
       {#if summary.updateMode}
-        <KvField label="Update Mode" value={summary.updateMode} />
+        <KvField label="Update mode" value={summary.updateMode} />
       {/if}
       {#if summary.lastScaleTime}
-        <KvField label="Last Scale" value={summary.lastScaleTime} />
+        <KvField label="Last scale" value={summary.lastScaleTime} />
       {/if}
     </KvGrid>
 
@@ -156,7 +156,7 @@
       <div class="mt-4 flex flex-col gap-1.5">
         <div class="relative h-1.5 w-full rounded-full bg-[var(--bg-tertiary)]">
           <div
-            class="h-full rounded-full bg-[var(--accent)] transition-all duration-300"
+            class="h-full rounded-full bg-[var(--accent)] transition-colors duration-300"
             style="width: {trackPosition(current)}%"
           ></div>
           {#if desired !== current}
@@ -167,7 +167,7 @@
             ></div>
           {/if}
         </div>
-        <div class="flex justify-between font-mono text-[10px] text-[var(--text-muted)]">
+        <div class="flex justify-between font-mono text-[11px] text-[var(--text-muted)]">
           <span>min {summary.min ?? 0}</span>
           <span class="text-[var(--text-secondary)]">
             {current} running{desired !== current ? ` → ${desired} wanted` : ""}
@@ -178,7 +178,7 @@
     {/if}
   </DetailSection>
 
-  <DetailSection title={copy.section} icon={Gauge}>
+  <DetailSection title={copy.section}>
     {#snippet actions()}
       <span class="font-mono text-[11px] text-[var(--text-muted)]">{summary.targets.length}</span>
     {/snippet}
@@ -204,7 +204,7 @@
               <div class="relative h-[3px] w-full overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
                 {#if target.percent !== null}
                   <div
-                    class="h-full rounded-full transition-all duration-300"
+                    class="h-full rounded-full transition-colors duration-300"
                     style="width: {Math.min(target.percent, 100)}%; background-color: {barColor(target)}"
                   ></div>
                 {/if}
@@ -226,7 +226,7 @@
   </DetailSection>
 
   {#if flavor === "hpa" && showReplicas}
-    <DetailSection title="Replica History" icon={Boxes}>
+    <DetailSection title="Replica history">
       {#if !history.configured}
         <p class="text-[11px] text-[var(--text-muted)]">{PROMETHEUS_HINT}</p>
       {:else if history.error}
@@ -241,11 +241,11 @@
              event, and the gap between them is how long it took to close. -->
         <div class="grid grid-cols-2 gap-6">
           <div class="flex flex-col gap-1">
-            <span class="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Running</span>
+            <span class="text-[11px] font-medium text-[var(--text-muted)]">Running</span>
             <UsageSparkline samples={history.series[0] ?? []} format={formatReplicaCount} />
           </div>
           <div class="flex flex-col gap-1">
-            <span class="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Wanted</span>
+            <span class="text-[11px] font-medium text-[var(--text-muted)]">Wanted</span>
             <UsageSparkline samples={history.series[1] ?? []} format={formatReplicaCount} color="var(--status-pending)" />
           </div>
         </div>
@@ -254,7 +254,7 @@
   {/if}
 
   {#if wpaTuning.length > 0}
-    <DetailSection title="Tuning" icon={Sliders}>
+    <DetailSection title="Tuning">
       <KvGrid>
         {#each wpaTuning as field (field.label)}
           <KvField label={field.label} value={field.value} />

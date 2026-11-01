@@ -162,3 +162,15 @@ export function splitPodName(name: string): { base: string; suffix: string } {
   if (!m || m.index === 0) return { base: name, suffix: "" };
   return { base: name.slice(0, m.index), suffix: name.slice(m.index) };
 }
+
+/**
+ * The same split, with the suffix cut once more: `-7d4f8b9c5` is shared by every
+ * replica, `-2xkqp` is the only part that tells two rows apart. A narrow column
+ * collapses the hash first and never the tail, which an end-truncated name loses.
+ */
+export function podNameParts(name: string): { base: string; hash: string; tail: string } {
+  const { base, suffix } = splitPodName(name);
+  const cut = suffix.lastIndexOf("-");
+  if (cut <= 0) return { base, hash: "", tail: suffix };
+  return { base, hash: suffix.slice(0, cut), tail: suffix.slice(cut) };
+}

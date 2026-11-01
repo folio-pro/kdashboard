@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  MAX_HEALTH_TICKS,
+  healthTicks,
   computeWorkloadStats,
   computePodStats,
   isPodNeedingAttention,
@@ -751,5 +753,22 @@ describe("isPodNeedingAttention — every failing pod counts", () => {
     ]);
     expect(result.stats.find((s) => s.key === "succeeded")?.value).toBe(2);
     expect(result.stats.find((s) => s.key === "succeeded")?.filterable).toBe(true);
+  });
+});
+
+describe("healthTicks", () => {
+  const seg = (key: string, value: number) => ({ key, value, color: key });
+
+  test("one tick per object, grouped in segment order", () => {
+    expect(healthTicks([seg("ok", 2), seg("bad", 1)])).toEqual(["ok", "ok", "bad"]);
+  });
+
+  test("nothing to count is nothing to draw", () => {
+    expect(healthTicks([seg("ok", 0)])).toBeNull();
+  });
+
+  test("falls back to a proportion past what a tick can show", () => {
+    expect(healthTicks([seg("ok", MAX_HEALTH_TICKS)])).toHaveLength(MAX_HEALTH_TICKS);
+    expect(healthTicks([seg("ok", MAX_HEALTH_TICKS + 1)])).toBeNull();
   });
 });

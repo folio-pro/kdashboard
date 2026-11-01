@@ -2,7 +2,7 @@
   import { open } from "$lib/ipc/shell";
   import { cn } from "$lib/utils";
   import { ChevronsUpDown, Unplug, ExternalLink, Square, Bookmark, BookmarkCheck } from "lucide-svelte";
-  import { Button, StatTile } from "$lib/components/ui";
+  import { Button } from "$lib/components/ui";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { portForwardStore } from "$lib/stores/port-forwards.svelte";
   import { describeTarget } from "$lib/stores/port-forwards.logic";
@@ -162,35 +162,36 @@
 </script>
 
 <div class="flex h-full flex-col bg-[var(--bg-primary)]">
-  <!-- Metric Cards -->
-  <div class="flex items-stretch gap-3 px-6 pt-4 pb-4">
-    <StatTile class="flex-1" label="Active" value={portForwards.length} note="port forwards" />
-    <StatTile class="flex-1" label={`Saved in ${k8sStore.currentContext || "this context"}`} value={savedForwards.length} note={`${savedForwards.filter((s) => s.auto_start).length} auto-start`} />
+  <div class="flex min-h-12 shrink-0 items-center gap-2 border-b border-[var(--border-color)] pl-6 pr-4">
+    <h1 class="mr-2 text-[15px] font-medium text-[var(--text-primary)]">Port forwards</h1>
+    <span class="font-mono text-[11px] text-[var(--text-muted)]">
+      {portForwards.length} active · {savedForwards.length} saved in {k8sStore.currentContext || "this context"} · {savedForwards.filter((s) => s.auto_start).length} auto-start
+    </span>
   </div>
 
   {#if savedForwards.length > 0}
-    <div class="px-6 pb-4">
+    <div class="px-6 pt-3">
       <SavedForwardsTable forwards={savedForwards} onOpen={openInBrowser} />
     </div>
   {/if}
 
   <!-- Table -->
-  <div class="relative flex-1 overflow-hidden px-6 pb-4">
-    <div class="h-full overflow-auto rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+  <div class="relative flex-1 overflow-hidden">
+    <div class="h-full overflow-auto">
       {#if portForwards.length === 0}
         <div class="flex h-full flex-col items-center justify-center py-20">
-          <Unplug class="h-6 w-6 text-[var(--text-muted)]" />
-          <p class="mt-3 text-[12px] text-[var(--text-muted)]">No active port forwards</p>
-          <p class="mt-1 text-[11px] text-[var(--text-muted)]">Open a pod and forward a container port to get started{savedForwards.length ? " — or start a saved forward above" : ""}</p>
+          <Unplug class="h-4 w-4 text-[var(--text-muted)]" />
+          <p class="mt-2 text-[13px] font-medium text-[var(--text-primary)]">No active port forwards</p>
+          <p class="mt-1 text-[12px] text-[var(--text-muted)]">Open a pod and forward a container port{savedForwards.length ? " — or start a saved forward above" : ""}</p>
         </div>
       {:else}
         <table class="w-full" style="table-layout: fixed;">
-          <thead class="sticky top-0 z-10 bg-[var(--bg-secondary)]">
-            <tr class="border-b border-[var(--border-hover)]">
+          <thead class="sticky top-0 z-10 bg-[var(--bg-primary)]">
+            <tr class="border-b border-[var(--border-color)]">
               {#each columns as col}
                 <th
                   class={cn(
-                    "relative h-10 overflow-hidden whitespace-nowrap px-4 text-left text-[11px] font-medium text-[var(--text-muted)]",
+                    "relative h-8 overflow-hidden whitespace-nowrap px-4 text-left text-[11px] font-medium text-[var(--text-muted)]",
                     col.sortable && "cursor-pointer select-none hover:text-[var(--text-secondary)]"
                   )}
                   style={getColumnStyle(col)}
@@ -220,11 +221,11 @@
           </thead>
           <tbody>
             {#each sortedForwards as pf}
-              <tr class="h-10 cursor-default border-b border-[var(--border-hover)] transition-colors hover:bg-[var(--table-row-hover)]">
+              <tr class="h-9 cursor-default border-b border-[var(--border-color)] transition-colors hover:bg-[var(--table-row-hover)]">
                 {#each columns as col}
                   <td class="overflow-hidden px-4 text-[12px]">
                     {#if col.key === "status"}
-                      <span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--status-running)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--status-running)]">
+                      <span class="inline-flex items-center gap-2 text-[var(--text-secondary)]">
                         <span class="h-1.5 w-1.5 rounded-full bg-[var(--status-running)]"></span>
                         Active
                       </span>

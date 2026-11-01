@@ -63,36 +63,36 @@
 </script>
 
 {#if hasContent}
-  <CollapsibleCard title="Security Context">
+  <CollapsibleCard title="Security context">
     <!-- Pod-level security -->
     {#if hasPodSecurity || hasServiceAccount}
       <div class="border-t border-[var(--border-hover)] px-5 py-3">
-        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Pod Level</div>
+        <div class="mb-2 text-[11px] font-medium text-[var(--text-muted)]">Pod Level</div>
       </div>
       {#if serviceAccountName}
-        <InfoRow label="Service Account" value={serviceAccountName} />
+        <InfoRow label="Service account" value={serviceAccountName} />
       {/if}
       {#if automountToken !== undefined}
-        <InfoRow label="Automount Token" value={String(automountToken)} valueColor={automountToken ? "var(--status-pending)" : "var(--status-running)"} />
+        <InfoRow label="Automount token" value={String(automountToken)} valueColor={automountToken ? "var(--status-pending)" : "var(--status-running)"} />
       {/if}
       {#if podSecurity.runAsUser !== undefined}
-        <InfoRow label="Run As User" value={String(podSecurity.runAsUser)} />
+        <InfoRow label="Run as user" value={String(podSecurity.runAsUser)} />
       {/if}
       {#if podSecurity.runAsGroup !== undefined}
-        <InfoRow label="Run As Group" value={String(podSecurity.runAsGroup)} />
+        <InfoRow label="Run as group" value={String(podSecurity.runAsGroup)} />
       {/if}
       {#if podSecurity.fsGroup !== undefined}
-        <InfoRow label="FS Group" value={String(podSecurity.fsGroup)} />
+        <InfoRow label="FS group" value={String(podSecurity.fsGroup)} />
       {/if}
       {#if podSecurity.runAsNonRoot !== undefined}
-        <InfoRow label="Run As Non-Root" value={String(podSecurity.runAsNonRoot)} valueColor={dangerColor(podSecurity.runAsNonRoot as boolean)} />
+        <InfoRow label="Run as non-root" value={String(podSecurity.runAsNonRoot)} valueColor={dangerColor(podSecurity.runAsNonRoot as boolean)} />
       {/if}
       {#if podSecurity.supplementalGroups}
-        <InfoRow label="Supplemental Groups" value={(podSecurity.supplementalGroups as number[]).join(", ")} />
+        <InfoRow label="Supplemental groups" value={(podSecurity.supplementalGroups as number[]).join(", ")} />
       {/if}
       {#if podSecurity.seccompProfile}
         {@const profile = podSecurity.seccompProfile as Record<string, unknown>}
-        <InfoRow label="Seccomp Profile" value={(profile.type as string) ?? "Unknown"} />
+        <InfoRow label="Seccomp profile" value={(profile.type as string) ?? "Unknown"} />
       {/if}
     {/if}
 
@@ -108,25 +108,25 @@
         cs.capDrop.length > 0}
       {#if hasAny}
         <div class="border-t border-[var(--border-hover)] px-5 py-3">
-          <div class="mb-1 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Container: {cs.name}</div>
+          <div class="mb-1 text-[11px] font-medium text-[var(--text-muted)]">Container: {cs.name}</div>
         </div>
         {#if cs.privileged !== undefined}
           <InfoRow label="Privileged" value={String(cs.privileged)} valueColor={dangerColor(!cs.privileged)} />
         {/if}
         {#if cs.allowPrivilegeEscalation !== undefined}
-          <InfoRow label="Privilege Escalation" value={String(cs.allowPrivilegeEscalation)} valueColor={dangerColor(!cs.allowPrivilegeEscalation)} />
+          <InfoRow label="Privilege escalation" value={String(cs.allowPrivilegeEscalation)} valueColor={dangerColor(!cs.allowPrivilegeEscalation)} />
         {/if}
         {#if cs.readOnlyRootFilesystem !== undefined}
-          <InfoRow label="Read-Only Root FS" value={String(cs.readOnlyRootFilesystem)} valueColor={dangerColor(!cs.readOnlyRootFilesystem)} />
+          <InfoRow label="Read-only root FS" value={String(cs.readOnlyRootFilesystem)} valueColor={dangerColor(!cs.readOnlyRootFilesystem)} />
         {/if}
         {#if cs.runAsUser !== undefined}
-          <InfoRow label="Run As User" value={String(cs.runAsUser)} />
+          <InfoRow label="Run as user" value={String(cs.runAsUser)} />
         {/if}
         {#if cs.runAsNonRoot !== undefined}
-          <InfoRow label="Run As Non-Root" value={String(cs.runAsNonRoot)} valueColor={dangerColor(cs.runAsNonRoot)} />
+          <InfoRow label="Run as non-root" value={String(cs.runAsNonRoot)} valueColor={dangerColor(cs.runAsNonRoot)} />
         {/if}
         {#if cs.capAdd.length > 0}
-          <InfoRow label="Capabilities Add">
+          <InfoRow label="Capabilities add">
             <div class="flex flex-wrap gap-1">
               {#each cs.capAdd as cap}
                 <Badge tone="error" mono>{cap}</Badge>
@@ -135,7 +135,7 @@
           </InfoRow>
         {/if}
         {#if cs.capDrop.length > 0}
-          <InfoRow label="Capabilities Drop">
+          <InfoRow label="Capabilities drop">
             <div class="flex flex-wrap gap-1">
               {#each cs.capDrop as cap}
                 <Badge tone="success" mono>{cap}</Badge>

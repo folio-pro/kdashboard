@@ -42,7 +42,7 @@ test("status bar button opens the agent panel", async ({ page, mockInvoke }) => 
   await page.getByTitle("AI agent").click();
   const panel = page.getByTestId("agent-panel");
   await expect(panel).toBeVisible();
-  await expect(panel.getByText("AI Agent")).toBeVisible();
+  await expect(panel.getByText("AI agent")).toBeVisible();
   await expect(panel.getByText("Start a session", { exact: false })).toBeVisible();
 });
 
@@ -96,7 +96,7 @@ test("the command palette lists the agent toggle", async ({ page, mockInvoke }) 
   await page.getByTitle("AI agent").waitFor();
   await page.locator("body").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("ControlOrMeta+k");
-  await page.locator('[data-testid="command-input"]').fill("Open AI Agent");
-  await page.locator('[data-testid="command-item"]', { hasText: "Open AI Agent" }).click();
+  await page.locator('[data-testid="command-input"]').fill("Open AI agent");
+  await page.locator('[data-testid="command-item"]', { hasText: "Open AI agent" }).click();
   await expect(page.getByTestId("agent-panel")).toBeVisible();
 });

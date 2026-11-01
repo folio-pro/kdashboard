@@ -260,8 +260,8 @@ export function buildEditorTheme(modules: CodeMirrorModules) {
       letterSpacing: "1px",
     },
     ".cm-k8s-image-tag": {
-      color: "var(--status-pending)",
-      fontWeight: "600",
+      color: "var(--text-primary)",
+      fontWeight: "500",
     },
     // Base64 payloads are data, not code: keep them legible but out of the way.
     ".cm-k8s-opaque": {

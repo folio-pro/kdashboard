@@ -24,6 +24,14 @@ export function nodePressure(n: NodeSummary): { cpu: number | null; memory: numb
   };
 }
 
+/** What the node really uses, on the same base as nodePressure: allocatable. */
+export function nodeUsage(n: NodeSummary): { cpu: number | null; memory: number | null } {
+  return {
+    cpu: n.cpu_usage === null ? null : pct(n.cpu_usage, n.cpu_allocatable),
+    memory: n.memory_usage === null ? null : pct(n.memory_usage, n.memory_allocatable),
+  };
+}
+
 /** A node needs a look when it is NotReady, under pressure, cordoned, or >90% committed. */
 export function nodeNeedsAttention(n: NodeSummary): boolean {
   const p = nodePressure(n);

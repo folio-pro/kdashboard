@@ -67,7 +67,7 @@
 
 <div
   class={cn(
-    "focus-ring-host flex items-center rounded-md border border-[var(--border-hover)] bg-[var(--bg-tertiary)] transition-[border-color,box-shadow] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]",
+    "focus-ring-host flex items-center rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] transition-[border-color,box-shadow] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]",
     box[size],
     className
   )}

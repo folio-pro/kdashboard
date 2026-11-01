@@ -53,7 +53,7 @@ export interface LayoutMetrics {
 }
 
 export const TOPOLOGY_METRICS: LayoutMetrics = {
-  nodeWidth: 180,
+  nodeWidth: 232,
   nodeHeight: 48,
   layerGapY: 100,
   rowGapY: 28,

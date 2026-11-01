@@ -2,10 +2,9 @@
   import type { Snippet } from "svelte";
 
   /**
-   * The strip under the subtabs: the five to eight numbers that used to be
-   * scattered down the page (status, ready, restarts, age…), each a
-   * SummaryCell. Auto-fits its columns, so the same cells work in a 440px
-   * aside and a full-width tab.
+   * The facts under the subtabs (status, ready, restarts, age…), each a
+   * SummaryCell, read like `kubectl describe`. Auto-fits its columns: one in a
+   * 440px aside, three in a full-width tab, with no half-empty rows of cards.
    */
   interface Props {
     children: Snippet;
@@ -15,8 +14,8 @@
 </script>
 
 <div
-  class="grid border-b border-[var(--border-color)] bg-[var(--bg-secondary)]"
-  style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));"
+  class="grid gap-x-6 gap-y-2 border-b border-[var(--border-color)] p-4"
+  style="grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));"
   data-testid="summary-strip"
 >
   {@render children()}

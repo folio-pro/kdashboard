@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Badge, Button } from "$lib/components/ui";
-  import { Globe, Server, Filter, Link, Unplug, Cloud } from "lucide-svelte";
+  import { Filter } from "lucide-svelte";
   import type { Resource, ResourceList } from "$lib/types";
   import { invoke } from "$lib/ipc/core";
   import { formatAge } from "$lib/utils/age";
@@ -124,7 +124,7 @@
   let sourceRanges = $derived((spec.loadBalancerSourceRanges as string[] | undefined) ?? []);
   let ipFamilies = $derived(((spec.ipFamilies as string[] | undefined) ?? []).join(", "));
 
-  const TH = "pb-1.5 text-left text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]";
+  const TH = "pb-1.5 text-left text-[11px] font-medium text-[var(--text-muted)]";
   const TD = "whitespace-nowrap py-1.5 pr-3 text-[12px]";
 </script>
 
@@ -142,8 +142,7 @@
         <span class="truncate font-mono text-[12px] tabular-nums text-[var(--text-primary)]">{external.label}</span>
       {:else if external.pending}
         <span
-          class="inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-[11px] font-medium leading-4"
-          style="color: var(--status-pending); background-color: color-mix(in srgb, var(--status-pending) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-pending) 25%, transparent);"
+          class="inline-flex shrink-0 items-center gap-2 text-[12px]" style="color: var(--status-pending);"
         ><span class="h-[5px] w-[5px] rounded-full bg-[var(--status-pending)]"></span>Pending</span>
       {:else}
         <span class="text-[12px] text-[var(--text-muted)]">—</span>
@@ -214,7 +213,7 @@
   <DetailColumns {layout}>
     {#snippet main()}
       <!-- Ports -->
-      <DetailSection title="Ports" icon={Globe}>
+      <DetailSection title="Ports">
         {#snippet actions()}
           <span class="font-mono text-[11px] text-[var(--text-muted)]">{ports.length}</span>
         {/snippet}
@@ -252,7 +251,7 @@
 
       <!-- Endpoints -->
       {#if serviceType !== "ExternalName"}
-        <DetailSection title="Endpoints" icon={Server}>
+        <DetailSection title="Endpoints">
           {#snippet actions()}
             <span class="font-mono text-[11px] text-[var(--text-muted)]">{summary === undefined ? "…" : summary === null ? "—" : summary.total}</span>
           {/snippet}
@@ -326,7 +325,7 @@
 
       <!-- Selector → pods -->
       {#if selectorTerms.length > 0}
-        <DetailSection title="Selector → pods" icon={Filter}>
+        <DetailSection title="Selector → pods">
           {#snippet actions()}
             <span class="font-mono text-[11px] text-[var(--text-muted)]">{podsLoading ? "…" : pods.length}</span>
           {/snippet}
@@ -363,9 +362,9 @@
                           <span class="text-[var(--text-muted)]">{st.label}</span>
                         {:else}
                           <span
-                            class="inline-flex items-center gap-1.5 rounded-sm px-1.5 text-[11px] font-medium leading-4"
-                            style="color: {statusColor(cat)}; background-color: color-mix(in srgb, {statusColor(cat)} 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, {statusColor(cat)} 25%, transparent);"
-                          ><span class="h-[5px] w-[5px] rounded-full" style="background-color: {statusColor(cat)}"></span>{st.label}</span>
+                            class="inline-flex items-center gap-2 text-[12px]"
+                            style="color: {statusColor(cat)}"
+                          ><span class="h-1.5 w-1.5 rounded-full" style="background-color: {statusColor(cat)}"></span>{st.label}</span>
                         {/if}
                       </td>
                       <td class="{TD} text-right font-mono tabular-nums" style:color={ready.total > 0 && ready.ready < ready.total ? "var(--status-pending)" : "var(--text-secondary)"}>{ready.ready}/{ready.total}</td>
@@ -389,7 +388,7 @@
 
     {#snippet rail()}
       {#if serviceType === "LoadBalancer"}
-        <DetailSection title="Load balancer" icon={Cloud}>
+        <DetailSection title="Load balancer">
           <KvGrid>
             <KvField label={lbIngress.length > 1 ? "Addresses" : "Address"} value={lbIngress.length ? lbIngress.join(", ") : "pending"} />
             {#if spec.loadBalancerClass}<KvField label="Class" value={spec.loadBalancerClass as string} mono={false} />{/if}
@@ -399,7 +398,7 @@
         </DetailSection>
       {/if}
 
-      <DetailSection title="Traffic" icon={Unplug}>
+      <DetailSection title="Traffic">
         <KvGrid>
           <KvField label="Session affinity" value={(spec.sessionAffinity as string) ?? "None"} mono={false} />
           <KvField label="Internal traffic policy" value={(spec.internalTrafficPolicy as string) ?? "Cluster"} mono={false} />
@@ -411,7 +410,7 @@
       </DetailSection>
 
       {#if controllers.length > 0 || routes.length > 0 || slices.length > 0 || spec.externalName}
-        <DetailSection title="Related" icon={Link}>
+        <DetailSection title="Related">
           {#snippet actions()}
             <span class="font-mono text-[11px] text-[var(--text-muted)]">{controllers.length + routes.length + slices.length + (spec.externalName ? 1 : 0)}</span>
           {/snippet}

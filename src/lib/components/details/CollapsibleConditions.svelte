@@ -31,7 +31,7 @@
       class="group flex w-full items-center justify-between px-6 py-4 text-left"
       onclick={() => expanded = !expanded}
     >
-      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)] transition-colors group-hover:text-[var(--text-secondary)]">Conditions</span>
+      <span class="text-[11px] font-medium text-[var(--text-muted)] transition-colors group-hover:text-[var(--text-secondary)]">Conditions</span>
       <div class="flex items-center gap-2">
         <div class="flex items-center gap-1.5">
           {#each conditions as condition}
@@ -55,7 +55,7 @@
             {/if}
           </div>
           {#if healthFn}
-            <span class="text-[10px] font-medium" class:text-[var(--status-running)]={isHealthy(condition.type, condition.status)} class:text-[var(--status-failed)]={!isHealthy(condition.type, condition.status)}>
+            <span class="text-[11px] font-medium" class:text-[var(--status-running)]={isHealthy(condition.type, condition.status)} class:text-[var(--status-failed)]={!isHealthy(condition.type, condition.status)}>
               {condition.status}
             </span>
           {:else}

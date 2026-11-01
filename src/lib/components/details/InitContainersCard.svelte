@@ -42,11 +42,11 @@
 </script>
 
 {#if hasContent}
-  <CollapsibleCard title="Init Containers" count={initContainers.length}>
+  <CollapsibleCard title="Init containers" count={initContainers.length}>
     {#each initContainers as container}
       <div class="border-t border-[var(--border-hover)] px-5 py-4">
         <div class="mb-2 flex items-center justify-between">
-          <span class="text-[12px] font-semibold text-[var(--text-primary)]">{container.name}</span>
+          <span class="text-[12px] font-medium text-[var(--text-primary)]">{container.name}</span>
           <StatusBadge status={container.state} />
         </div>
         <div class="mb-1.5 truncate font-mono text-[11px] text-[var(--text-muted)]">{container.image}</div>

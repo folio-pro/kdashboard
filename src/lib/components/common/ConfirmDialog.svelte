@@ -35,9 +35,7 @@
     <DialogHeader>
       <div class="flex items-center gap-3">
         {#if variant === "destructive"}
-          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--status-failed)]/10">
-            <AlertTriangle class="h-4.5 w-4.5 text-[var(--status-failed)]" />
-          </div>
+          <AlertTriangle class="h-4 w-4 shrink-0 text-[var(--status-failed)]" />
         {/if}
         <div class="flex flex-col gap-1">
           <DialogTitle>{title}</DialogTitle>

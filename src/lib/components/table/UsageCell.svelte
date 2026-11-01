@@ -18,18 +18,18 @@
   let usage = $derived(usageMeter(resource, columnKey, ctx));
 </script>
 
-<div class="flex items-center gap-2 font-mono text-[11px] leading-none tabular-nums" title={usage?.title ?? ""}>
+<div class="flex items-center gap-1.5 font-mono text-[12px] leading-none tabular-nums" title={usage?.title ?? ""}>
   {#if usage}
-    <span class="w-[42px] shrink-0 truncate text-[var(--text-secondary)]">{usage.label}</span>
+    <span class="w-10 shrink-0 truncate text-[var(--text-primary)]">{usage.label}</span>
     {#if usage.percent !== null}
-      <span class="h-[3px] w-[46px] shrink-0 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
+      <span class="h-1 w-7 shrink-0 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
         <span
           class="block h-full rounded-full transition-[width] duration-300"
           style="width: {Math.min(usage.percent, 100)}%; background-color: {usageBarColor(usage.percent)}"
         ></span>
       </span>
       <span
-        class="shrink-0"
+        class="w-7 shrink-0 text-right"
         style:color={usagePercentIsLoud(usage.percent) ? usageBarColor(usage.percent) : "var(--text-muted)"}
       >{usage.percent}%</span>
     {:else if usage.basisLabel}

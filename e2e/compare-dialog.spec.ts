@@ -50,7 +50,7 @@ test("diffs a resource against its sibling in another namespace", async ({ page,
   await expect(page.getByRole("heading", { name: "Pods", exact: true })).toBeVisible({ timeout: 10_000 });
 
   await page.locator("tbody tr").first().click({ button: "right" });
-  await page.getByRole("menuitem", { name: /Compare Across Namespaces/ }).click();
+  await page.getByRole("menuitem", { name: /Compare across namespaces/ }).click();
 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("Compare Pod");
@@ -68,7 +68,7 @@ test("diffs a resource against the same namespace in another context", async ({ 
   await expect(page.getByRole("heading", { name: "Pods", exact: true })).toBeVisible({ timeout: 10_000 });
 
   await page.locator("tbody tr").first().click({ button: "right" });
-  await page.getByRole("menuitem", { name: /Compare Across Namespaces/ }).click();
+  await page.getByRole("menuitem", { name: /Compare across namespaces/ }).click();
 
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: /Target context/ }).click();

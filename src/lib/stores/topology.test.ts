@@ -122,9 +122,9 @@ describe("topology layout", () => {
   const m = TOPOLOGY_METRICS;
 
   test("maxNodesPerRow spans the viewport at the minimum zoom", () => {
-    // 1000px wide at 0.75 = 1333 units, minus padding: six 180+40 slots.
-    expect(maxNodesPerRow(1000)).toBe(5);
-    expect(maxNodesPerRow(2000)).toBe(11);
+    // 1000px wide at 0.75 = 1333 units, minus padding: four 232+40 slots.
+    expect(maxNodesPerRow(1000)).toBe(4);
+    expect(maxNodesPerRow(2000)).toBe(9);
     expect(maxNodesPerRow(0)).toBe(6);
     expect(maxNodesPerRow(10)).toBe(1);
   });

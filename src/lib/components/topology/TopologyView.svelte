@@ -5,7 +5,7 @@
   import TopologyCanvas from "./TopologyCanvas.svelte";
   import TopologyLegend from "./TopologyLegend.svelte";
   import { Skeleton } from "$lib/components/ui/skeleton";
-  import { GitFork, AlertTriangle, Maximize2, Minimize2, ShieldCheck } from "lucide-svelte";
+  import { GitFork, AlertTriangle, ShieldCheck } from "lucide-svelte";
   import { topologyStore } from "$lib/stores/topology.svelte";
   import { netpolStore } from "$lib/stores/netpol.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
@@ -13,7 +13,6 @@
   import { buildOverlay } from "./netpol-layer.logic";
 
   let searchFilter = $state("");
-  let showLegend = $state(true);
   let showPolicies = $state(false);
 
 
@@ -71,50 +70,33 @@
     }
   }
 
-  // Reload when the header's namespace picker changes scope, and refresh the
-  // policy overlay too when it is toggled on (openAppView issued the first load).
-  let lastNamespace: string | undefined;
-  $effect(() => {
-    const ns = k8sStore.currentNamespace;
-    if (lastNamespace !== undefined && lastNamespace !== ns) {
-      if (topologyStore.focusedResourceUid) {
-        topologyStore.loadResourceTopology(topologyStore.focusedResourceUid, ns);
-      } else {
-        topologyStore.loadNamespaceTopology(ns);
-      }
-      if (showPolicies) void netpolStore.loadNetworkPolicies(ns);
-    }
-    lastNamespace = ns;
-  });
 
 </script>
 
 <ViewPanel
-  title={topologyStore.focusedResourceUid ? "Resource Topology" : "Namespace Topology"}
+  title={topologyStore.focusedResourceUid ? "Resource topology" : "Namespace topology"}
   icon={GitFork}
   isLoading={topologyStore.isLoading}
   error={topologyStore.error}
   hasData={!!topologyStore.graph}
   onRefresh={handleRefresh}
   onNamespaceChange={handleNamespaceChange}
-  loadingMessage="Loading topology..."
+  loadingMessage="Loading topology…"
   errorMessage="Failed to load topology"
   emptyMessage="No resources to display"
 >
   {#snippet badge()}
     {#if topologyStore.graph}
-      <Badge appearance="surface" size="sm">
-        {topologyStore.graph.total_resources} resources
-        {#if topologyStore.graph.clustered}
-          · clustered
-        {/if}
-      </Badge>
+      <span class="font-mono text-[11px] text-[var(--text-muted)]">
+        {topologyStore.graph.total_resources} resources{topologyStore.graph.clustered ? " · clustered" : ""}
+      </span>
       {#if topologyStore.graph.has_cycles}
-        <Badge tone="warning" size="sm" class="rounded-md font-normal">
+        <Badge tone="warning" size="sm" class="font-normal">
           <AlertTriangle class="h-3 w-3" />
           cycles detected
         </Badge>
       {/if}
+      {#if filteredGraph}<TopologyLegend nodes={filteredGraph.nodes} />{/if}
     {/if}
   {/snippet}
 
@@ -123,20 +105,13 @@
       <SearchField
         size="sm"
         clearable
-        placeholder="Filter nodes..."
+        placeholder="Filter nodes"
         ariaLabel="Filter topology nodes"
         bind:value={searchFilter}
       />
     </div>
-    <Button variant={showPolicies ? "accent" : "outline"} size="lg" onclick={togglePolicies} title="Overlay NetworkPolicies: isolation per workload and the flows they allow" data-testid="topology-policies">
+    <Button variant={showPolicies ? "accent" : "toolbar"} size="sm" onclick={togglePolicies} title="Overlay NetworkPolicies: isolation per workload and the flows they allow" data-testid="topology-policies">
       <ShieldCheck class="h-3.5 w-3.5" /> Policies
-    </Button>
-    <Button variant="outline" size="icon-lg" onclick={() => showLegend = !showLegend} title="Toggle legend" aria-label="Toggle legend">
-      {#if showLegend}
-        <Minimize2 class="h-3.5 w-3.5" />
-      {:else}
-        <Maximize2 class="h-3.5 w-3.5" />
-      {/if}
     </Button>
   {/snippet}
 
@@ -147,11 +122,6 @@
   {#if filteredGraph && filteredGraph.nodes.length > 0}
     <div class="relative h-full">
       <TopologyCanvas graph={filteredGraph} {overlay} />
-      {#if showLegend}
-        <div class="absolute bottom-4 left-4">
-          <TopologyLegend nodes={filteredGraph.nodes} />
-        </div>
-      {/if}
       {#if showPolicies}
         <NetpolPanel selected={selectedStatus} namespace={k8sStore.currentNamespace} />
       {/if}

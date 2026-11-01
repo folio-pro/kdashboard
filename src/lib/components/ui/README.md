@@ -119,6 +119,10 @@ drift in the other direction.
 
 ## Rules
 
+- **Colour means cluster state.** In the default theme `--accent` is neutral on
+  purpose: green is `--status-running`, and a green Create button beside green
+  "healthy" dots made the colour mean nothing. Chrome stays in the ramp; healthy
+  stays quiet; a value takes a status colour only when it needs a look.
 - **No literal colours.** No `text-red-400`, no `#0C0C0C`. Tone variants or
   `var(--…)` only. The five light presets are the test: a raw palette colour
   that looks fine on the default dark theme is unreadable on `github-light`.

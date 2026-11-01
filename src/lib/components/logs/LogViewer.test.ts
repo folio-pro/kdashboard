@@ -482,7 +482,7 @@ describe("streamEmptyStateMessage", () => {
 
   test("connecting phase announces the connection attempt", () => {
     expect(streamEmptyStateMessage(opts({ phase: "connecting" }))).toBe(
-      "Connecting to log stream...",
+      "Connecting to log stream…",
     );
   });
 
@@ -523,7 +523,7 @@ describe("streamEmptyStateMessage", () => {
 
   test("idle deployment while pods load", () => {
     expect(streamEmptyStateMessage(opts({ isDeployment: true, podsLoading: true }))).toBe(
-      "Loading pods...",
+      "Loading pods…",
     );
   });
 
@@ -573,6 +573,6 @@ describe("streamEmptyStateMessage", () => {
   test("filters are ignored when nothing arrived", () => {
     expect(
       streamEmptyStateMessage(opts({ phase: "connecting", hasLogs: false, levelFilter: "error" })),
-    ).toBe("Connecting to log stream...");
+    ).toBe("Connecting to log stream…");
   });
 });

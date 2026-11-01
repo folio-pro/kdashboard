@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Column, Resource } from "$lib/types";
 import {
+  podNameParts,
   parseFacet,
   facetToText,
   resolveFacetKey,
@@ -18,7 +19,7 @@ const columns: Column[] = [
   { key: "status", label: "Status", sortable: true },
   { key: "restarts", label: "Restarts", sortable: true },
   { key: "node", label: "Node", sortable: true },
-  { key: "cjLastSchedule", label: "Last Schedule", sortable: false },
+  { key: "cjLastSchedule", label: "Last schedule", sortable: false },
 ];
 
 function pod(name: string, phase: string, restarts: number, extra: Record<string, unknown> = {}): Resource {
@@ -208,5 +209,19 @@ describe("splitPodName", () => {
   });
   test("a bare 5-char random name keeps its base", () => {
     expect(splitPodName("x9k2d")).toEqual({ base: "x9k2d", suffix: "" });
+  });
+});
+
+describe("podNameParts", () => {
+  test("separates the shared hash from the replica's own tail", () => {
+    expect(podNameParts("api-gateway-7d4f8b9c5-2xkqp")).toEqual({ base: "api-gateway", hash: "-7d4f8b9c5", tail: "-2xkqp" });
+  });
+
+  test("a DaemonSet pod has a tail and no hash", () => {
+    expect(podNameParts("fluent-bit-x7k2m")).toEqual({ base: "fluent-bit", hash: "", tail: "-x7k2m" });
+  });
+
+  test("a StatefulSet ordinal stays whole", () => {
+    expect(podNameParts("redis-0")).toEqual({ base: "redis-0", hash: "", tail: "" });
   });
 });

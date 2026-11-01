@@ -117,10 +117,10 @@
     tone: ButtonTone;
     activeStyle: ButtonActiveStyle;
   }[] = [
-    { value: "all", variant: "toolbar", tone: "accent", activeStyle: "solid" },
-    { value: "info", variant: "toolbar-tone", tone: "info", activeStyle: "soft" },
-    { value: "warn", variant: "toolbar-tone", tone: "warning", activeStyle: "soft" },
-    { value: "error", variant: "toolbar-tone", tone: "error", activeStyle: "soft" },
+    { value: "all", variant: "segment", tone: "neutral", activeStyle: "raised" },
+    { value: "info", variant: "segment", tone: "neutral", activeStyle: "raised" },
+    { value: "warn", variant: "segment", tone: "neutral", activeStyle: "raised" },
+    { value: "error", variant: "segment", tone: "neutral", activeStyle: "raised" },
   ];
 
   const TOGGLES = $derived([
@@ -164,23 +164,21 @@
   }
 </script>
 
-<div class="flex h-11 shrink-0 items-center gap-2 border-t border-[var(--border-color)] px-4">
+<div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-color)] px-4 py-2">
   <!-- Stream toggle -->
   {#if !isStreaming}
     <Button
-      variant="solid-tone"
-      tone="success"
+      variant="accent"
       size="sm"
-      mono
       onclick={onStartStreaming}
       disabled={!selectedContainer}
     >
-      <Play class="h-3 w-3" />
+      <Play class="h-3.5 w-3.5" />
       <span>Stream</span>
     </Button>
   {:else}
-    <Button variant="solid-tone" tone="error" size="sm" mono onclick={onStopStreaming}>
-      <Square class="h-3 w-3" />
+    <Button variant="solid-tone" tone="error" size="sm" onclick={onStopStreaming}>
+      <Square class="h-3.5 w-3.5" />
       <span>Stop</span>
     </Button>
   {/if}
@@ -197,16 +195,15 @@
     </SelectMenu>
   {/if}
 
-  <div class="h-5 w-px shrink-0 bg-[var(--border-color)]"></div>
-
   <!-- Level filters -->
-  <div class="flex shrink-0 items-center gap-1" role="group" aria-label="Log level filter">
+  <div class="flex shrink-0 items-center gap-0.5 rounded-md border border-[var(--border-color)] p-0.5" role="group" aria-label="Log level filter">
     {#each LEVELS as level}
       <Button
         variant={level.variant}
-        size="sm"
+        size="xs"
         mono
         tone={level.tone}
+        class={levelFilter === level.value ? "bg-[var(--bg-tertiary)] shadow-none" : ""}
         active={levelFilter === level.value}
         activeStyle={level.activeStyle}
         onclick={() => (levelFilter = level.value)}
@@ -232,7 +229,7 @@
     <span class="shrink-0 font-mono text-[11px] text-[var(--text-muted)]">loading pods…</span>
   {:else if isDeployment && deploymentPodNames.length > 0}
     <Badge appearance="outline" tone="muted" size="sm" mono class="h-7 px-2.5">
-      <Box class="h-3 w-3" />
+      <Box class="h-3.5 w-3.5" />
       {deploymentPodNames.length} pods
     </Badge>
   {/if}
@@ -259,30 +256,30 @@
   <SearchField
     size="sm"
     mono
-    placeholder="Filter logs…"
+    placeholder="Filter logs"
     ariaLabel="Filter logs"
-    class="min-w-[80px] flex-1"
+    class="min-w-[160px] flex-1"
     bind:value={filterText}
   />
 
   <!-- Icon toggles -->
   {#each TOGGLES as toggle}
     <Button
-      variant="toolbar"
+      variant="muted"
       size="icon-sm"
       active={toggle.on}
       title={toggle.label}
       aria-label={toggle.label}
       onclick={toggle.toggle}
     >
-      <toggle.icon class="h-3 w-3" />
+      <toggle.icon class="h-3.5 w-3.5" />
     </Button>
   {/each}
 
   <!-- Export: both act on the DISPLAYED lines — after the level, pod and text
        filters — so what leaves the viewer is what the user was looking at. -->
   <Button
-    variant="toolbar"
+    variant="muted"
     size="icon-sm"
     title="Copy logs"
     aria-label="Copy logs"
@@ -292,33 +289,33 @@
     {#if copied}
       <Check class="h-3 w-3 text-[var(--status-running)]" />
     {:else}
-      <Copy class="h-3 w-3" />
+      <Copy class="h-3.5 w-3.5" />
     {/if}
   </Button>
   <Button
-    variant="toolbar"
+    variant="muted"
     size="icon-sm"
     title="Download logs"
     aria-label="Download logs"
     disabled={!hasLines}
     onclick={onDownload}
   >
-    <Download class="h-3 w-3" />
+    <Download class="h-3.5 w-3.5" />
   </Button>
 
   <Button
-    variant="toolbar"
+    variant="muted"
     size="icon-sm"
     title="Analyze these logs with the AI agent"
     aria-label="Analyze logs with AI agent"
     onclick={onAskAgent}
     data-testid="logs-ask-agent"
   >
-    <Bot class="h-3 w-3" />
+    <Bot class="h-3.5 w-3.5" />
   </Button>
 
-  <Button variant="toolbar" size="icon-sm" title="Clear logs" aria-label="Clear logs" onclick={onClear}>
-    <Trash2 class="h-3 w-3" />
+  <Button variant="muted" size="icon-sm" title="Clear logs" aria-label="Clear logs" onclick={onClear}>
+    <Trash2 class="h-3.5 w-3.5" />
   </Button>
 
   <!-- The badge reports the stream phase, not merely "a stream exists": a LIVE
@@ -326,13 +323,13 @@
        look like a hung one. -->
   {#if streamPhase === "live"}
     <div class="flex shrink-0 items-center gap-1.5">
-      <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-running)]"></div>
-      <span class="font-mono text-[11px] font-semibold text-[var(--status-running)]">LIVE</span>
+      <div class="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--status-running)]"></div>
+      <span class="text-[11px] text-[var(--text-secondary)]">Live</span>
     </div>
   {:else if streamPhase === "connecting"}
     <div class="flex shrink-0 items-center gap-1.5">
-      <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--text-muted)]"></div>
-      <span class="font-mono text-[11px] font-semibold text-[var(--text-muted)]">CONNECTING</span>
+      <div class="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--text-muted)]"></div>
+      <span class="text-[11px] text-[var(--text-muted)]">Connecting</span>
     </div>
   {/if}
 </div>

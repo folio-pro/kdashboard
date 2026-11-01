@@ -56,7 +56,7 @@
       {#if group.tool === null}
         <div class="border-b border-[var(--border-color)]">
           <div class="flex items-center justify-between px-6 py-4">
-            <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Other Annotations</h3>
+            <h3 class="text-[11px] font-medium text-[var(--text-muted)]">Other Annotations</h3>
             <span class="text-[12px] text-[var(--text-muted)]">{count}</span>
           </div>
           {#each Object.entries(group.annotations) as [key, value]}
@@ -79,7 +79,7 @@
                   {@const ToolIcon = ICON_MAP[group.tool.icon]}
                   <ToolIcon class="h-3.5 w-3.5 text-[var(--text-muted)]" />
                 {/if}
-                <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{group.tool.name}</h3>
+                <h3 class="text-[11px] font-medium text-[var(--text-muted)]">{group.tool.name}</h3>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-[12px] text-[var(--text-muted)]">{count}</span>
@@ -93,7 +93,7 @@
                   {@const ToolIcon = ICON_MAP[group.tool.icon]}
                   <ToolIcon class="h-3.5 w-3.5 text-[var(--text-muted)]" />
                 {/if}
-                <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{group.tool.name}</h3>
+                <h3 class="text-[11px] font-medium text-[var(--text-muted)]">{group.tool.name}</h3>
               </div>
               <span class="text-[12px] text-[var(--text-muted)]">{count}</span>
             </div>

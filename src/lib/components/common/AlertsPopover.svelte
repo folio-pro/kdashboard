@@ -34,7 +34,7 @@
     {/if}
   </PopoverTrigger>
   <PopoverContent align="start" side="top" class="w-[360px] p-0 text-[11px]" data-testid="alerts-popover">
-    <div class="border-b border-[var(--border-color)] px-3 py-2 font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Watching · {k8sStore.currentContext}</div>
+    <div class="border-b border-[var(--border-color)] px-3 py-2 font-medium text-[var(--text-muted)]">Watching · {k8sStore.currentContext}</div>
     <ul class="max-h-[160px] overflow-y-auto py-1">
       {#each alertStore.watched as w (w.id)}
         <li class="flex items-center gap-2 px-3 py-1">
@@ -43,7 +43,7 @@
         </li>
       {/each}
     </ul>
-    <div class="border-t border-[var(--border-color)] px-3 py-2 font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Recent alerts</div>
+    <div class="border-t border-[var(--border-color)] px-3 py-2 font-medium text-[var(--text-muted)]">Recent alerts</div>
     {#if alertStore.recent.length === 0}
       <div class="px-3 pb-2 text-[var(--text-muted)]">Nothing yet — checks every 20 s.</div>
     {:else}

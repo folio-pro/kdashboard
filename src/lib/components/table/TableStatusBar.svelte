@@ -64,18 +64,17 @@
 </script>
 
 <footer
-  class="flex h-[26px] shrink-0 items-center gap-2.5 border-t border-[var(--border-color)] bg-[var(--bg-secondary)] px-6 text-[11px] text-[var(--text-muted)]"
+  class="flex h-7 shrink-0 items-center gap-2 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-4 text-[11px] text-[var(--text-muted)]"
   aria-label="Table status"
 >
   <span
-    class="inline-flex shrink-0 items-center gap-1.5"
-    style:color={watchTone}
+    class="inline-flex shrink-0 items-center gap-2 text-[var(--text-secondary)]"
+    style:color={unreachable ? watchTone : undefined}
     title={unreachable ? k8sStore.unreachableTooltip : undefined}
   >
     <span
-      class="h-[5px] w-[5px] rounded-full"
+      class="h-1.5 w-1.5 rounded-full"
       style:background-color={watchTone}
-      style:box-shadow={watching && !unreachable ? "0 0 6px color-mix(in srgb, var(--status-running) 55%, transparent)" : "none"}
     ></span>
     {watchLabel}
   </span>
@@ -98,7 +97,7 @@
 
   {#if namespaceHidden}
     <span aria-hidden="true">·</span>
-    <span class="truncate">Namespace column hidden — one namespace selected</span>
+    <span class="truncate">Namespace column hidden</span>
   {:else if allNamespaces}
     <span aria-hidden="true">·</span>
     <span class="truncate">All namespaces</span>

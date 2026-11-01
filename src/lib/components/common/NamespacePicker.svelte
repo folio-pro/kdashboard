@@ -44,7 +44,7 @@
     <Button
       variant="toolbar"
       size="sm"
-      class="border-[var(--border-hover)] bg-[var(--bg-tertiary)] pl-2 pr-1.5 hover:bg-[var(--sidebar-active)]"
+      class="pl-2 pr-1.5"
       aria-label="Change namespace"
     >
       <Boxes class="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
@@ -57,7 +57,7 @@
       <Input
         type="text"
         size="sm"
-        placeholder="Filter namespaces..."
+        placeholder="Filter namespaces"
         bind:value={filter}
         aria-label="Filter namespaces"
         class="bg-[var(--bg-secondary)]"

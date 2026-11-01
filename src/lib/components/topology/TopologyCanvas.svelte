@@ -9,6 +9,7 @@
   import { toastStore } from "$lib/stores/toast.svelte";
   import { Button } from "$lib/components/ui";
   import { Scan } from "lucide-svelte";
+  import { edgeStateColors } from "./topology-state";
   import { fitViewBox, layoutTopology, maxNodesPerRow, TOPOLOGY_METRICS } from "$lib/stores/topology.logic";
 
   import type { NetpolOverlay } from "./netpol-layer.logic";
@@ -90,6 +91,8 @@
     }
     return ids;
   });
+
+  let edgeColors = $derived(edgeStateColors(graph.nodes, graph.edges));
 
   function edgePath(edge: TopologyEdge): string {
     const from = layout.positions.get(edge.from);
@@ -212,12 +215,13 @@
          re-evaluates every edge's attributes, and large graphs have thousands. -->
     {@const hl = isEdgeHighlighted(edge)}
     {@const dim = isEdgeDimmed(edge)}
+    {@const state = edgeColors.get(`${edge.from}-${edge.to}`)}
     <path
       d={edgePath(edge)}
       fill="none"
-      stroke={hl ? "var(--accent)" : "var(--text-muted)"}
+      stroke={hl ? "var(--accent)" : state ?? "var(--text-muted)"}
       stroke-width={hl ? 2 : 1}
-      stroke-opacity={dim ? 0.15 : hl ? 0.8 : 0.35}
+      stroke-opacity={dim ? 0.15 : hl || state ? 0.8 : 0.35}
       marker-end={hl ? "url(#arrowhead-highlight)" : "url(#arrowhead)"}
       class="transition-[stroke,stroke-width,stroke-opacity] duration-150"
     />

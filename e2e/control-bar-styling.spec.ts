@@ -67,34 +67,24 @@ test.describe("control bar styling", () => {
     const panel = page.locator('[data-testid="log-viewer"]');
     await expect(panel).toBeVisible();
 
-    // The primary action is filled in the success tone. No fill = invisible
-    // button: its label is --bg-primary, the colour of the bar behind it.
+    // The primary action is filled. No fill = invisible button: its label is
+    // --bg-primary, the colour of the bar behind it.
     const stream = panel.getByRole("button", { name: /Stream|Stop/ });
     await expect(stream).toBeVisible();
     const streamBg = await stream.evaluate((el) => getComputedStyle(el).backgroundColor);
     expect(TRANSPARENT, `Stream button background: ${streamBg}`).not.toContain(streamBg);
 
-    // Each level filter carries its own status colour at rest, so no two of
-    // them may paint the same label colour.
-    const levels = ["info", "warn", "error"];
-    const colours = await Promise.all(
-      levels.map((l) =>
-        panel
-          .getByRole("button", { name: l, exact: true })
-          .evaluate((el) => getComputedStyle(el).color),
-      ),
-    );
-    expect(new Set(colours).size, `level colours: ${colours.join(", ")}`).toBe(levels.length);
+    // The level filters are a segmented control: the selected one sits on a
+    // surface, the rest stay flat. Colour is for the log lines, not the chrome.
+    const levelBg = (name: string) =>
+      panel.getByRole("button", { name, exact: true }).evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(TRANSPARENT).not.toContain(await levelBg("all"));
+    expect(TRANSPARENT).toContain(await levelBg("error"));
 
-    // The recessed toolbar controls have a surface and a border.
+    // Secondary actions are quiet icons, at the toolbar's control height.
     const clear = panel.getByRole("button", { name: "Clear logs" });
-    const clearStyle = await clear.evaluate((el) => {
-      const s = getComputedStyle(el);
-      return { bg: s.backgroundColor, border: s.borderTopWidth, height: el.getBoundingClientRect().height };
-    });
-    expect(TRANSPARENT, `Clear button background: ${clearStyle.bg}`).not.toContain(clearStyle.bg);
-    expect(clearStyle.border).not.toBe("0px");
-    expect(clearStyle.height).toBe(28);
+    await expect(clear).toBeVisible();
+    expect(await clear.evaluate((el) => el.getBoundingClientRect().height)).toBe(28);
   });
 
   test("the shell control bar paints its buttons", async ({ page, mockInvoke }) => {

@@ -206,8 +206,8 @@ describe("ScaleDialog — button label", () => {
     expect(getButtonLabel(false)).toBe("Scale");
   });
 
-  test("shows 'Scaling...' when loading", () => {
-    expect(getButtonLabel(true)).toBe("Scaling...");
+  test("shows 'Scaling…' when loading", () => {
+    expect(getButtonLabel(true)).toBe("Scaling…");
   });
 });
 

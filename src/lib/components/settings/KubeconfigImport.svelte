@@ -83,9 +83,9 @@
   <div class="mt-6 rounded-lg border border-[var(--border-color)] p-4" data-testid="kubeconfig-import">
     <div class="flex items-center gap-2">
       <Import class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-      <h3 class="text-[12px] font-semibold text-[var(--text-primary)]">Import another kubeconfig</h3>
+      <h3 class="text-[12px] font-medium text-[var(--text-primary)]">Import another kubeconfig</h3>
     </div>
-    <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+    <p class="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
       Merge the contexts of another kubeconfig (a file your cloud CLI wrote, or YAML you were sent) into the active one.
       Existing entries are kept unless you choose to overwrite; the file is backed up before writing.
     </p>

@@ -19,7 +19,7 @@
   aria-label={heading}
 >
   {#if heading}
-    <div role="presentation" class="px-2 py-1.5 text-[12px] font-medium text-[var(--text-secondary)]" data-testid="command-group-label">
+    <div role="presentation" class="px-2 py-1 text-[11px] font-medium text-[var(--text-muted)]" data-testid="command-group-label">
       {heading}
     </div>
   {/if}

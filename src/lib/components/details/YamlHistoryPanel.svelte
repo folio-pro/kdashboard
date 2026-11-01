@@ -47,7 +47,7 @@
           onclick={() => { onselect(i); }}
         >
           <span class="text-[11px] font-medium">{entry.label}</span>
-          <span class="text-[10px] text-[var(--text-muted)]">{formatTime(entry.timestamp)}</span>
+          <span class="text-[11px] text-[var(--text-muted)]">{formatTime(entry.timestamp)}</span>
         </button>
       {/each}
     </div>
@@ -57,7 +57,7 @@
       {#if selectedIndex !== null}
         <div class="flex h-full flex-col">
           <div class="flex shrink-0 items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-1.5">
-            <div class="flex items-center gap-4 text-[10px] text-[var(--text-muted)]">
+            <div class="flex items-center gap-4 text-[11px] text-[var(--text-muted)]">
               <span class="flex items-center gap-1">
                 <span class="inline-block h-2 w-2 rounded-sm bg-[var(--status-failed)]/30"></span>
                 Before
@@ -67,7 +67,7 @@
                 After
               </span>
             </div>
-            <Button variant="toolbar" size="sm" mono class="text-[10px]" onclick={() => onrestore(selectedIndex!)}>
+            <Button variant="toolbar" size="sm" mono class="text-[11px]" onclick={() => onrestore(selectedIndex!)}>
               <RotateCcw class="h-3 w-3" />
               Restore this version
             </Button>

@@ -1,8 +1,9 @@
 <script lang="ts">
   import ViewPanel from "$lib/components/common/ViewPanel.svelte";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Badge, SegmentedControl, StatTile, type BadgeTone } from "$lib/components/ui";
-  import { Shield, ShieldAlert, ShieldCheck, ShieldQuestionMark, ChevronDown, ChevronRight } from "lucide-svelte";
+  import { SegmentedControl } from "$lib/components/ui";
+  import { Shield, ChevronDown, ChevronRight } from "lucide-svelte";
+  import { healthTicks } from "$lib/utils/workload-stats";
   import { securityStore } from "$lib/stores/security.svelte";
   import { podScanLabel, podScanSummary, vulnTotal } from "$lib/stores/security.logic";
   import { rbacStore } from "$lib/stores/rbac.svelte";
@@ -49,26 +50,6 @@
     }
   }
 
-  // Reload the active mode when the header's namespace picker changes scope;
-  // openAppView issued the first load, so only a change re-loads. The mode that
-  // is NOT on screen is dropped rather than reloaded: both loaders skip the
-  // fetch when data is already there (RbacPanel guards on `subjects.length`),
-  // so leaving it would show the old namespace's rows on the next mode switch.
-  let lastNamespace: string | undefined;
-  $effect(() => {
-    const ns = k8sStore.currentNamespace;
-    if (lastNamespace !== undefined && lastNamespace !== ns) {
-      if (mode === "permissions") {
-        securityStore.reset();
-        rbacStore.reset();
-        void rbacStore.loadSubjects(ns);
-      } else {
-        rbacStore.reset();
-        securityStore.loadSecurityOverview(ns);
-      }
-    }
-    lastNamespace = ns;
-  });
 
   function togglePod(key: string) {
     const next = new Set(expandedPods);
@@ -81,52 +62,56 @@
   }
 
   /**
-   * CVSS severity mapped onto the design system's semantic tones. This view
-   * used to reach straight for raw Tailwind palette classes, which are fixed
-   * to a dark background and wash out to unreadable on the five light theme
-   * presets.
+   * CVSS severity on the semantic scale. Low is deliberately neutral: it is
+   * the long tail, and painting it blue made the quietest number the loudest.
    */
   type Severity = "critical" | "high" | "medium" | "low";
 
-  const severityTone: Record<Severity, BadgeTone> = {
-    critical: "error",
-    high: "terminating",
-    medium: "warning",
-    low: "info",
-  };
-
-  const severityVar: Record<Severity, string> = {
+  const severityColor: Record<Severity, string> = {
     critical: "var(--status-failed)",
     high: "var(--status-terminating)",
     medium: "var(--status-pending)",
-    low: "var(--status-succeeded)",
+    low: "var(--text-secondary)",
   };
 
-  const severities: { key: Severity; label: string; initial: string }[] = [
-    { key: "critical", label: "Critical", initial: "C" },
-    { key: "high", label: "High", initial: "H" },
-    { key: "medium", label: "Medium", initial: "M" },
-    { key: "low", label: "Low", initial: "L" },
+  const severities: { key: Severity; label: string }[] = [
+    { key: "critical", label: "Critical" },
+    { key: "high", label: "High" },
+    { key: "medium", label: "Medium" },
+    { key: "low", label: "Low" },
   ];
 
+  let compliance = $derived(
+    securityStore.overview
+      ? [
+          { key: "compliant", value: securityStore.overview.compliant_pods, color: "var(--status-running)" },
+          { key: "non-compliant", value: securityStore.overview.non_compliant_pods, color: "var(--status-failed)" },
+        ]
+      : [],
+  );
+  let complianceTicks = $derived(healthTicks(compliance));
+  let compliancePct = $derived.by(() => {
+    const total = compliance.reduce((sum, c) => sum + c.value, 0);
+    return total > 0 ? Math.round((compliance[0].value / total) * 100) : 0;
+  });
 </script>
 
 <ViewPanel
-  title="Security Overview"
+  title="Security"
   icon={Shield}
   isLoading={panel.isLoading}
   error={panel.error}
   hasData={panel.hasData}
   onRefresh={handleRefresh}
   onNamespaceChange={handleNamespaceChange}
-  loadingMessage="Scanning images..."
+  loadingMessage="Scanning images…"
   errorMessage="Failed to load security data"
   emptyMessage="No security data available"
   emptyHelper="Install trivy or grype to scan container images"
 >
   {#snippet badge()}
     {#if mode === "posture" && securityStore.overview}
-      <Badge appearance="surface" size="sm">{securityStore.overview.scanner}</Badge>
+      <span class="font-mono text-[11px] text-[var(--text-muted)]">{securityStore.overview.scanner}</span>
     {/if}
   {/snippet}
 
@@ -147,155 +132,123 @@
       <RbacPanel />
     {/key}
   {:else}
+  {@const overview = securityStore.overview!}
   <ScrollArea class="h-full">
-    <div class="p-4 space-y-4">
-      <!-- Summary Cards -->
-      <div class="grid grid-cols-5 gap-3">
-        <StatTile label="Images Scanned" value={securityStore.overview!.total_images_scanned} />
+    <div class="flex flex-col gap-3 py-3">
+      <!-- One band, not five equal cards: compliance leads, the severities
+           are its breakdown. -->
+      <div class="mx-6 grid grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))] rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+        <div class="flex min-w-0 flex-col justify-between gap-2 px-4 py-3">
+          <span class="text-[12px] text-[var(--text-muted)]">Compliance · {overview.total_images_scanned} images scanned · updated {new Date(overview.fetched_at).toLocaleTimeString()}</span>
+          <div class="flex items-center gap-3">
+            {#if complianceTicks}
+              <div class="flex shrink-0 gap-0.5" role="img" aria-label={`${overview.compliant_pods} compliant, ${overview.non_compliant_pods} non-compliant`}>
+                {#each complianceTicks as color, i (i)}
+                  <span class="h-4 w-2 rounded-[2px]" style:background-color={color}></span>
+                {/each}
+              </div>
+            {:else if overview.pods.length > 0}
+              <span class="font-mono text-[12px] text-[var(--text-primary)]">{compliancePct}%</span>
+            {/if}
+            <span class="truncate text-[12px] text-[var(--text-secondary)]">
+              <span class="font-mono text-[var(--text-primary)]">{overview.compliant_pods}</span> compliant ·
+              <span class="font-mono text-[var(--text-primary)]">{overview.non_compliant_pods}</span> non-compliant
+            </span>
+          </div>
+        </div>
         {#each severities as sev (sev.key)}
-          <StatTile label={sev.label} value={securityStore.overview!.total_vulns[sev.key]} tone={severityTone[sev.key]} class="border-[var(--tone)]/30" />
+          {@const n = overview.total_vulns[sev.key]}
+          <div class="flex min-w-0 flex-col gap-2 border-l border-[var(--border-color)] px-4 py-3">
+            <span class="text-[12px] text-[var(--text-muted)]">{sev.label}</span>
+            <span class="font-mono text-[26px] font-medium leading-none tabular-nums" style:color={n > 0 && sev.key !== "low" ? severityColor[sev.key] : "var(--text-primary)"}>{n}</span>
+          </div>
         {/each}
       </div>
 
-      <!-- Compliance Bar -->
-      <div class="flex items-center gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3">
-        <div class="flex items-center gap-2">
-          <ShieldCheck class="h-4 w-4 text-[var(--status-running)]" />
-          <span class="text-[13px] text-[var(--text-primary)]">{securityStore.overview!.compliant_pods} compliant</span>
-        </div>
-        <div class="h-4 w-px bg-[var(--border-color)]"></div>
-        <div class="flex items-center gap-2">
-          <ShieldAlert class="h-4 w-4 text-[var(--status-failed)]" />
-          <span class="text-[13px] text-[var(--text-primary)]">{securityStore.overview!.non_compliant_pods} non-compliant</span>
-        </div>
-        <div class="flex-1"></div>
-        {#if securityStore.overview!.pods.length > 0}
-          {@const total = securityStore.overview!.compliant_pods + securityStore.overview!.non_compliant_pods}
-          {@const pct = total > 0 ? (securityStore.overview!.compliant_pods / total) * 100 : 0}
-          <div class="flex items-center gap-2">
-            <div class="h-2 w-32 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
-              <div
-                class="h-full rounded-full transition-all"
-                style="width: {pct}%; background: var(--status-running);"
-              ></div>
-            </div>
-            <span class="text-[12px] text-[var(--text-muted)]">{Math.round(pct)}%</span>
-          </div>
-        {/if}
-        <span class="text-[11px] text-[var(--text-muted)]">
-          Updated {new Date(securityStore.overview!.fetched_at).toLocaleTimeString()}
-        </span>
-      </div>
-
-      <!-- Pod List -->
-      <div class="space-y-1">
-        {#each securityStore.overview!.pods as pod}
-          {@const podKey = `${pod.namespace}/${pod.name}`}
-          {@const scan = podScanSummary(pod)}
-          {@const label = podScanLabel(scan)}
-          <div class="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]" data-testid="security-pod" data-scan-state={label?.tone ?? "vulnerable"}>
-            <button
-              class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-tertiary)]"
+      <!-- Pods as rows: the same four columns on every line, where pills
+           pushed to the right edge could not be compared down the list. -->
+      <table class="w-full table-fixed text-[12px]">
+        <colgroup>
+          <col class="w-[46px]" /><col />
+          <col class="w-[88px]" /><col class="w-[88px]" /><col class="w-[88px]" /><col class="w-[88px]" />
+          <col class="w-[184px]" />
+        </colgroup>
+        <thead>
+          <tr class="h-8 border-b border-[var(--border-color)] text-[11px] text-[var(--text-muted)]">
+            <th></th>
+            <th class="px-2 text-left font-medium">Pod</th>
+            {#each severities as sev (sev.key)}
+              <th class="px-2 text-right font-medium">{sev.label}</th>
+            {/each}
+            <th class="px-2 pr-4 text-left font-medium">Scan</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each overview.pods as pod (`${pod.namespace}/${pod.name}`)}
+            {@const podKey = `${pod.namespace}/${pod.name}`}
+            {@const scan = podScanSummary(pod)}
+            {@const label = podScanLabel(scan)}
+            {@const expanded = expandedPods.has(podKey)}
+            {@const unscanned = scan.scanned === 0}
+            <tr
+              class="h-9 cursor-pointer border-b border-[var(--border-color)] hover:bg-[var(--table-row-hover)]"
+              data-testid="security-pod"
+              data-scan-state={label?.tone ?? "vulnerable"}
               onclick={() => togglePod(podKey)}
             >
-              {#if expandedPods.has(podKey)}
-                <ChevronDown class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-              {:else}
-                <ChevronRight class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-              {/if}
-
-              <!-- A pod nobody scanned is neither compliant nor not: it is unknown. -->
-              {#if scan.scanned === 0}
-                <ShieldQuestionMark class="h-4 w-4 text-[var(--text-muted)]" />
-              {:else if pod.compliant}
-                <ShieldCheck class="h-4 w-4 text-[var(--status-running)]" />
-              {:else}
-                <ShieldAlert class="h-4 w-4 text-[var(--status-failed)]" />
-              {/if}
-
-              <div class="flex flex-1 flex-col">
-                <span class="text-[13px] font-medium text-[var(--text-primary)]">{pod.name}</span>
-                <span class="text-[11px] text-[var(--text-muted)]">{pod.namespace}</span>
-              </div>
-
-              <div class="flex items-center gap-1.5">
-                {#each severities as sev}
-                  {#if pod.total_vulns[sev.key] > 0}
-                    <Badge tone={severityTone[sev.key]} size="sm">
-                      {pod.total_vulns[sev.key]}
-                      {sev.initial}
-                    </Badge>
-                  {/if}
-                {/each}
-                {#if label}
-                  <span
-                    class="text-[12px]"
-                    style:color={label.tone === "success" ? "var(--status-running)" : "var(--text-muted)"}
-                  >{label.text}</span>
-                {:else if scan.missing > 0}
-                  <span class="text-[12px] text-[var(--text-muted)]">· {scan.missing} not scanned</span>
-                {/if}
-              </div>
-            </button>
-
-            {#if expandedPods.has(podKey)}
-              <div class="border-t border-[var(--border-color)]">
-                <table class="w-full text-[12px]">
-                  <thead>
-                    <tr class="text-[var(--text-muted)]">
-                      <th class="px-3 py-1.5 text-left font-medium">Image</th>
-                      <th class="px-3 py-1.5 text-right font-medium">Critical</th>
-                      <th class="px-3 py-1.5 text-right font-medium">High</th>
-                      <th class="px-3 py-1.5 text-right font-medium">Medium</th>
-                      <th class="px-3 py-1.5 text-right font-medium">Low</th>
-                      <th class="px-3 py-1.5 text-right font-medium">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each pod.images as img}
-                      <tr class="border-t border-[var(--border-color)]/50 text-[var(--text-secondary)]">
-                        <td class="max-w-[300px] truncate px-3 py-1.5 font-mono text-[var(--text-primary)]" title={img.image}>
-                          {img.image}
-                        </td>
-                        {#if img.status === "failed"}
-                          <td class="px-3 py-1.5 text-right text-[var(--text-muted)]" colspan="5" title={img.error ?? ""}>scan failed</td>
-                        {:else}
-                        <td
-                          class="px-3 py-1.5 text-right {img.vulns.critical > 0 ? 'font-medium' : ''}"
-                          style={img.vulns.critical > 0 ? `color: ${severityVar.critical};` : ""}
-                        >
-                          {img.vulns.critical}
-                        </td>
-                        <td
-                          class="px-3 py-1.5 text-right {img.vulns.high > 0 ? 'font-medium' : ''}"
-                          style={img.vulns.high > 0 ? `color: ${severityVar.high};` : ""}
-                        >
-                          {img.vulns.high}
-                        </td>
-                        <td
-                          class="px-3 py-1.5 text-right"
-                          style={img.vulns.medium > 0 ? `color: ${severityVar.medium};` : ""}
-                        >
-                          {img.vulns.medium}
-                        </td>
-                        <td class="px-3 py-1.5 text-right">{img.vulns.low}</td>
-                        <td class="px-3 py-1.5 text-right font-medium">{vulnTotal(img.vulns)}</td>
-                        {/if}
-                      </tr>
-                    {/each}
-                    {#each pod.unscanned_images ?? [] as image (image)}
-                      <tr class="border-t border-[var(--border-color)]/50 text-[var(--text-muted)]">
-                        <td class="max-w-[300px] truncate px-3 py-1.5 font-mono" title={image}>{image}</td>
-                        <td class="px-3 py-1.5 text-right" colspan="5">not scanned</td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </div>
+              <td class="pl-6">
+                {#if expanded}<ChevronDown class="h-3.5 w-3.5 text-[var(--text-muted)]" />{:else}<ChevronRight class="h-3.5 w-3.5 text-[var(--text-muted)]" />{/if}
+              </td>
+              <td class="truncate px-2">
+                <button type="button" class="flex w-full min-w-0 items-center gap-2 text-left" aria-expanded={expanded} onclick={(e) => { e.stopPropagation(); togglePod(podKey); }} title={podKey}>
+                  <!-- A pod nobody scanned is neither compliant nor not: it is unknown. -->
+                  <span class="h-1.5 w-1.5 shrink-0 rounded-full" style:background-color={unscanned ? "var(--text-muted)" : pod.compliant ? "var(--status-running)" : "var(--status-failed)"}></span>
+                  <span class="truncate text-[var(--text-primary)]">{pod.name}</span>
+                </button>
+              </td>
+              {#each severities as sev (sev.key)}
+                {@const n = pod.total_vulns[sev.key]}
+                <td class="px-2 text-right font-mono tabular-nums" style:color={unscanned || n === 0 ? "var(--text-muted)" : severityColor[sev.key]}>{unscanned ? "—" : n}</td>
+              {/each}
+              <td class="truncate px-2 pr-4 text-[var(--text-muted)]" title={label?.text}>
+                {label?.text ?? (pod.compliant ? "Compliant" : "Non-compliant")}{!label && scan.missing > 0 ? ` · ${scan.missing} not scanned` : ""}
+              </td>
+            </tr>
+            {#if expanded}
+              <tr class="border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
+                <td colspan="7" class="pb-2 pl-[46px] pr-4">
+                  <table class="w-full table-fixed">
+                    <colgroup>
+                      <col /><col class="w-[88px]" /><col class="w-[88px]" /><col class="w-[88px]" /><col class="w-[88px]" /><col class="w-[168px]" />
+                    </colgroup>
+                    <tbody>
+                      {#each pod.images as img (img.image)}
+                        <tr class="h-8 text-[var(--text-secondary)]">
+                          <td class="truncate px-2 font-mono text-[var(--text-primary)]" title={img.image}>{img.image}</td>
+                          {#if img.status === "failed"}
+                            <td class="px-2 text-right text-[var(--text-muted)]" colspan="5" title={img.error ?? ""}>Scan failed</td>
+                          {:else}
+                            {#each severities as sev (sev.key)}
+                              <td class="px-2 text-right font-mono tabular-nums" style:color={img.vulns[sev.key] > 0 ? severityColor[sev.key] : "var(--text-muted)"}>{img.vulns[sev.key]}</td>
+                            {/each}
+                            <td class="px-2 font-mono tabular-nums">{vulnTotal(img.vulns)} total</td>
+                          {/if}
+                        </tr>
+                      {/each}
+                      {#each pod.unscanned_images ?? [] as image (image)}
+                        <tr class="h-8 text-[var(--text-muted)]">
+                          <td class="truncate px-2 font-mono" title={image}>{image}</td>
+                          <td class="px-2 text-right" colspan="5">Not scanned</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
             {/if}
-          </div>
-        {/each}
-      </div>
+          {/each}
+        </tbody>
+      </table>
     </div>
   </ScrollArea>
   {/if}

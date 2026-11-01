@@ -142,7 +142,7 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "command-palette",
     keys: "⌘K",
-    label: "Command Palette",
+    label: "Command palette",
     scope: "global",
     allowInInput: true,
     match: (e, meta) => meta && e.key === "k",
@@ -151,7 +151,7 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "close-tab",
     keys: "⌘W",
-    label: "Close Tab",
+    label: "Close tab",
     scope: "global",
     allowInInput: true,
     hideHint: true,
@@ -162,11 +162,11 @@ export const SHORTCUTS: Shortcut[] = [
   },
   // Tab switching. allowInInput like ⌘W: none of these chords edit text, and
   // an editor or terminal that binds one claims it first (see tabShortcut).
-  tabShortcut("next-tab", "⌃Tab", "Next Tab", (t, e) => t === "next" && e.key === "Tab", () => uiStore.nextTab()),
-  tabShortcut("previous-tab", "⌃⇧Tab", "Previous Tab", (t, e) => t === "previous" && e.key === "Tab", () => uiStore.previousTab()),
-  tabShortcut("next-tab-bracket", "⌘⇧]", "Next Tab", (t, e) => t === "next" && e.key !== "Tab", () => uiStore.nextTab()),
-  tabShortcut("previous-tab-bracket", "⌘⇧[", "Previous Tab", (t, e) => t === "previous" && e.key !== "Tab", () => uiStore.previousTab()),
-  tabShortcut("go-to-tab", "⌘1–⌘8", "Go to Tab 1–8", (t) => typeof t === "object" && t.index >= 0, (t) => {
+  tabShortcut("next-tab", "⌃Tab", "Next tab", (t, e) => t === "next" && e.key === "Tab", () => uiStore.nextTab()),
+  tabShortcut("previous-tab", "⌃⇧Tab", "Previous tab", (t, e) => t === "previous" && e.key === "Tab", () => uiStore.previousTab()),
+  tabShortcut("next-tab-bracket", "⌘⇧]", "Next tab", (t, e) => t === "next" && e.key !== "Tab", () => uiStore.nextTab()),
+  tabShortcut("previous-tab-bracket", "⌘⇧[", "Previous tab", (t, e) => t === "previous" && e.key !== "Tab", () => uiStore.previousTab()),
+  tabShortcut("go-to-tab", "⌘1–⌘8", "Go to tab 1–8", (t) => typeof t === "object" && t.index >= 0, (t) => {
     if (typeof t === "object") uiStore.activateTabAt(t.index);
   }),
   tabShortcut("last-tab", "⌘9", "Go to Last Tab", (t) => typeof t === "object" && t.index < 0, () => uiStore.activateTabAt(-1)),
@@ -199,7 +199,7 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "toggle-agent",
     keys: "⌘J",
-    label: "AI Agent",
+    label: "AI agent",
     scope: "global",
     allowInInput: true,
     hideHint: true,
@@ -224,7 +224,7 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "toggle-sidebar",
     keys: "⌘B",
-    label: "Toggle Sidebar",
+    label: "Toggle sidebar",
     scope: "global",
     hideHint: true,
     match: (e, meta) => meta && e.key === "b",
