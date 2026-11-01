@@ -31,23 +31,23 @@
 
 <div class="border-b border-[var(--border-color)]">
   <div class="flex items-center justify-between px-6 py-4">
-    <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Update Strategy</span>
+    <span class="text-[11px] font-medium text-[var(--text-muted)]">Update Strategy</span>
     <Badge appearance="surface" size="sm" mono class="text-[var(--text-primary)]">{strategyType || "—"}</Badge>
   </div>
 
   {#if isDeployment}
     {#if deployStrategyType === "RollingUpdate"}
-      <InfoRow label="Max Surge" value={String(deployRollingUpdate.maxSurge ?? "25%")} />
-      <InfoRow label="Max Unavailable" value={String(deployRollingUpdate.maxUnavailable ?? "25%")} />
+      <InfoRow label="Max surge" value={String(deployRollingUpdate.maxSurge ?? "25%")} />
+      <InfoRow label="Max unavailable" value={String(deployRollingUpdate.maxUnavailable ?? "25%")} />
     {/if}
     {#if spec.revisionHistoryLimit !== undefined}
-      <InfoRow label="Revision History" value={String(spec.revisionHistoryLimit)} />
+      <InfoRow label="Revision history" value={String(spec.revisionHistoryLimit)} />
     {/if}
     {#if spec.minReadySeconds !== undefined}
-      <InfoRow label="Min Ready Seconds" value={String(spec.minReadySeconds)} />
+      <InfoRow label="Min ready seconds" value={String(spec.minReadySeconds)} />
     {/if}
     {#if spec.progressDeadlineSeconds !== undefined}
-      <InfoRow label="Progress Deadline" value={`${spec.progressDeadlineSeconds}s`} />
+      <InfoRow label="Progress deadline" value={`${spec.progressDeadlineSeconds}s`} />
     {/if}
     {#if spec.paused}
       <InfoRow label="Paused" value="true" valueColor="var(--status-pending)" />
@@ -59,14 +59,14 @@
       <InfoRow label="Partition" value={String(rollingUpdate.partition)} />
     {/if}
     {#if podManagementPolicy}
-      <InfoRow label="Pod Management" value={podManagementPolicy} />
+      <InfoRow label="Pod management" value={podManagementPolicy} />
     {/if}
     {#if Object.keys(pvcRetentionPolicy).length > 0}
       {#if pvcRetentionPolicy.whenDeleted}
-        <InfoRow label="PVC When Deleted" value={String(pvcRetentionPolicy.whenDeleted)} />
+        <InfoRow label="PVC when deleted" value={String(pvcRetentionPolicy.whenDeleted)} />
       {/if}
       {#if pvcRetentionPolicy.whenScaled}
-        <InfoRow label="PVC When Scaled" value={String(pvcRetentionPolicy.whenScaled)} />
+        <InfoRow label="PVC when scaled" value={String(pvcRetentionPolicy.whenScaled)} />
       {/if}
     {/if}
   {/if}
@@ -74,10 +74,10 @@
   {#if isDaemonSet}
     {#if updateStrategyType === "RollingUpdate"}
       {#if rollingUpdate.maxUnavailable !== undefined}
-        <InfoRow label="Max Unavailable" value={String(rollingUpdate.maxUnavailable)} />
+        <InfoRow label="Max unavailable" value={String(rollingUpdate.maxUnavailable)} />
       {/if}
       {#if rollingUpdate.maxSurge !== undefined}
-        <InfoRow label="Max Surge" value={String(rollingUpdate.maxSurge)} />
+        <InfoRow label="Max surge" value={String(rollingUpdate.maxSurge)} />
       {/if}
     {/if}
   {/if}

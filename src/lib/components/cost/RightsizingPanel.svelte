@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { Badge, Button, SearchField, SegmentedControl, StatTile } from "$lib/components/ui";
+  import { Button, SearchField, SegmentedControl, StatTile, toneStyle } from "$lib/components/ui";
   import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "$lib/components/ui/dialog";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Scaling, ChevronDown, ChevronRight, Wand2 } from "lucide-svelte";
+  import { ChevronDown, ChevronRight } from "lucide-svelte";
   import { rightsizingStore } from "$lib/stores/rightsizing.svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
@@ -54,19 +54,20 @@
     if (share === null) return "var(--text-muted)";
     if (share > 90) return "var(--status-failed)";
     if (share < 50) return "var(--status-pending)";
-    return "var(--accent)";
+    return "color-mix(in srgb, var(--text-primary) 38%, var(--bg-primary))";
   }
 </script>
 
 {#if overview}
   <ScrollArea class="h-full">
-    <div class="flex flex-col gap-4 p-4" data-testid="rightsizing">
+    <div class="flex flex-col gap-3 px-6 py-3" data-testid="rightsizing">
       <!-- Summary -->
       <div class="grid grid-cols-4 gap-3">
-        <StatTile label="Potential saving" value={`${formatSaving(overview.total_saving_monthly)}/mo`} note="if recommendations were applied" data-testid="rightsizing-saving" />
-        <StatTile label="Over-provisioned" value={overview.over_count} tone="warning" note="workloads requesting > 1.5× what they use" />
-        <StatTile label="Under-provisioned" value={overview.under_count} tone="error" note="using > 90 % of their request — throttling / OOM risk" />
+        <StatTile size="lg" label="Potential saving" value={`${formatSaving(overview.total_saving_monthly)}/mo`} note="if recommendations were applied" data-testid="rightsizing-saving" />
+        <StatTile size="lg" label="Over-provisioned" value={overview.over_count} note="workloads requesting > 1.5× what they use" />
+        <StatTile size="lg" label="Under-provisioned" value={overview.under_count} tone={overview.under_count > 0 ? "error" : "neutral"} note="using > 90% of their request — throttling / OOM risk" />
         <StatTile
+          size="lg"
           label="Usage source"
           value={overview.usage_source === "none" ? "none" : overview.usage_source}
           mono={false}
@@ -76,9 +77,9 @@
 
       <!-- Filters -->
       <div class="flex items-center gap-2">
-        <div class="flex gap-0.5 rounded-md bg-[var(--bg-tertiary)] p-0.5 text-[11px]">
+        <div class="flex gap-0.5 rounded-md border border-[var(--border-color)] p-0.5 text-[11px]">
           {#each [["all", "All"], ["over", "Over"], ["under", "Under"], ["ok", "Right-sized"]] as [value, label] (value)}
-            <button type="button" class={cn("rounded-sm px-2 py-0.5", filter === value ? "bg-[var(--bg-secondary)] text-[var(--text-primary)]" : "text-[var(--text-muted)]")} onclick={() => (filter = value as RightsizingFilter)} data-testid={`rightsizing-filter-${value}`}>{label}</button>
+            <button type="button" class={cn("rounded-sm px-2 py-0.5", filter === value ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]" : "text-[var(--text-muted)]")} onclick={() => (filter = value as RightsizingFilter)} data-testid={`rightsizing-filter-${value}`}>{label}</button>
           {/each}
         </div>
         <SearchField value={text} ariaLabel="Filter workloads" placeholder="Filter by workload or namespace" oninput={(e: Event) => { text = (e.target as HTMLInputElement).value; }} class="w-[260px]" />
@@ -87,7 +88,7 @@
 
       <!-- Rows -->
       <div class="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-        <div class="grid grid-cols-[20px_minmax(0,1.6fr)_70px_minmax(0,1fr)_minmax(0,1fr)_130px_90px_90px] items-center gap-3 bg-[var(--table-header-bg)] px-3 py-1.5 text-[11px] text-[var(--text-muted)]">
+        <div class="grid grid-cols-[20px_minmax(0,1.6fr)_70px_minmax(0,1fr)_minmax(0,1fr)_130px_90px_90px] items-center gap-3 px-4 py-2 text-[11px] text-[var(--text-muted)]">
           <span></span><span>Workload</span><span class="text-right">Pods</span><span>CPU request → recommended</span><span>Memory request → recommended</span><span>Verdict</span><span class="text-right">Δ / month</span><span></span>
         </div>
         {#if rows.length === 0}
@@ -98,7 +99,7 @@
           {@const first = w.containers[0]}
           {@const patchable = !!rightsizingPatchYaml(w)}
           <div class="border-t border-[var(--border-color)]">
-            <div class="grid grid-cols-[20px_minmax(0,1.6fr)_70px_minmax(0,1fr)_minmax(0,1fr)_130px_90px_90px] items-center gap-3 px-3 py-2 hover:bg-[var(--table-row-hover)]" data-testid="rightsizing-row">
+            <div class="grid grid-cols-[20px_minmax(0,1.6fr)_70px_minmax(0,1fr)_minmax(0,1fr)_130px_90px_90px] items-center gap-3 px-4 py-2 hover:bg-[var(--table-row-hover)]" data-testid="rightsizing-row">
               <button type="button" class="text-[var(--text-muted)]" onclick={() => toggle(w.id)} aria-label={open ? "Collapse" : "Expand"}>
                 {#if open}<ChevronDown class="h-3.5 w-3.5" />{:else}<ChevronRight class="h-3.5 w-3.5" />{/if}
               </button>
@@ -115,11 +116,14 @@
                 <span class="font-mono text-[11px] text-[var(--text-secondary)]">{first?.memory_request === null ? "—" : formatBytes(first?.memory_request ?? 0)} → <span class="text-[var(--text-primary)]">{first?.memory_recommended === null ? "—" : formatBytes(first?.memory_recommended ?? 0)}</span>{w.containers.length > 1 ? " …" : ""}</span>
                 {#if first}{@const s = usageShare(first, "memory")}<span class="h-1 rounded-full bg-[var(--bg-tertiary)]"><span class="block h-1 rounded-full" style="width: {Math.min(100, s ?? 0)}%; background: {barColor(s)}"></span></span>{/if}
               </span>
-              <span><Badge tone={VERDICT_TONE[w.verdict]}>{verdictLabel(w.verdict)}</Badge></span>
-              <span class={cn("text-right font-mono text-[12px]", w.saving_monthly > 0.5 ? "text-[var(--status-running)]" : w.saving_monthly < -0.5 ? "text-[var(--status-failed)]" : "text-[var(--text-muted)]")}>{w.saving_monthly > 0.5 ? "+" : ""}{formatSaving(w.saving_monthly)}</span>
+              <span class="inline-flex min-w-0 items-center gap-2 text-[12px]" style={toneStyle(VERDICT_TONE[w.verdict])}>
+                <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--tone)]"></span>
+                <span class="truncate text-[var(--text-secondary)]">{verdictLabel(w.verdict)}</span>
+              </span>
+              <span class={cn("text-right font-mono text-[12px]", w.saving_monthly > 0.5 ? "text-[var(--text-primary)]" : w.saving_monthly < -0.5 ? "text-[var(--status-failed)]" : "text-[var(--text-muted)]")}>{w.saving_monthly > 0.5 ? "+" : ""}{formatSaving(w.saving_monthly)}</span>
               <span class="text-right">
                 {#if patchable}
-                  <Button size="sm" variant="outline" onclick={() => (patchFor = w)} data-testid="rightsizing-apply"><Wand2 class="h-3 w-3" /> Apply…</Button>
+                  <Button size="sm" variant="toolbar" onclick={() => (patchFor = w)} data-testid="rightsizing-apply">Apply…</Button>
                 {/if}
               </span>
             </div>
@@ -136,11 +140,11 @@
                         <td class="py-1 text-right">{c.cpu_request === null ? "—" : formatCpu(c.cpu_request)}</td>
                         <td class="py-1 text-right">{c.cpu_usage === null ? "—" : formatCpu(c.cpu_usage)}</td>
                         <td class="py-1 text-right text-[var(--text-primary)]">{c.cpu_recommended === null ? "—" : formatCpu(c.cpu_recommended)}</td>
-                        <td class="py-1 pl-2"><Badge tone={VERDICT_TONE[c.cpu_verdict]}>{verdictLabel(c.cpu_verdict)}</Badge></td>
+                        <td class="py-1 pl-2 text-[var(--text-muted)]">{verdictLabel(c.cpu_verdict)}</td>
                         <td class="py-1 text-right">{c.memory_request === null ? "—" : formatBytes(c.memory_request)}</td>
                         <td class="py-1 text-right">{c.memory_usage === null ? "—" : formatBytes(c.memory_usage)}</td>
                         <td class="py-1 text-right text-[var(--text-primary)]">{c.memory_recommended === null ? "—" : formatBytes(c.memory_recommended)}</td>
-                        <td class="py-1 pl-2"><Badge tone={VERDICT_TONE[c.memory_verdict]}>{verdictLabel(c.memory_verdict)}</Badge></td>
+                        <td class="py-1 pl-2 text-[var(--text-muted)]">{verdictLabel(c.memory_verdict)}</td>
                       </tr>
                     {/each}
                   </tbody>
@@ -150,7 +154,7 @@
           </div>
         {/each}
       </div>
-      <p class="text-[11px] text-[var(--text-muted)]">Recommendations are usage × 1.3 (CPU) / × 1.25 (memory), rounded-md up. Limits are left alone. Review before applying: a 7-day window misses monthly peaks.</p>
+      <p class="text-[11px] text-[var(--text-muted)]">Recommendations are usage × 1.3 (CPU) / × 1.25 (memory), then round up. Limits are left alone. Review before applying: a 7-day window misses monthly peaks.</p>
     </div>
   </ScrollArea>
 {/if}
@@ -158,14 +162,11 @@
 <Dialog open={patchFor !== null} onOpenChange={(v) => { if (!v) patchFor = null; }}>
   <DialogContent class="sm:max-w-[640px]">
     <DialogHeader>
-      <div class="flex items-center gap-3">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10"><Scaling class="h-4 w-4 text-[var(--accent)]" /></div>
-        <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1">
           <DialogTitle>Apply recommended requests?</DialogTitle>
           <DialogDescription class="text-[12px] text-[var(--text-muted)]">
             Server-side apply of the requests below to <span class="font-mono text-[var(--text-secondary)]">{patchFor?.kind}/{patchFor?.name}</span> in <span class="font-mono text-[var(--text-secondary)]">{patchFor?.namespace}</span> ({k8sStore.currentContext}). The controller rolls the pods.
           </DialogDescription>
-        </div>
       </div>
     </DialogHeader>
     <pre class="mt-3 max-h-[320px] overflow-auto rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 font-mono text-[11px] leading-relaxed text-[var(--text-primary)]" data-testid="rightsizing-patch">{patchYaml}</pre>

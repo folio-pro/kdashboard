@@ -41,6 +41,8 @@ export interface LogLine {
  * the message, so `WARN request failed: error=timeout` is a warning, not an
  * error — the old "error beats warn" priority read the message body instead.
  */
+const LEADING_LEVEL = /^\[?(?:trace|debug|info|notice|warn|warning|err|error|fatal|panic|critical)\]?:?\s+/i;
+
 const LEVEL_TOKEN =
   /(?<=^|[\s[=(<"'])(trace|debug|info|notice|warn|warning|err|error|fatal|panic|critical)(?=$|[\s\]:=)>,;."'])/i;
 
@@ -201,6 +203,15 @@ export function resetLogIdCounter(): void {
 
 export function nextLogId(): number {
   return logIdCounter++;
+}
+
+/**
+ * The message as the viewer shows it: the level already has its own column, so
+ * a leading `INFO` would read twice. Copy and download keep the line untouched.
+ */
+export function displayMessage(line: Pick<LogLine, "message" | "level">): string {
+  if (!line.level) return line.message;
+  return line.message.replace(LEADING_LEVEL, "");
 }
 
 export function parseLogLine(raw: string): LogLine {
@@ -364,7 +375,7 @@ export function navigateLog(
  * attached — it may simply not have produced output yet.
  *
  * Collapsing those two into one `isStreaming` boolean is what used to pin the
- * viewer on "Connecting to log stream..." forever: the message was shown for
+ * viewer on "Connecting to log stream…" forever: the message was shown for
  * any stream with zero lines, so a perfectly healthy but quiet pod looked
  * permanently stuck (while the header showed a LIVE badge at the same time).
  */
@@ -386,7 +397,7 @@ export type StreamCommand = "stream_pod_logs" | "stream_multi_pod_logs";
  * Modelled as a union rather than a nullable so the "nothing streamable" case
  * carries its own explanation. The viewer used to discover this halfway through
  * starting a stream and `return` early, leaving the streaming flag set: that is
- * what pinned the empty state on "Connecting to log stream..." forever.
+ * what pinned the empty state on "Connecting to log stream…" forever.
  */
 export type StreamRequest =
   | { kind: "stream"; command: StreamCommand; args: Record<string, unknown> }
@@ -506,7 +517,7 @@ export function streamEmptyStateMessage(opts: EmptyStateOptions): string {
 
   switch (opts.phase) {
     case "connecting":
-      return "Connecting to log stream...";
+      return "Connecting to log stream…";
     case "live":
       return `Connected — waiting for output. Nothing logged in the last ${opts.sinceWindowLabel}.`;
     case "ended":
@@ -517,7 +528,7 @@ export function streamEmptyStateMessage(opts: EmptyStateOptions): string {
       break;
   }
 
-  if (opts.isDeployment && opts.podsLoading) return "Loading pods...";
+  if (opts.isDeployment && opts.podsLoading) return "Loading pods…";
   if (opts.isDeployment && opts.podsLoadFailed) {
     return "Couldn't list pods for this deployment — check permissions and retry";
   }

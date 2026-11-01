@@ -424,6 +424,9 @@ test.describe("frontend perf bench", () => {
       await raf2();
 
       const t0 = performance.now();
+      // The mock has no contexts, which leaves a load error: it would win over
+      // the rows this bench measures.
+      k8sStore.error = null;
       k8sStore.crdResources = { items, columns };
       // Lazy view + first paint.
       for (let k = 0; k < 240; k++) {

@@ -33,7 +33,7 @@
 {#if Object.keys(annotations).length > 0}
   <div class="overflow-hidden rounded-sm border border-[var(--border-color)] bg-[var(--bg-secondary)]">
     <div class="flex items-center justify-between px-5 py-4">
-      <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">Annotations</h3>
+      <h3 class="text-[13px] font-medium text-[var(--text-primary)]">Annotations</h3>
       <span class="text-[12px] text-[var(--text-muted)]">{Object.keys(annotations).length}</span>
     </div>
     {#each Object.entries(annotations) as [key, value]}

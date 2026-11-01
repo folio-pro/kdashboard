@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import {
   type LogLine,
   detectLevel,
+  displayMessage,
   filterLogs,
   levelMatches,
   parseLogLine,
@@ -199,5 +200,20 @@ describe("filterLogs with unlevelled lines", () => {
   test("warn and error drop it", () => {
     expect(run("warn")).toEqual([2]);
     expect(run("error")).toEqual([3]);
+  });
+});
+
+describe("displayMessage", () => {
+  test("drops a leading level the badge already states", () => {
+    expect(displayMessage({ message: "INFO  boot ledger-worker", level: "info" })).toBe("boot ledger-worker");
+    expect(displayMessage({ message: "[WARN]: heap high", level: "warn" })).toBe("heap high");
+  });
+
+  test("leaves a level word inside the message alone", () => {
+    expect(displayMessage({ message: "request failed: error=timeout", level: "error" })).toBe("request failed: error=timeout");
+  });
+
+  test("a line with no level is shown as it came", () => {
+    expect(displayMessage({ message: "error handling is fine", level: null })).toBe("error handling is fine");
   });
 });

@@ -16,12 +16,12 @@
      and right by the dialog's overflow-hidden, and cutting across the row's
      bottom border. -->
 <div
-  class="focus-ring-host flex items-center border-b border-[var(--border-color)] px-3 transition-colors focus-within:border-[var(--accent)]"
+  class="focus-ring-host flex items-center border-b border-[var(--border-color)] px-3 transition-colors focus-within:border-[var(--border-hover)]"
 >
   <Search class="mr-2 h-4 w-4 shrink-0 opacity-50" />
   <input
     class={cn(
-      "flex h-10 w-full rounded-md bg-transparent py-3 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] disabled:cursor-not-allowed disabled:opacity-50",
+      "flex h-10 w-full rounded-md bg-transparent py-3 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-50",
       className
     )}
     data-testid="command-input"

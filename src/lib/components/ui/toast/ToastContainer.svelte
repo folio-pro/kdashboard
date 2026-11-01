@@ -23,7 +23,7 @@
   {#each toastStore.toasts as toast (toast.id)}
     <div
       class="pointer-events-auto flex items-start gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3 shadow-lg min-w-[320px] max-w-[420px]"
-      transition:fly={{ x: 100, duration: 200 }}
+      transition:fly={{ x: 12, duration: 160 }}
     >
       <svelte:component this={iconMap[toast.type]} class="h-4 w-4 shrink-0 mt-0.5" style="color: {colorMap[toast.type]}" />
       <div class="flex-1 min-w-0">

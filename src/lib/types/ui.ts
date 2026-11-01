@@ -6,6 +6,8 @@ export interface CommandPaletteItem {
   id: string;
   label: string;
   description?: string;
+  /** kubectl short name, shown right-aligned in place of the description. */
+  alias?: string;
   category: string;
   hint?: string;
   // Icon is typed loosely to accommodate lucide-svelte components.

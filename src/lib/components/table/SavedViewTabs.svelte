@@ -53,7 +53,7 @@
         activeStyle="raised"
         role="tab"
         aria-selected={active}
-        class={cn("gap-1.5 px-2.5", active && "font-medium")}
+        class={cn("gap-2 px-2", active && "bg-[var(--bg-tertiary)] font-medium shadow-none")}
         onclick={() => applyView(view)}
         title={view.builtin ? undefined : "Saved view"}
       >

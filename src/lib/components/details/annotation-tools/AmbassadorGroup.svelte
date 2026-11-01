@@ -45,7 +45,7 @@
         {parsedConfig.kind ?? "Mapping"}
       </Badge>
       {#if parsedConfig.apiVersion}
-        <span class="text-[10px] text-[var(--text-muted)]">{parsedConfig.apiVersion}</span>
+        <span class="text-[11px] text-[var(--text-muted)]">{parsedConfig.apiVersion}</span>
       {/if}
     </div>
     <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">

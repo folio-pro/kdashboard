@@ -8,14 +8,14 @@ import { k8sIndentGuides, k8sSemanticHighlight } from "./yaml-decorations";
 /** Build the syntax highlight style list using CSS variable colors. */
 export function buildHighlightStyles(modules: CodeMirrorModules) {
   return modules.HighlightStyle.define([
-    { tag: modules.tags.propertyName, color: "var(--accent)" },
-    { tag: modules.tags.string, color: "var(--status-running)" },
-    { tag: modules.tags.number, color: "var(--status-succeeded)" },
-    { tag: modules.tags.bool, color: "var(--status-pending)" },
+    { tag: modules.tags.propertyName, color: "var(--text-secondary)" },
+    { tag: modules.tags.string, color: "var(--text-primary)" },
+    { tag: modules.tags.number, color: "var(--text-primary)" },
+    { tag: modules.tags.bool, color: "var(--text-primary)" },
     { tag: modules.tags.null, color: "var(--text-muted)" },
     { tag: modules.tags.comment, color: "var(--text-muted)", fontStyle: "italic" },
     { tag: modules.tags.punctuation, color: "var(--text-muted)" },
-    { tag: modules.tags.keyword, color: "var(--accent)" },
+    { tag: modules.tags.keyword, color: "var(--text-secondary)" },
     { tag: modules.tags.operator, color: "var(--text-muted)" },
     { tag: modules.tags.meta, color: "var(--text-muted)" },
   ]);

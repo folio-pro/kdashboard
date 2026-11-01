@@ -91,9 +91,9 @@ describe("formatting", () => {
 
   test("bytes step up to the largest readable binary unit", () => {
     expect(formatBytes(0)).toBe("0");
-    expect(formatBytes(900)).toBe("900 B");
-    expect(formatBytes(1536)).toBe("1.5 Ki");
-    expect(formatBytes(700 * 1024 * 1024)).toBe("700 Mi");
+    expect(formatBytes(900)).toBe("900B");
+    expect(formatBytes(1536)).toBe("1.5Ki");
+    expect(formatBytes(700 * 1024 * 1024)).toBe("700Mi");
   });
 });
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Resource } from "$lib/types";
   import { invoke } from "$lib/ipc/core";
-  import { Box, History, Layers, Link, Scale, Tag } from "lucide-svelte";
+  
   import { Badge } from "$lib/components/ui";
   import SummaryStrip from "./SummaryStrip.svelte";
   import SummaryCell from "./SummaryCell.svelte";
@@ -151,10 +151,10 @@
       <span class="truncate text-[12px] text-[var(--text-muted)]">{label}</span>
     {:else}
       <span
-        class="inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-[11px] font-medium leading-4"
-        style="color: {statusColor(category)}; background-color: color-mix(in srgb, {statusColor(category)} 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, {statusColor(category)} 25%, transparent);"
+        class="inline-flex shrink-0 items-center gap-2 text-[12px]"
+        style="color: {statusColor(category)}"
       >
-        <span class="h-[5px] w-[5px] shrink-0 rounded-full" style="background-color: {statusColor(category)}"></span>
+        <span class="h-1.5 w-1.5 shrink-0 rounded-full" style="background-color: {statusColor(category)}"></span>
         {label}
       </span>
     {/if}
@@ -212,7 +212,7 @@
   <DetailColumns {layout}>
     {#snippet main()}
       <!-- Rollout: the bar, the counts, the conditions, then the ReplicaSets as revisions. -->
-      <DetailSection title="Rollout" icon={History}>
+      <DetailSection title="Rollout">
         {#snippet actions()}
           {#if spec.paused}
             <span class="font-mono text-[11px] text-[var(--status-pending)]">paused</span>
@@ -242,7 +242,7 @@
       <RevisionHistoryCard {resource} />
 
       <!-- Pods of the selector -->
-      <DetailSection title="Pods" icon={Box}>
+      <DetailSection title="Pods">
         {#snippet actions()}
           <button
             type="button"
@@ -256,7 +256,7 @@
           <div class="overflow-x-auto">
           <table class="w-full border-collapse text-[12px]">
             <thead>
-              <tr class="border-b border-[var(--border-color)] text-left text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">
+              <tr class="border-b border-[var(--border-color)] text-left text-[11px] font-medium text-[var(--text-muted)]">
                 <th class="pb-1.5 pr-3 font-medium">Name</th>
                 <th class="pb-1.5 pr-3 font-medium">Status</th>
                 <th class="pb-1.5 pr-3 text-right font-medium">Ready</th>
@@ -304,7 +304,7 @@
 
       <!-- What the template runs -->
       {#if containerRows.length > 0}
-        <DetailSection title="Template · containers" icon={Layers}>
+        <DetailSection title="Template · containers">
           {#snippet actions()}
             <span class="font-mono text-[11px] text-[var(--text-muted)]">{containerRows.length}</span>
           {/snippet}
@@ -312,7 +312,7 @@
             <div class="overflow-x-auto">
             <table class="w-full border-collapse text-[12px]">
               <thead>
-                <tr class="border-b border-[var(--border-color)] text-left text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">
+                <tr class="border-b border-[var(--border-color)] text-left text-[11px] font-medium text-[var(--text-muted)]">
                   <th class="pb-1.5 pr-3 font-medium">Container</th>
                   <th class="pb-1.5 pr-3 font-medium">CPU req / lim</th>
                   <th class="pb-1.5 pr-3 font-medium">Mem req / lim</th>
@@ -359,7 +359,7 @@
 
     {#snippet rail()}
       <!-- Scaling: the HPA that owns the replica count, if any -->
-      <DetailSection title="Scaling" icon={Scale}>
+      <DetailSection title="Scaling">
         {#if hpa && hpaSummary}
           <div class="flex flex-col gap-2.5">
             <div class="flex items-center justify-between gap-3">
@@ -393,7 +393,7 @@
 
       <!-- Related: the services in front, the config behind -->
       {#if matchedServices.length > 0 || references.length > 0}
-        <DetailSection title="Related" icon={Link}>
+        <DetailSection title="Related">
           {#snippet actions()}
             <span class="font-mono text-[11px] text-[var(--text-muted)]">{matchedServices.length + references.length}</span>
           {/snippet}
@@ -409,7 +409,7 @@
       {/if}
 
       <!-- Selector and labels -->
-      <DetailSection title="Selector · labels" icon={Tag}>
+      <DetailSection title="Selector · labels">
         <div class="flex flex-col gap-2.5">
           {#if selectorTerms.length > 0}
             <span class="text-[11px] text-[var(--text-muted)]">Selector</span>

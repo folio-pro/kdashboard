@@ -37,7 +37,7 @@
 </script>
 
 <footer
-  class="flex h-[30px] shrink-0 items-center justify-between border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-4 text-[10px] text-[var(--text-muted)]"
+  class="flex h-7 shrink-0 items-center justify-between border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-4 text-[11px] text-[var(--text-muted)]"
 >
   <!--
     Left: connection + port forwards only. Namespace and the resource count
@@ -48,39 +48,35 @@
   <div class="flex items-center gap-3">
     <!-- Connection Status -->
     <div class="flex items-center gap-1.5" title={statusTitle}>
-      <span class={cn("h-[7px] w-[7px] rounded-full", statusColor)} role="img" aria-label={statusTitle}></span>
-      <span class="font-medium text-[var(--text-secondary)]">{k8sStore.currentContext || "Disconnected"}</span>
+      <span class={cn("h-1.5 w-1.5 rounded-full", statusColor)} role="img" aria-label={statusTitle}></span>
+      <span class="text-[var(--text-secondary)]">{k8sStore.currentContext || "Disconnected"}</span>
     </div>
-
-    <span class="h-3 w-px bg-[var(--border-color)]"></span>
 
     <!-- Port forwards: count + jump to the view -->
     <button
       class={cn(
         "flex items-center gap-1 transition-colors hover:text-[var(--text-primary)]",
-        uiStore.activeView === "portforwards" && "text-[var(--accent)]",
+        uiStore.activeView === "portforwards" && "text-[var(--text-primary)]",
         k8sStore.portForwards.length > 0 && uiStore.activeView !== "portforwards" && "text-[var(--text-secondary)]"
       )}
       title="Port forwards"
       onclick={() => openAppView("portforwards")}
     >
-      <Unplug class="h-3 w-3" />
-      <span>{k8sStore.portForwards.length}</span>
+      <Unplug class="h-3.5 w-3.5" />
+      <span class="font-mono">{k8sStore.portForwards.length}</span>
     </button>
-
-    <span class="h-3 w-px bg-[var(--border-color)]"></span>
 
     <!-- AI agent: toggle the bottom panel -->
     <button
       class={cn(
         "flex items-center gap-1 transition-colors hover:text-[var(--text-primary)]",
-        agentStore.panelOpen && "text-[var(--accent)]",
+        agentStore.panelOpen && "text-[var(--text-primary)]",
         agentStore.status === "running" && !agentStore.panelOpen && "text-[var(--text-secondary)]"
       )}
       title={agentStore.status === "running" && !agentStore.panelOpen ? "AI agent (running, hidden)" : "AI agent"}
       onclick={() => (agentStore.panelOpen ? agentStore.closePanel() : agentStore.openPanel())}
     >
-      <Bot class="h-3 w-3" />
+      <Bot class="h-3.5 w-3.5" />
       {#if agentStore.status === "running"}
         <span class="h-[6px] w-[6px] animate-pulse rounded-full bg-[var(--status-running)]"></span>
       {:else if agentStore.approvals.length > 0}

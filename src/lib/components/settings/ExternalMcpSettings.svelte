@@ -94,8 +94,8 @@
 </script>
 
 <div class="mt-6 border-t border-[var(--border-color)] pt-5">
-    <h3 class="text-[12px] font-semibold text-[var(--text-primary)]">Expose to external AI tools (MCP server)</h3>
-    <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+    <h3 class="text-[12px] font-medium text-[var(--text-primary)]">Expose to external AI tools (MCP server)</h3>
+    <p class="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
       Serve kdashboard's cluster tools to Claude Desktop, Claude Code, Cursor, Codex or any MCP client on this machine.
       Clients see the context active in kdashboard, use your kubeconfig credentials, and every mutation still goes through
       the Approve / Deny dialog above. Loopback only, bearer token required.

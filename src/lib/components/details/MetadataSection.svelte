@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Info, ChevronRight, Layers } from "lucide-svelte";
+  import { ChevronRight, Layers } from "lucide-svelte";
   import type { Resource } from "$lib/types";
   import { formatAge } from "$lib/utils/age";
   import { kindToResourceType } from "$lib/utils/related-resources";
@@ -18,7 +18,7 @@
 
 </script>
 
-<DetailSection title="Metadata" icon={Info}>
+<DetailSection title="Metadata">
   <KvGrid>
     <KvField label="Name" value={resource.metadata.name} />
     {#if resource.metadata.namespace}
@@ -30,11 +30,11 @@
       <KvField label="UID" value={resource.metadata.uid} />
     {/if}
     {#if resource.metadata.resource_version}
-      <KvField label="Resource Version" value={resource.metadata.resource_version} />
+      <KvField label="Resource version" value={resource.metadata.resource_version} />
     {/if}
     {#each ownerRefs as ref}
       {@const refType = kindToResourceType(ref.kind)}
-      <KvField label="Controlled By">
+      <KvField label="Controlled by">
         {#if refType}
           <button
             class="group flex items-center gap-1.5 text-left"

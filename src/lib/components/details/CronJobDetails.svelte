@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Badge } from "$lib/components/ui";
-  import { Clock } from "lucide-svelte";
+  
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
   import LabelsSection from "./LabelsSection.svelte";
@@ -41,7 +41,7 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title="CronJob Spec" icon={Clock}>
+  <DetailSection title="CronJob spec">
     {#snippet actions()}
       {#if suspend}
         <Badge tone="warning" class="border border-[var(--status-pending)]/30">Suspended</Badge>
@@ -53,21 +53,21 @@
       <KvField label="Active">
         <span class="font-mono text-[13px] {activeJobs.length > 0 ? 'text-[var(--status-pending)]' : 'text-[var(--text-primary)]'}">{activeJobs.length}</span>
       </KvField>
-      <KvField label="Last Schedule" value={lastScheduleTime ? formatTimestamp(lastScheduleTime) : "-"} mono={false} />
-      <KvField label="Last Success" value={lastSuccessfulTime ? formatTimestamp(lastSuccessfulTime) : "-"} mono={false} />
+      <KvField label="Last schedule" value={lastScheduleTime ? formatTimestamp(lastScheduleTime) : "-"} mono={false} />
+      <KvField label="Last success" value={lastSuccessfulTime ? formatTimestamp(lastSuccessfulTime) : "-"} mono={false} />
       {#if startingDeadlineSeconds !== null}
-        <KvField label="Start Deadline" value={`${startingDeadlineSeconds}s`} />
+        <KvField label="Start deadline" value={`${startingDeadlineSeconds}s`} />
       {/if}
       {#if spec.timeZone}
-        <KvField label="Time Zone" value={spec.timeZone as string} mono={false} />
+        <KvField label="Time zone" value={spec.timeZone as string} mono={false} />
       {/if}
-      <KvField label="Keep Success" value={successfulJobsHistoryLimit} />
-      <KvField label="Keep Failed" value={failedJobsHistoryLimit} />
+      <KvField label="Keep success" value={successfulJobsHistoryLimit} />
+      <KvField label="Keep failed" value={failedJobsHistoryLimit} />
     </KvGrid>
   </DetailSection>
 
   {#if activeJobs.length > 0}
-    <DetailSection title="Active Jobs" icon={Clock}>
+    <DetailSection title="Active jobs">
       {#snippet actions()}
         <span class="font-mono text-[11px] text-[var(--text-muted)]">{activeJobs.length}</span>
       {/snippet}

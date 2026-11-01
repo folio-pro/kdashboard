@@ -89,7 +89,7 @@
   <DialogContent class="flex max-h-[85vh] flex-col sm:max-w-[720px]" aria-labelledby="quick-edit-title">
     <div class="flex min-h-0 flex-col gap-3 p-1" data-testid="quick-edit">
       <div>
-        <h3 id="quick-edit-title" class="text-[13px] font-semibold text-[var(--text-primary)]">Quick edit {resource?.kind}</h3>
+        <h3 id="quick-edit-title" class="text-[13px] font-medium text-[var(--text-primary)]">Quick edit {resource?.kind}</h3>
         <p class="mt-1 text-[11px] text-[var(--text-muted)]">{resource?.metadata.namespace}/{resource?.metadata.name} · image, environment and resources per container. Applied with server-side apply; the controller rolls the pods.</p>
       </div>
 

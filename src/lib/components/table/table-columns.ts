@@ -9,10 +9,9 @@ export const columnsByType: Record<string, Column[]> = {
   // Pods read like `kubectl get pods -o wide`, plus live usage: the Ready
   // column carries the container tiles with the fraction, Status is the
   // effective state (CrashLoopBackOff, Init:1/2, Terminating — not the phase),
-  // Restarts says when the last one happened, and the owner is visible so a
-  // long list groups by eye.
+  // The owner is visible so a long list groups by eye.
   //
-  // The default widths sum to 1200px with the gutter and the Name floor
+  // The default widths fit the content at the 12px mono face with the gutter and the Name floor
   // (see minimumTableWidth), so the whole default set fits a 1280px window
   // without a horizontal scrollbar. CPU/Memory are the floor for the usage
   // meter (value · bar · percent); Node and Controlled by truncate with a
@@ -20,14 +19,14 @@ export const columnsByType: Record<string, Column[]> = {
   pods: [
     { key: "name", label: "Name", sortable: true },
     { key: "namespace", label: "Namespace", sortable: true, width: "100px" },
-    { key: "podReady", label: "Ready", sortable: true, width: "94px" },
+    { key: "podReady", label: "Ready", sortable: true, width: "64px" },
     { key: "status", label: "Status", sortable: true, width: "140px" },
-    { key: "restarts", label: "Restarts", sortable: true, width: "84px" },
-    { key: "podCpu", label: "CPU", sortable: false, width: "152px" },
-    { key: "podMemory", label: "Memory", sortable: false, width: "152px" },
-    { key: "age", label: "Age", sortable: true, width: "64px" },
-    { key: "controlledBy", label: "Controlled by", sortable: true, width: "130px" },
-    { key: "node", label: "Node", sortable: true, width: "96px" },
+    { key: "restarts", label: "Restarts", sortable: true, width: "68px" },
+    { key: "podCpu", label: "CPU", sortable: false, width: "128px" },
+    { key: "podMemory", label: "Memory", sortable: false, width: "128px" },
+    { key: "age", label: "Age", sortable: true, width: "72px" },
+    { key: "controlledBy", label: "Controlled by", sortable: true, width: "180px" },
+    { key: "node", label: "Node", sortable: true, width: "110px" },
     { key: "ip", label: "IP", sortable: false, width: "120px", defaultHidden: true },
   ],
   // One Ready cell (fraction + ready/pending/missing bar) and one Status word

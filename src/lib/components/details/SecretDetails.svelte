@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Lock, Copy, Check, KeyRound, ShieldCheck, Container } from "lucide-svelte";
+  import { Copy, Check, KeyRound, ShieldCheck } from "lucide-svelte";
   import { Badge, Button } from "$lib/components/ui";
   import type { Resource } from "$lib/types";
   import { toggleSetItem } from "$lib/utils/k8s-helpers";
@@ -88,7 +88,7 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title="Secret" icon={Lock}>
+  <DetailSection title="Secret">
     <KvGrid>
       <KvField label="Type">
         <div class="flex flex-wrap items-center gap-2">
@@ -100,7 +100,7 @@
       </KvField>
       <KvField label="Keys" value={entries.length} />
       {#if resource.metadata.annotations?.["kubernetes.io/service-account.name"]}
-        <KvField label="Service Account" value={resource.metadata.annotations["kubernetes.io/service-account.name"]} />
+        <KvField label="Service account" value={resource.metadata.annotations["kubernetes.io/service-account.name"]} />
       {/if}
       {#if tls}
         <KvField label="Certificate">
@@ -123,7 +123,7 @@
   </DetailSection>
 
   {#if registries.length > 0}
-    <DetailSection title="Registries" icon={Container}>
+    <DetailSection title="Registries">
       {#snippet actions()}
         <span class="font-mono text-[11px] text-[var(--text-muted)]">{registries.length}</span>
       {/snippet}
@@ -144,7 +144,7 @@
        the pod's "Config & Secrets" card so the two read the same. -->
   <div class="border-b border-[var(--border-color)]" data-testid="secret-data">
     <div class="flex items-center justify-between px-6 py-4">
-      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Data</span>
+      <span class="text-[11px] font-medium text-[var(--text-muted)]">Data</span>
       <div class="flex items-center gap-3">
         {#if revealableKeys.length > 0}
           <Button variant="link" size="inline-xs" onclick={copyAll}>
@@ -172,12 +172,12 @@
           <!-- Size, reveal and copy wait for the values (DetailPanel's get_resource). -->
           <div class="flex h-5 shrink-0 items-center gap-2">
             {#if !ready}
-              <span class="font-mono text-[10px] text-[var(--text-muted)]">…</span>
+              <span class="font-mono text-[11px] text-[var(--text-muted)]">…</span>
             {:else if entry.binary}
-              <span class="font-mono text-[10px] text-[var(--text-muted)]">{formatBytes(entry.bytes)}</span>
+              <span class="font-mono text-[11px] text-[var(--text-muted)]">{formatBytes(entry.bytes)}</span>
               <Badge tone="muted" appearance="surface" bordered>binary</Badge>
             {:else}
-              <span class="font-mono text-[10px] text-[var(--text-muted)]">{formatBytes(entry.bytes)}</span>
+              <span class="font-mono text-[11px] text-[var(--text-muted)]">{formatBytes(entry.bytes)}</span>
               <Button
                 variant="muted"
                 size="icon-xs"

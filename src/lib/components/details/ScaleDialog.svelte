@@ -66,7 +66,7 @@
   <DialogContent class="sm:max-w-[380px]" aria-labelledby="scale-dialog-title" aria-describedby="scale-dialog-desc">
     <div class="flex flex-col gap-4 p-1">
       <div>
-        <h3 id="scale-dialog-title" class="text-[13px] font-semibold text-[var(--text-primary)]">Scale {resource.kind}</h3>
+        <h3 id="scale-dialog-title" class="text-[13px] font-medium text-[var(--text-primary)]">Scale {resource.kind}</h3>
         <p id="scale-dialog-desc" class="mt-1 text-[11px] text-[var(--text-muted)]">{resource.name}</p>
       </div>
 
@@ -75,8 +75,8 @@
           <Minus class="h-4 w-4" />
         </Button>
         <div class="flex flex-col items-center">
-          <span class="text-3xl font-bold tabular-nums text-[var(--text-primary)]">{replicas}</span>
-          <span class="text-[10px] text-[var(--text-muted)]">replicas</span>
+          <span class="text-3xl font-medium tabular-nums text-[var(--text-primary)]">{replicas}</span>
+          <span class="text-[11px] text-[var(--text-muted)]">replicas</span>
         </div>
         <Button variant="outline" size="icon-lg" onclick={() => replicas = incrementReplicas(replicas)} disabled={loading} aria-label="Increase replicas">
           <Plus class="h-4 w-4" />

@@ -27,7 +27,7 @@
     title="{kind} {name}"
   >
     <span
-      class="shrink-0 rounded-sm px-1.5 py-px text-[10px] font-semibold leading-4"
+      class="shrink-0 rounded-sm px-1.5 py-px text-[11px] font-medium leading-4"
       style="color: {color}; border: 1px solid color-mix(in srgb, {color} 30%, transparent); background-color: color-mix(in srgb, {color} 8%, transparent);"
     >{kind}</span>
     <span class="min-w-0 flex-1 truncate font-mono text-[12px] font-medium text-[var(--text-primary)] group-hover:underline">{name}</span>
@@ -36,7 +36,7 @@
   </button>
 {:else}
   <div class="flex w-full min-w-0 items-center gap-2" title="{kind} {name}">
-    <span class="shrink-0 rounded-sm border border-[var(--border-color)] px-1.5 py-px text-[10px] font-medium leading-4 text-[var(--text-muted)]">{kind}</span>
+    <span class="shrink-0 rounded-sm border border-[var(--border-color)] px-1.5 py-px text-[11px] font-medium leading-4 text-[var(--text-muted)]">{kind}</span>
     <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--text-muted)]">{name}</span>
     {#if note}<span class="shrink-0 truncate text-[11px] text-[var(--text-muted)]">{note}</span>{/if}
   </div>

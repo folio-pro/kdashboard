@@ -23,21 +23,22 @@
     mono?: boolean;
     /** Show a tone-coloured dot before the note. */
     dot?: boolean;
+    /** The tone reaches the value too. Off when only the dot should speak. */
+    toneValue?: boolean;
     children?: Snippet;
     class?: string;
   }
 
-  let { label, value, note, tone = "neutral", icon: Icon, size = "md", mono = true, dot = false, children, class: className, ...rest }: Props = $props();
+  let { label, value, note, tone = "neutral", icon: Icon, size = "md", mono = true, dot = false, toneValue = true, children, class: className, ...rest }: Props = $props();
 </script>
 
-<Card class={cn("flex flex-col gap-1.5", className)} style={toneStyle(tone)} {...rest}>
-  <div class="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
-    {#if Icon}<Icon class="h-3.5 w-3.5" />{/if}
+<Card class={cn("flex flex-col gap-2 px-4", className)} style={toneStyle(tone)} {...rest}>
+  <div class="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
     {label}
   </div>
   <div
-    class={cn("font-semibold leading-none text-[var(--text-primary)]", mono && "font-mono tabular-nums", size === "lg" ? "text-[26px] font-medium" : "text-[18px]")}
-    style={tone !== "neutral" ? "color: var(--tone);" : ""}
+    class={cn("font-medium leading-none text-[var(--text-primary)]", mono && "font-mono tabular-nums", size === "lg" ? "text-[26px] font-medium" : "text-[18px]")}
+    style={tone !== "neutral" && toneValue ? "color: var(--tone);" : ""}
   >
     {value}
   </div>

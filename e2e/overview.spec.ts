@@ -62,7 +62,7 @@ test("the Overview shows tiles, node pressure and the top problems", async ({ pa
   const nodes = view.locator('[data-testid="overview-nodes"]');
   await expect(nodes).toContainText("ip-10-0-1-12");
   await expect(nodes).toContainText("MemoryPressure");
-  await expect(nodes).toContainText("85 %");
+  await expect(nodes).toContainText("85%");
   await expect(nodes).toContainText("38 pods");
 
   const problems = view.locator('[data-testid="overview-problems"]');

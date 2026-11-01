@@ -25,13 +25,13 @@
      underneath, and doubles as the collapse toggle. It is painted opaque on
      purpose: a translucent fade let the row sliding under it show through as
      a half-clipped item, which read as the header overlapping the list. -->
-<div class="section mt-3.5">
+<div class="section mt-5">
   <div
-    class="section-header sticky top-0 z-[1] border-t border-[var(--border-color)] bg-[var(--sidebar-bg)]"
+    class="section-header sticky top-0 z-[1] bg-[var(--sidebar-bg)]"
   >
     <button
       type="button"
-      class="flex w-full items-center gap-1 px-[13px] pt-2.5 pb-1.5 text-left transition-colors hover:text-[var(--text-primary)]"
+      class="flex h-6 w-full items-center gap-1 px-2 text-left transition-colors hover:text-[var(--text-primary)]"
       onclick={() => sidebarStore.toggle(title)}
       aria-expanded={!collapsed}
       aria-controls={contentId}
@@ -40,23 +40,19 @@
       <ChevronRight
         class="h-3 w-3 shrink-0 text-[var(--text-muted)] transition-transform {collapsed ? '' : 'rotate-90'}"
       />
-      <span class="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-secondary)]">{title}</span>
+      <span class="truncate text-[11px] font-medium text-[var(--text-muted)]">{title}</span>
     </button>
   </div>
   {#if !collapsed}
-    <div id={contentId} class="flex flex-col">
+    <div id={contentId} class="flex flex-col gap-0.5">
       {@render children()}
     </div>
   {/if}
 </div>
 
 <style>
-  /* First section sits directly under the cluster header — no divider border
-     and no extra gap, so the list starts flush. */
+  /* First section sits directly under the filter, so the list starts flush. */
   .section:first-child {
     margin-top: 0;
-  }
-  .section:first-child .section-header {
-    border-top: none;
   }
 </style>

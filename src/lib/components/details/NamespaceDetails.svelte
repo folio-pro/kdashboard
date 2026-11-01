@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Boxes, Layers } from "lucide-svelte";
+  
   import { invoke } from "$lib/ipc/core";
   import type { Resource } from "$lib/types";
   import StatusBadge from "$lib/components/common/StatusBadge.svelte";
@@ -74,7 +74,7 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title="Namespace" icon={Boxes}>
+  <DetailSection title="Namespace">
     <KvGrid>
       <KvField label="Phase">
         <StatusBadge status={phase} />
@@ -92,7 +92,7 @@
     <CollapsibleConditions {conditions} healthFn={isConditionHealthy} />
   {/if}
 
-  <DetailSection title="Resources" icon={Layers}>
+  <DetailSection title="Resources">
     {#snippet actions()}
       {#if counts === null && !countsError}
         <span class="font-mono text-[11px] text-[var(--text-muted)]">…</span>
@@ -105,7 +105,7 @@
         {#each COUNTED as c (c.type)}
           {@const n = counts?.[c.type]}
           <div class="flex flex-col gap-0.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2">
-            <span class="font-mono text-[15px] font-semibold {n ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}">
+            <span class="font-mono text-[15px] font-medium {n ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}">
               {counts === null ? "–" : (n ?? 0)}
             </span>
             <span class="text-[11px] text-[var(--text-muted)]">{c.label}</span>

@@ -148,7 +148,7 @@ test("the HPA detail panel explains the replica gap and the scaling limit", asyn
   await expect(panel).toContainText("TooManyReplicas");
   await expect(panel).toContainText("cpu");
   // The replica chart is offered but degrades to a hint without a Prometheus.
-  await expect(panel).toContainText("Replica History");
+  await expect(panel).toContainText("Replica history");
   await expect(panel).toContainText("Set a Prometheus URL");
 });
 
@@ -181,7 +181,7 @@ test("the WPA detail panel renders the autoscaler panel, not the generic one", a
   await expect(panel).toContainText("300s");
   await expect(panel).toContainText("50%");
   // kube-state-metrics has no WPA replica series, so no chart is offered.
-  await expect(panel).not.toContainText("Replica History");
+  await expect(panel).not.toContainText("Replica history");
 });
 
 test("the VPA table shows recommendations instead of replica bounds", async ({ page }) => {
@@ -198,5 +198,5 @@ test("the VPA table shows recommendations instead of replica bounds", async ({ p
   await expect(panel).toContainText("Recommendations");
   await expect(panel).toContainText("app/memory");
   // A VPA never changes the replica count, so the scaling track stays away.
-  await expect(panel).not.toContainText("Max Replicas");
+  await expect(panel).not.toContainText("Max replicas");
 });

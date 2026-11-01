@@ -85,7 +85,7 @@
       if (supportsLogs) {
         items.push({
           id: "res-action-logs",
-          label: "View Logs",
+          label: "View logs",
           description: `Show logs for ${resName}`,
           category: "Resource Actions",
           action: () => {
@@ -98,7 +98,7 @@
       if (resType === "pods") {
         items.push({
           id: "res-action-terminal",
-          label: "Open Terminal",
+          label: "Open terminal",
           description: `Exec into ${resName}`,
           category: "Resource Actions",
           action: () => {
@@ -156,7 +156,7 @@
 
       items.push({
         id: "res-action-delete",
-        label: "Delete Resource",
+        label: "Delete resource",
         description: `Delete ${resName}`,
         category: "Resource Actions",
         action: () => {
@@ -167,7 +167,7 @@
 
       items.push({
         id: "res-action-copy-name",
-        label: "Copy Name",
+        label: "Copy name",
         description: `Copy "${resName}" to clipboard`,
         category: "Resource Actions",
         action: async () => {
@@ -179,7 +179,7 @@
       if (resNamespace) {
         items.push({
           id: "res-action-copy-ns",
-          label: "Copy Namespace",
+          label: "Copy namespace",
           description: `Copy "${resNamespace}" to clipboard`,
           category: "Resource Actions",
           action: async () => {
@@ -196,6 +196,7 @@
         id: `resource-${rt.type}`,
         label: rt.name,
         description: `View ${rt.name}`,
+        alias: rt.short,
         category: "Resources",
         action: () => {
           navigateToResourceTable(rt.name, rt.type);
@@ -266,7 +267,7 @@
     items.push(
       {
         id: "action-settings",
-        label: "Open Settings",
+        label: "Open settings",
         description: "Configure theme, density, and more",
         category: "Actions",
         hint: "\u2318,",
@@ -277,7 +278,7 @@
       },
       {
         id: "action-logs",
-        label: "Show Logs",
+        label: "Show logs",
         description: "Open the log viewer",
         category: "Actions",
         hint: "\u2318L",
@@ -288,7 +289,7 @@
       },
       {
         id: "action-terminal",
-        label: "Open Terminal",
+        label: "Open terminal",
         description: "Start terminal session",
         category: "Actions",
         hint: "\u2318T",
@@ -299,7 +300,7 @@
       },
       {
         id: "action-agent",
-        label: "Open AI Agent",
+        label: "Open AI agent",
         description: "Toggle the embedded agent panel",
         category: "Actions",
         hint: "\u2318J",
@@ -311,7 +312,7 @@
       },
       {
         id: "action-refresh",
-        label: "Refresh Resources",
+        label: "Refresh resources",
         description: "Reload current resource list",
         category: "Actions",
         action: () => {
@@ -432,7 +433,7 @@
           aria-controls="command-palette-list"
           aria-autocomplete="list"
           aria-activedescendant={filteredItems[selectedIndex] ? `command-item-${selectedIndex}` : undefined}
-          placeholder="Search by name across the cluster, or contexts and actions… (ns: kind:)"
+          placeholder="Search the cluster, contexts and actions (ns: kind:)"
           value={query}
           oninput={(e: Event) => { query = (e.target as HTMLInputElement).value; }}
         />
@@ -455,8 +456,8 @@
                 <CommandItem
                   id={`command-item-${globalIndex}`}
                   class={cn(
-                    "gap-2.5",
-                    globalIndex === selectedIndex && "bg-[var(--bg-secondary)]"
+                    "gap-2",
+                    globalIndex === selectedIndex && "bg-[var(--bg-tertiary)]"
                   )}
                   onclick={() => item.action()}
                   onmouseenter={() => (selectedIndex = globalIndex)}
@@ -464,17 +465,20 @@
                   data-selected={globalIndex === selectedIndex ? "true" : undefined}
                 >
                   <IconComp class="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
-                  <div class="flex-1">
-                    <span class="text-[12px] font-medium">{item.label}</span>
-                    {#if item.description}
-                      <span class="ml-2 text-[10px] text-[var(--text-muted)]">{item.description}</span>
+                  <div class="min-w-0 flex-1 truncate">
+                    <span class="text-[13px]">{item.label}</span>
+                    {#if item.description && !item.alias}
+                      <span class="ml-2 text-[11px] text-[var(--text-muted)]">{item.description}</span>
                     {/if}
                   </div>
+                  {#if item.alias}
+                    <span class="font-mono text-[11px] text-[var(--text-muted)]">{item.alias}</span>
+                  {/if}
                   {#if item.hint}
                     <Kbd>{item.hint}</Kbd>
                   {/if}
                   {#if globalIndex === selectedIndex}
-                    <Kbd>Enter</Kbd>
+                    <Kbd>⏎</Kbd>
                   {/if}
                 </CommandItem>
               {/each}

@@ -47,7 +47,7 @@
     onBack,
     onRefresh,
     onNamespaceChange,
-    loadingMessage = "Loading...",
+    loadingMessage = "Loading…",
     errorMessage = "Failed to load data",
     emptyMessage = "No data available",
     emptyHelper,
@@ -69,16 +69,15 @@
 
 <div class="flex h-full flex-col bg-[var(--bg-primary)]">
   <!-- Header -->
-  <div class="flex h-[52px] items-center justify-between border-b border-[var(--border-color)] px-4">
-    <div class="flex items-center gap-3">
+  <div class="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-[var(--border-color)] py-2 pl-6 pr-4">
+    <div class="flex items-center gap-2">
       {#if onBack}
-        <Button variant="outline" size="icon-lg" onclick={onBack} title="Back" aria-label="Go back">
+        <Button variant="muted" size="icon-sm" onclick={onBack} title="Back" aria-label="Go back">
           <ArrowLeft class="h-4 w-4" />
         </Button>
       {/if}
       <div class="flex items-center gap-2">
-        <Icon class="h-4 w-4 text-[var(--accent)]" />
-        <span class="text-[13px] font-semibold text-[var(--text-primary)]">{title}</span>
+        <h1 class="mr-2 text-[15px] font-medium text-[var(--text-primary)]">{title}</h1>
         <!--
           These views all load per-namespace, but the namespace was rendered
           here as dead text while the only picker lived in a title bar that
@@ -95,7 +94,7 @@
       {#if headerActions}
         {@render headerActions()}
       {/if}
-      <Button variant="outline" size="icon-lg" onclick={onRefresh} disabled={isLoading} title="Refresh" aria-label="Refresh">
+      <Button variant="muted" size="icon-sm" onclick={onRefresh} disabled={isLoading} title="Refresh" aria-label="Refresh">
         <RefreshCw class="h-3.5 w-3.5 {isLoading ? 'animate-spin' : ''}" />
       </Button>
     </div>
@@ -117,7 +116,7 @@
     {:else if error}
       <div class="flex h-full items-center justify-center">
         <div class="flex flex-col items-center gap-2 text-center">
-          <AlertTriangle class="h-8 w-8 text-[var(--status-failed)]" />
+          <AlertTriangle class="h-4 w-4 text-[var(--status-failed)]" />
           <span class="text-[13px] font-medium text-[var(--text-primary)]">{errorMessage}</span>
           <span class="max-w-md text-[12px] text-[var(--text-muted)]">{error}</span>
           <Button variant="outline" size="md" onclick={onRefresh} class="mt-2">Try again</Button>
@@ -131,7 +130,7 @@
       {:else}
         <div class="flex h-full items-center justify-center">
           <div class="flex flex-col items-center gap-2 text-center">
-            <Icon class="h-8 w-8 text-[var(--text-muted)]" />
+            <Icon class="h-4 w-4 text-[var(--text-muted)]" />
             <span class="text-[13px] text-[var(--text-muted)]">{emptyMessage}</span>
             {#if emptyHelper}
               <span class="text-[12px] text-[var(--text-muted)]">{emptyHelper}</span>

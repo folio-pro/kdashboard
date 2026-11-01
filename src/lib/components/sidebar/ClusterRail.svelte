@@ -29,7 +29,7 @@
   <Button
     variant="muted"
     size="icon-sm"
-    class="mt-2 mb-1 rounded-full hover:bg-[var(--sidebar-hover)]"
+    class="mt-2 mb-1 hover:bg-[var(--sidebar-hover)]"
     onclick={() => uiStore.toggleSidebar()}
     title="Collapse sidebar"
   >
@@ -37,11 +37,11 @@
   </Button>
 
   <!-- Context icons -->
-  <div class="flex w-full flex-1 flex-col items-center gap-[9px] overflow-y-auto overflow-x-hidden py-2">
+  <div class="flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-2">
     {#if k8sStore.contextsLoadError}
       <Tooltip>
         <TooltipTrigger>
-          <div class="flex h-[34px] w-[34px] items-center justify-center rounded-lg bg-[var(--status-failed)]/15 text-[var(--status-failed)]">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--status-failed)]/15 text-[var(--status-failed)]">
             <AlertTriangle class="h-4 w-4" />
           </div>
         </TooltipTrigger>
@@ -68,18 +68,15 @@
       <Tooltip>
         <TooltipTrigger>
           <button
-            class="relative flex h-[34px] w-[34px] shrink-0 items-center justify-center transition-[border-radius,transform] {isActive ? 'rounded-lg' : 'rounded-lg hover:rounded-lg'}"
+            class="relative flex h-8 w-8 shrink-0 items-center justify-center transition-[border-radius,transform] rounded-lg"
             style={isActive
-              ? `background-color: var(${color}); color: white; box-shadow: 0 0 0 2px var(--rail-bg, color-mix(in srgb, var(--sidebar-bg) 92%, #000)), 0 0 0 3.5px rgba(255,255,255,0.22);`
+              ? `background-color: var(${color}); color: white;`
               : `background-color: color-mix(in srgb, var(${color}) 20%, transparent); color: var(${color});`}
             onclick={() => switchContext(ctx)}
             title={ctx}
             aria-label="Switch to context {ctx}"
             aria-current={isActive ? "true" : undefined}
           >
-            {#if isActive}
-              <span class="absolute top-1/2 -left-[11px] h-5 w-[3px] -translate-y-1/2 rounded-r-[3px] bg-[var(--accent)]"></span>
-            {/if}
             {#if isActive && !k8sStore.reachable}
               <!-- Outage marker on the active cluster: the rail is the one
                    piece of chrome that stays visible with the sidebar open. -->
@@ -98,11 +95,11 @@
               -->
               <DeviconIcon id={iconDef.id} class="h-5.5 w-5.5" />
             {:else if label}
-              <span class="text-[10px] font-bold leading-none tracking-tight">{label}</span>
+              <span class="text-[11px] font-medium leading-none">{label}</span>
             {:else}
               <!-- Segment initials, not charAt(0): a real kubeconfig turned
                    the whole rail into a column of near-identical letters. -->
-              <span class="text-[11px] font-bold tracking-tight">{contextInitials(ctx)}</span>
+              <span class="text-[11px] font-medium">{contextInitials(ctx)}</span>
             {/if}
           </button>
         </TooltipTrigger>

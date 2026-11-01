@@ -45,7 +45,7 @@
   <div class="flex items-center justify-between px-6 py-4">
     <div class="flex items-center gap-2">
       <Box class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Pods on this node</span>
+      <span class="text-[11px] font-medium text-[var(--text-muted)]">Pods on this node</span>
     </div>
     <span class="font-mono text-[11px] text-[var(--text-muted)]">
       {#if loading}<Spinner class="h-3 w-3" />{:else}{pods.length}{/if}

@@ -219,7 +219,7 @@
         {/each}
       {:else if isBulk}
         <!-- Bulk header -->
-        <div class="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+        <div class="px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)]">
           {bulkCount} {bulkCount === 1 ? "resource" : "resources"} selected
         </div>
         <div class="mx-2 my-1 border-t border-[var(--border-hover)]"></div>

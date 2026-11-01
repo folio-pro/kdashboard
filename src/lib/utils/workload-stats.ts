@@ -23,6 +23,19 @@ export interface HealthSegment {
   color: string;
 }
 
+/** Past this a tick is too small to count; the strip shows a proportion instead. */
+export const MAX_HEALTH_TICKS = 100;
+
+/**
+ * One colour per object, grouped by state in segment order. `null` when there
+ * is nothing to show or too many objects for a tick to mean one thing.
+ */
+export function healthTicks(segments: HealthSegment[]): string[] | null {
+  const total = segments.reduce((sum, seg) => sum + seg.value, 0);
+  if (total === 0 || total > MAX_HEALTH_TICKS) return null;
+  return segments.flatMap((seg) => Array.from({ length: seg.value }, () => seg.color));
+}
+
 // Shared pod status classification — used by both stat computation and table rendering
 export function classifyPodStatus(resource: Resource): "running" | "pending" | "failed" | "succeeded" | "unknown" {
   const phase = (resource.status?.phase as string) ?? "";

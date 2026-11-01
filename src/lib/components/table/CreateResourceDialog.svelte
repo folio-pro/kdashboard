@@ -3,7 +3,7 @@
   import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "$lib/components/ui/dialog";
   import { Button, Select, SelectMenu, Spinner } from "$lib/components/ui";
   import { CodeSkeleton } from "$lib/components/ui/skeleton";
-  import { ClipboardPaste, FilePlus2, CircleAlert, ArrowRight } from "lucide-svelte";
+  import { ClipboardPaste, CircleAlert, ArrowRight } from "lucide-svelte";
   import { k8sStore } from "$lib/stores/k8s.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
   import { loadCodeMirror, type CodeMirrorModules } from "$lib/utils/codemirror-lazy";
@@ -212,17 +212,12 @@
     onInteractOutside={handleInteractOutside}
   >
     <DialogHeader>
-      <div class="flex items-center gap-3">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10">
-          <FilePlus2 class="h-4 w-4 text-[var(--accent)]" />
-        </div>
-        <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1">
           <DialogTitle>Create resource</DialogTitle>
           <DialogDescription class="text-[12px] text-[var(--text-muted)]">
             Write or paste a manifest. It is applied to
             <span class="font-mono text-[var(--text-secondary)]">{context || "the current cluster"}</span>{#if currentNamespace}, namespace <span class="font-mono text-[var(--text-secondary)]">{currentNamespace}</span>{/if}.
           </DialogDescription>
-        </div>
       </div>
     </DialogHeader>
 

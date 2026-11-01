@@ -9,7 +9,7 @@ export function podKey(namespace: string | undefined | null, name: string): stri
 }
 
 export interface UsageCell {
-  /** Absolute usage, already humanised ("120m", "512 Mi"). */
+  /** Absolute usage, already humanised ("120m", "512Mi"). */
   label: string;
   /** Usage as a percentage of `basis`; null when the pod declares neither. */
   percent: number | null;
@@ -49,7 +49,7 @@ export function formatBytes(bytes: number): string {
     value /= KIBI;
     unit += 1;
   }
-  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)}${units[unit]}`;
 }
 
 // resource.Quantity suffixes. Mirrors electron/k8s/quantity.ts — the renderer

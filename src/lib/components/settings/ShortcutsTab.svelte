@@ -21,19 +21,19 @@
 
 <!-- Keyboard Shortcuts -->
 <section>
-  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Keyboard Shortcuts</h2>
-  <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+  <h2 class="text-[13px] font-medium text-[var(--text-primary)]">Keyboard shortcuts</h2>
+  <p class="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
     Quick reference for navigating kdashboard with your keyboard.
   </p>
 
   {#each groups as group (group.scope)}
-    <h3 class="mt-5 mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
+    <h3 class="mt-5 mb-2 text-[11px] font-medium text-[var(--text-muted)]">
       {group.label}
     </h3>
     <div class="grid grid-cols-2 gap-x-8 gap-y-1">
       {#each group.items as shortcut (shortcut.id)}
         <div class="flex items-center justify-between gap-3 rounded-sm px-2 py-1 hover:bg-[var(--bg-secondary)]">
-          <span class="text-[11px] text-[var(--text-secondary)]">{shortcut.label}</span>
+          <span class="text-[12px] text-[var(--text-secondary)]">{shortcut.label}</span>
           <Kbd>{shortcut.keys}</Kbd>
         </div>
       {/each}

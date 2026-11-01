@@ -54,7 +54,7 @@
   <!-- Subjects -->
   <div class="flex min-h-0 flex-col border-r border-[var(--border-color)]">
     <div class="flex flex-col gap-2 border-b border-[var(--border-color)] p-3">
-      <SearchField value={subjectQuery} ariaLabel="Filter subjects" placeholder="Filter subjects…" oninput={(e: Event) => { subjectQuery = (e.target as HTMLInputElement).value; }} />
+      <SearchField value={subjectQuery} ariaLabel="Filter subjects" placeholder="Filter subjects" oninput={(e: Event) => { subjectQuery = (e.target as HTMLInputElement).value; }} />
       <SegmentedControl
         ariaLabel="Subject kind"
         value={kindFilter ?? "all"}
@@ -80,7 +80,7 @@
         >
           <Badge appearance="surface" mono size="xs" class="w-8 justify-center">{s.kind === "ServiceAccount" ? "sa" : s.kind === "User" ? "usr" : "grp"}</Badge>
           <span class="min-w-0 flex-1 truncate font-mono text-[var(--text-primary)]">{s.namespace ? `${s.namespace}/` : ""}{s.name}</span>
-          <span class="font-mono text-[10px] text-[var(--text-muted)]">{s.bindings}</span>
+          <span class="font-mono text-[11px] text-[var(--text-muted)]">{s.bindings}</span>
         </button>
       {/each}
     </ScrollArea>
@@ -134,7 +134,7 @@
           {/if}
         </div>
         <div class="flex items-center gap-2">
-          <SearchField value={rowQuery} ariaLabel="Filter resources" placeholder="Filter resources…" oninput={(e: Event) => { rowQuery = (e.target as HTMLInputElement).value; }} class="w-[220px]" />
+          <SearchField value={rowQuery} ariaLabel="Filter resources" placeholder="Filter resources" oninput={(e: Event) => { rowQuery = (e.target as HTMLInputElement).value; }} class="w-[220px]" />
           <div class="flex flex-wrap gap-1">
             {#each scopes as sc (sc)}
               <Button variant="outline" size="xs" mono active={scopeFilter === sc} activeStyle="underline" onclick={() => (scopeFilter = scopeFilter === sc ? null : sc)}>{sc}</Button>
@@ -159,7 +159,7 @@
                 <tr class="border-t border-[var(--border-color)]/60 hover:bg-[var(--table-row-hover)]" data-testid="rbac-row">
                   <td class="px-3 py-1 font-mono text-[var(--text-primary)]">{r.resource}{r.api_group ? `.${r.api_group}` : ""}{#if r.resource_names}<span class="ml-1 text-[var(--text-muted)]" title={r.resource_names.join(", ")}>({r.resource_names.length} named)</span>{/if}</td>
                   {#each VERBS as v (v)}
-                    <td class="px-1 py-1 text-center">{#if rowAllows(r, v)}<span class="inline-block h-2 w-2 rounded-full bg-[var(--status-running)]" title={v}></span>{:else}<span class="text-[var(--border-color)]">·</span>{/if}</td>
+                    <td class="px-1 py-1 text-center">{#if rowAllows(r, v)}<span class="inline-block h-1.5 w-1.5 rounded-full bg-[var(--text-primary)]" title={v}></span>{:else}<span class="text-[var(--border-color)]">·</span>{/if}</td>
                   {/each}
                   <td class="px-3 py-1 font-mono text-[var(--text-muted)]">{r.scopes.join(", ")}</td>
                 </tr>
@@ -169,7 +169,7 @@
         {/if}
         {#if perms.grants.length > 0}
           <div class="border-t border-[var(--border-color)] p-4">
-            <div class="mb-2 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">Grants</div>
+            <div class="mb-2 text-[11px] text-[var(--text-muted)]">Grants</div>
             <ul class="flex flex-col gap-1 text-[11px]">
               {#each perms.grants as g (g.scope + g.binding + g.role)}
                 <li class="flex flex-wrap items-center gap-2 font-mono">

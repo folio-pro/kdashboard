@@ -95,8 +95,8 @@
 
 <!-- Context Customization -->
 <section>
-  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Contexts</h2>
-  <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+  <h2 class="text-[13px] font-medium text-[var(--text-primary)]">Contexts</h2>
+  <p class="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
     Assign icons, labels, and colors to your contexts to tell them apart in the sidebar.
   </p>
 
@@ -125,19 +125,19 @@
             {#if iconDef && custom?.label}
               <span class="flex flex-col items-center gap-0.5">
                 <DeviconIcon id={iconDef.id} class="h-4 w-4" />
-                <span class="text-[10px] font-bold leading-none tracking-tight">{custom.label}</span>
+                <span class="text-[11px] font-medium leading-none">{custom.label}</span>
               </span>
             {:else if iconDef}
               <DeviconIcon id={iconDef.id} class="h-5.5 w-5.5" />
             {:else if custom?.label}
-              <span class="text-[10px] font-bold leading-none tracking-tight">{custom.label}</span>
+              <span class="text-[11px] font-medium leading-none">{custom.label}</span>
             {:else}
-              <span class="text-[13px] font-bold">{ctx.charAt(0).toUpperCase()}</span>
+              <span class="text-[13px] font-medium">{ctx.charAt(0).toUpperCase()}</span>
             {/if}
           </span>
           <span class="flex-1 truncate font-medium text-[var(--text-primary)]">{ctx}</span>
           {#if isActive}
-            <Badge tone="accent" pill class="px-2">active</Badge>
+            <span class="font-mono text-[11px] text-[var(--text-muted)]">active</span>
           {/if}
           {#if hasCustom}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -159,30 +159,30 @@
           <div class="border-t border-[var(--border-color)] px-3 py-3 space-y-4">
             <!-- Custom label -->
             <div>
-              <span class="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Label (max 3 chars)</span>
+              <span class="mb-1.5 block text-[11px] font-medium text-[var(--text-muted)]">Label (max 3 chars)</span>
               <Input
                 type="text"
                 placeholder="e.g. PRD, STG, DEV"
                 value={custom?.label ?? ""}
                 oninput={(e) => setContextLabel(ctx, (e.target as HTMLInputElement).value)}
                 maxlength={3}
-                class="h-8 w-40 font-mono text-[12px] uppercase"
+                class="h-8 w-40 font-mono text-[12px]"
               />
             </div>
 
             <!-- Icon picker -->
             <div>
-              <span class="mb-2 block text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Icon</span>
+              <span class="mb-2 block text-[11px] font-medium text-[var(--text-muted)]">Icon</span>
               {#each ICON_CATEGORIES as cat}
                 {@const icons = iconsByCategory[cat.key] ?? []}
                 <div class="mb-2.5">
-                  <span class="mb-1 block text-[10px] text-[var(--text-muted)]">{cat.label}</span>
+                  <span class="mb-1 block text-[11px] text-[var(--text-muted)]">{cat.label}</span>
                   <div class="flex flex-wrap gap-1">
                     {#each icons as icon}
                       {@const isSelected = custom?.icon === icon.id}
                       <button
                         class={cn(
-                          "group relative flex h-8 w-8 items-center justify-center rounded-md border transition-all",
+                          "group relative flex h-8 w-8 items-center justify-center rounded-md border transition-colors",
                           isSelected
                             ? "border-[var(--accent)] bg-[var(--accent)]/10"
                             : "border-transparent hover:border-[var(--border-color)] hover:bg-[var(--bg-tertiary)]"
@@ -200,13 +200,13 @@
 
             <!-- Color picker -->
             <div>
-              <span class="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Color</span>
+              <span class="mb-1.5 block text-[11px] font-medium text-[var(--text-muted)]">Color</span>
               <div class="flex gap-1.5">
                 {#each COLOR_OPTIONS as colorOpt}
                   {@const isSelected = custom?.color === colorOpt.id}
                   <button
                     class={cn(
-                      "flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[10px] transition-all",
+                      "flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] transition-colors",
                       isSelected
                         ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--text-primary)]"
                         : "border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--border-hover)]"
@@ -254,8 +254,8 @@
 
 <!-- Kubernetes Configuration -->
 <section>
-  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Kubeconfig</h2>
-  <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+  <h2 class="text-[13px] font-medium text-[var(--text-primary)]">Kubeconfig</h2>
+  <p class="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
     Path to your kubeconfig file. Leave empty to use the default location (~/.kube/config).
   </p>
   <div class="mt-4 flex gap-2">
@@ -290,8 +290,8 @@
 
 <!-- Prometheus -->
 <section>
-  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Prometheus</h2>
-  <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+  <h2 class="text-[13px] font-medium text-[var(--text-primary)]">Prometheus</h2>
+  <p class="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
     Optional. metrics-server only reports the latest scrape, so charts over time need a Prometheus.
     Point this at one reachable from this machine — an ingress URL, or
     <span class="font-mono">http://localhost:9090</span> while you port-forward it.
@@ -306,7 +306,7 @@
       class="flex-1"
     />
     <Button size="lg" variant="outline" onclick={handlePrometheusTest} disabled={testingPrometheus}>
-      {testingPrometheus ? "Testing..." : "Test"}
+      {testingPrometheus ? "Testing…" : "Test"}
     </Button>
     <Button size="lg" onclick={handlePrometheusSave}>Save</Button>
   </div>
@@ -314,8 +314,8 @@
 
 <!-- Cost Pricing -->
 <section>
-  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Cost Pricing</h2>
-  <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+  <h2 class="text-[13px] font-medium text-[var(--text-primary)]">Cost Pricing</h2>
+  <p class="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
     Node pricing is fetched from cloud providers (AWS, Azure, GCP) and cached for 24 hours.
     Prices are updated monthly on the server. Force a refresh if you need the latest rates.
   </p>

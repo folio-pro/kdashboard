@@ -90,14 +90,12 @@
       aria-modal="true"
       data-state="open"
       aria-labelledby="connection-error-title"
-      class="mx-4 flex max-w-md flex-col items-center gap-4 rounded-xl border border-[var(--status-failed)]/30 bg-[var(--bg-secondary)] px-8 py-6 shadow-xl outline-none"
+      class="mx-4 flex max-w-md flex-col items-center gap-4 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-8 py-6 shadow-xl outline-none"
     >
-      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--status-failed)]/10">
-        <WifiOff class="h-6 w-6 text-[var(--status-failed)]" />
-      </div>
+      <WifiOff class="h-4 w-4 text-[var(--status-failed)]" />
 
       <div class="flex flex-col items-center gap-1 text-center">
-        <h2 id="connection-error-title" class="text-[13px] font-semibold text-[var(--text-primary)]">
+        <h2 id="connection-error-title" class="text-[13px] font-medium text-[var(--text-primary)]">
           Cluster connection lost
         </h2>
         <p class="max-w-xs text-[12px] leading-relaxed text-[var(--text-secondary)]">
@@ -114,11 +112,11 @@
           disabled={isRetrying}
         >
           <RefreshCw class="h-3.5 w-3.5 {isRetrying ? 'animate-spin' : ''}" />
-          {isRetrying ? "Reconnecting..." : "Retry connection"}
+          {isRetrying ? "Reconnecting…" : "Retry connection"}
         </Button>
       </div>
 
-      <p class="text-[10px] text-[var(--text-muted)]">
+      <p class="text-[11px] text-[var(--text-muted)]">
         Check your kubeconfig and cluster availability.
       </p>
     </div>

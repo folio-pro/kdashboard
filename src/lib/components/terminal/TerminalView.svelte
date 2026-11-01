@@ -361,50 +361,16 @@
 </script>
 
 <div data-testid="terminal-panel" class="flex h-full flex-col bg-[var(--bg-primary)]">
-  <!-- Terminal: the tab bar already names the view and the pod, so this panel
-       carries no title of its own. -->
-  <div class="flex-1 overflow-hidden px-4 pt-3 pb-2">
-    <div class="flex h-full flex-col">
-      <!-- Terminal Container -->
-      <div
-        bind:this={hostEl}
-        class="wterm-host relative flex-1 overflow-hidden rounded-sm border border-[var(--border-color)] bg-[var(--log-bg)] px-2"
-      >
-        {#if initError}
-          <div
-            class="absolute inset-0 z-10 flex items-center justify-center px-4 text-center font-mono text-[12px] text-[var(--status-failed)]"
-          >
-            Terminal failed to start: {initError}
-          </div>
-        {:else if !terminalReady}
-          <div class="absolute inset-0 z-10 flex items-center justify-center text-[12px] text-[var(--text-muted)]">
-            Select a container and press Connect to start
-          </div>
-        {/if}
-        <!--
-          No onclick focus handler here: WTerm attaches its own, which skips
-          focusing when there is an active text selection so click-dragging to
-          select does not steal focus mid-selection.
-        -->
-        <!-- Height is set imperatively by snapHostToRowGrid(), not by a class. -->
-        <div
-          bind:this={terminalEl}
-          class="w-full"
-          class:invisible={!terminalReady}
-        ></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Controls: single bar at the bottom of the panel. -->
-  <div class="flex h-11 shrink-0 items-center gap-2 border-t border-[var(--border-color)] px-4">
+  <!-- Controls sit above the terminal and wrap: a single bottom bar lost its
+       right half in the 440px detail aside. -->
+  <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-color)] px-4 py-2">
     {#if !isConnected}
-      <Button variant="solid-tone" tone="success" size="sm" mono onclick={connect} disabled={!selectedContainer}>
+      <Button variant="accent" size="sm" onclick={connect} disabled={!selectedContainer}>
         <TerminalSquare class="h-3 w-3" />
         <span>Connect</span>
       </Button>
     {:else}
-      <Button variant="solid-tone" tone="error" size="sm" mono onclick={disconnect}>
+      <Button variant="solid-tone" tone="error" size="sm" onclick={disconnect}>
         <TerminalSquare class="h-3 w-3" />
         <span>Disconnect</span>
       </Button>
@@ -442,7 +408,7 @@
     </Button>
 
     <Button
-      variant="toolbar"
+      variant="muted"
       size="icon-sm"
       title="Clear terminal"
       aria-label="Clear terminal"
@@ -453,10 +419,45 @@
 
     {#if isConnected}
       <div class="ml-auto flex shrink-0 items-center gap-1.5">
-        <div class="h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--status-running)]"></div>
-        <span class="font-mono text-[11px] font-semibold text-[var(--status-running)]">CONNECTED</span>
+        <div class="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--status-running)]"></div>
+        <span class="text-[11px] text-[var(--text-secondary)]">Connected</span>
       </div>
     {/if}
+  </div>
+
+  <!-- Terminal: the tab bar already names the view and the pod, so this panel
+       carries no title of its own. -->
+  <div class="flex-1 overflow-hidden px-4 pt-3 pb-2">
+    <div class="flex h-full flex-col">
+      <!-- Terminal Container -->
+      <div
+        bind:this={hostEl}
+        class="wterm-host relative flex-1 overflow-hidden px-2"
+      >
+        {#if initError}
+          <div
+            class="absolute inset-0 z-10 flex items-center justify-center px-4 text-center font-mono text-[12px] text-[var(--status-failed)]"
+          >
+            Terminal failed to start: {initError}
+          </div>
+        {:else if !terminalReady}
+          <div class="absolute inset-0 z-10 flex items-center justify-center text-[12px] text-[var(--text-muted)]">
+            Select a container and press Connect to start
+          </div>
+        {/if}
+        <!--
+          No onclick focus handler here: WTerm attaches its own, which skips
+          focusing when there is an active text selection so click-dragging to
+          select does not steal focus mid-selection.
+        -->
+        <!-- Height is set imperatively by snapHostToRowGrid(), not by a class. -->
+        <div
+          bind:this={terminalEl}
+          class="w-full"
+          class:invisible={!terminalReady}
+        ></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -490,7 +491,7 @@
      (0,1,0). */
   .wterm-host,
   .wterm-host :global(.wterm) {
-    --term-bg: var(--log-bg, #111111);
+    --term-bg: var(--bg-primary, #111111);
     --term-fg: var(--text-secondary, #a0a0a0);
     --term-cursor: var(--accent, #ffffff);
 
@@ -500,7 +501,7 @@
     --term-color-3: var(--log-warn, #eab308);
     --term-color-4: var(--log-info, #3b82f6);
     --term-color-5: var(--log-json, #a78bfa);
-    --term-color-6: var(--accent, #06b6d4);
+    --term-color-6: color-mix(in srgb, var(--status-succeeded) 60%, var(--status-running));
     --term-color-7: var(--text-primary, #e0e0e0);
     --term-color-8: var(--text-muted, #525252);
     --term-color-9: var(--log-error, #ef4444);
@@ -508,7 +509,7 @@
     --term-color-11: var(--log-warn, #eab308);
     --term-color-12: var(--log-info, #3b82f6);
     --term-color-13: var(--log-json, #a78bfa);
-    --term-color-14: var(--accent, #06b6d4);
+    --term-color-14: color-mix(in srgb, var(--status-succeeded) 60%, var(--status-running));
     --term-color-15: var(--text-primary, #ffffff);
 
     --term-font-family: "Geist Mono", ui-monospace, SFMono-Regular, monospace;

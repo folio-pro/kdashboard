@@ -22,8 +22,8 @@
 </script>
 
 <section data-testid="extensions-tab">
-  <h2 class="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Extensions</h2>
-  <p class="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+  <h2 class="text-[13px] font-medium text-[var(--text-primary)]">Extensions</h2>
+  <p class="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
     Drop a folder with a <span class="font-mono">manifest.json</span> and an ES module into the extensions directory; it is loaded at start-up and may register actions, palette commands, settings tabs, UI slots and event handlers through the extension API (v{API_VERSION}).
     {#if extensionHost.directory}<span class="font-mono text-[var(--text-secondary)]">{extensionHost.directory}</span>{/if}
   </p>
@@ -48,7 +48,7 @@
         {#if ext.description}<p class="mt-1 text-[11px] text-[var(--text-secondary)]">{ext.description}</p>{/if}
         {#if ext.error}<p class="mt-1 font-mono text-[11px] text-[var(--status-failed)]">{ext.error}</p>{/if}
         {#if ext.registered.length}<p class="mt-1 text-[11px] text-[var(--text-muted)]">registered: {ext.registered.join(", ")}</p>{/if}
-        <p class="mt-1 font-mono text-[10px] text-[var(--text-muted)]">{ext.dir}</p>
+        <p class="mt-1 font-mono text-[11px] text-[var(--text-muted)]">{ext.dir}</p>
       </div>
     {/each}
   </div>

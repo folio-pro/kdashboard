@@ -27,7 +27,7 @@ test("edits image, env and requests from the form and applies the resulting YAML
   await expect(page.getByRole("heading", { name: "Deployments", exact: true })).toBeVisible();
 
   await page.locator("tbody tr").first().click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Quick Edit..." }).click();
+  await page.getByRole("menuitem", { name: "Quick edit…" }).click();
   const dialog = page.locator('[data-testid="quick-edit"]');
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel("Image")).toHaveValue("acme/web:1.4.0");

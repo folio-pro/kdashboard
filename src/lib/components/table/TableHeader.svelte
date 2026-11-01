@@ -68,15 +68,15 @@
   });
 </script>
 
-<!-- 32px, 10px uppercase: the header labels the data, it is not data. The
+<!-- 32px, muted sentence case: the header labels the data, it is not data. The
      active sort column is the one exception — it reads in the primary colour
      so you can tell at a glance what order the list is in. -->
 <th
   bind:this={thEl}
   class={cn(
-    "relative h-8 overflow-hidden whitespace-nowrap px-3.5 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]",
+    "relative h-8 overflow-hidden whitespace-nowrap px-2 align-middle text-[11px] font-medium text-[var(--text-muted)]",
     alignRight ? "text-right" : "text-left",
-    column.sortable && "cursor-pointer select-none hover:text-[var(--text-secondary)]"
+    column.sortable && "group/th cursor-pointer select-none hover:text-[var(--text-secondary)]"
   )}
   style={computedStyle}
   data-testid="table-header"
@@ -85,7 +85,7 @@
   {#if column.sortable}
     <button
       class={cn(
-        "inline-flex items-center gap-1 uppercase tracking-[0.06em] transition-colors",
+        "inline-flex items-center gap-1 align-middle transition-colors",
         alignRight && "flex-row-reverse",
         isActive && "text-[var(--text-primary)]"
       )}
@@ -94,11 +94,13 @@
     >
       <span>{column.label}</span>
       {#if isActive && sortDirection === "asc"}
-        <ArrowUp class="h-[11px] w-[11px] text-[var(--accent)]" />
+        <ArrowUp class="h-3 w-3" />
       {:else if isActive}
-        <ArrowDown class="h-[11px] w-[11px] text-[var(--accent)]" />
+        <ArrowDown class="h-3 w-3" />
       {:else}
-        <ChevronsUpDown class="h-3 w-3 text-[var(--text-muted)] opacity-60" />
+        <!-- Only shown on hover: a sort glyph on every column is noise, and the
+             reserved width keeps the labels from shifting when it appears. -->
+        <ChevronsUpDown class="h-3 w-3 text-[var(--text-muted)] opacity-0 transition-opacity group-hover/th:opacity-60" />
       {/if}
     </button>
   {:else}

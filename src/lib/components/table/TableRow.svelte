@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Badge } from "$lib/components/ui";
   import { cn } from "$lib/utils";
   import type { Resource, Column, TableDensity } from "$lib/types";
   import { Checkbox } from "$lib/components/ui/checkbox";
@@ -26,10 +25,9 @@
   import { podReadyCount, podRestarts } from "$lib/utils/pod-status";
   import { replicaSegments, shortImage, templateImages } from "$lib/utils/workload-status";
   import { serviceExternal } from "$lib/utils/service-info";
-  import { formatAge } from "$lib/utils/age";
   import ReplicaBar from "$lib/components/common/ReplicaBar.svelte";
-  import { statusCategory, statusColor, isQuietStatus, rowSeverity } from "./status-category";
-  import { splitPodName } from "./table-filter";
+  import { statusCategory, statusColor, isQuietStatus } from "./status-category";
+  import { podNameParts } from "./table-filter";
   import { ROW_HEIGHT, DENSITY_CLASSES } from "./table-density";
   import ContainersCell from "./ContainersCell.svelte";
   import UsageCell from "./UsageCell.svelte";
@@ -110,15 +108,7 @@
 
   // Pods: the generated suffix is dimmed so the owner's name is what the eye
   // reads down the column. Other kinds keep their name whole.
-  let podName = $derived(resourceType === "pods" ? splitPodName(resource.metadata.name) : null);
-
-  // Row severity comes from the status cell: a 2px bar in the gutter for
-  // problem rows only, so a scroll through 300 pods lands on the red ones.
-  // The table says which column is its status (Events use `eventType`), so the
-  // gutter reads that one rather than assuming "status".
-  let statusColumn = $derived(columns.find((c) => isStatusColumn(c.key)));
-  let statusValue = $derived(statusColumn ? getCellValue(resource, statusColumn.key, cellCtx) : "-");
-  let severity = $derived(statusValue === "-" ? null : rowSeverity(statusCategory(statusValue)));
+  let podName = $derived(resourceType === "pods" ? podNameParts(resource.metadata.name) : null);
 
   // Events: the Object column deep-links to the involved resource when its
   // Kind is one the catalog can navigate to (built-in kinds only — a CRD kind
@@ -166,20 +156,11 @@
   data-testid="resource-row"
   data-selected={selected || checkboxChecked ? "true" : undefined}
 >
-  <!-- Gutter: severity bar + checkbox. The checkbox only shows on hover or
-       once a selection exists, so an unselected table has no column of empty
-       boxes; the bar is the first thing the eye meets on a problem row. -->
+  <!-- Gutter: the checkbox only shows on hover or once a selection exists, so
+       an unselected table has no column of empty boxes. -->
   <td class="relative w-7 p-0 text-center" onclick={(e) => e.stopPropagation()}>
     {#if highlighted}
       <span class="absolute inset-y-0 left-0 w-0.5 bg-[var(--accent)]" aria-hidden="true"></span>
-    {:else if severity}
-      <span
-        class="absolute inset-y-0 left-0 w-0.5"
-        style:background-color={severity === "error"
-          ? "var(--status-failed)"
-          : "color-mix(in srgb, var(--status-pending) 55%, transparent)"}
-        aria-hidden="true"
-      ></span>
     {/if}
     {#if oncheck && showChrome}
       <span
@@ -196,11 +177,11 @@
   </td>
   {#each columns as column, ci}
     <td
-      class={cn("relative overflow-hidden px-3.5", d.text, isRightAlignedColumn(column.key) && "text-right")}
+      class={cn("relative overflow-hidden px-2", d.text, isRightAlignedColumn(column.key) && "text-right")}
       data-testid="cell-{column.key}"
     >
       {#if isContainersColumn(column.key)}
-        <ContainersCell {resource} {density} />
+        <ContainersCell {resource} />
       {:else if isUsageColumn(column.key)}
         <UsageCell {resource} columnKey={column.key} ctx={cellCtx} />
       {:else if isAutoscalerTargetsColumn(column.key)}
@@ -235,7 +216,7 @@
             <div class="relative h-[3px] w-full overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
               {#if pressure.percent !== null}
                 <div
-                  class="h-full rounded-full transition-all duration-300"
+                  class="h-full rounded-full transition-colors duration-300"
                   style="width: {Math.min(pressure.percent, 100)}%; background-color: {usageBarColor(pressure.percent)}"
                 ></div>
               {/if}
@@ -268,7 +249,7 @@
         {@const ready = podReadyCount(resource)}
         {@const finished = resource.status?.phase === "Succeeded"}
         <div class="flex items-center gap-2 overflow-hidden">
-          <ContainersCell {resource} {density} />
+          <ContainersCell {resource} />
           <span
             class="shrink-0 font-mono tabular-nums"
             style:color={finished
@@ -292,12 +273,12 @@
         {#if images.length === 0}
           <span class="text-[var(--text-muted)]">—</span>
         {:else}
-          <div class="flex items-center gap-1.5 overflow-hidden">
+          <div class="flex items-center gap-2 overflow-hidden font-mono text-[var(--text-secondary)]">
             {#each images.slice(0, 2) as image (image)}
-              <Badge appearance="surface" size="sm" bordered mono class="max-w-[220px] truncate px-1.5" title={image}>{shortImage(image)}</Badge>
+              <span class="min-w-0 truncate" title={image}>{shortImage(image)}</span>
             {/each}
             {#if images.length > 2}
-              <Badge appearance="surface" size="sm" bordered mono class="px-1.5" title={images.slice(2).join(", ")}>+{images.length - 2}</Badge>
+              <span class="shrink-0 text-[var(--text-muted)]" title={images.slice(2).join(", ")}>+{images.length - 2}</span>
             {/if}
           </div>
         {/if}
@@ -328,8 +309,7 @@
         {:else if external.pending}
           <span class="inline-flex max-w-full items-center gap-1.5 overflow-hidden" title="LoadBalancer has no address yet">
             <span
-              class="inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-[11px] font-medium leading-4"
-              style="color: var(--status-pending); background-color: color-mix(in srgb, var(--status-pending) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-pending) 25%, transparent);"
+              class="inline-flex shrink-0 items-center gap-2 text-[12px]" style="color: var(--status-pending);"
             >
               <span class="h-[5px] w-[5px] rounded-full bg-[var(--status-pending)]"></span>Pending
             </span>
@@ -345,8 +325,8 @@
         {:else}
           {@const slash = owner.indexOf("/")}
           <span class="flex items-center gap-1.5 overflow-hidden" title={owner}>
-            <span class="shrink-0 text-[10px] font-medium uppercase tracking-[0.04em] text-[var(--text-muted)]">{owner.slice(0, slash)}</span>
-            <span class="truncate font-mono text-[11px] text-[var(--text-secondary)]">{owner.slice(slash + 1)}</span>
+            <span class="shrink-0 font-mono text-[12px] text-[var(--text-muted)]">{owner.slice(0, slash).toUpperCase()}</span>
+            <span class="truncate font-mono text-[12px] text-[var(--text-secondary)]">{owner.slice(slash + 1)}</span>
           </span>
         {/if}
       {:else if isStatusColumn(column.key)}
@@ -361,17 +341,13 @@
             <!-- Healthy / finished: plain muted text. Colour is reserved for
                  rows that need a look. -->
             <span class="truncate text-[var(--text-muted)]" title={val}>{val}</span>
-          {:else if d.pill}
-            <span
-              class="inline-flex max-w-full shrink-0 items-center gap-1.5 truncate rounded-sm px-1.5 text-[11px] font-medium leading-4"
-              style="color: {statusColor(category)}; background-color: color-mix(in srgb, {statusColor(category)} 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, {statusColor(category)} 25%, transparent);"
-              title={val}
-            >
-              <span class="h-[5px] w-[5px] shrink-0 rounded-full" style="background-color: {statusColor(category)}"></span>
-              <span class="truncate">{val}</span>
-            </span>
           {:else}
-            <span class="truncate font-medium" style="color: {statusColor(category)}" title={val}>{val}</span>
+            <!-- The word never shrinks for the detail beside it: "Unavailable"
+                 is the fact, the reason is the footnote. -->
+            <span class="inline-flex shrink-0 items-center gap-2" style="color: {statusColor(category)}" title={val}>
+              <span class="h-1.5 w-1.5 shrink-0 rounded-full" style="background-color: {statusColor(category)}"></span>
+              <span>{val}</span>
+            </span>
           {/if}
           {#if detail}
             <!-- The reason behind the word: Unschedulable, MinimumReplicasUnavailable… -->
@@ -382,22 +358,17 @@
       {:else if column.key === "restarts"}
         {@const restartInfo = podRestarts(resource)}
         {@const restarts = restartInfo.count}
-        <span class="inline-flex items-baseline justify-end gap-1.5 overflow-hidden">
-          <span
-            class={cn("font-mono tabular-nums", restarts > 5 && "font-medium")}
-            style:color={restarts > 5
-              ? "var(--status-failed)"
-              : restarts > 0
-                ? "var(--status-pending)"
-                : "color-mix(in srgb, var(--text-muted) 55%, var(--bg-primary))"}
-          >{restarts}</span>
-          {#if restarts > 0 && restartInfo.lastAt}
-            <!-- When the last one happened: 7 restarts three days ago is not
-                 7 restarts in the last hour. ageTick keeps it live. -->
-            {@const _tick = cellCtx.ageTick}
-            <span class="shrink-0 font-mono text-[10px] text-[var(--text-muted)]" title="Last restart {restartInfo.lastAt}">↻ {formatAge(restartInfo.lastAt)}</span>
-          {/if}
-        </span>
+        <!-- When the last one happened lives in the title: 7 restarts three days
+             ago is not 7 restarts in the last hour. -->
+        <span
+          class="font-mono tabular-nums"
+          style:color={restarts > 5
+            ? "var(--status-failed)"
+            : restarts > 0
+              ? "var(--status-pending)"
+              : "var(--text-muted)"}
+          title={restartInfo.lastAt ? `Last restart ${restartInfo.lastAt}` : undefined}
+        >{restarts}</span>
       {:else if column.key === "eventObject" && eventObjectTarget}
         {@const label = getCellValue(resource, column.key, cellCtx)}
         {@const target = eventObjectTarget}
@@ -413,22 +384,30 @@
       {:else if isTagColumn(column.key)}
         {@const tagValue = getCellValue(resource, column.key, cellCtx)}
         {#if tagValue && tagValue !== "-" && tagValue !== "<none>"}
-          <Badge appearance="surface" size="sm" bordered mono class="max-w-full truncate px-1.5" title={tagValue}>{tagValue}</Badge>
+          <span class="block truncate font-mono text-[var(--text-secondary)]" title={tagValue}>{tagValue}</span>
         {:else}
           <span class="text-[var(--text-muted)]">—</span>
         {/if}
       {:else if column.key === "name"}
         {@const cellValue = getCellValue(resource, column.key, cellCtx)}
-        <span class="block truncate font-medium text-[var(--text-primary)]" title={cellValue}>
-          {#if uiStore.filter}
-            {@const idx = nameLower.indexOf(uiStore.filterLower)}
-            {#if idx >= 0}{cellValue.slice(0, idx)}<span style="color:var(--accent)">{cellValue.slice(idx, idx + uiStore.filter.length)}</span>{cellValue.slice(idx + uiStore.filter.length)}{:else}{cellValue}{/if}
-          {:else if podName && podName.suffix}
-            {podName.base}<span class="font-normal text-[var(--text-muted)]">{podName.suffix}</span>
-          {:else}
-            {cellValue}
-          {/if}
-        </span>
+        {#if !uiStore.filter && podName && podName.tail}
+          <!-- Three boxes so a narrow column collapses the shared hash first and
+               keeps the tail, the only part that tells two replicas apart. -->
+          <span class="flex min-w-0 text-[var(--text-primary)]" title={cellValue}>
+            <span class="shrink truncate">{podName.base}</span>
+            {#if podName.hash}<span class="min-w-0 truncate text-[var(--text-muted)]" style="flex-shrink: 1000">{podName.hash}</span>{/if}
+            <span class="shrink-0 text-[var(--text-muted)]">{podName.tail}</span>
+          </span>
+        {:else}
+          <span class="block truncate text-[var(--text-primary)]" title={cellValue}>
+            {#if uiStore.filter}
+              {@const idx = nameLower.indexOf(uiStore.filterLower)}
+              {#if idx >= 0}{cellValue.slice(0, idx)}<span class="rounded-sm bg-[var(--bg-tertiary)] font-medium">{cellValue.slice(idx, idx + uiStore.filter.length)}</span>{cellValue.slice(idx + uiStore.filter.length)}{:else}{cellValue}{/if}
+            {:else}
+              {cellValue}
+            {/if}
+          </span>
+        {/if}
       {:else}
         {@const cellValue = getCellValue(resource, column.key, cellCtx)}
         <span
@@ -436,7 +415,7 @@
             "block truncate text-[var(--text-secondary)]",
             isMonoColumn(column.key) && "font-mono tabular-nums",
             column.key === "namespace" && "text-[var(--text-muted)]",
-            column.key === "node" && "font-mono text-[11px] text-[var(--text-muted)]"
+            column.key === "node" && "font-mono text-[var(--text-muted)]"
           )}
           title={cellValue}
         >{cellValue}</span>

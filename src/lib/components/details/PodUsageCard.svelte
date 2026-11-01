@@ -45,7 +45,7 @@
        security context) keep their per-section borders. -->
   <div class="grid grid-cols-2 gap-6 px-5 pb-1">
     <div class="flex flex-col gap-1">
-      <span class="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">CPU</span>
+      <span class="text-[11px] font-medium text-[var(--text-muted)]">CPU</span>
       {#if cpu}
         <span class="font-mono text-[12px] tabular-nums text-[var(--text-primary)]">{cpu.label}</span>
         <span class="font-mono text-[12px] text-[var(--text-muted)]">
@@ -64,7 +64,7 @@
     </div>
 
     <div class="flex flex-col gap-1">
-      <span class="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Memory</span>
+      <span class="text-[11px] font-medium text-[var(--text-muted)]">Memory</span>
       {#if memory}
         <span class="font-mono text-[12px] tabular-nums text-[var(--text-primary)]">{memory.label}</span>
         <span class="font-mono text-[12px] text-[var(--text-muted)]">
@@ -84,8 +84,8 @@
   </div>
 
   {#if !history.configured}
-    <p class="px-5 pb-3 text-[10px] text-[var(--text-muted)]">{PROMETHEUS_HINT}</p>
+    <p class="px-5 pb-3 text-[11px] text-[var(--text-muted)]">{PROMETHEUS_HINT}</p>
   {:else if history.error}
-    <p class="px-5 pb-3 text-[10px] text-[var(--status-failed)]">{history.error}</p>
+    <p class="px-5 pb-3 text-[11px] text-[var(--status-failed)]">{history.error}</p>
   {/if}
 </CollapsibleCard>

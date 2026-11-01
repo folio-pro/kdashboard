@@ -220,23 +220,22 @@
 {:else}
   <div class="flex h-full flex-col">
     <!-- Header -->
-    <div class="flex items-center gap-2 border-b border-[var(--border-color)] px-4 py-2">
+    <div class="flex h-12 shrink-0 items-center gap-2 border-b border-[var(--border-color)] pl-6 pr-4">
       {#if crd}
-        <span class="text-[12px] text-[var(--text-muted)]">{crd.group}</span>
-        <span class="text-[12px] text-[var(--text-muted)]">/</span>
-        <span class="text-[13px] font-medium text-[var(--text-primary)]">{crd.kind}</span>
-        <span class="text-[12px] text-[var(--text-muted)]" data-testid="crd-count">
-          ({rows.length === k8sStore.crdResources.items.length ? rows.length : `${rows.length}/${k8sStore.crdResources.items.length}`})
+        <h1 class="mr-2 text-[15px] font-medium text-[var(--text-primary)]">{crd.kind}</h1>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]">{crd.group}</span>
+        <span class="font-mono text-[11px] text-[var(--text-muted)]" data-testid="crd-count">
+          {rows.length === k8sStore.crdResources.items.length ? rows.length : `${rows.length}/${k8sStore.crdResources.items.length}`}
         </span>
         {#if clusterScoped}
-          <Badge appearance="surface" tone="muted" class="ml-1">cluster-scoped</Badge>
+          <span class="font-mono text-[11px] text-[var(--text-muted)]">cluster-scoped</span>
         {/if}
       {/if}
       <SearchField
         id="resource-filter"
         size="sm"
         class="ml-auto w-[280px] min-w-[160px] shrink"
-        placeholder="Filter…"
+        placeholder="Filter"
         ariaLabel="Filter {label.toLowerCase()}"
         bind:value={() => uiStore.filter, (v) => uiStore.setFilter(v)}
         onkeydown={handleFilterKeydown}
@@ -246,7 +245,7 @@
         {/snippet}
       </SearchField>
       <Button
-        variant="toolbar"
+        variant="muted"
         size="icon-sm"
         aria-label="Refresh"
         title="Refresh"
@@ -336,7 +335,7 @@
                   {#each columns as column (column.key)}
                     <td
                       class={cn(
-                        "overflow-hidden truncate px-3.5",
+                        "overflow-hidden truncate px-2",
                         column.key === "name" ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]",
                         column.key === "age" && "text-right text-[var(--text-muted)]",
                       )}

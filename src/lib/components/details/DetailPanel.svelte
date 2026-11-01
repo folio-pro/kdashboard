@@ -246,8 +246,8 @@
          Logs / Shell / YAML have their subtabs below. -->
     <div class="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border-color)] bg-[var(--bg-primary)] pl-4 pr-2">
       <div class="flex min-w-0 flex-1 flex-col">
-        <span class="truncate text-[13px] font-semibold leading-4 text-[var(--text-primary)]" title={resource.metadata.name} data-testid="detail-resource-name">{resource.metadata.name}</span>
-        <span class="truncate text-[10px] leading-[14px] text-[var(--text-muted)]">
+        <span class="truncate text-[13px] font-medium leading-4 text-[var(--text-primary)]" title={resource.metadata.name} data-testid="detail-resource-name">{resource.metadata.name}</span>
+        <span class="truncate text-[11px] leading-[14px] text-[var(--text-muted)]">
           {resource.kind}{#if resource.metadata.namespace}{" · "}{resource.metadata.namespace}{/if}{#if nodeName}{" · "}{nodeName}{/if}
         </span>
       </div>
@@ -318,7 +318,7 @@
             {/if}
           </div>
         {:else}
-          <span class="truncate text-[15px] font-semibold text-[var(--text-primary)]" data-testid="detail-resource-name">{resource.metadata.name}</span>
+          <span class="truncate text-[15px] font-medium text-[var(--text-primary)]" data-testid="detail-resource-name">{resource.metadata.name}</span>
           <div class="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
             <span class="text-[var(--text-muted)]">{resource.kind}</span>
             {#if resource.metadata.namespace}
@@ -359,7 +359,7 @@
         {#if kind === "cronjob"}
           <Button variant="outline" size="md" class="gap-2" onclick={doTrigger} disabled={triggerLoading} title="Create a Job from this CronJob's template now">
             <Play class="h-3.5 w-3.5" />
-            {triggerLoading ? "Triggering..." : "Trigger now"}
+            {triggerLoading ? "Triggering…" : "Trigger now"}
           </Button>
           <Button
             variant="outline"
@@ -374,13 +374,13 @@
             {:else}
               <Pause class="h-3.5 w-3.5" />
             {/if}
-            {suspendLoading ? "Working..." : cronSuspended ? "Resume" : "Suspend"}
+            {suspendLoading ? "Working…" : cronSuspended ? "Resume" : "Suspend"}
           </Button>
         {/if}
         {#if kind === "job"}
           <Button variant="outline" size="md" class="gap-2" onclick={doRerun} disabled={rerunLoading} title="Create a new Job with the same spec">
             <RefreshCw class="h-3.5 w-3.5" />
-            {rerunLoading ? "Creating..." : "Re-run"}
+            {rerunLoading ? "Creating…" : "Re-run"}
           </Button>
         {/if}
         {#if kind === "node" && resource}
@@ -398,11 +398,11 @@
             {:else}
               <Ban class="h-3.5 w-3.5" />
             {/if}
-            {cordonLoading ? "Working..." : cordoned ? "Uncordon" : "Cordon"}
+            {cordonLoading ? "Working…" : cordoned ? "Uncordon" : "Cordon"}
           </Button>
           <Button variant="outline" size="md" class="gap-2" onclick={doNodeShell} disabled={nodeShellLoading} title="Open a host shell on this node (privileged pod)">
             <Terminal class="h-3.5 w-3.5" />
-            {nodeShellLoading ? "Starting..." : "Node shell"}
+            {nodeShellLoading ? "Starting…" : "Node shell"}
           </Button>
           <Button
             variant="destructive"

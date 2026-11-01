@@ -212,7 +212,7 @@ export const resourceActions: ActionDef[] = [
   // --- Navigate group ---
   {
     id: "view-logs",
-    label: "View Logs",
+    label: "View logs",
     icon: FileText,
     shortcut: "\u2318L",
     tier: "green",
@@ -223,7 +223,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "open-terminal",
-    label: "Open Terminal",
+    label: "Open terminal",
     icon: Terminal,
     shortcut: "\u2318T",
     tier: "green",
@@ -234,7 +234,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "show-topology",
-    label: "View Topology",
+    label: "View topology",
     icon: GitFork,
     tier: "green",
     group: "navigate",
@@ -263,7 +263,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "compare-namespaces",
-    label: "Compare Across Namespaces / Contexts...",
+    label: "Compare across namespaces / contexts…",
     icon: GitCompare,
     tier: "green",
     group: "navigate",
@@ -275,7 +275,7 @@ export const resourceActions: ActionDef[] = [
   // --- Operations group ---
   {
     id: "scale",
-    label: "Scale Replicas...",
+    label: "Scale replicas…",
     icon: Scale,
     shortcut: "S",
     tier: "yellow",
@@ -286,7 +286,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "quick-edit",
-    label: "Quick Edit...",
+    label: "Quick edit…",
     icon: PencilLine,
     tier: "yellow",
     group: "operations",
@@ -316,7 +316,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "trigger-cronjob",
-    label: "Trigger Now",
+    label: "Trigger now",
     icon: Play,
     tier: "yellow",
     group: "operations",
@@ -414,7 +414,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "node-shell",
-    label: "Node Shell",
+    label: "Node shell",
     icon: Terminal,
     tier: "yellow",
     group: "operations",
@@ -424,7 +424,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "drain-node",
-    label: "Drain...",
+    label: "Drain…",
     icon: Droplets,
     tier: "red",
     group: "operations",
@@ -434,7 +434,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "open-in-browser",
-    label: "Open in Browser",
+    label: "Open in browser",
     icon: ExternalLink,
     tier: "green",
     group: "operations",
@@ -453,7 +453,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "watch-alerts",
-    label: "Watch for Alerts",
+    label: "Watch for alerts",
     icon: Bell,
     tier: "green",
     group: "operations",
@@ -463,7 +463,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "unwatch-alerts",
-    label: "Stop Watching",
+    label: "Stop watching",
     icon: BellOff,
     tier: "green",
     group: "operations",
@@ -476,7 +476,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "pin-resource",
-    label: "Pin to Sidebar",
+    label: "Pin to sidebar",
     icon: Pin,
     tier: "green",
     group: "operations",
@@ -497,7 +497,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "unpin-resource",
-    label: "Unpin from Sidebar",
+    label: "Unpin from sidebar",
     icon: PinOff,
     tier: "green",
     group: "operations",
@@ -515,7 +515,7 @@ export const resourceActions: ActionDef[] = [
   // --- Clipboard group ---
   {
     id: "copy-name",
-    label: "Copy Name",
+    label: "Copy name",
     icon: ClipboardCopy,
     tier: "green",
     group: "clipboard",
@@ -528,7 +528,7 @@ export const resourceActions: ActionDef[] = [
   },
   {
     id: "copy-namespace",
-    label: "Copy Namespace",
+    label: "Copy namespace",
     icon: Copy,
     tier: "green",
     group: "clipboard",
@@ -627,7 +627,7 @@ export const bulkActions: BulkActionDef[] = [
   },
   {
     id: "bulk-copy-names",
-    label: "Copy Names",
+    label: "Copy names",
     icon: ClipboardCopy,
     tier: "green",
     group: "clipboard",

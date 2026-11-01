@@ -38,7 +38,7 @@
     {#if selectedLog}
       <!-- Header -->
       <div class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border-color)] px-5 pr-12">
-        <span class="font-mono text-[13px] font-semibold text-[var(--text-primary)]">Log Detail</span>
+        <span class="font-mono text-[13px] font-medium text-[var(--text-primary)]">Log Detail</span>
         <Button
           variant="muted"
           size="icon-sm"
@@ -61,17 +61,17 @@
           {#if selectedLog.level}
             <span
               class={cn(
-                "rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-bold",
+                "rounded-sm px-1.5 py-0.5 font-mono text-[11px] font-medium",
                 LEVEL_PILL_COLORS[selectedLog.level],
               )}
             >
               {LEVEL_LABELS[selectedLog.level]}
             </span>
           {:else}
-            <span class="font-mono text-[10px] text-[var(--text-muted)]">no level</span>
+            <span class="font-mono text-[11px] text-[var(--text-muted)]">no level</span>
           {/if}
           {#if selectedLog.isJson}
-            <Badge mono class="font-bold" style="--tone: var(--log-json);">JSON</Badge>
+            <Badge mono class="font-medium" style="--tone: var(--log-json);">JSON</Badge>
           {/if}
         </div>
         {#if selectedLog.podName}

@@ -55,7 +55,7 @@ export const QUICK_ACTIONS: QuickActionDef[] = [
   { id: "why-pending", label: "Agent: Why Is It Pending?", resourceTypes: ["persistentvolumeclaims"] },
   { id: "why-not-scaling", label: "Agent: Why Isn't It Scaling?", resourceTypes: ["hpa", "vpa", "wpa"] },
   { id: "explain", label: "Agent: Explain This Resource", resourceTypes: null },
-  { id: "ask-about", label: "Ask Agent About This…", resourceTypes: null },
+  { id: "ask-about", label: "Ask agent about this…", resourceTypes: null },
 ];
 
 export function quickActionApplies(action: QuickActionDef, resourceType: string): boolean {

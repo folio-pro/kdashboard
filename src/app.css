@@ -96,10 +96,13 @@ html, body {
   --text-primary: #E5E5E5;
   --text-secondary: #A3A3A3;
   --text-muted: #8B8B8B;
-  --border-color: #333333;
-  --border-hover: #404040;
-  --accent: #21C45D;
-  --accent-hover: #1CA64F;
+  --border-color: #262626;
+  --border-hover: #333333;
+  /* Neutral on purpose. Green is --status-running here, and a green Create
+     button next to green "healthy" dots made the colour mean nothing. In this
+     theme colour is cluster state and only that; chrome stays in the ramp. */
+  --accent: #E5E5E5;
+  --accent-hover: #CFCFCF;
   --status-running: #21C45D;
   --status-pending: #F59F0A;
   --status-failed: #EF4343;
@@ -665,11 +668,11 @@ summary:focus-visible,
    ======================================== */
 
 .yaml-key {
-  color: var(--accent);
+  color: var(--text-secondary);
 }
 
 .yaml-string {
-  color: var(--status-running);
+  color: var(--text-primary);
 }
 
 .yaml-number {

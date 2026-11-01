@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Database, HardDrive } from "lucide-svelte";
+  
   import type { Resource } from "$lib/types";
   import MetadataSection from "./MetadataSection.svelte";
   import LabelsSection from "./LabelsSection.svelte";
@@ -52,16 +52,16 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title="StatefulSet Spec" icon={Database}>
+  <DetailSection title="StatefulSet spec">
     <KvGrid>
       <KvField label="Ready">
         <span class="font-mono text-[13px] {readyReplicas === replicas ? 'text-[var(--text-primary)]' : 'text-[var(--status-pending)]'}">{readyReplicas}/{replicas}</span>
       </KvField>
       <KvField label="Current" value={currentReplicas} />
       <KvField label="Updated" value={updatedReplicas} />
-      <KvField label="Service Name" value={serviceName} />
-      <KvField label="Update Strategy" value={updateStrategy.type ?? "RollingUpdate"} mono={false} />
-      <KvField label="Pod Management" value={podManagementPolicy} mono={false} />
+      <KvField label="Service name" value={serviceName} />
+      <KvField label="Update strategy" value={updateStrategy.type ?? "RollingUpdate"} mono={false} />
+      <KvField label="Pod management" value={podManagementPolicy} mono={false} />
     </KvGrid>
   </DetailSection>
 
@@ -70,7 +70,7 @@
   {/if}
 
   {#if volumeClaimTemplates.length > 0}
-    <DetailSection title="Volume Claim Templates" icon={HardDrive}>
+    <DetailSection title="Volume claim templates">
       {#snippet actions()}
         <span class="font-mono text-[11px] text-[var(--text-muted)]">{volumeClaimTemplates.length}</span>
       {/snippet}

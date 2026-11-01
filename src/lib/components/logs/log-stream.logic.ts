@@ -18,7 +18,7 @@
 // `connecting` covers ONLY the window until the backend confirms the log request
 // is established; `live` means attached, which is NOT the same as "has produced
 // output". Collapsing those two into one boolean is what used to leave a quiet
-// pod showing "Connecting to log stream..." forever.
+// pod showing "Connecting to log stream…" forever.
 
 import type { StreamPhase, StreamRequest, StreamStatus } from "./log-viewer";
 

@@ -22,7 +22,7 @@
     <Icon class="h-[17px] w-[17px]" />
   </span>
   <div class="min-w-0 flex-1">
-    <div class="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)]">{kind}</div>
+    <div class="text-[11px] font-medium text-[var(--text-muted)]">{kind}</div>
     <div class="truncate text-[13px] font-medium text-[var(--text-primary)]">{name}</div>
     {#if sub}
       <div class="truncate text-[11px] text-[var(--text-muted)]">{sub}</div>

@@ -91,13 +91,3 @@ export function statusColor(category: StatusCategory): string {
 export function isQuietStatus(category: StatusCategory): boolean {
   return category === "success" || category === "info" || category === "muted";
 }
-
-/**
- * Severity shown in the row's left gutter: a 2px bar for problems only, so a
- * scroll through a long list lands the eye on the rows that matter.
- */
-export function rowSeverity(category: StatusCategory): "error" | "warning" | null {
-  if (category === "error") return "error";
-  if (category === "warning" || category === "orange") return "warning";
-  return null;
-}

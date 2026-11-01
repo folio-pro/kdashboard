@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileText, Copy, Check, ChevronRight } from "lucide-svelte";
+  import { Copy, Check, ChevronRight } from "lucide-svelte";
   import { Badge, Button } from "$lib/components/ui";
   import type { Resource } from "$lib/types";
   import { toggleSetItem } from "$lib/utils/k8s-helpers";
@@ -77,7 +77,7 @@
 <div class="select-text">
   <MetadataSection {resource} />
 
-  <DetailSection title="ConfigMap" icon={FileText}>
+  <DetailSection title="ConfigMap">
     <KvGrid>
       <KvField label="Keys" value={entries.length} />
       {#if binaryEntries.length > 0}
@@ -93,7 +93,7 @@
 
   <div class="border-b border-[var(--border-color)]" data-testid="configmap-data">
     <div class="flex items-center justify-between px-6 py-4">
-      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Data</span>
+      <span class="text-[11px] font-medium text-[var(--text-muted)]">Data</span>
       <div class="flex items-center gap-3">
         {#if ready && entries.length > 0}
           <Button variant="link" size="inline-xs" onclick={copyAll}>
@@ -131,9 +131,9 @@
           <!-- Size and copy wait for the values (DetailPanel's get_resource). -->
           <div class="flex h-5 shrink-0 items-center gap-2">
             {#if !ready}
-              <span class="font-mono text-[10px] text-[var(--text-muted)]">…</span>
+              <span class="font-mono text-[11px] text-[var(--text-muted)]">…</span>
             {:else}
-              <span class="font-mono text-[10px] text-[var(--text-muted)]">
+              <span class="font-mono text-[11px] text-[var(--text-muted)]">
                 {#if entry.block}{entry.lines} {entry.lines === 1 ? "line" : "lines"} · {/if}{formatBytes(entry.chars)}
               </span>
               <Button variant="muted" size="icon-xs" onclick={() => copyValue(entry.key, entry.value)} title="Copy value">
@@ -169,7 +169,7 @@
         <span class="min-w-0 truncate font-mono text-[12px] font-medium text-[var(--text-primary)]" title={entry.key}>{entry.key}</span>
         <div class="flex shrink-0 items-center gap-2">
           <Badge tone="muted" appearance="surface" bordered>binary</Badge>
-          <span class="font-mono text-[10px] text-[var(--text-muted)]">{formatBytes(entry.bytes)}</span>
+          <span class="font-mono text-[11px] text-[var(--text-muted)]">{formatBytes(entry.bytes)}</span>
         </div>
       </div>
     {/each}

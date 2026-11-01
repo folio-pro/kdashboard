@@ -69,22 +69,18 @@
   {@const view = classifyLoadError(error, resourceTypeLabel)}
   {@const unreachable = view.kind === "unreachable"}
   <div class="flex h-full items-center justify-center" data-testid="table-error" data-error-kind={view.kind}>
-    <div class="flex max-w-md flex-col items-center gap-4 px-10 py-16 text-center">
-      <div
-        class={unreachable
-          ? "flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--status-failed)]/30 bg-[var(--status-failed)]/10 text-[var(--status-failed)]"
-          : "flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--status-warning)]/30 bg-[var(--status-warning)]/10 text-[var(--status-warning)]"}
-      >
+    <div class="flex max-w-md flex-col items-center gap-2 px-10 py-16 text-center">
+      <div class={unreachable ? "text-[var(--status-failed)]" : "text-[var(--status-warning)]"}>
         {#if view.kind === "not-installed"}
-          <PackageX class="h-6 w-6" />
+          <PackageX class="h-4 w-4" />
         {:else if view.kind === "forbidden"}
-          <Lock class="h-6 w-6" />
+          <Lock class="h-4 w-4" />
         {:else}
-          <AlertTriangle class="h-6 w-6" />
+          <AlertTriangle class="h-4 w-4" />
         {/if}
       </div>
-      <div class="text-[15px] font-semibold text-[var(--text-primary)]">{view.title}</div>
-      <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]" title={error ?? ""}>{view.detail}</p>
+      <div class="text-[13px] font-medium text-[var(--text-primary)]">{view.title}</div>
+      <p class="max-w-sm text-[12px] leading-relaxed text-[var(--text-muted)]" title={error ?? ""}>{view.detail}</p>
       <Button variant="toolbar" size="md" class="mt-1" onclick={onretry}>
         <RefreshCw class="h-3.5 w-3.5" />
         {view.action}
@@ -93,23 +89,21 @@
   </div>
 {:else}
   <div class="flex h-full items-center justify-center">
-    <div class="flex max-w-md flex-col items-center gap-4 px-10 py-16 text-center">
-      <div class="flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-tertiary)] text-[var(--text-muted)]">
-        <Inbox class="h-6 w-6" />
-      </div>
-      <div class="text-[15px] font-semibold text-[var(--text-primary)]">No {resourceTypeLabel.toLowerCase()} found</div>
+    <div class="flex max-w-md flex-col items-center gap-2 px-10 py-16 text-center">
+      <Inbox class="h-4 w-4 text-[var(--text-muted)]" />
+      <div class="text-[13px] font-medium text-[var(--text-primary)]">No {resourceTypeLabel.toLowerCase()} found</div>
       {#if hasStatFilter}
-        <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">No resources match the active stat filter.</p>
+        <p class="max-w-sm text-[12px] leading-relaxed text-[var(--text-muted)]">No resources match the active stat filter.</p>
         <Button variant="link" size="inline-sm" class="mt-1" onclick={onclearStatFilter}>
           Clear stat filter
         </Button>
       {:else if hasTextFilter}
-        <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">No resources match your search and filters.</p>
+        <p class="max-w-sm text-[12px] leading-relaxed text-[var(--text-muted)]">No resources match your search and filters.</p>
         <Button variant="link" size="inline-sm" class="mt-1" onclick={onclearTextFilter}>
           Clear filters
         </Button>
       {:else}
-        <p class="max-w-sm text-[13px] leading-relaxed text-[var(--text-muted)]">
+        <p class="max-w-sm text-[12px] leading-relaxed text-[var(--text-muted)]">
           {#if clusterScoped}There are none in this cluster. Try switching context to see results.{:else}There are none in this namespace. Try switching namespace or context to see results.{/if}
         </p>
       {/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bell } from "lucide-svelte";
+  
   import type { Resource, Event as K8sEvent } from "$lib/types";
   import { invoke } from "$lib/ipc/core";
   import { formatAge } from "$lib/utils/age";
@@ -62,7 +62,7 @@
 </script>
 
 {#if recent.length > 0 || loading}
-  <DetailSection title="Recent events" icon={Bell}>
+  <DetailSection title="Recent events">
     {#snippet actions()}
       <span class="font-mono text-[11px] text-[var(--text-muted)]">{loading ? "…" : events.length}</span>
       <Button variant="muted" size="inline-xs" class="text-[var(--accent)] hover:text-[var(--accent)]" onclick={() => { uiStore.detailSubtab = "events"; }}>All events</Button>
@@ -74,8 +74,7 @@
           <span class="w-9 shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">{ts(e) ? formatAge(ts(e)) : "—"}</span>
           {#if warning}
             <span
-              class="inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-[11px] font-medium leading-4"
-              style="color: var(--status-pending); background-color: color-mix(in srgb, var(--status-pending) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-pending) 25%, transparent);"
+              class="inline-flex shrink-0 items-center gap-2 text-[12px]" style="color: var(--status-pending);"
             ><span class="h-[5px] w-[5px] rounded-full bg-[var(--status-pending)]"></span>Warning</span>
           {:else}
             <span class="w-[58px] shrink-0 text-[11px] text-[var(--text-muted)]">Normal</span>
